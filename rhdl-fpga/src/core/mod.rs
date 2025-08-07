@@ -6,4 +6,5 @@ pub mod delay;
 pub mod dff;
 pub mod option;
 pub mod ram;
+pub mod shift_reg;
 pub mod slice;
