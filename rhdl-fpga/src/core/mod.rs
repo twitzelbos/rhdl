@@ -7,4 +7,5 @@ pub mod dff;
 pub mod option;
 pub mod ram;
 pub mod shift_reg;
+pub mod shift_out;
 pub mod slice;
