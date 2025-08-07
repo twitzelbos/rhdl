@@ -6,11 +6,167 @@ use syn::{
     parse::Parser, punctuated::Punctuated, spanned::Spanned, token::Comma, FnArg, Ident, Pat,
     PatType, Path, ReturnType, Token,
 };
+use syn::visit_mut::{self, VisitMut};
 
 // use crate::suffix::CustomSuffix;
 type TS = proc_macro2::TokenStream;
 type Result<T> = syn::Result<T>;
-// use syn::visit_mut::VisitMut;
+
+/// Break statement transformation for synthesizable hardware
+mod break_transformer {
+    use super::*;
+    use syn::{ExprForLoop, ExprReturn};
+    use quote::format_ident;
+
+    /// Main entry point for transforming breaks in a function
+    pub fn transform_function(function: &mut syn::ItemFn) -> syn::Result<()> {
+        let mut transformer = BreakTransformer::new();
+        transformer.visit_item_fn_mut(function);
+        Ok(())
+    }
+
+    /// Transforms a for loop with break statements into synthesizable form
+    pub struct BreakTransformer {
+        break_counter: usize,
+    }
+
+    impl BreakTransformer {
+        pub fn new() -> Self {
+            Self {
+                break_counter: 0,
+            }
+        }
+
+        fn has_break_or_return(&self, block: &syn::Block) -> bool {
+            // Simple check for break or return statements
+            let code = quote::quote! { #block }.to_string();
+            code.contains("break") || code.contains("return")
+        }
+    }
+
+    impl VisitMut for BreakTransformer {
+        fn visit_expr_for_loop_mut(&mut self, node: &mut ExprForLoop) {
+            // Check if this loop has break statements
+            if !self.has_break_or_return(&node.body) {
+                // Continue with normal processing for nested loops
+                visit_mut::visit_expr_for_loop_mut(self, node);
+                return;
+            }
+
+            // Generate unique break flag variable
+            let break_flag = format_ident!("__rhdl_break_flag_{}", self.break_counter);
+            self.break_counter += 1;
+
+            // Transform the body: wrap statements in conditional execution
+            let original_stmts = std::mem::take(&mut node.body.stmts);
+            let mut new_stmts: Vec<syn::Stmt> = Vec::new();
+            
+            // Add break flag initialization
+            new_stmts.push(syn::parse_quote! {
+                let mut #break_flag = false;
+            });
+
+            // Transform each statement
+            for mut stmt in original_stmts {
+                // Replace break/return with flag assignment
+                let mut break_replacer = BreakReplacer { 
+                    break_flag: break_flag.clone() 
+                };
+                break_replacer.visit_stmt_mut(&mut stmt);
+
+                // Wrap statement in conditional execution
+                new_stmts.push(syn::parse_quote! {
+                    if !#break_flag {
+                        #stmt
+                    }
+                });
+            }
+
+            node.body.stmts = new_stmts;
+            
+            // Continue visiting nested loops
+            visit_mut::visit_expr_for_loop_mut(self, node);
+        }
+    }
+
+    struct BreakReplacer {
+        break_flag: syn::Ident,
+    }
+
+    impl VisitMut for BreakReplacer {
+        fn visit_expr_mut(&mut self, expr: &mut syn::Expr) {
+            match expr {
+                syn::Expr::Break(_) => {
+                    // Replace break with flag assignment
+                    let flag = &self.break_flag;
+                    *expr = syn::parse_quote! { #flag = true };
+                }
+                _ => {
+                    // Continue visiting other expressions
+                    visit_mut::visit_expr_mut(self, expr);
+                }
+            }
+        }
+
+        fn visit_expr_return_mut(&mut self, node: &mut ExprReturn) {
+            // For now, don't transform returns - that's more complex
+            // In a full implementation, we'd need to accumulate return values
+            visit_mut::visit_expr_return_mut(self, node);
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use quote::quote;
+
+        #[test]
+        fn test_simple_break_transformation() {
+            let input = quote! {
+                fn process_data(data: [u8; 10]) -> () {
+                    for i in 0..10 {
+                        if data[i] > 100 {
+                            break;
+                        }
+                    }
+                }
+            };
+
+            let mut function = syn::parse2::<syn::ItemFn>(input).unwrap();
+            let result = transform_function(&mut function);
+            
+            assert!(result.is_ok());
+            
+            let output = quote! { #function }.to_string();
+            assert!(output.contains("__rhdl_break_flag_0"));
+            assert!(output.contains("if ! __rhdl_break_flag_0"));
+            assert!(output.contains("__rhdl_break_flag_0 = true"));
+        }
+
+        #[test]
+        fn test_no_breaks_unchanged() {
+            let input = quote! {
+                fn no_breaks(data: [u8; 10]) -> u32 {
+                    let mut sum = 0u32;
+                    for i in 0..10 {
+                        sum += data[i] as u32;
+                    }
+                    sum
+                }
+            };
+
+            let mut function = syn::parse2::<syn::ItemFn>(input).unwrap();
+            let _original_str = quote! { #function }.to_string();
+            let result = transform_function(&mut function);
+            
+            assert!(result.is_ok());
+            
+            // Function should remain essentially unchanged (no break flags)
+            let transformed_str = quote! { #function }.to_string();
+            assert!(!transformed_str.contains("__rhdl_break_flag"));
+        }
+    }
+}
 
 // We need the same kind of scope tracking that is used in `infer_types.rs`.
 // Basically, in any given scope, we need a list of the bindings that have
@@ -526,8 +682,15 @@ impl Context {
     fn function(
         &mut self,
         attrs: &Punctuated<Ident, Token![,]>,
-        function: syn::ItemFn,
+        mut function: syn::ItemFn,
     ) -> Result<TS> {
+        // Apply break transformation before other processing
+        if let Err(e) = break_transformer::transform_function(&mut function) {
+            return Err(syn::Error::new(
+                function.span(),
+                format!("Failed to transform break statements: {}", e),
+            ));
+        }
         let orig_name = &function.sig.ident;
         let vis = &function.vis;
         let (impl_generics, ty_generics, where_clause) = function.sig.generics.split_for_impl();
