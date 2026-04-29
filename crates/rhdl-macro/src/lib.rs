@@ -72,6 +72,14 @@ pub fn fsm_properties(attr: TokenStream, input: TokenStream) -> TokenStream {
     }
 }
 
+#[proc_macro_attribute]
+pub fn fsm_doc(attr: TokenStream, input: TokenStream) -> TokenStream {
+    match rhdl_macro_core::fsm_doc(attr.into(), input.into()) {
+        Ok(output) => output.into(),
+        Err(err) => err.to_compile_error().into(),
+    }
+}
+
 #[proc_macro_derive(SynchronousDQ)]
 pub fn synchronous_dq(input: TokenStream) -> TokenStream {
     match rhdl_macro_core::derive_synchronous_dq(input.into()) {

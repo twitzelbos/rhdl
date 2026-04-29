@@ -63,6 +63,7 @@ pub use rhdl_macro::CircuitDQ;
 pub use rhdl_macro::Digital;
 pub use rhdl_macro::Fsm;
 pub use rhdl_macro::FsmWidget;
+pub use rhdl_macro::fsm_doc;
 pub use rhdl_macro::fsm_properties;
 pub use rhdl_macro::Synchronous;
 pub use rhdl_macro::SynchronousDQ;

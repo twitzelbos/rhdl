@@ -284,16 +284,24 @@ The diagrams should be embedded in the rustdoc as both SVG and as a structured r
 
 ### 6.5 Status (2026-04-29)
 
-**Substrate shipped (Phase 2 + 3) and the kernel→diagram connector now lives in `rhdl_fpga::doc`:**
+**Phase 3 shipped end-to-end across two PRs:**
 
+**Phase 3b — kernel→diagram connector** (`feat/fsm-auto-transitions`, PR #4):
 - `rhdl_core::fsm::extract_widget_transitions::<W>()` — compiles `W::Kernel` through Stage 1, runs `extract_canonical_transitions` against the resulting RHIF, returns the `ExtractionResult { transitions, unanalyzable }`.
 - `rhdl_core::fsm::extract_widget_transitions_strict::<W>()` — same but errors out on any `Unanalyzable` diagnostic and returns the sorted transitions directly.
 - `rhdl_fpga::doc::write_fsm_diagram::<W>(filename)` — calls the strict extractor, builds the diagram, renders to SVG, writes the markdown file.  No author-curated `FSM_TRANSITIONS` const required.
-- `rhdl_fpga::doc::assert_fsm_transitions_match::<W>(manual)` — drift-check helper for tests; useful during the deprecation window for any author-curated lists from earlier widget vintages.
+- `rhdl_fpga::doc::assert_fsm_transitions_match::<W>(manual)` — drift-check for any widget vintages still carrying author-curated lists.
 
-**This satisfies acceptance criterion #2** (diagram derived from source, no example-run step needed for the *contents* — though the example still runs `write_fsm_diagram` once at example time to materialise the included markdown file).  **Criterion #1's "no extra annotations" is also satisfied at the API level** — the only annotations a widget needs are the existing `#[derive(Fsm)] / #[derive(FsmWidget)] / #[fsm(state_field = ..., state_enum = ...)]` from Phase 1.
+**Phase 3c — rustdoc auto-injection** (`feat/fsm-rustdoc-autoinject`):
+- `#[fsm_doc]` attribute macro (`rhdl_macro_core::fsm_doc`) — when placed on an FSM-tagged widget struct, emits `#[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/doc/<WidgetName>_fsm.md"))]` automatically.  No per-widget `#![doc = include_str!(...)]` boilerplate.
+- `#[fsm_doc(file = "...")]` form for the rare case where the conventional filename doesn't match the struct name.
+- `rhdl_fpga::doc::assert_fsm_diagram_up_to_date::<W>(filename)` — drift-check helper for the on-disk SVG file (catches "kernel changed but author forgot to re-run the example").
+- End-to-end demonstration: `rhdl_fpga::doc::demo::AutoDocMachine` — `cargo doc` produces a struct page with the SVG embedded, no author-written include line.
 
-**Still on the table for the *full* Phase 3 endpoint:** wire `write_fsm_diagram` into `Descriptor::hdl()` so the inline-SVG diagram is auto-injected into the widget's rustdoc without requiring a `#![doc = include_str!(...)]` line per widget.  This is a separate PR (`feat/fsm-diagram-rustdoc-autoinclude`); building on top of the helpers above means it's a pure rustdoc-emission change, not an algorithmic one.
+**Both Phase 3 acceptance criteria from §6.4 are now met:**
+
+- ✅ #1 ("no extra annotations needed by the widget author") — `#[derive(Fsm)] + #[derive(FsmWidget)] + #[fsm(...)] + #[fsm_doc]` cover everything.  The `#[fsm_doc]` line replaces the old 3-line `#![doc = include_str!(...)]` block.
+- ✅ #2 ("diagram up-to-date by virtue of being derived from source") — the markdown file's *content* is auto-derived from the kernel; `assert_fsm_diagram_up_to_date` catches drift in CI.  The file-materialisation step (running `cargo run --example <name>` after kernel changes) remains a manual cycle for now; full automation via `build.rs` is a small follow-on (Phase 3d) once anyone wants it.
 
 ---
 
@@ -417,8 +425,9 @@ Specific test requirements per layer:
 | 1 | `#[derive(Fsm)]` macro + 3 widget rewrites | shipped (PR #2) | Nothing |
 | 2 | Static reachability + dead-state pass (RHIF-level extractor + analyzer) | shipped (PR #2) | Phase 1 |
 | 3a | Diagram renderer + JSON / SVG / dot emitters | shipped (PR #2) | Phase 1, 2 |
-| 3b | Kernel→diagram connector: `extract_widget_transitions` + `write_fsm_diagram` (no manual `FSM_TRANSITIONS` const) | shipped (`feat/fsm-auto-transitions`) | Phase 1, 2, 3a |
-| 3c | Auto-inject diagram into `Descriptor::hdl()` rustdoc — removes the `#![doc = include_str!(...)]` per-widget line | not yet shipped | Phase 3b |
+| 3b | Kernel→diagram connector: `extract_widget_transitions` + `write_fsm_diagram` (no manual `FSM_TRANSITIONS` const) | shipped (`feat/fsm-auto-transitions`, PR #4) | Phase 1, 2, 3a |
+| 3c | `#[fsm_doc]` attribute macro auto-injects `#[doc = include_str!(...)]` into the widget's rustdoc — removes the per-widget boilerplate line | shipped (`feat/fsm-rustdoc-autoinject`) | Phase 3b |
+| 3d | `build.rs`-driven auto-emission of the diagram file (removes the `cargo run --example` step too) | not yet shipped (small, optional) | Phase 3c |
 | 4 | `#[fsm_properties(...)]` + SVA emission | shipped (PR #2) | Phase 1, 2 |
 | 4b | `cargo rhdl prove` SymbiYosys driver + corpus proofs | not yet shipped | Phase 4 |
 | 5 | Built-in bounded model checker | not yet shipped (research-grade) | Phase 4b |
