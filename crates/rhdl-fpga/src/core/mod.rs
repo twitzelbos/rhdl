@@ -2,6 +2,7 @@
 //! Core components (RAMs, DFF, constants, etc)
 pub mod audio_pwm;
 pub mod barrel_shifter;
+pub mod bus_uart;
 pub mod can_master;
 pub mod cga_rgbi;
 pub mod comparator;
@@ -21,6 +22,7 @@ pub mod leading_zeros;
 pub mod lin_master;
 pub mod mac;
 pub mod midi;
+pub mod ntsc_composite;
 pub mod one_hot;
 pub mod one_wire_master;
 pub mod option;

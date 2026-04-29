@@ -31,6 +31,61 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-04-29 — Bus-attached UART (16550A-style register interface, v1)
+
+**Path:** `crates/rhdl-fpga/src/core/bus_uart.rs` (+ example, doc, vcd)
+
+**Why this, why now:** Roadmap row #24 — Tier 3 protocol PHY. Wraps the shipped `core::uart` (#36) with a tiny memory-mapped register interface. This is the minimal viable subset of the Intel 16550A — enough for a soft-CPU SoC to do interrupt-driven serial I/O — without the full register-bit compatibility that Linux `8250_core` expects.
+
+**Design decisions:**
+- **Two registers, not the full 16550A.** v1 ships `DATA` (RW, 0x0) and `STATUS` (R, 0x1); reserves 0x2/0x3 for future LCR/IER. Full 16550A register bit-compatibility (DLL/DLM with DLAB bank-switch, IIR with priority-encoded interrupt sources, MSR, MCR, FCR, etc.) is at least 4–5× more code and is tracked as a v2 follow-up. The minimal layout fits in ~30 lines of C driver.
+- **Wraps `core::uart` as a single sub-circuit field.** Pure-combinational kernel does address decoding, status assembly, and the read-data mux. No additional state. This is the reference example of how to compose an existing widget into a register-mapped one.
+- **`tx_push = write_enable && addr == 0x0`** and **`rx_pop = read_enable && addr == 0x0`** — the inner UART's FIFO push/pop strobes are gated by the address decode. Means a write to STATUS or any unmapped address is silently ignored (which is the right semantics for a memory-mapped peripheral).
+- **`Option<Bits<8>>` from `uart.rx_data` decoded via `match`** in the kernel: `Some(byte) → (byte, true), None → (0, false)`. The `rx_valid` flag goes into bit 7 of STATUS; the byte goes into the read mux. This is the canonical pattern for consuming `Option`-returning sub-circuits inside a kernel — first one in the tree to do it explicitly.
+- **Single combined `irq`** (asserted while RX FIFO non-empty). The full IIR with TX-empty-vs-RX-ready-vs-line-status priority encoding is a v2 follow-up.
+
+**Surprises and gotchas:**
+- **Inner-kernel name resolution** — same `use uart_kernel as _;` pattern as `cga_rgbi` and `ntsc_composite`. The `#[kernel]` macro generates a reference to the sub-circuit's kernel function during expansion; without the import the name doesn't resolve. Adding to the §13 "common kernel-composition pattern" docs.
+- **Status reads always return the current FIFO state, not a latched snapshot.** This means `read STATUS` and `read DATA` in successive cycles see consistent state, but a CPU doing a wide read or a multi-cycle bus transaction sees the FIFO as it advances. For this v1 scope it's fine; v2 with a CPU-side handshake will need wait-states or a status-latch.
+
+**Validation:** All 5 tiers, 7 tests including: idle no-irq, STATUS reads `rx_empty=1, tx_full=0` after reset, TX wire toggles when host writes DATA, **bit-exact 0xA5 round-trip from RX wire → DATA register**. Tier 3 HDL emission length 58674 chars (substantially larger than other widgets — composing the FIFO'd UART balloons the synthesis); Tier 4 iverilog RTL clean; Tier 5 VCD digest blessed.
+
+**Follow-ups:**
+- **Full 16550A register layout** — DLL/DLM divisor-latch with DLAB bank-switch in LCR; IIR with priority-encoded interrupt sources; MSR (modem status); MCR (modem control); FCR (FIFO control / clear). Needed for Linux `8250_core` and QEMU `hw/char/serial.c` compatibility. Probably ~400 LOC of additional widget code; the natural reference is the QEMU implementation.
+- **Programmable LCR** — word length (5/6/7/8), parity (none/even/odd/mark/space), stop bits (1/1.5/2). Each requires a small change to the underlying TX/RX pipelines.
+- **Hardware handshake** (RTS/CTS/DTR/DSR/DCD/RI) — modem-status pads + modem-control register + status-change interrupt. Each pad is a 1-bit input/output; the bookkeeping is the work.
+- **Loopback mode** (LCR bit 4) — internally connects TX → RX for self-test.
+- **Break detect/generate** — host writes 0x40 to LCR to assert break; an extended low (longer than a frame) on RX is detected as a break-received status bit.
+- **Status-latch / wait-state for multi-cycle bus** — current STATUS is "live"; a CPU on a slow bus or with asynchronous register access wants either a latched snapshot or a wait-state.
+
+---
+
+## 2026-04-29 — NTSC composite sync encoder (monochrome v1)
+
+**Path:** `crates/rhdl-fpga/src/core/ntsc_composite.rs` (+ example, doc, vcd)
+
+**Why this, why now:** Roadmap row #39 — Tier 3 video PHY. Composes the shipped `VideoTimingCore` into a 2-bit composite-video output that drives a standard composite monitor or capture device. Pairs with a $0.10 R-2R DAC (two FPGA pins → one video pin). Together with the CGA RGBI (#35), this gives RHDL the full "drive a VHS-era display" capability set.
+
+**Design decisions:**
+- **Monochrome only.** No color subcarrier, no colorburst, no chrominance modulation. A real NTSC color encoder needs a 3.579545 MHz colorburst phase-locked to the horizontal scan, gated into the back porch of each line, with chrominance quadrature-modulated by I/Q color-difference signals. That is at least 2× the LOC of this monochrome encoder and is tracked as a v2 follow-up.
+- **2-bit output** that maps to the standard composite levels: `00` = sync tip (0 IRE), `01` = blank/black (7.5 IRE setup pedestal), `10`/`11` = picture luma. This is the minimum for valid composite output and is the cheapest DAC option (two FPGA pins + 2 resistors).
+- **Simplified VSYNC** — v1 emits a single broad VSYNC pulse for the duration of `VideoTimingCore`'s vsync region, rather than the standard 9-line equalize/vsync/equalize sequence. Most "rough sync" capture equipment accepts this; broadcast-quality VSYNC is a v2 follow-up.
+- **Black-pedestal gating** — `pic_sample = 00` is gated to `01` (blanking) during active. This is the right semantics: a real video signal has a 7.5 IRE setup pedestal, so "black" reads correctly through the receiver's blanking comparator. Without the gate, picture content of `00` would briefly look like a sync tip.
+- **No interlace** — v1 emits a 262-line progressive frame ("240p"). NTSC is 525 lines interlaced; full 480i is a v2 follow-up that needs a field counter.
+
+**Surprises and gotchas:** None — the widget is a tiny 4-way mux on top of `VideoTimingCore`. The `#![doc = ...]` and `use ... as _` boilerplate matched the established pattern from `cga_rgbi`. First widget in the tree where the kernel literally has zero own state.
+
+**Validation:** All 5 tiers, 7 tests including: composite is `00` during HSYNC/VSYNC, composite is `01` during blanking (not active, not sync), composite passes `pic_sample = 11` through during active, `pic_sample = 00` is gated to `01` during active. Tier 3 HDL emission length 8090 chars; Tier 4 iverilog RTL clean; Tier 5 VCD digest blessed.
+
+**Follow-ups:**
+- **NTSC color encoder** — adds the 3.579545 MHz subcarrier generator, colorburst-gating logic (during the back porch of each line), and YIQ→QAM modulation of the chrominance. Probably ~400 LOC; the canonical reference is the Atari 2600 / Atari 8-bit "TIA" or the Sega Genesis VDP's composite output.
+- **Standards-compliant VSYNC** with 6 equalizing pulses + 6 broad VSYNC pulses + 6 equalizing pulses (each at half-line frequency). Required for picky monitors and broadcast equipment.
+- **480i interlace** — emits two fields per frame with a half-line offset; needs a field counter and a field-dependent VSYNC adjustment.
+- **PAL variant** — 50 Hz, 625 lines, 4.43361875 MHz subcarrier, line-by-line colorburst phase alternation. Mostly the same skeleton with different timing constants; the "PAL switch" makes it more complex than NTSC.
+- **Pixel-clock divider** — at the canonical 13.5 MHz pixel clock the FPGA needs either a PLL or an internal divider gating the timing-core advance.
+
+---
+
 ## 2026-04-29 — CGA digital RGBI video (test-pattern v1)
 
 **Path:** `crates/rhdl-fpga/src/core/cga_rgbi.rs` (+ example, doc, vcd)
