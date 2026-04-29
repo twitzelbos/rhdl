@@ -77,6 +77,23 @@ fn pattern_has_bindings(pat: &syn::Pat) -> bool {
     }
 }
 
+/// Check whether `pat` contains an or-pattern *anywhere within it*
+/// (i.e., not at its top level).  Used to reject nested or-patterns
+/// like `(A | B, C)` with a clear diagnostic.  Top-level or-patterns
+/// are flattened in `match_ex` and never reach this check.
+fn pattern_has_nested_or(pat: &syn::Pat) -> bool {
+    match pat {
+        Pat::Or(_) => true,
+        Pat::Paren(p) => pattern_has_nested_or(&p.pat),
+        Pat::Slice(s) => s.elems.iter().any(pattern_has_nested_or),
+        Pat::Tuple(t) => t.elems.iter().any(pattern_has_nested_or),
+        Pat::Struct(st) => st.fields.iter().any(|f| pattern_has_nested_or(&f.pat)),
+        Pat::TupleStruct(ts) => ts.elems.iter().any(pattern_has_nested_or),
+        Pat::Type(ty) => pattern_has_nested_or(&ty.pat),
+        _ => false,
+    }
+}
+
 //
 // This is a kludge.  I do not know of any way to determine if
 // an expression like j = Foo::Bar(3) is a function named Bar
@@ -879,6 +896,17 @@ impl Context {
                     wild_pat(#id.into())
                 })
             }
+            // Top-level or-patterns are flattened in `match_ex`
+            // before they reach this lowerer.  Reaching here means
+            // we hit a *nested* or-pattern (e.g. `(A | B, C)`),
+            // which would require pattern distribution to expand
+            // (`(A, C) | (B, C)`).  That's tractable but out of
+            // scope for v1; produce a clear diagnostic instead of
+            // the generic "Unsupported pattern type".
+            syn::Pat::Or(_) => Err(syn::Error::new(
+                pat.span(),
+                "Nested or-patterns are not supported.  Or-patterns are only allowed at the top of a match arm (e.g. `State::A | State::B => ...`); rewrite the surrounding pattern to lift the or-pattern to the arm level.",
+            )),
             _ => Err(syn::Error::new(pat.span(), "Unsupported pattern type")),
         }
     }
@@ -1306,10 +1334,37 @@ impl Context {
                 ));
             }
         }
+        // Top-level or-patterns are desugared into one arm per
+        // alternative with the same body: `A | B => body` lowers
+        // to `A => body, B => body`.  Bindings within an
+        // alternative work because each arm opens its own scope
+        // (see `arm` and `add_scoped_binding`); Rust's own
+        // type-checker has already verified that all alternatives
+        // bind the same identifiers with the same types before
+        // we see the AST.  Nested or-patterns (inside tuple /
+        // struct / slice patterns) are out of scope for this
+        // extension; they are caught and rejected by the leaf
+        // `pat()` lowerer with a clear diagnostic.
         let arms = expr
             .arms
             .iter()
-            .map(|x| self.arm(&x.pat, &x.body))
+            .flat_map(|arm| match &arm.pat {
+                syn::Pat::Or(or_pat) => or_pat
+                    .cases
+                    .iter()
+                    .map(|case| (case.clone(), arm.body.clone()))
+                    .collect::<Vec<_>>(),
+                other => vec![(other.clone(), arm.body.clone())],
+            })
+            .map(|(pat, body)| {
+                if pattern_has_nested_or(&pat) {
+                    return Err(syn::Error::new(
+                        pat.span(),
+                        "Nested or-patterns are not supported.  Or-patterns are only allowed at the top of a match arm (e.g. `State::A | State::B => ...`); rewrite the surrounding pattern to lift the or-pattern to the arm level.",
+                    ));
+                }
+                self.arm(&pat, &body)
+            })
             .collect::<Result<Vec<_>>>()?;
         let expr = self.expr(&expr.expr)?;
         Ok(quote! {
@@ -1959,6 +2014,46 @@ mod test {
         let result = prettyplease::unparse(&syn::parse2::<syn::File>(new_code).unwrap());
         let expect = expect_file!["expect/match_arm_pattern.expect"];
         expect.assert_eq(&result);
+    }
+
+    #[test]
+    fn test_match_or_pattern() {
+        let test_code = quote! {
+            fn update(z: Bar) {
+                match z {
+                    Bar::A | Bar::B => {},
+                    Bar::C => {},
+                }
+            }
+        };
+        let function = syn::parse2::<syn::ItemFn>(test_code).unwrap();
+        let item = Context::default()
+            .function(&Punctuated::default(), function)
+            .unwrap();
+        let new_code = quote! {#item};
+        let result = prettyplease::unparse(&syn::parse2::<syn::File>(new_code).unwrap());
+        let expect = expect_file!["expect/match_or_pattern.expect"];
+        expect.assert_eq(&result);
+    }
+
+    #[test]
+    fn test_match_nested_or_pattern_rejected() {
+        let test_code = quote! {
+            fn update(z: (Bar, Bar)) {
+                match z {
+                    (Bar::A | Bar::B, Bar::C) => {},
+                }
+            }
+        };
+        let function = syn::parse2::<syn::ItemFn>(test_code).unwrap();
+        let err = Context::default()
+            .function(&Punctuated::default(), function)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("Nested or-patterns are not supported"),
+            "expected nested-or diagnostic, got: {err}"
+        );
     }
 
     #[test]

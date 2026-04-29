@@ -15,8 +15,29 @@ Here are the types of match arms that _are_ supported.
 - Wildcards
 - Struct variant patterns, e.g., `Bar::Foo{a, b}`, where `Bar` is an enum with a `struct` variant named `Foo`.
 - Tuple variant patterns, e.g., `Bar::Foo(a,b)`,  where `Bar` is an enum with a tuple variant named `Foo`.
+- **Top-level or-patterns**, e.g. `Bar::A | Bar::B => ...`.  See below.
 
 All other types of match patterns are not supported.
+
+## Or-patterns
+
+You can collapse multiple variants with the same body into a single arm using the `|` syntax:
+
+```rust
+match state {
+    Light::Red | Light::Yellow => bits(1),    // both stop
+    Light::Green => bits(2),                   // go
+    Light::Off => bits(0),                     // unknown
+}
+```
+
+The macro layer desugars this into one arm per alternative — `Bar::A | Bar::B => body` lowers identically to `Bar::A => body, Bar::B => body`.  The emitted Verilog is the same as the hand-written multi-arm form.
+
+Bindings inside an alternative work as you would expect: each alternative opens its own scope, and Rust's own type-checker enforces that all alternatives bind the same identifiers with the same types.
+
+```admonish warning
+Or-patterns are only supported at the **top level** of a match arm.  Nested or-patterns inside tuple, struct, or slice patterns — like `(A | B, C) => ...` — produce a clear diagnostic and are not supported.  If you need that shape, distribute the or-pattern manually: write `(A, C) | (B, C) => ...` instead.
+```
 
 The simplest form of a `match` is to build a lookup table.  In this case, the `match` patterns must be explicit in constructing patterns that match the type of the "scrutinee".  So this looks something like:
 

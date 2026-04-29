@@ -1,0 +1,71 @@
+fn update(z: Bar) {
+    #[forbid(non_snake_case)]
+    #[forbid(non_upper_case_globals)]
+    #[forbid(unreachable_patterns)]
+    #[allow(clippy::manual_map)]
+    #[allow(clippy::redundant_pattern_matching)]
+    #[allow(clippy::manual_memcpy)]
+    #[forbid(path_statements)]
+    #[forbid(unused_variables)]
+    #[allow(unused_doc_comments)]
+    fn inner(z: Bar) {
+        {
+            match z {
+                Bar::A | Bar::B => {}
+                Bar::C => {}
+            }
+        }
+    }
+    rhdl::core::trace_push_path(stringify!(update));
+    let ret = inner(z);
+    rhdl::core::trace_pop_path();
+    ret
+}
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+struct update {}
+impl rhdl::core::digital_fn::DigitalFn1 for update {
+    type A0 = Bar;
+    type O = ();
+    fn func() -> fn(Bar) {
+        update
+    }
+}
+impl rhdl::core::digital_fn::DigitalFn for update {
+    fn kernel_fn() -> Option<rhdl::core::digital_fn::KernelFnKind> {
+        use rhdl::core::ast::builder::*;
+        const META_DATA: &'static str = "{\"0\":{\"span\":{\"start_line\":1,\"start_col\":0,\"end_line\":1,\"end_col\":0},\"attributes\":[]},\"1\":{\"span\":{\"start_line\":1,\"start_col\":0,\"end_line\":1,\"end_col\":0},\"attributes\":[]},\"2\":{\"span\":{\"start_line\":1,\"start_col\":0,\"end_line\":1,\"end_col\":0},\"attributes\":[]},\"3\":{\"span\":{\"start_line\":1,\"start_col\":0,\"end_line\":1,\"end_col\":0},\"attributes\":[]},\"4\":{\"span\":{\"start_line\":1,\"start_col\":0,\"end_line\":1,\"end_col\":0},\"attributes\":[]},\"5\":{\"span\":{\"start_line\":1,\"start_col\":0,\"end_line\":1,\"end_col\":0},\"attributes\":[]},\"6\":{\"span\":{\"start_line\":1,\"start_col\":0,\"end_line\":1,\"end_col\":0},\"attributes\":[]},\"7\":{\"span\":{\"start_line\":1,\"start_col\":0,\"end_line\":1,\"end_col\":0},\"attributes\":[]},\"8\":{\"span\":{\"start_line\":1,\"start_col\":0,\"end_line\":1,\"end_col\":0},\"attributes\":[]},\"9\":{\"span\":{\"start_line\":1,\"start_col\":0,\"end_line\":1,\"end_col\":0},\"attributes\":[]},\"10\":{\"span\":{\"start_line\":1,\"start_col\":0,\"end_line\":1,\"end_col\":0},\"attributes\":[]},\"11\":{\"span\":{\"start_line\":1,\"start_col\":0,\"end_line\":1,\"end_col\":0},\"attributes\":[]},\"12\":{\"span\":{\"start_line\":1,\"start_col\":0,\"end_line\":1,\"end_col\":0},\"attributes\":[]},\"13\":{\"span\":{\"start_line\":1,\"start_col\":0,\"end_line\":1,\"end_col\":0},\"attributes\":[]},\"14\":{\"span\":{\"start_line\":1,\"start_col\":0,\"end_line\":1,\"end_col\":0},\"attributes\":[]},\"15\":{\"span\":{\"start_line\":1,\"start_col\":0,\"end_line\":1,\"end_col\":0},\"attributes\":[]}}";
+        Some(
+            kernel_fn(
+                0u32.into(),
+                stringify!(update),
+                vec! {
+                    type_pat(15u32.into(), ident_pat(14u32.into(), stringify!(z), false),
+                    < Bar as rhdl::core::Digital > ::static_kind())
+                },
+                rhdl::core::Kind::Empty,
+                block(
+                    1u32.into(),
+                    vec![
+                        expr_stmt(2u32.into(), match_expr(3u32.into(), path_expr(13u32
+                        .into(), path(vec![path_segment(stringify!(z),
+                        path_arguments_none())],)), vec![arm(4u32.into(),
+                        arm_kind_constant(expr_lit_typed_bits(rhdl::core::Digital::typed_bits(Bar::A),
+                        stringify!(Bar::A))), block_expr(5u32.into(), block(6u32.into(),
+                        vec![],))), arm(7u32.into(),
+                        arm_kind_constant(expr_lit_typed_bits(rhdl::core::Digital::typed_bits(Bar::B),
+                        stringify!(Bar::B))), block_expr(8u32.into(), block(9u32.into(),
+                        vec![],))), arm(10u32.into(),
+                        arm_kind_constant(expr_lit_typed_bits(rhdl::core::Digital::typed_bits(Bar::C),
+                        stringify!(Bar::C))), block_expr(11u32.into(), block(12u32
+                        .into(), vec![],)))]))
+                    ],
+                ),
+                std::any::TypeId::of::<update>(),
+                None,
+                rhdl::serde_json::from_str(META_DATA).unwrap(),
+                vec![],
+            ),
+        )
+    }
+}
