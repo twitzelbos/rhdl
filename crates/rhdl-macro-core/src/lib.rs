@@ -22,6 +22,8 @@ mod fsm_properties;
 pub use fsm_properties::fsm_properties;
 mod fsm_widget;
 pub use fsm_widget::derive_fsm_widget;
+mod fsm_doc;
+pub use fsm_doc::fsm_doc;
 mod path;
 pub use path::path_macro;
 pub mod vlog;
