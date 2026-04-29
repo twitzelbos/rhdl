@@ -282,6 +282,19 @@ The diagrams should be embedded in the rustdoc as both SVG and as a structured r
 3. Three existing FSM widgets have their rustdoc inspected and the diagrams reviewed for accuracy.
 4. The structured (JSON) representation is also available for LLM-tool consumption.
 
+### 6.5 Status (2026-04-29)
+
+**Substrate shipped (Phase 2 + 3) and the kernel→diagram connector now lives in `rhdl_fpga::doc`:**
+
+- `rhdl_core::fsm::extract_widget_transitions::<W>()` — compiles `W::Kernel` through Stage 1, runs `extract_canonical_transitions` against the resulting RHIF, returns the `ExtractionResult { transitions, unanalyzable }`.
+- `rhdl_core::fsm::extract_widget_transitions_strict::<W>()` — same but errors out on any `Unanalyzable` diagnostic and returns the sorted transitions directly.
+- `rhdl_fpga::doc::write_fsm_diagram::<W>(filename)` — calls the strict extractor, builds the diagram, renders to SVG, writes the markdown file.  No author-curated `FSM_TRANSITIONS` const required.
+- `rhdl_fpga::doc::assert_fsm_transitions_match::<W>(manual)` — drift-check helper for tests; useful during the deprecation window for any author-curated lists from earlier widget vintages.
+
+**This satisfies acceptance criterion #2** (diagram derived from source, no example-run step needed for the *contents* — though the example still runs `write_fsm_diagram` once at example time to materialise the included markdown file).  **Criterion #1's "no extra annotations" is also satisfied at the API level** — the only annotations a widget needs are the existing `#[derive(Fsm)] / #[derive(FsmWidget)] / #[fsm(state_field = ..., state_enum = ...)]` from Phase 1.
+
+**Still on the table for the *full* Phase 3 endpoint:** wire `write_fsm_diagram` into `Descriptor::hdl()` so the inline-SVG diagram is auto-injected into the widget's rustdoc without requiring a `#![doc = include_str!(...)]` line per widget.  This is a separate PR (`feat/fsm-diagram-rustdoc-autoinclude`); building on top of the helpers above means it's a pure rustdoc-emission change, not an algorithmic one.
+
 ---
 
 ## 7 — Layer 4: invariant assertions and SymbiYosys integration
@@ -399,15 +412,18 @@ Specific test requirements per layer:
 
 ## 11 — Phasing summary
 
-| Phase | Deliverable | Effort | Depends on |
+| Phase | Deliverable | Status | Depends on |
 |---|---|---|---|
-| 1 | `#[derive(Fsm)]` macro + 3 widget rewrites | ~2 weeks | Nothing |
-| 2 | Static reachability + dead-state pass | ~4 weeks | Phase 1 |
-| 3 | Auto-generated state diagrams in rustdoc | ~2 weeks | Phase 1, 2 |
-| 4 | Invariants + SymbiYosys flow + corpus proofs | ~6 weeks | Phase 1, 2 |
-| 5 | Built-in bounded model checker | ~6 months | Phase 4 (validates approach) |
+| 1 | `#[derive(Fsm)]` macro + 3 widget rewrites | shipped (PR #2) | Nothing |
+| 2 | Static reachability + dead-state pass (RHIF-level extractor + analyzer) | shipped (PR #2) | Phase 1 |
+| 3a | Diagram renderer + JSON / SVG / dot emitters | shipped (PR #2) | Phase 1, 2 |
+| 3b | Kernel→diagram connector: `extract_widget_transitions` + `write_fsm_diagram` (no manual `FSM_TRANSITIONS` const) | shipped (`feat/fsm-auto-transitions`) | Phase 1, 2, 3a |
+| 3c | Auto-inject diagram into `Descriptor::hdl()` rustdoc — removes the `#![doc = include_str!(...)]` per-widget line | not yet shipped | Phase 3b |
+| 4 | `#[fsm_properties(...)]` + SVA emission | shipped (PR #2) | Phase 1, 2 |
+| 4b | `cargo rhdl prove` SymbiYosys driver + corpus proofs | not yet shipped | Phase 4 |
+| 5 | Built-in bounded model checker | not yet shipped (research-grade) | Phase 4b |
 
-Phases 1+2+3 ship together as one roadmap track ("FSM ergonomics + analysis"). Phase 4 is its own track. Phase 5 is research-grade, not committed.
+Phases 1+2+3a ship together as PR #2 ("FSM ergonomics + analysis substrate"). Phase 3b ships as `feat/fsm-auto-transitions` (this branch) and lets every widget drop its author-curated `FSM_TRANSITIONS` const. Phase 3c is the rustdoc auto-include follow-on. Phase 4 is its own track. Phase 5 is research-grade, not committed.
 
 ---
 

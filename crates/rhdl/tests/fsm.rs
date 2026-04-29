@@ -266,3 +266,8 @@ mod property_layer {
         assert_eq!(props.len(), 0);
     }
 }
+
+// (End-to-end transition-extraction tests live in rhdl-fpga where
+// `core::dff::DFF` is available — see
+// `crates/rhdl-fpga/src/doc.rs`'s tests for the integration
+// covering Phase 3 acceptance criteria #1 and #2.)
