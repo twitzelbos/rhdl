@@ -167,6 +167,122 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-04-28 — Tier-3 protocol PHY batch (8 widgets)
+
+A focused day of Tier-3 work. Lib test count: 275 → **346 passing** (0 regressions).
+
+### Per-widget notes
+
+#### PWM generator — `core::pwm`
+
+Roadmap row #22.  Saw-tooth counter + comparator: `output = counter < duty`.  Period = `2^N` cycles; duty in `[0, 2^N - 1]`.  100% duty isn't representable (gate externally if needed).  10 tests including a Tier-2 test that runs each duty value through one full period and verifies the high-cycle count exactly matches the duty.
+
+#### UART TX — `core::uart_tx`
+
+Roadmap row #18 (TX half).  Standard 8-N-1, runtime divisor.  State machine: `Idle → Transmitting`, with a 4-bit `bit_counter` walking start (0) → data[0..=7] (1..=8) → stop (9).  The "compute current TX bit from `bit_counter`" path uses `bit_idx_safe = (bit_counter - 1) & 0b111` to mask the shift amount into `[0, 7]` so the always-evaluated mux input never trips the kernel-VM shift bound — same lesson as the barrel shifter.  12 tests including a round-trip decode that samples `tx` at the middle of each baud period and reconstructs the byte.
+
+#### UART RX — `core::uart_rx`
+
+Roadmap row #18 (RX half).  Mid-baud sampling for noise immunity.  Edge-detects falling start bit using a `prev_rx` register.  Shift register is 8 bits, sampled MSB-in so the LSB-first protocol naturally lands `data[0]` at the LSB after 8 samples.  6 tests including back-to-back multi-byte reception.  Documents the metastability requirement to externally `Sync1Bit` the `rx` line.
+
+#### N-stage synchronizer chain (already shipped, not in this batch)
+*(already in CHANGELOG above — this is just the batch's UART RX entry.)*
+
+#### SPI master — `core::spi_master`
+
+Roadmap row #19.  Mode 0 (CPOL=0, CPHA=0), MSB-first, 4-wire (`sclk`, `mosi`, `miso`, `cs_n`).  Two FPGA cycles per SPI bit.  Other modes / bit orders deferred — they're a small kernel change but the parameter explosion (`<W, CW, CPOL: bool, CPHA: bool, MSB_FIRST: bool>`) wasn't worth the v1 surface.  5 tests including a 6-pair round-trip with a simulated slave that drives MISO MSB-first.
+
+#### SPI slave — `core::spi_slave`
+
+Roadmap row #20.  Mirror of the master.  Samples external `sclk_in` on the FPGA clock and edge-detects (standard pattern when the SPI bus is much slower than FPGA clock).  Bidirectional: samples MOSI into `shift_rx`, drives MISO from `shift_tx` (latched at the falling edge of `cs_n_in`).  5 tests.
+
+#### I2C master — `core::i2c_master`
+
+Roadmap row #21 (write-only single-byte v1).  This is the first widget that exercises the `tristate` design end-to-end via `scl_drive_low` / `sda_drive_low` open-drain outputs (host wraps with `tristate::simple` at the pad).  4-phase per-bit timing (low setup, low hold, high sample, high hold) with each phase taking `divisor` FPGA cycles.  State machine: `Idle → Start → Addr → AckAddr → Data → AckData → Stop`.  5 tests.  **Surprise:** `match` with or-patterns (`A | B => ...`) is not supported in `#[kernel]`; had to expand into one arm per variant.  Recorded as a kernel-language-extensions follow-up — already on the list.
+
+#### WS2812 / NeoPixel — `core::ws2812`
+
+Roadmap row #26 (single-pixel v1).  Runtime-configurable timings (`t0_high`, `t1_high`, `bit_period`, `latch_period`) cover WS2812B, WS2811, SK6812 RGB by changing constants.  Sends a single 24-bit pixel per `send` strobe; multi-pixel chains are host-managed (strobe `send` per pixel in succession, then `latch` for the inter-frame idle).  5 tests including a Tier-2 test that records the data line, decodes per-bit pulse widths, and verifies the recovered pattern equals the sent pixel MSB-first.
+
+#### DHT22 / AM2302 — `core::dht22`
+
+Roadmap row #29.  Single-wire humidity/temperature sensor.  State machine: `Idle → StartLow → StartReleaseHigh → StartReleaseLow → AckLow → AckHigh → BitLow → BitHigh`.  The two `StartRelease*` states are split (rather than a single `StartRelease`) because the line is *still master-driven low* on the cycle the FSM exits `StartLow` — without an explicit "wait for high (line released)" step before "wait for low (sensor ACK)", the FSM races and treats its own master-low as the sensor's ACK.  Caught and fixed by the round-trip test.
+
+**Surprise:** `Bits<40>::resize::<16>().as_bits()` does not give `Bits<16>` — the `as_bits` method's return type defaulted to the kernel's outer const generic (`CW`) instead of the requested `16`, and I couldn't find an annotation that pinned it.  Worked around by exposing the raw 40-bit `frame` in the output and letting the host mask `(frame >> 24) & 0xFFFF` for humidity etc.  Recorded as a kernel-type-inference follow-up.  5 tests.
+
+### Cross-cutting observations from this batch
+
+- **`match` with or-patterns is forbidden in `#[kernel]`** (CLAUDE.md §4 already lists it under "Forbidden" via the kernel-language-extensions reference).  Hit it twice — in `i2c_master` and again in some debugging.  Always expand to one arm per variant.  When refactoring shared bodies, accept the duplication or extract to a kernel function call.
+- **State machines that include "wait for line release"** (DHT22, slow_crosser-style handshakes) need explicit two-step waits — first for the released-high state, then for the next driven-low state — to avoid racing against the master's own driven-low period.  Pattern: split the wait into `*_WaitHigh` and `*_WaitLow` states with a clean transition.
+- **`if-else` inside the data path of a `match` arm** still lowers to a mux that always evaluates both branches.  Same gotcha as the barrel shifter: any operand that would be invalid (out-of-range shift, divide-by-zero) must be clamped at the operand level, not just guarded at the result level.
+
+---
+
+## 2026-04-28 — Generic memory-mapped register file
+
+**Path:** `crates/rhdl-fpga/src/core/register_file.rs` (+ example, doc, vcd)
+
+**Why this, why now:** Roadmap row #17. The existing `axi4lite::register::{single, bank, rom}` widgets couple register storage to the AXI4-Lite protocol. Building UART, SPI, I2C, etc. on top of those means each protocol PHY drags in an AXI dependency. This widget is the bus-agnostic register storage primitive — any bus adapter (AXI4-Lite, Wishbone, APB, custom) wraps it by translating its own `(read_addr, read_enable)` and `(write_addr, write_data, write_enable)` to the widget's flat input struct.
+
+**Design decisions:**
+- Combinational read + registered write semantics. Standard FPGA register-file model. Same-cycle read of an address being written returns the *old* value (documented).
+- Outputs include `read_data` (combinational, from the read mux) AND `registers: [T; N]` (live view of every register). Adapters use the former; client logic that wants a specific register inline can pull from the latter without paying the read-mux delay.
+- `read_enable` is passed through to a `read_valid` output (echoes input one cycle later — a common adapter pipelining pattern). Does not affect the data path.
+- Three-parameter generic: `T` (data type), `N` (register count), `W` (address width). User picks `W >= ceil(log2(N))`. The widget does not enforce.
+- Reset zeroes all registers via `T::default()`; `with_reset_values([T; N])` constructor exposes per-register reset values for use cases where defaults aren't appropriate (e.g. configured magic numbers in a status register).
+
+**Surprises and gotchas:**
+- **First implementation tripped RHDL's "Path .0.read_data is not covered" error.** I wrote `let mut read_data = T::dont_care(); for k in 0..N { if i.read_addr == bits(k) { read_data = q.regs[k]; } }` and then `o.read_data = read_data;`. Even though the assignment to `o.read_data` is unconditional, the kernel's coverage analyzer flagged it — likely because `T::dont_care()` for a generic `T` doesn't satisfy the field-coverage check. The fix turned out to be much simpler: **runtime array indexing**. `o.read_data = q.regs[i.read_addr];` lowers to an N-input mux on `read_addr` directly, no mut-local accumulator needed. RHDL handles `[T; N][Bits<W>]` cleanly per CLAUDE.md §4 ("Indexing arrays with constant or runtime indices").
+- **Lesson, generalized:** for a "select one of N elements based on a runtime index", prefer direct array indexing `arr[idx]` over a `for`-loop-with-conditional-assignment. The compiler synthesizes the same hardware (an N-input mux) but the indexing form satisfies the coverage analyzer cleanly. The loop form is still correct for *local* mut accumulators (priority encoder, popcount), just not for struct fields.
+- **Synchronous derive's bound on T.** Since `SynchronousIO::Kernel` propagates the kernel's `T: Default` constraint, the parent struct also needs `T: Digital + Default` in its definition, not just the constructor `impl`. Took one cycle to spot.
+
+**Validation:** All five tiers, 10 tests including a write-then-read sequence verifying `0xA0..0xA3` land in addresses `0..3`, a concurrent-read-write-same-address test confirming old-value semantics, and `iverilog` RTL+NTL clean.
+
+**Follow-ups:**
+- **Per-register read-only flag** so adapters can refuse writes to specific addresses without external logic.
+- **Optional registered read** (1-cycle latency, higher fmax) for designs where the combinational read is the critical path. Composes with the `delay::Delay<T, 1>` widget at the call site for now.
+
+---
+
+## 2026-04-28 — Wide-bus comparator
+
+**Path:** `crates/rhdl-fpga/src/core/comparator.rs` (+ example, doc, vcd)
+
+**Why this, why now:** Roadmap row #10 (Tier 1). Closing a Tier 1/2 gap left over from the second batch. The built-in `Bits<N>::==` and `<` already cover the bit-level work, but a named widget that emits all five comparison flags at once is useful as an arbiter/scheduler subblock and as a clear reference point for callers building wider or signed variants.
+
+**Design decisions:**
+- Pure `#[kernel]` function (no struct, no state). Caller wraps with `Func` if needed at the boundary.
+- Returns a `Flags { eq, lt, le, gt, ge }` struct. Considered five separate function variants (`eq_kernel`, `lt_kernel`, ...) — rejected because a caller wanting more than one flag would compute `a < b` and `a == b` twice; emitting all five at once shares the underlying compare.
+- Implementation: derive `eq` and `lt` from primitives, then `le = lt || eq`, `gt = !lt && !eq`, `ge = !lt`. The synthesizer should de-duplicate.
+- **Unsigned only.** Signed variant (`SignedBits<N>`) deferred — needs sign-bit XOR-and-flip and is enough of a separate algorithm to warrant its own kernel.
+
+**Surprises and gotchas:** None. Validates exhaustively against Rust's `==/<` over 256 4-bit pairs, both at the kernel level and through `test_kernel_vm_and_verilog_synchronous`.
+
+**Validation:** All five tiers, 8 tests, Verilog cross-validation clean.
+
+**Follow-ups:** Signed comparator variant.
+
+---
+
+## 2026-04-28 — PWM generator
+
+**Path:** `crates/rhdl-fpga/src/core/pwm.rs` (+ example, doc, vcd)
+
+**Why this, why now:** Roadmap row #22 (Tier 3). First Tier-3 protocol-ish widget: a saw-tooth counter feeding a single comparator. Useful immediately for LED dimming, motor control, and as a building block for more complex modulation schemes.
+
+**Design decisions:**
+- Single `N` const generic for both period (= `2^N` cycles) and duty width. Keeps the API minimal at the cost of forcing period and duty to scale together.
+- `duty = 0` is "always low"; `duty = 2^N - 1` is the closest representable to 100% (high for `(2^N - 1) / 2^N` of cycles). Exact 100% is *not* representable — documented; gate externally if needed.
+- Duty input is sampled combinationally each cycle; mid-period duty changes take effect immediately (the next comparison). Documented; for glitch-free duty changes the caller registers the duty externally.
+
+**Surprises and gotchas:** None. The Tier-2 stream test exercises six duty values and checks the high-cycle count per period matches the duty *exactly* — a useful invariant test for any future re-implementation.
+
+**Validation:** All five tiers, 10 tests, `iverilog` clean.
+
+**Follow-ups:** Center-aligned PWM (triangle counter instead of saw-tooth) for motor-control applications that prefer symmetric switching.
+
+---
+
 ## 2026-04-28 — Strict-priority arbiter
 
 **Path:** `crates/rhdl-fpga/src/core/strict_priority_arbiter.rs` (+ example, doc, vcd)
