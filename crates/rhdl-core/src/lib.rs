@@ -29,6 +29,7 @@ pub use types::timed::Timed;
 pub mod ast;
 pub mod circuit;
 pub mod compiler;
+pub mod fsm;
 pub mod types;
 pub mod util;
 pub use util::id;

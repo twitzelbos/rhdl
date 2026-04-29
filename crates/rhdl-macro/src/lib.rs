@@ -48,6 +48,30 @@ pub fn synchronous(input: TokenStream) -> TokenStream {
     }
 }
 
+#[proc_macro_derive(Fsm, attributes(fsm, fsm_state))]
+pub fn fsm(input: TokenStream) -> TokenStream {
+    match rhdl_macro_core::derive_fsm(input.into()) {
+        Ok(output) => output.into(),
+        Err(err) => err.to_compile_error().into(),
+    }
+}
+
+#[proc_macro_derive(FsmWidget, attributes(fsm))]
+pub fn fsm_widget(input: TokenStream) -> TokenStream {
+    match rhdl_macro_core::derive_fsm_widget(input.into()) {
+        Ok(output) => output.into(),
+        Err(err) => err.to_compile_error().into(),
+    }
+}
+
+#[proc_macro_attribute]
+pub fn fsm_properties(attr: TokenStream, input: TokenStream) -> TokenStream {
+    match rhdl_macro_core::fsm_properties(attr.into(), input.into()) {
+        Ok(output) => output.into(),
+        Err(err) => err.to_compile_error().into(),
+    }
+}
+
 #[proc_macro_derive(SynchronousDQ)]
 pub fn synchronous_dq(input: TokenStream) -> TokenStream {
     match rhdl_macro_core::derive_synchronous_dq(input.into()) {
