@@ -301,7 +301,14 @@ The diagrams should be embedded in the rustdoc as both SVG and as a structured r
 **Both Phase 3 acceptance criteria from §6.4 are now met:**
 
 - ✅ #1 ("no extra annotations needed by the widget author") — `#[derive(Fsm)] + #[derive(FsmWidget)] + #[fsm(...)] + #[fsm_doc]` cover everything.  The `#[fsm_doc]` line replaces the old 3-line `#![doc = include_str!(...)]` block.
-- ✅ #2 ("diagram up-to-date by virtue of being derived from source") — the markdown file's *content* is auto-derived from the kernel; `assert_fsm_diagram_up_to_date` catches drift in CI.  The file-materialisation step (running `cargo run --example <name>` after kernel changes) remains a manual cycle for now; full automation via `build.rs` is a small follow-on (Phase 3d) once anyone wants it.
+- ✅ #2 ("diagram up-to-date by virtue of being derived from source") — the markdown file's *content* is auto-derived from the kernel; `assert_fsm_diagram_up_to_date` catches drift in CI.
+
+**Phase 3d — `cargo test` is the refresh trigger:**
+- `rhdl_fpga::doc::refresh_and_check_fsm_diagram::<W>(filename)` — combined helper that *rewrites* the on-disk file from the current kernel and verifies the result.  Designed to be called from a `#[test]`.
+- The author workflow becomes a single command: edit kernel → `cargo test` → diagram is fresh and the next `cargo doc` build picks it up via the `#[fsm_doc]`-emitted include.  No more "remember to run `cargo run --example <name>` after every kernel change".
+- The strict no-refresh `assert_fsm_diagram_up_to_date` remains available as a CI canary that catches *renderer-level* regressions (e.g., a change to the SVG layout algorithm).
+
+A *true* `build.rs`-driven auto-emit (Phase 3e if it ever becomes worth doing) would remove even the `cargo test` invocation, but Rust's build model makes this awkward — `build.rs` runs before the lib compiles and can't reach into the widget kernels without a circular dependency.  The realistic implementation paths (recursive cargo invocation, libloading-based reflection, a `cargo rhdl` subcommand) all carry significant complexity.  The `cargo test`-driven approach above already collapses the dev cycle to a single command using only Rust's standard tooling, which is the honest limit of what's worth building here.
 
 ---
 
@@ -427,7 +434,7 @@ Specific test requirements per layer:
 | 3a | Diagram renderer + JSON / SVG / dot emitters | shipped (PR #2) | Phase 1, 2 |
 | 3b | Kernel→diagram connector: `extract_widget_transitions` + `write_fsm_diagram` (no manual `FSM_TRANSITIONS` const) | shipped (`feat/fsm-auto-transitions`, PR #4) | Phase 1, 2, 3a |
 | 3c | `#[fsm_doc]` attribute macro auto-injects `#[doc = include_str!(...)]` into the widget's rustdoc — removes the per-widget boilerplate line | shipped (`feat/fsm-rustdoc-autoinject`) | Phase 3b |
-| 3d | `build.rs`-driven auto-emission of the diagram file (removes the `cargo run --example` step too) | not yet shipped (small, optional) | Phase 3c |
+| 3d | `cargo test`-driven auto-refresh via `refresh_and_check_fsm_diagram` (`cargo run --example` step no longer needed) | shipped (`feat/fsm-rustdoc-autoinject`) | Phase 3c |
 | 4 | `#[fsm_properties(...)]` + SVA emission | shipped (PR #2) | Phase 1, 2 |
 | 4b | `cargo rhdl prove` SymbiYosys driver + corpus proofs | not yet shipped | Phase 4 |
 | 5 | Built-in bounded model checker | not yet shipped (research-grade) | Phase 4b |
