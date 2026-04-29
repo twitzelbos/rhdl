@@ -615,6 +615,31 @@ These are the rules whose violation will get a PR rejected without further discu
 - One conceptual change per commit. A widget addition is a single commit; a widget addition plus an unrelated typo fix is two commits.
 - Before pushing: run `cargo test --all`, `cargo clippy --all -- -D warnings`, `cargo fmt --all`. CI will run them; you should beat it.
 
+### 14.1 — Pull requests target the FORK, never upstream
+
+> **`gh pr create` defaults to the upstream parent repo when there's a fork relationship.  This is wrong for this project.  Every PR opened by an agent MUST target the user's fork (`twitzelbos/rhdl`), never the upstream `samitbasu/rhdl`.**
+
+This is non-negotiable.  The user reviews and merges PRs on their own fork; opening against upstream creates noise on someone else's project that the agent has no authority to make.  Agents have been bitten by this twice; the rule exists because the default behaviour is silently wrong.
+
+**The only correct invocation:**
+
+```sh
+gh pr create --repo twitzelbos/rhdl --base main --head <branch> --title "..." --body "..."
+```
+
+The `--repo twitzelbos/rhdl` flag is mandatory.  Omitting it lets `gh` pick the upstream parent repo, which is the wrong target.  If you forget, the resulting URL will be `https://github.com/samitbasu/rhdl/pull/<N>` instead of `https://github.com/twitzelbos/rhdl/pull/<N>` — that is the failure signature.
+
+**Before invoking `gh pr create`, verify your remotes** with `git remote -v`:
+
+```
+origin    git@github.com:twitzelbos/rhdl.git   # the fork — PRs go HERE
+upstream  https://github.com/samitbasu/rhdl.git # the parent — DO NOT target
+```
+
+If `--repo` is forgotten and the wrong PR opens, **stop immediately**, do not attempt to close the upstream PR yourself (that requires the user's authorization on someone else's repo), and tell the user so they can close it.  Then re-open with the correct `--repo` flag.
+
+The same rule applies to `gh issue create`, `gh release create`, and any other `gh` subcommand that defaults to the parent repo when a fork relationship exists.
+
 ---
 
 ## 15 — Reporting Status Honestly
