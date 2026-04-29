@@ -31,6 +31,38 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-04-28 — CAN master (Classical CAN 2.0A, TX-only v1)
+
+**Path:** `crates/rhdl-fpga/src/core/can_master.rs` (+ example, doc, vcd)
+
+**Why this, why now:** Roadmap row #37 — Tier 3 protocol PHY. Wraps up the automotive-bus trifecta (LIN, MIDI, CAN) and is by far the most structurally complex of the three: a real frame producer with field-walking FSM, CRC-15 accumulator, and bit-stuffer all running off a divided-down CAN bit clock. With this, an FPGA driving a TJA1050 / MCP2551 / SN65HVD230 transceiver can transmit standard 11-bit frames onto a real CAN bus.
+
+**Design decisions:**
+- **TX-only v1.** Standard 11-bit ID, data frames, DLC 0..=8, CRC-15 polynomial `0x4599`, full bit stuffing, no ACK detection (drives the ACK slot recessive expecting some other node to dominate it). No receiver, no acceptance filter, no error counters, no bus-off, no SJA1000 register interface. Each of those is a self-contained v2 follow-up.
+- **Frame-walking FSM keyed on a `CanField` enum** (`Sof / Id / Rtr / Ide / R0 / Dlc / Data / Crc / CrcDelim / AckSlot / AckDelim / Eof / Ifs`) plus a `field_bit_idx: Bits<7>` counter. The 7-bit width covers the 64-bit Data field. Field transitions handled per-variant in a giant `match` rather than computed; explicit but readable.
+- **`StuffState` substruct** bundles `last_bit`, `run`, `pending` into one DFF — purely to stay under the 12-tuple ceiling that the `Synchronous` derive enforces (the natural decomposition would have been three separate DFFs, pushing the widget to 13 fields). The substruct is documented in its own `///` block with the rationale spelled out.
+- **`total_data_bits = dlc * 8`** computed via a hand-rolled `match` on each DLC value rather than a runtime multiply or shift. Necessary because `as_bits::<7>()` defaults to `Bits<DIV_W>` inside a kernel (the as_bits-generic-default footgun, see DHT22 follow-up). Explicit lookup table is uglier than `dlc << 3` but actually compiles.
+- **Position arithmetic in `Bits<7>`** (the source width of `field_bit_idx`) and shifting target registers (`Bits<11>`, `Bits<4>`, `Bits<64>`, `Bits<15>`) directly via the generic `Shr<Bits<M>> for Bits<N>` impl. Avoids the as_bits trap entirely. **This is now the canonical pattern for runtime bit selection inside RHDL kernels** — recorded as a footgun-avoiding idiom worth lifting into the docs.
+- Reset comes last (per CLAUDE.md §12 rule), forces the FSM back to `Idle` and clears all latched state.
+
+**Surprises and gotchas:**
+- **`as_bits()` defaults to outer kernel's `DIV_W` const generic.** When you write `q.field_bit_idx.dyn_bits().resize::<11>().as_bits()` inside a kernel that's generic over `DIV_W`, the inferred width is `DIV_W`, not `11`. The compiler error is `cannot subtract Bits<DIV_W> from Bits<11>` and is genuinely confusing the first time. Workaround: either annotate the result type explicitly (`let x: Bits<11> = ...`) — but in some positions that still doesn't help — or restructure to never need width conversion at all by computing in the source width and using `Shr<Bits<M>>`. Already documented as a follow-up from DHT22; this widget reinforces that the second workaround is the more reliable one.
+- **The 12-tuple ceiling for `Synchronous` derive.** The macro generates a `S` type that's a flat tuple of every field's state plus the `Q` type. With 13 sub-circuits, you get `cannot compare (..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ()) with itself` — `PartialEq` isn't derived for tuples beyond 12 elements. Fix: bundle related single-bit/few-bit DFFs into a substruct. Worth lifting the cap eventually (probably needs the macro to generate a real struct rather than a tuple).
+- **CRC-15 must skip stuff bits.** The CRC accumulator updates on raw frame bits only (SOF + ID + control + DLC + data), NOT on stuffed bits. Easy to get wrong because the stuff bit *is* on the wire. The kernel gates the CRC update with the same condition as the field-advance branch (`!q.stuff.pending && crc_input_active`).
+
+**Validation:** Tier 1 (functional behavioral checks: `test_idle_line_recessive`, `test_frame_starts_with_sof_dominant`); Tier 2 (`test_frame_completes` — drive a frame and verify the `done` pulse arrives); Tier 3 (HDL emission length 26937 chars); Tier 4 (`iverilog` RTL round-trip clean); Tier 5 (VCD digest). 6 tests, all passing. **No CRC-bitwise validation against a known-good frame yet** — that requires either porting a CAN model into the test harness or capturing a real-bus trace; recorded as a follow-up.
+
+**Follow-ups:**
+- **Bit-exact CRC validation.** Cross-check the emitted frame against a software CAN model (`canlib`, `python-can`, or hand-computed) for at least one or two test vectors with known CRCs. Until this lands, the CRC implementation is "structurally plausible" rather than "verified bit-correct."
+- **CAN receiver** (`CanReceiver`). Sample the RX line, sync to SOF, decode the same field walk in reverse with bit destuffing, validate CRC, drive an ACK slot dominant.
+- **29-bit extended ID** (CAN 2.0B). Adds an SRR + IDE = 1 + 18 more ID bits before the RTR — small extension to the field walk.
+- **ACK slot detection.** Sample the bus during the ACK slot; if no node dominated it, raise an `ack_error` flag.
+- **Programmable bit timing** (Sync / Prop / Phase1 / Phase2 segments per ISO 11898-1). Required for receive-side resync; not needed for v1 TX-only.
+- **Error handling** (CRC error frame, form error, bit error, error-active / error-passive / bus-off counters).
+- **SJA1000 / FlexCAN-style register interface** so a CPU can drive frames via memory-mapped registers rather than the current direct `(id, dlc, data, start)` ports.
+
+---
+
 ## 2026-04-28 — Multi-bit handshake bridge (slow CDC)
 
 **Path:** `crates/rhdl-fpga/src/cdc/slow_crosser.rs` (+ example, doc, vcd)

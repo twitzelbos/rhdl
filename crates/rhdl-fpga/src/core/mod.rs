@@ -2,6 +2,7 @@
 //! Core components (RAMs, DFF, constants, etc)
 pub mod audio_pwm;
 pub mod barrel_shifter;
+pub mod can_master;
 pub mod comparator;
 pub mod constant;
 pub mod counter;
