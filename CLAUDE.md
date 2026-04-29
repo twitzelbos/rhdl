@@ -24,6 +24,45 @@ The full rules below expand each item. Every section has examples drawn from exi
 
 ---
 
+## TL;DR — CRITICAL: NEVER ship a "v1" that is less than what was asked
+
+> **The ask defines done.** When the user requests a feature, the deliverable must satisfy that request — not a synthetic-test-passing slice of it, not a scoped-down "v1," not a "let's ship the easy half and follow up." If you discover the work is bigger than the original ask, you **stop and tell the user before writing code**, so they can decide whether to expand scope or narrow the ask. You do not silently ship a sliver and call it done.
+>
+> This rule is numbered above the Non-Negotiable Contract because it precedes every other rule. The five-clause contract above is *necessary* but not *sufficient* — a sliver implementation can pass all five clauses (code compiles, tests pass on the sliver, docs cover the sliver, snapshots committed, CHANGELOG entry written) and still be wrong if the sliver doesn't match the user's ask.
+>
+> **This rule exists because it has been violated repeatedly, at concrete cost to the user.** PR #6 shipped an FSM extractor that handled "the canonical match-on-state idiom" — validated only against synthetic widgets in `doc.rs`. The PR description even called this out (§5.5: *"the real 27-widget corpus will be the bigger validation"*) and shipped anyway. PR #7 was supposed to be that validation; instead it added one more synthetic widget that mimicked *one arm* of `can_master`, called it a "faithful synthetic stand-in," and shipped. First live test against the actual `can_master` widget produced 13 wrong transitions out of 20. The user was rightly angry.
+
+### What this rule forbids
+
+- **Synthetic-as-proxy-for-real.** Writing a small synthetic test case that captures one shape of a real widget's pattern, passing it, and calling that "validation against the corpus." If the user's ask is "make X work for the real widgets," the test must run against the real widgets. Synthetic tests are useful for unit-testing internals; they are not a substitute for the real validation.
+- **"v1 / v2" framing without explicit user agreement.** The word "v1" inside an internal implementation note is fine. Shipping a PR titled "Feature X (v1)" with a rest-of-feature follow-up tracked as TODO is forbidden unless the user explicitly chose that staging.
+- **Following up bugs with bugs.** If PR #N shipped a sliver and PR #N+1 is fixing a sliver-of-the-sliver, stop. The user wanted the whole thing. Re-scope and ship the whole thing.
+- **"Acceptance criteria met" when criteria are scoped to the sliver.** Acceptance criteria you wrote yourself, that conveniently cover only the slice you implemented, are not real acceptance criteria. Real acceptance criteria are derived from the user's ask, not from what's easy to prove.
+- **Documenting the gap and shipping anyway.** A CHANGELOG "Follow-ups" section that lists the rest of the feature does not absolve the sliver. The user's ask was the feature, not the sliver-plus-a-list.
+
+### What this rule requires
+
+- **Before writing code, restate the ask in your own words and confirm scope.** If the ask is "make the FSM extractor work for our widget corpus," that means the extractor must produce correct output for every widget in the corpus, validated against the real widgets, not against synthetic stand-ins. If you read the ask differently, say so, and get confirmation.
+- **Discover scope creep early, surface it loudly.** When investigating the ask reveals it requires more work than initially apparent (a second compiler change, a new IR opcode, multi-pass coordination), stop and tell the user *before* writing any code. Do not assume the user wants the smaller version.
+- **Validate against the user's actual artifact, not a model of it.** If the ask involves a specific widget, that widget is the test. If the ask involves the corpus, every member of the corpus is the test. Run the actual thing end-to-end before claiming success.
+- **State problems plainly when they appear.** If a live test against the real artifact produces wrong output, that is the lede of the next message — not buried beneath success metrics from synthetic tests. The user's time is better spent on a clear "X doesn't work, here's why" than on a long success report ending in "but also X doesn't work."
+- **One PR per coherent feature, sized to the ask.** If the ask requires three coordinated changes, that is one PR with three commits, not three PRs each labeled "v1."
+
+### How to recover when you have already shipped a sliver
+
+- Acknowledge the sliver explicitly. Don't soften with "but the sliver is correct as far as it goes." That is true and irrelevant.
+- Re-scope the rest of the work as a single coherent piece — not as another sliver.
+- If the rest of the work is genuinely too large for one PR, present the staging plan to the user and get explicit agreement before splitting.
+- Do not open the next PR until you can credibly claim it completes the original ask.
+
+### How this composes with the rest of the contract
+
+- **§11.1 (one feature per PR)** still applies — but the unit "one feature" is *the user's ask*, not "the easiest extractable subset of the user's ask."
+- **§15 (reporting status honestly)** absorbs this: a sliver implementation reported as "Done" is dishonest reporting even if every clause of the five-part contract is satisfied for the sliver.
+- **§16 (CHANGELOG)** absorbs this: an entry that documents shipping a sliver-with-known-gap is documenting a contract violation, not absolving it.
+
+---
+
 ## 1 — Repository Map
 
 This is a Cargo workspace. Twelve member crates plus mdbook source:
