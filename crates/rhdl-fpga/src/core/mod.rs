@@ -1,5 +1,6 @@
 #![warn(missing_docs)]
 //! Core components (RAMs, DFF, constants, etc)
+pub mod audio_pwm;
 pub mod barrel_shifter;
 pub mod comparator;
 pub mod constant;
@@ -11,6 +12,7 @@ pub mod dff;
 pub mod dht22;
 pub mod divider;
 pub mod edge_detector;
+pub mod half_spi_master;
 pub mod i2c_master;
 pub mod leading_zeros;
 pub mod lin_master;

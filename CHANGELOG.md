@@ -167,6 +167,28 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-04-28 — Tier-3 batch 4: half-duplex SPI master + stereo PWM audio
+
+#### Half-duplex / 3-wire SPI master — `core::half_spi_master`
+
+Roadmap row #23.  The first widget in the tree that genuinely exercises the `tristate` design end-to-end via an `(sdio_oe, sdio_out)` pair the host wraps with `tristate::simple` at the pad.  State machine: `Idle → Write → Turnaround → Read`.  Runtime-configurable `write_bits`, `read_bits`, and `turnaround` per transaction (latched at `start`).  Mode 0 / MSB-first / 2 FPGA cycles per SPI bit, matching the existing `spi_master`.
+
+Same widget covers both 3-wire (use `sdio_oe` to gate the pad) and 4-wire (treat `sdio_out` as MOSI, ignore `sdio_oe`, feed slave's MISO into `sdio_in`) — documented in the rustdoc.
+
+**Surprise:** built a write-then-read round-trip Tier-2 test that drives a fake slave on `sdio_in` based on the master's exposed cycle timing.  First version had an off-by-one error: my `read_start` formula was `1 + 1 + 2*write_bits + turnaround`, but the actual Read state begins one cycle earlier — `1 + 2*write_bits + turnaround`.  The "extra +1" was me double-counting the start-cycle latency.  Caught when the rx pattern came out shifted right by one bit.  Lesson: when writing a stimulus that races the kernel's state machine, sketch out the cycle-by-cycle q.state transitions explicitly before computing offsets — don't reason from the SPI protocol's perspective.
+
+7 tests, including three round-trips (8w/8r, 8w/8r with turnaround, 4w/4r), `iverilog` RTL+NTL clean.
+
+#### Stereo PWM audio output — `core::audio_pwm`
+
+Roadmap row #36 (naive PWM v1).  Two parallel `core::pwm::PwmGenerator` channels share a sample-rate divider and a per-channel sample register.  The host responds to `sample_request` pulses with the next `(left, right)` pair; the widget latches and holds them as the PWM duties for the next sample period.
+
+**Sigma-delta noise-shaping deferred.**  Naive PWM is good for ~5–6 effective bits at moderate carrier rates (fine for hobbyist audio); CD-quality output needs a 1st/2nd-order modulator, which adds a signed-arithmetic accumulator (the `SignedBits<N>` ↔ `Bits<N>` conversions are still awkward in the kernel — see DHT22's earlier follow-up).  Recorded as a follow-up.
+
+5 tests including a Tier-2 sample-cadence test that verifies `sample_request` pulses every `sample_period` cycles, plus a duty-latch test that observes the PWM output statistics shift from idle to (high left, low right) after the host starts feeding samples.  `iverilog` RTL+NTL clean.
+
+---
+
 ## 2026-04-28 — Tier-3 batch 3: MIDI wire layer + Video timing core
 
 #### MIDI interface — `core::midi`
