@@ -407,6 +407,7 @@ mod tests {
             widget: FsmWidgetTag {
                 state_field: "state",
                 strict: false,
+                allow_implicit: false,
             },
             kernel: FsmKernelTag {
                 state_var: "q.state",

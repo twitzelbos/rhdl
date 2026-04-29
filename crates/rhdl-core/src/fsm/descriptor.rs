@@ -26,6 +26,32 @@ pub struct FsmWidgetTag {
     /// diagnostics as errors rather than warnings, set by
     /// `#[fsm(strict)]`.
     pub strict: bool,
+    /// Whether the extractor should include implicit self-loops in
+    /// the transition graph, set by `#[fsm(allow_implicit)]`.
+    ///
+    /// When `true`: the canonical RHDL kernel pattern (kernel-top
+    /// default `d.<state_field> = q.<state_field>` + selective
+    /// override in arms that transition) is recognised; an arm that
+    /// omits the `d.<state_field>` write produces a `(s, s)`
+    /// self-loop edge.  This is the typical case for FSM widgets in
+    /// the corpus.
+    ///
+    /// When `false` (default): the extractor only emits transitions
+    /// for *explicit* writes to `d.<state_field>` inside an arm.
+    /// Arms that fall through to the kernel-top default are NOT
+    /// counted as transitions; states whose only outgoing edges
+    /// would have been implicit self-loops appear with no outgoing
+    /// edges, which causes the Layer 2 `DeadlockCandidate`
+    /// diagnostic to fire.  This catches forgotten transitions —
+    /// the structural correctness gap documented in
+    /// `fsm-architecture.md` §5.4.1 (now closed by this opt-in).
+    ///
+    /// **Default is `false` (strict).**  Widgets that genuinely
+    /// want stay-in-place via the canonical default must opt in.
+    /// This makes deadlock detection useful by default; the opt-in
+    /// makes the author's intent explicit when they do want
+    /// implicit holds.
+    pub allow_implicit: bool,
 }
 
 /// Tag emitted by `#[fsm_kernel(state_var = "...")]` on a kernel

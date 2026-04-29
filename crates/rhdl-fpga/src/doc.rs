@@ -183,7 +183,7 @@ mod tests {
 
     #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
     #[rhdl(dq_no_prefix)]
-    #[fsm(state_field = "state", state_enum = CycleState)]
+    #[fsm(state_field = "state", state_enum = CycleState, allow_implicit)]
     pub struct CycleMachine {
         state: dff::DFF<CycleState>,
     }
@@ -458,7 +458,7 @@ mod tests {
         }
         #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
         #[rhdl(dq_no_prefix)]
-        #[fsm(state_field = "state", state_enum = S)]
+        #[fsm(state_field = "state", state_enum = S, allow_implicit)]
         pub struct W {
             state: dff::DFF<S>,
         }
@@ -503,6 +503,46 @@ mod tests {
                 ]
             );
         }
+
+        /// Property-based check: simulator-observed ⊆ extractor.
+        /// Per `fsm-architecture.md` §5.4.2 #2.
+        #[test]
+        fn property_simulator_observed_is_subset_of_extractor_output() {
+            use rhdl::core::fsm::analysis::Transition;
+            use std::collections::BTreeSet;
+
+            let extractor = rhdl::core::fsm::extract_widget_transitions::<W>()
+                .expect("compile + extract");
+            assert!(extractor.unanalyzable.is_empty());
+            let extracted: BTreeSet<_> = extractor.transitions.iter().collect();
+
+            let mut observed: BTreeSet<Transition> = BTreeSet::new();
+            let cr = clock_reset(clock(false), reset(false));
+
+            for (src_idx, src_state) in [(0usize, S::A), (1, S::B), (2, S::C)] {
+                for &i_val in &[false, true] {
+                    let q = Q { state: src_state };
+                    let (_o, d) = k(cr, i_val, q);
+                    let target_idx = match d.state {
+                        S::A => 0,
+                        S::B => 1,
+                        S::C => 2,
+                    };
+                    observed.insert(Transition {
+                        source_index: src_idx,
+                        target_index: target_idx,
+                    });
+                }
+            }
+
+            for obs in &observed {
+                assert!(
+                    extracted.contains(obs),
+                    "Simulator observed {obs:?} but extractor missed it"
+                );
+            }
+            assert!(!observed.is_empty());
+        }
     }
 
     // ---- Adversarial widget #2: nested if-else inside one arm ----
@@ -518,7 +558,7 @@ mod tests {
         }
         #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
         #[rhdl(dq_no_prefix)]
-        #[fsm(state_field = "state", state_enum = S)]
+        #[fsm(state_field = "state", state_enum = S, allow_implicit)]
         pub struct W {
             state: dff::DFF<S>,
         }
@@ -581,7 +621,7 @@ mod tests {
         }
         #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
         #[rhdl(dq_no_prefix)]
-        #[fsm(state_field = "state", state_enum = S)]
+        #[fsm(state_field = "state", state_enum = S, allow_implicit)]
         pub struct W {
             state: dff::DFF<S>,
         }
@@ -630,7 +670,7 @@ mod tests {
         }
         #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
         #[rhdl(dq_no_prefix)]
-        #[fsm(state_field = "state", state_enum = S)]
+        #[fsm(state_field = "state", state_enum = S, allow_implicit)]
         pub struct W {
             state: dff::DFF<S>,
         }
@@ -684,7 +724,7 @@ mod tests {
         }
         #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
         #[rhdl(dq_no_prefix)]
-        #[fsm(state_field = "state", state_enum = S)]
+        #[fsm(state_field = "state", state_enum = S, allow_implicit)]
         pub struct W {
             state: dff::DFF<S>,
         }
@@ -734,7 +774,7 @@ mod tests {
         }
         #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
         #[rhdl(dq_no_prefix)]
-        #[fsm(state_field = "state", state_enum = S)]
+        #[fsm(state_field = "state", state_enum = S, allow_implicit)]
         pub struct W {
             state: dff::DFF<S>,
         }
@@ -797,7 +837,7 @@ mod tests {
         }
         #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
         #[rhdl(dq_no_prefix)]
-        #[fsm(state_field = "state", state_enum = S)]
+        #[fsm(state_field = "state", state_enum = S, allow_implicit)]
         pub struct W {
             state: dff::DFF<S>,
         }
@@ -864,7 +904,7 @@ mod tests {
         }
         #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
         #[rhdl(dq_no_prefix)]
-        #[fsm(state_field = "state", state_enum = S)]
+        #[fsm(state_field = "state", state_enum = S, allow_implicit)]
         pub struct W {
             state: dff::DFF<S>,
             bit_idx: dff::DFF<rhdl::bits::Bits<4>>,
@@ -934,6 +974,75 @@ mod tests {
                 ]
             );
         }
+
+        /// Property-based check #1 against the canonical 3-state
+        /// can_master-shape kernel: enumerate every (source variant,
+        /// bit_idx ∈ {0, max}) input combination, call the kernel
+        /// directly, observe d.state, build the simulator-observed
+        /// set of transitions, assert it is a subset of the
+        /// extractor's output.
+        ///
+        /// This validates **soundness** (no false negatives) — every
+        /// transition the simulator can produce IS in the extractor's
+        /// graph.  Per `fsm-architecture.md` §5.4.2 #2 (NECESSARY
+        /// follow-up converted to in-PR work).
+        ///
+        /// The complementary direction (every extractor edge is
+        /// simulator-reachable) is generally NOT enforceable for the
+        /// canonical kernel pattern: the implicit self-loops emitted
+        /// by the kernel-top default are sound in the I/O sense but
+        /// may require inputs the limited test space doesn't cover.
+        /// Documented here, not asserted.
+        #[test]
+        fn property_simulator_observed_is_subset_of_extractor_output() {
+            use rhdl::core::fsm::analysis::Transition;
+            use std::collections::BTreeSet;
+
+            let extractor = rhdl::core::fsm::extract_widget_transitions::<W>()
+                .expect("compile + extract");
+            assert!(extractor.unanalyzable.is_empty());
+            let extracted: BTreeSet<_> = extractor.transitions.iter().collect();
+
+            // Enumerate inputs: bit_idx is bool here (the widget's
+            // input I = bool), so 2 input values.  3 source variants.
+            let mut observed: BTreeSet<Transition> = BTreeSet::new();
+            let cr = clock_reset(clock(false), reset(false));
+
+            let source_states = [(0usize, S::Sof), (1, S::Id), (2, S::Eof)];
+            for (src_idx, src_state) in source_states {
+                for &i_val in &[false, true] {
+                    let q = Q {
+                        state: src_state,
+                        bit_idx: rhdl::bits::bits::<4>(if i_val { 10 } else { 0 }),
+                    };
+                    let (_o, d) = k(cr, false, q);
+                    let target_idx = match d.state {
+                        S::Sof => 0,
+                        S::Id => 1,
+                        S::Eof => 2,
+                    };
+                    observed.insert(Transition {
+                        source_index: src_idx,
+                        target_index: target_idx,
+                    });
+                }
+            }
+
+            // Soundness: every simulator-observed transition must
+            // be in the extractor's output.  Failure here = the
+            // extractor missed a real edge.
+            for obs in &observed {
+                assert!(
+                    extracted.contains(obs),
+                    "Simulator observed {obs:?} but extractor missed it. \n\
+                     Observed: {observed:?}\nExtracted: {extracted:?}"
+                );
+            }
+            assert!(
+                !observed.is_empty(),
+                "Property test produced no observations — sanity check failed"
+            );
+        }
     }
 
     // ---- Adversarial widget #9: nested-conditional implicit ----
@@ -953,7 +1062,7 @@ mod tests {
         }
         #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
         #[rhdl(dq_no_prefix)]
-        #[fsm(state_field = "state", state_enum = S)]
+        #[fsm(state_field = "state", state_enum = S, allow_implicit)]
         pub struct W {
             state: dff::DFF<S>,
             ctr: dff::DFF<rhdl::bits::Bits<4>>,
@@ -1061,7 +1170,7 @@ pub mod demo {
     #[fsm_doc]
     #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
     #[rhdl(dq_no_prefix)]
-    #[fsm(state_field = "state", state_enum = DemoState)]
+    #[fsm(state_field = "state", state_enum = DemoState, allow_implicit)]
     pub struct AutoDocMachine {
         state: dff::DFF<DemoState>,
     }

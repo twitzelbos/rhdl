@@ -27,6 +27,15 @@ struct FsmWidgetAttr {
     state_field: Option<String>,
     state_enum: Option<Path>,
     strict: bool,
+    /// Set by `#[fsm(allow_implicit)]`.  When true, the extractor
+    /// includes implicit self-loops (the canonical kernel-top
+    /// default + selective override pattern) in the transition
+    /// graph.  When false (default), implicit self-loops are
+    /// excluded, which makes the Layer 2 `DeadlockCandidate`
+    /// diagnostic fire for states whose only would-be outgoing
+    /// edges are implicit holds — closing the deadlock-masking
+    /// gap (`fsm-architecture.md` §5.4.1).
+    allow_implicit: bool,
 }
 
 fn parse_fsm_widget_attr(attrs: &[Attribute]) -> syn::Result<FsmWidgetAttr> {
@@ -41,6 +50,9 @@ fn parse_fsm_widget_attr(attrs: &[Attribute]) -> syn::Result<FsmWidgetAttr> {
             match meta {
                 Meta::Path(p) if p.is_ident("strict") => {
                     out.strict = true;
+                }
+                Meta::Path(p) if p.is_ident("allow_implicit") => {
+                    out.allow_implicit = true;
                 }
                 Meta::NameValue(nv) if nv.path.is_ident("state_field") => {
                     if let Expr::Lit(ExprLit {
@@ -89,7 +101,7 @@ fn parse_fsm_widget_attr(attrs: &[Attribute]) -> syn::Result<FsmWidgetAttr> {
                 other => {
                     return Err(syn::Error::new(
                         other.span(),
-                        "unrecognised fsm attribute (allowed: `state_field = \"...\"`, `state_enum = ...`, `strict`)",
+                        "unrecognised fsm attribute (allowed: `state_field = \"...\"`, `state_enum = ...`, `strict`, `allow_implicit`)",
                     ));
                 }
             }
@@ -124,6 +136,7 @@ pub fn derive_fsm_widget(input: TokenStream) -> syn::Result<TokenStream> {
         )
     })?;
     let strict = attr.strict;
+    let allow_implicit = attr.allow_implicit;
 
     // Verify the named field actually exists on the struct, so
     // the user gets an error at #[derive(FsmWidget)] expansion
@@ -174,6 +187,7 @@ pub fn derive_fsm_widget(input: TokenStream) -> syn::Result<TokenStream> {
                     widget: rhdl::core::fsm::FsmWidgetTag {
                         state_field: #state_field,
                         strict: #strict,
+                        allow_implicit: #allow_implicit,
                     },
                     kernel: rhdl::core::fsm::FsmKernelTag {
                         state_var: #state_var,

@@ -82,6 +82,7 @@
 	- [Synthesis](synchronous/synthesis.md)
 - [Finite State Machines](fsm/summary.md)
 	- [Derive Macros](fsm/derive.md)
+	- [Transition Extraction](fsm/extraction.md)
 	- [Static Analysis](fsm/static_analysis.md)
 	- [State Diagrams](fsm/diagrams.md)
 	- [Formal Verification](fsm/formal_verification.md)
