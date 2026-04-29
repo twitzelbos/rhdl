@@ -406,6 +406,439 @@ mod tests {
         );
     }
 
+    // -----------------------------------------------------------
+    // Adversarial integration tests for the side-effect-form
+    // FSM extractor (PR `feat/fsm-extractor-side-effects`).  Each
+    // sub-mod defines a real `Synchronous` + `FsmWidget` widget
+    // whose kernel exercises a distinct kernel-language idiom.
+    // The test compiles the kernel through Stage 1, runs the
+    // canonical transition extractor, and asserts the recovered
+    // graph against a hand-derived expected set.
+    //
+    // These exist to guarantee that EVERY kernel idiom an author
+    // can plausibly use to update `d.state` is either extracted
+    // correctly or surfaces a precise Unanalyzable diagnostic.
+    // Combined with the synthetic-RHIF unit tests in
+    // `rhdl_core::fsm::extraction::tests`, this gives end-to-end
+    // coverage of the extractor.
+    // -----------------------------------------------------------
+
+    use rhdl::core::fsm::analysis::Transition;
+
+    /// Helper to drive the extractor against a widget and return its
+    /// sorted derived transitions.  Asserts no Unanalyzable
+    /// diagnostics — a positive test fails loudly if the kernel
+    /// shape isn't fully recognised.
+    fn extract_or_fail<W>() -> Vec<Transition>
+    where
+        W: rhdl::core::fsm::FsmWidget + SynchronousIO,
+    {
+        let result =
+            rhdl::core::fsm::extract_widget_transitions::<W>().expect("compile + extract");
+        assert!(
+            result.unanalyzable.is_empty(),
+            "Unanalyzable diagnostics for {}: {:?}",
+            std::any::type_name::<W>(),
+            result.unanalyzable
+        );
+        let mut t = result.transitions;
+        t.sort();
+        t
+    }
+
+    // ---- Adversarial widget #1: side-effect with conditional + default ----
+    mod adv_sideeffect_conditional {
+        use super::*;
+        #[derive(Fsm, Digital, PartialEq, Copy, Clone, Debug, Default)]
+        pub enum S {
+            #[default]
+            A,
+            B,
+            C,
+        }
+        #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
+        #[rhdl(dq_no_prefix)]
+        #[fsm(state_field = "state", state_enum = S)]
+        pub struct W {
+            state: dff::DFF<S>,
+        }
+        impl SynchronousIO for W {
+            type I = bool;
+            type O = bool;
+            type Kernel = k;
+        }
+        #[kernel]
+        pub fn k(cr: ClockReset, i: bool, q: Q) -> (bool, D) {
+            let mut d = D::dont_care();
+            d.state = q.state;
+            match q.state {
+                S::A => {
+                    if i {
+                        d.state = S::B;
+                    }
+                }
+                S::B => {
+                    d.state = S::C;
+                }
+                S::C => {
+                    d.state = S::A;
+                }
+            }
+            if cr.reset.any() {
+                d.state = S::A;
+            }
+            (false, d)
+        }
+        #[test]
+        fn extracts() {
+            let t = extract_or_fail::<W>();
+            // A→A (self-loop via default), A→B (taken), B→C, C→A.
+            assert_eq!(
+                t,
+                vec![
+                    Transition { source_index: 0, target_index: 0 },
+                    Transition { source_index: 0, target_index: 1 },
+                    Transition { source_index: 1, target_index: 2 },
+                    Transition { source_index: 2, target_index: 0 },
+                ]
+            );
+        }
+    }
+
+    // ---- Adversarial widget #2: nested if-else inside one arm ----
+    mod adv_nested_if_else {
+        use super::*;
+        #[derive(Fsm, Digital, PartialEq, Copy, Clone, Debug, Default)]
+        pub enum S {
+            #[default]
+            A,
+            B,
+            C,
+            D2,
+        }
+        #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
+        #[rhdl(dq_no_prefix)]
+        #[fsm(state_field = "state", state_enum = S)]
+        pub struct W {
+            state: dff::DFF<S>,
+        }
+        impl SynchronousIO for W {
+            type I = (bool, bool);
+            type O = bool;
+            type Kernel = k;
+        }
+        #[kernel]
+        pub fn k(cr: ClockReset, i: (bool, bool), q: Q) -> (bool, D) {
+            let mut d = D::dont_care();
+            d.state = q.state;
+            let (c1, c2) = i;
+            match q.state {
+                S::A => {
+                    if c1 {
+                        d.state = S::B;
+                    } else if c2 {
+                        d.state = S::C;
+                    } else {
+                        d.state = S::D2;
+                    }
+                }
+                S::B => d.state = S::A,
+                S::C => d.state = S::A,
+                S::D2 => d.state = S::A,
+            }
+            if cr.reset.any() {
+                d.state = S::A;
+            }
+            (false, d)
+        }
+        #[test]
+        fn extracts() {
+            let t = extract_or_fail::<W>();
+            // A → {B, C, D2}; B,C,D2 → A.
+            assert_eq!(
+                t,
+                vec![
+                    Transition { source_index: 0, target_index: 1 }, // A → B
+                    Transition { source_index: 0, target_index: 2 }, // A → C
+                    Transition { source_index: 0, target_index: 3 }, // A → D2
+                    Transition { source_index: 1, target_index: 0 }, // B → A
+                    Transition { source_index: 2, target_index: 0 }, // C → A
+                    Transition { source_index: 3, target_index: 0 }, // D2 → A
+                ]
+            );
+        }
+    }
+
+    // ---- Adversarial widget #3: let-binding form (existing pattern) ----
+    mod adv_let_binding {
+        use super::*;
+        #[derive(Fsm, Digital, PartialEq, Copy, Clone, Debug, Default)]
+        pub enum S {
+            #[default]
+            A,
+            B,
+            C,
+        }
+        #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
+        #[rhdl(dq_no_prefix)]
+        #[fsm(state_field = "state", state_enum = S)]
+        pub struct W {
+            state: dff::DFF<S>,
+        }
+        impl SynchronousIO for W {
+            type I = bool;
+            type O = bool;
+            type Kernel = k;
+        }
+        #[kernel]
+        pub fn k(cr: ClockReset, _i: bool, q: Q) -> (bool, D) {
+            let mut d = D::dont_care();
+            let next = match q.state {
+                S::A => S::B,
+                S::B => S::C,
+                S::C => S::A,
+            };
+            d.state = next;
+            if cr.reset.any() {
+                d.state = S::A;
+            }
+            (false, d)
+        }
+        #[test]
+        fn extracts() {
+            let t = extract_or_fail::<W>();
+            assert_eq!(
+                t,
+                vec![
+                    Transition { source_index: 0, target_index: 1 },
+                    Transition { source_index: 1, target_index: 2 },
+                    Transition { source_index: 2, target_index: 0 },
+                ]
+            );
+        }
+    }
+
+    // ---- Adversarial widget #4: computed-then-assigned (mixed form) ----
+    mod adv_computed_then_assigned {
+        use super::*;
+        #[derive(Fsm, Digital, PartialEq, Copy, Clone, Debug, Default)]
+        pub enum S {
+            #[default]
+            A,
+            B,
+            C,
+        }
+        #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
+        #[rhdl(dq_no_prefix)]
+        #[fsm(state_field = "state", state_enum = S)]
+        pub struct W {
+            state: dff::DFF<S>,
+        }
+        impl SynchronousIO for W {
+            type I = bool;
+            type O = bool;
+            type Kernel = k;
+        }
+        #[kernel]
+        pub fn k(cr: ClockReset, i: bool, q: Q) -> (bool, D) {
+            let mut d = D::dont_care();
+            d.state = q.state;
+            match q.state {
+                S::A => {
+                    let next = if i { S::B } else { S::C };
+                    d.state = next;
+                }
+                S::B => d.state = S::A,
+                S::C => d.state = S::A,
+            }
+            if cr.reset.any() {
+                d.state = S::A;
+            }
+            (false, d)
+        }
+        #[test]
+        fn extracts() {
+            let t = extract_or_fail::<W>();
+            // A → {B, C} via let-bound select inside arm. B,C → A.
+            assert_eq!(
+                t,
+                vec![
+                    Transition { source_index: 0, target_index: 1 },
+                    Transition { source_index: 0, target_index: 2 },
+                    Transition { source_index: 1, target_index: 0 },
+                    Transition { source_index: 2, target_index: 0 },
+                ]
+            );
+        }
+    }
+
+    // ---- Adversarial widget #5: arm-with-no-state-assignment uses default ----
+    mod adv_arm_with_no_assignment {
+        use super::*;
+        #[derive(Fsm, Digital, PartialEq, Copy, Clone, Debug, Default)]
+        pub enum S {
+            #[default]
+            A,
+            B,
+            C,
+        }
+        #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
+        #[rhdl(dq_no_prefix)]
+        #[fsm(state_field = "state", state_enum = S)]
+        pub struct W {
+            state: dff::DFF<S>,
+        }
+        impl SynchronousIO for W {
+            type I = bool;
+            type O = bool;
+            type Kernel = k;
+        }
+        #[kernel]
+        pub fn k(cr: ClockReset, _i: bool, q: Q) -> (bool, D) {
+            let mut d = D::dont_care();
+            d.state = q.state;
+            match q.state {
+                S::A => d.state = S::B,
+                S::B => d.state = S::C,
+                S::C => {} // empty arm — state stays at q.state (self-loop)
+            }
+            if cr.reset.any() {
+                d.state = S::A;
+            }
+            (false, d)
+        }
+        #[test]
+        fn extracts() {
+            let t = extract_or_fail::<W>();
+            assert_eq!(
+                t,
+                vec![
+                    Transition { source_index: 0, target_index: 1 }, // A → B
+                    Transition { source_index: 1, target_index: 2 }, // B → C
+                    Transition { source_index: 2, target_index: 2 }, // C → C (empty arm preserves)
+                ]
+            );
+        }
+    }
+
+    // ---- Adversarial widget #6: multi-arm with mixed conditional + unconditional ----
+    mod adv_mixed_arms {
+        use super::*;
+        #[derive(Fsm, Digital, PartialEq, Copy, Clone, Debug, Default)]
+        pub enum S {
+            #[default]
+            Idle,
+            Active,
+            Cooldown,
+            Error,
+        }
+        #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
+        #[rhdl(dq_no_prefix)]
+        #[fsm(state_field = "state", state_enum = S)]
+        pub struct W {
+            state: dff::DFF<S>,
+        }
+        impl SynchronousIO for W {
+            type I = (bool, bool);
+            type O = bool;
+            type Kernel = k;
+        }
+        #[kernel]
+        pub fn k(cr: ClockReset, i: (bool, bool), q: Q) -> (bool, D) {
+            let mut d = D::dont_care();
+            d.state = q.state;
+            let (start, fault) = i;
+            match q.state {
+                S::Idle => {
+                    if start {
+                        d.state = S::Active;
+                    }
+                }
+                S::Active => {
+                    if fault {
+                        d.state = S::Error;
+                    } else {
+                        d.state = S::Cooldown;
+                    }
+                }
+                S::Cooldown => d.state = S::Idle,
+                S::Error => {} // stuck
+            }
+            if cr.reset.any() {
+                d.state = S::Idle;
+            }
+            (false, d)
+        }
+        #[test]
+        fn extracts() {
+            let t = extract_or_fail::<W>();
+            assert_eq!(
+                t,
+                vec![
+                    Transition { source_index: 0, target_index: 0 }, // Idle self-loop (start=false)
+                    Transition { source_index: 0, target_index: 1 }, // Idle → Active
+                    Transition { source_index: 1, target_index: 2 }, // Active → Cooldown
+                    Transition { source_index: 1, target_index: 3 }, // Active → Error
+                    Transition { source_index: 2, target_index: 0 }, // Cooldown → Idle
+                    Transition { source_index: 3, target_index: 3 }, // Error self-loop
+                ]
+            );
+        }
+    }
+
+    // ---- Adversarial widget #7: bare-match output (let-binding) with self-loop branch ----
+    mod adv_let_binding_with_self_loop_branch {
+        use super::*;
+        #[derive(Fsm, Digital, PartialEq, Copy, Clone, Debug, Default)]
+        pub enum S {
+            #[default]
+            A,
+            B,
+        }
+        #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
+        #[rhdl(dq_no_prefix)]
+        #[fsm(state_field = "state", state_enum = S)]
+        pub struct W {
+            state: dff::DFF<S>,
+        }
+        impl SynchronousIO for W {
+            type I = bool;
+            type O = bool;
+            type Kernel = k;
+        }
+        #[kernel]
+        pub fn k(cr: ClockReset, i: bool, q: Q) -> (bool, D) {
+            let mut d = D::dont_care();
+            let next = match q.state {
+                S::A => {
+                    if i {
+                        S::B
+                    } else {
+                        S::A
+                    }
+                }
+                S::B => S::A,
+            };
+            d.state = next;
+            if cr.reset.any() {
+                d.state = S::A;
+            }
+            (false, d)
+        }
+        #[test]
+        fn extracts() {
+            let t = extract_or_fail::<W>();
+            assert_eq!(
+                t,
+                vec![
+                    Transition { source_index: 0, target_index: 0 }, // A → A (else)
+                    Transition { source_index: 0, target_index: 1 }, // A → B (then)
+                    Transition { source_index: 1, target_index: 0 }, // B → A
+                ]
+            );
+        }
+    }
+
     /// Strict variant — verifies the committed file matches what
     /// the kernel produces *without* rewriting first.  Useful as a
     /// CI canary that catches renderer regressions (a change to
