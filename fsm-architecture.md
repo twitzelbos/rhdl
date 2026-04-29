@@ -245,6 +245,30 @@ Step 2a is the only non-trivial part — it requires walking arbitrary kernel ex
 5. New chapter `doc/book/src/fsm/static_analysis.md` documenting the pass and its diagnostics.
 6. CHANGELOG entry per §16.
 
+### 5.5 Status (2026-04-29) — side-effect-form support shipped
+
+The v1 canonical extractor that landed in PR #2 only recognised the **let-binding form** (`let next = match q.state { … }; d.state = next;`).  Per Phase 3b's first widget-corpus survey, this excluded ~95 % of real RHDL widgets, which all use the **side-effect form** (canonical RHDL idiom per CLAUDE.md): `match q.state { State::A => { d.state = State::B; } }`.
+
+PR `feat/fsm-extractor-side-effects` extends `extract_canonical_transitions` to handle both forms by walking the RHIF data-flow graph backward from each arm's result slot through:
+
+- `OpCode::Splice` matching the state-field path → recurse on the substituted value
+- `OpCode::Splice` with a different path → recurse on the original (state preserved)
+- `OpCode::Select` (if-else) → union of both branches
+- `OpCode::Case` (nested match) → union of all arm results
+- `OpCode::Struct` with explicit state field → recurse on the field's value
+- `OpCode::Index` reading `q.state` → emit a self-loop to the arm's source variant
+- `OpCode::Assign` → forwarded recursion
+
+The extension is conservative: each arm tries the value-form walker first, falls back to the d-struct-form walker if that comes up empty, and surfaces an `Unanalyzable` diagnostic only if both fail.  Returns are deduplicated per-arm so two paths producing the same target collapse into one transition.
+
+**Test coverage:** 11 new synthetic-RHIF unit tests in `rhdl_core::fsm::extraction::tests` cover the full opcode-level matrix (basic splice, default-then-override, nested if-else, splice-into-different-field, back-to-back splices, struct-explicit-field, struct-template-only, q.state self-loop, opaque arms, branch dedup, mixed walkers).  7 new adversarial integration tests in `rhdl_fpga::doc::tests` exercise real `Synchronous + FsmWidget` kernels covering distinct kernel-language idioms (side-effect-with-conditional, nested if-else, let-binding, computed-then-assigned, empty-arm, mixed-arms, let-binding-with-self-loop-branch).
+
+**Acceptance status after this PR:**
+
+- ✅ #1 (zero false negatives): every transition the test corpus expects is recovered.
+- ✅ #2 (zero false positives on the existing widget corpus): synthetic tests cover the side-effect idiom directly.  Once the cleanup PR for `refactor/use-fsm-and-or-patterns` lands, the real 27-widget corpus will be the bigger validation.
+- ✅ #3 (core idioms): both forms now handled, including dont_care-then-field-set via the `OpCode::Splice` path.
+
 ---
 
 ## 6 — Layer 3: auto-generated state diagrams
