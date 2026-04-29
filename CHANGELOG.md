@@ -167,6 +167,36 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-04-28 — Tier-3 composition batch: full-duplex UART, LIN master
+
+Two more Tier-3 widgets, both pure compositions of earlier work — the reusability dividend in action.
+
+#### Full-duplex UART — `core::uart`
+
+Roadmap row #18 closeout (the previously-deferred FIFO-buffered variant).  Pure dataflow composition: `tx_fifo` + `tx_uart` + `rx_uart` + `rx_fifo`.  Inputs: push to TX FIFO, pop from RX FIFO; the FIFOs decouple the host's clock-domain rate from the wire's baud rate.  4 tests including a Tier-2 round trip that drives an externally-encoded byte onto the RX line and verifies it shows up in the RX FIFO at the right cycle.
+
+#### LIN bus master — `core::lin_master`
+
+Roadmap row #28.  Single-byte v1.  Composes `core::uart_tx` for the byte-oriented sub-fields (sync, PID, data, checksum), adds a small FSM for the break field.  Computes PID parity (P0/P1) and classic checksum in the kernel.
+
+**Surprise:** the kernel macro restricts turbofish to a small set of methods (`resize`, `xext`, `xshl`, `xshr`).  My first attempt at extracting `id_acc_8` used `q.id_reg.dyn_bits().resize::<8>().as_bits::<8>()` to widen `Bits<6>` to `Bits<8>` — `as_bits::<8>` was rejected.  Workaround: build the widened value bit-by-bit via a constant-bound loop:
+
+```
+let mut id_acc_8: Bits<8> = bits::<8>(0);
+for k in 0..6 {
+    let bit_k = (q.id_reg >> (k as u128)) & bits::<6>(1);
+    if bit_k != bits::<6>(0) {
+        id_acc_8 |= bits::<8>(1) << (k as u128);
+    }
+}
+```
+
+This is the third instance of "RHDL kernel doesn't accept the obvious type-cast" pattern (the others: `Bits<40> → Bits<16>` in DHT22, runtime-indexed array sizing in register file).  The pattern of "extract bits with a loop, then OR into the wider register" works around all three.  Recorded as a kernel-language-extensions follow-up — `Bits<N> → Bits<M>` with implicit zero/sign-extend is a clear ergonomic miss.
+
+4 tests, `iverilog` clean.
+
+---
+
 ## 2026-04-28 — Tier-3 protocol PHY batch (8 widgets)
 
 A focused day of Tier-3 work. Lib test count: 275 → **346 passing** (0 regressions).
