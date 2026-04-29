@@ -269,6 +269,18 @@ The extension is conservative: each arm tries the value-form walker first, falls
 - ✅ #2 (zero false positives on the existing widget corpus): synthetic tests cover the side-effect idiom directly.  Once the cleanup PR for `refactor/use-fsm-and-or-patterns` lands, the real 27-widget corpus will be the bigger validation.
 - ✅ #3 (core idioms): both forms now handled, including dont_care-then-field-set via the `OpCode::Splice` path.
 
+### 5.6 Status (2026-04-29) — implicit-self-loop support shipped
+
+The PR-#6 extractor handled both let-binding and side-effect forms but assumed every match arm explicitly wrote `d.state` somewhere on every path.  First validation against `core::can_master` (the motivating real-world widget shape) showed this assumption breaks for ~all production protocol-PHY kernels: arms with guarded transitions whose else-branches only update auxiliary state (a bit counter, a CRC register, etc.) leave `d.<state_field>` un-overridden.  Pre-fix, such arms surfaced as `Unanalyzable` with diagnostic *"neither value-form nor d-struct-form walker found a state assignment in this arm"* — even though the kernel-top default `d.<state_field> = q.<state_field>` (CLAUDE.md §3 canonical pattern) means the omission is well-defined: hold the state.
+
+PR `feat/fsm-extractor-implicit-self-loops` closes the gap with a single semantic change in `extract_canonical_transitions`: when both walkers run cleanly (no genuine error) but find no state-overriding op for an arm, the arm is interpreted as a self-loop on the source variant rather than `Unanalyzable`.  The Select / Case union points in the d-struct walker apply the same convention per branch (so a guarded arm where the then-branch transitions and the else-branch holds correctly produces both the explicit edge and the self-loop).  The leaf paths (`find_definer` returns None, unrecognised opcode, Struct-without-state-field) keep their `Ok(vec![])` return so the value-form walker's analysis can still win when called on a state-typed slot — i.e., the implicit-self-loop only triggers at union points where the d-struct context is unambiguous, plus the top-level fallback for kernels with no Select / Case wrapping at all.
+
+`Unanalyzable` is now reserved exclusively for genuinely malformed IR — for example, an Enum opcode whose discriminant value matches no variant in the descriptor.  Pinned by a negative test (`arm_with_unmatched_enum_discriminant_yields_unanalyzable`) so a future loosening that re-broadens the Unanalyzable surface fails loudly.
+
+**Test coverage:** 4 new synthetic-RHIF unit tests in `rhdl_core::fsm::extraction::tests` (kernel-top-default + guarded transition; guarded transition with implicit-else-writes-other-field — the can_master shape verbatim; arm with no state write at all; the negative malformed-discriminant test) plus 3 existing tests reframed for the new semantics (no-recognisable-target, struct-without-state-field, opaque arm).  2 new adversarial integration tests in `rhdl_fpga::doc::tests` exercise real `Synchronous + FsmWidget` kernels covering the can_master-shaped guarded transition and a nested-conditional kernel where two paths inside one arm independently omit the d.state write.
+
+**Acceptance status after this PR:** the same three criteria from §5.5 hold, and #2 (zero false positives on the existing widget corpus) now extends to cover the canonical "kernel-top default + arms with guarded transitions and implicit-hold else-branches" pattern that every production FSM widget uses.
+
 ---
 
 ## 6 — Layer 3: auto-generated state diagrams

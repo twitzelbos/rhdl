@@ -31,6 +31,40 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-04-29 — FSM extractor handles implicit self-loops (canonical kernel-top default + arms with guarded transitions)
+
+**Paths:** `crates/rhdl-core/src/fsm/extraction.rs`, `crates/rhdl-fpga/src/doc.rs`, `fsm-architecture.md` §5.6
+
+**Why this, why now:** Direct follow-up to PR #6.  First validation of the side-effect-form extractor against a real production widget (`core::can_master`) showed it failed on 4 out of 13 arms with `Unanalyzable` diagnostic *"neither value-form nor d-struct-form walker found a state assignment in this arm"* — even though the kernel uses the textbook canonical RHDL pattern (kernel-top `d.<state_field> = q.<state_field>` default, then per-arm guarded transitions whose else-branches only update auxiliary state).  Per CLAUDE.md §3, this pattern *is* the canonical idiom; the extractor must honour it or the auto-extraction track is unusable on real widgets.  This PR closes the gap.
+
+**What guarantee is preserved:** Layer 2 acceptance criterion #2 (`fsm-architecture.md` §5.4) — *"zero false positives on the existing widget corpus"*.  Pre-fix, every production protocol-PHY kernel (CAN, I²C, SPI, UART RX, DHT22, etc.) would have produced spurious `Unanalyzable` diagnostics on its guarded-transition arms once `#[derive(FsmWidget)]` was applied.  Post-fix, the implicit-self-loop semantics correctly recovers the held-state edges from the canonical kernel-top default, so the extractor's diagnostic surface is reserved for genuinely malformed kernels.
+
+**Design decisions:**
+
+- **Implicit self-loops live at union points (Select branches, Case arms) plus the top-level fallback** in `extract_canonical_transitions` — not at every leaf return in the d-struct walker.  Pushing the convention into the leaves polluted the value-form walker (which is also called on state-typed slots like `Enum` opcodes); restricting it to the union points and the top-level fallback keeps the let-binding form's analysis clean.  The d-struct walker's `find_definer`-None / `_` / `Struct-without-state-field` paths still return `Ok(vec![])`; the top-level fallback applies the self-loop interpretation only when both walkers run cleanly with no errors.
+- **`Unanalyzable` is now reserved for genuinely malformed IR.**  After this PR, the only way to surface `Unanalyzable` is for the value-form walker to encounter an Enum opcode whose discriminant value matches no variant in the descriptor (or some equivalent type-system violation).  Pinned by an inverted negative test (`arm_with_unmatched_enum_discriminant_yields_unanalyzable`) so a future loosening that re-broadens the Unanalyzable surface fails loudly.
+- **Three pre-existing tests reframed for the new semantics.**  `arm_with_unanalyzable_target_is_flagged` → `arm_with_no_recognisable_target_yields_implicit_self_loop`; `opaque_arm_result_yields_unanalyzable_diagnostic` → `opaque_arm_result_yields_implicit_self_loop`; `struct_opcode_without_state_field_is_unanalyzable` → `struct_opcode_without_state_field_yields_implicit_self_loop`.  Each test's assertion is rewritten to expect the self-loop interpretation; the old assertions were testing the *old* (incorrect) behaviour and would have masked the can_master regression had they been kept.
+
+**Surprises and gotchas:**
+
+- **First attempt pushed the implicit-self-loop semantics into every leaf of the d-struct walker.**  This broke 6 tests because the d-struct walker is also invoked on slots that the value-form walker can analyse (state-typed slots defined by `Enum`).  The walker has to return empty for those so the value walker's analysis wins at the union.  The fix is geometric — the convention belongs at the union points, where the d-struct interpretation is unambiguous, plus the top-level fallback.
+- **`typed_bits_to_discriminant` always returns `Some` in practice.**  The `?` operator at line 222 of `extraction.rs` (the value-form walker's `Enum` arm) only triggers via the *other* error path: `variant_index_for_discriminant` returning `None` when the discriminant matches no variant.  Worth noting because the diagnostic message string ("enum template has no resolvable discriminant") is dead code on every kernel path I've explored.  Left in place for future-proofing if `typed_bits_to_discriminant` ever returns `None` for some kind variant.
+- **The kernel-top default is conventional, not enforced.**  An FSM widget without the `d.<state_field> = q.<state_field>` default would still synthesize correctly (the unset d field becomes a don't-care that synthesis tools optimise as they please), but the auto-extractor would interpret arms with no state writes as self-loops anyway.  A future enhancement could verify the kernel-top default exists and warn if it's missing — tracked as a follow-up below.
+
+**Validation:**
+
+- `cargo test --package rhdl-core fsm::` — **65 tests passing**, including 4 new synthetic-RHIF unit tests (`kernel_top_default_plus_guarded_transition_yields_both_edges`; `guarded_transition_with_implicit_else_yields_self_loop`; `arm_with_no_state_write_at_all_yields_self_loop`; `arm_with_unmatched_enum_discriminant_yields_unanalyzable`) and 3 reframed tests pinning the new semantics.
+- `cargo test --package rhdl-fpga --lib doc::` — **20 tests passing**, including 2 new adversarial integration tests (`adv_can_master_guarded_else_writes_other_field` — the can_master shape verbatim with a 3-state FSM, kernel-top default, and guarded transitions whose else-branches write only the bit counter; `adv_nested_conditional_implicit_self_loops` — a nested-if-else arm where two paths independently omit the d.state write, proving the dedup at union points works).
+- Full workspace lib-test sweep — no widget HDL snapshot regressions.  The change is purely additive in the extractor; no IR opcode added, no lowering changed, no Verilog emitted differently.
+
+**Follow-ups:**
+
+- **Cleanup PR (`refactor/use-fsm-and-or-patterns`)** — with auto-extraction now working on real widget shapes, the manual `pub const FSM_TRANSITIONS: &[Transition] = &[...]` consts in 55 widget files can be replaced with calls to `extract_widget_transitions::<W>()`.  Each widget's example switches from `write_fsm_diagram_as_markdown::<W>(FSM_TRANSITIONS, "...")` to `write_fsm_diagram::<W>("...")`.  The obsolete manual helpers (`render_fsm_diagram_markdown`, `write_fsm_diagram_as_markdown`) get deleted from `doc.rs`.
+- **Optional kernel-top-default enforcement** — a Layer 2 advisory diagnostic that fires when an FSM-tagged widget's kernel doesn't write `d.<state_field> = q.<state_field>` at the top, since the implicit-self-loop interpretation is technically convention-dependent.  Low priority; CLAUDE.md §3's pattern is universal so far.
+- **Real `can_master` integration validation** — once the cleanup PR adds `#[derive(FsmWidget)]` to `core::can_master`, run `extract_widget_transitions::<CanMaster<5>>()` and pin the resulting transition set as a snapshot.  This branch's `adv_can_master_guarded_else_writes_other_field` test is a faithful synthetic stand-in but a real-widget regression test is the gold standard.
+
+---
+
 ## 2026-04-29 — FSM extractor handles side-effect `d.state` form (+ adversarial diagnostic & SVA tests)
 
 **Paths:** `crates/rhdl-core/src/fsm/extraction.rs`, `crates/rhdl-core/src/fsm/analysis.rs`, `crates/rhdl-core/src/fsm/property.rs`, `crates/rhdl-fpga/src/doc.rs`

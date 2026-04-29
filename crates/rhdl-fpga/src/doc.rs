@@ -839,6 +839,177 @@ mod tests {
         }
     }
 
+    // ---- Adversarial widget #8: can_master-shaped — guarded ----
+    // ---- transition + else-branch writing a different field ----
+    //
+    // The motivating real-world widget shape (per
+    // crates/rhdl-fpga/src/core/can_master.rs lines 354 + 495):
+    // kernel-top default `d.field = q.field` + `match q.field {
+    // X => if guard { d.field = NextX; d.bit_idx = 0 } else {
+    // d.bit_idx = bit_idx + 1 } }`.  The else-branch writes ONLY
+    // d.bit_idx, never d.field — but the canonical RHDL pattern
+    // (kernel-top default) means the state holds.  Pre-fix, the
+    // extractor flagged this arm as Unanalyzable with diagnostic
+    // "neither value-form nor d-struct-form walker found a state
+    // assignment in this arm".  Post-fix, the implicit-self-loop
+    // semantics correctly emit a self-loop on the source variant.
+    mod adv_can_master_guarded_else_writes_other_field {
+        use super::*;
+        #[derive(Fsm, Digital, PartialEq, Copy, Clone, Debug, Default)]
+        pub enum S {
+            #[default]
+            Sof,
+            Id,
+            Eof,
+        }
+        #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
+        #[rhdl(dq_no_prefix)]
+        #[fsm(state_field = "state", state_enum = S)]
+        pub struct W {
+            state: dff::DFF<S>,
+            bit_idx: dff::DFF<rhdl::bits::Bits<4>>,
+        }
+        impl SynchronousIO for W {
+            type I = bool;
+            type O = bool;
+            type Kernel = k;
+        }
+        #[kernel]
+        pub fn k(cr: ClockReset, _i: bool, q: Q) -> (bool, D) {
+            let mut d = D::dont_care();
+            // Canonical RHDL kernel-top defaults — the source of
+            // the implicit-self-loop semantics.
+            d.state = q.state;
+            d.bit_idx = q.bit_idx;
+            let max: rhdl::bits::Bits<4> = rhdl::bits::bits::<4>(10);
+            let one: rhdl::bits::Bits<4> = rhdl::bits::bits::<4>(1);
+            let zero: rhdl::bits::Bits<4> = rhdl::bits::bits::<4>(0);
+            match q.state {
+                S::Sof => {
+                    // Unconditional transition: Sof → Id.
+                    d.state = S::Id;
+                    d.bit_idx = zero;
+                }
+                S::Id => {
+                    // The motivating shape: guarded transition,
+                    // else-branch writes only the bit counter.
+                    if q.bit_idx == max {
+                        d.state = S::Eof;
+                        d.bit_idx = zero;
+                    } else {
+                        d.bit_idx = q.bit_idx + one;
+                    }
+                }
+                S::Eof => {
+                    // Same shape — wraps to Sof at end-of-frame.
+                    if q.bit_idx == max {
+                        d.state = S::Sof;
+                        d.bit_idx = zero;
+                    } else {
+                        d.bit_idx = q.bit_idx + one;
+                    }
+                }
+            }
+            if cr.reset.any() {
+                d.state = S::Sof;
+                d.bit_idx = zero;
+            }
+            (false, d)
+        }
+        #[test]
+        fn extracts() {
+            let t = extract_or_fail::<W>();
+            // Sof → Id (unconditional, no self-loop because no
+            // implicit branch).  Id → Eof (then) + Id → Id
+            // (implicit self-loop on else).  Eof → Sof + Eof →
+            // Eof (same shape).
+            assert_eq!(
+                t,
+                vec![
+                    Transition { source_index: 0, target_index: 1 }, // Sof → Id
+                    Transition { source_index: 1, target_index: 1 }, // Id → Id (else)
+                    Transition { source_index: 1, target_index: 2 }, // Id → Eof (then)
+                    Transition { source_index: 2, target_index: 0 }, // Eof → Sof (then)
+                    Transition { source_index: 2, target_index: 2 }, // Eof → Eof (else)
+                ]
+            );
+        }
+    }
+
+    // ---- Adversarial widget #9: nested-conditional implicit ----
+    // ---- self-loops (multiple guards inside one arm) ----
+    //
+    // Stresses the Select-union behaviour: a single arm with
+    // nested if/else where TWO branches omit the d.state write.
+    // The walker must visit each empty Select branch and emit a
+    // self-loop contribution at each union point.
+    mod adv_nested_conditional_implicit_self_loops {
+        use super::*;
+        #[derive(Fsm, Digital, PartialEq, Copy, Clone, Debug, Default)]
+        pub enum S {
+            #[default]
+            A,
+            B,
+        }
+        #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
+        #[rhdl(dq_no_prefix)]
+        #[fsm(state_field = "state", state_enum = S)]
+        pub struct W {
+            state: dff::DFF<S>,
+            ctr: dff::DFF<rhdl::bits::Bits<4>>,
+        }
+        impl SynchronousIO for W {
+            type I = (bool, bool);
+            type O = bool;
+            type Kernel = k;
+        }
+        #[kernel]
+        pub fn k(cr: ClockReset, i: (bool, bool), q: Q) -> (bool, D) {
+            let mut d = D::dont_care();
+            d.state = q.state;
+            d.ctr = q.ctr;
+            let zero: rhdl::bits::Bits<4> = rhdl::bits::bits::<4>(0);
+            let one: rhdl::bits::Bits<4> = rhdl::bits::bits::<4>(1);
+            match q.state {
+                S::A => {
+                    if i.0 {
+                        if i.1 {
+                            d.state = S::B;
+                        } else {
+                            // Nested else: no d.state write.
+                            d.ctr = q.ctr + one;
+                        }
+                    } else {
+                        // Outer else: also no d.state write.
+                        d.ctr = zero;
+                    }
+                }
+                S::B => {
+                    d.state = S::A;
+                }
+            }
+            if cr.reset.any() {
+                d.state = S::A;
+                d.ctr = zero;
+            }
+            (false, d)
+        }
+        #[test]
+        fn extracts() {
+            let t = extract_or_fail::<W>();
+            // A → B (the inner-then branch), A → A (TWO implicit
+            // paths union to one self-loop), B → A.
+            assert_eq!(
+                t,
+                vec![
+                    Transition { source_index: 0, target_index: 0 }, // A → A (implicit, deduped)
+                    Transition { source_index: 0, target_index: 1 }, // A → B
+                    Transition { source_index: 1, target_index: 0 }, // B → A
+                ]
+            );
+        }
+    }
+
     /// Strict variant — verifies the committed file matches what
     /// the kernel produces *without* rewriting first.  Useful as a
     /// CI canary that catches renderer regressions (a change to
