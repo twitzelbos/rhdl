@@ -1,0 +1,1 @@
+TraceInfo({"top.clock":Clock,"top.input":Bits(4),"top.outputs":Enum((name:"Option::<rhdl_bits::bits_impl::Bits<2>>",variants:[(name:"None",discriminant:0,ty:Empty),(name:"Some",discriminant:1,ty:Tuple((elements:[Bits(2)])))],discriminant_layout:(width:1,alignment:Msb,ty:Unsigned))),"top.reset":Reset})

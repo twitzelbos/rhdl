@@ -1,0 +1,1 @@
+TraceInfo({"top.clock":Clock,"top.input":Bits(1),"top.outputs":Struct((name:"rhdl_fpga::core::edge_detector::Edges",fields:[(name:"rising",ty:Bits(1)),(name:"falling",ty:Bits(1)),(name:"any",ty:Bits(1))])),"top.prev.dff.input":Bits(1),"top.prev.dff.output":Bits(1),"top.reset":Reset})

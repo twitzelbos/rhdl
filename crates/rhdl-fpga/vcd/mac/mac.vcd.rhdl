@@ -1,0 +1,1 @@
+TraceInfo({"top.acc.dff.input":Bits(24),"top.acc.dff.output":Bits(24),"top.clock":Clock,"top.input":Struct((name:"rhdl_fpga::core::mac::In",fields:[(name:"a",ty:Bits(8)),(name:"b",ty:Bits(8)),(name:"enable",ty:Bits(1)),(name:"clear",ty:Bits(1))])),"top.outputs":Bits(24),"top.reset":Reset})
