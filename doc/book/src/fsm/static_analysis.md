@@ -45,20 +45,22 @@ use rhdl_core::fsm::{
     analyze_fsm_structure, extract_canonical_transitions,
 };
 
-let result = extract_canonical_transitions(&kernel.ops, &desc, &literal_lookup);
+let result = extract_canonical_transitions(
+    &kernel.ops,
+    kernel.return_slot,
+    &desc,
+    &literal_lookup,
+);
 let diags = analyze_fsm_structure(&desc, &result.transitions, &result.unanalyzable);
 ```
 
-## What the canonical extractor handles
+## What the extractor handles
 
-The current extractor recognises:
+See the dedicated [Transition Extraction](extraction.md) chapter for the full algorithm and the formal definition of the FSM transition graph.
 
-- A single `match` on the state field (`match q.state { ... }`).
-- Each arm whose result is constructed by a single `Enum` opcode (i.e., the next state is a plain variant constructor like `State::Running { counter: 0 }`).
-- `Assign`-forwarded arm results (intermediate variable bindings).
-- Wild arms (`_`) — silently skipped because they don't contribute a definite transition target.
+In short: the extractor walks backward from `d.<state_field>` at the kernel's return point, partitioned by source variant, with constraint propagation through `Case` and `Select` opcodes.  It correctly handles **multiple `match q.<state>` expressions per kernel** (a constraint-propagating walk distinguishes the FSM-transition match from output-computation matches), **the canonical kernel-top default + selective override pattern** (when the widget opts in via `#[fsm(allow_implicit)]`), **guarded transitions with implicit-hold else-branches**, **or-pattern arms**, **`Wild` arms**, and **the canonical `if cr.reset.any() { d.<state_field> = INIT }` reset block** (skipped per convention).
 
-Anything else — nested if/else producing the next state, field-by-field assignment to a `dont_care()`-built state struct, computed transitions via `match` inside `match` — is conservatively reported as `Unanalyzable`. The deadlock-candidate check skips any source variant that was unanalyzable, so you don't get noisy false-positive deadlock warnings on patterns the extractor can't yet decode.
+`Unanalyzable` is reserved for genuinely malformed IR: kernel return shape unrecognised, or an `Enum` opcode whose discriminant matches no variant in the descriptor.  The deadlock-candidate check skips any source variant that was unanalyzable, so you don't get noisy false-positive deadlock warnings on patterns the extractor genuinely can't decode.
 
 ## Strict mode
 
@@ -72,12 +74,12 @@ pub struct MyMachine { ... }
 
 In strict mode the build fails on the first FSM-structural diagnostic the analysis surfaces.
 
-## Limitations (v1)
+## Limitations
 
-- The extractor recognises one `match` per kernel. Kernels with multiple state-machines composed in the same function are not yet supported (split them into sub-widgets, each with its own state DFF).
-- Only the immediate-defining opcode of each arm result is inspected; nested case analysis is conservatively skipped.
-- Match guards aren't handled (they're a kernel-language extension that hasn't shipped yet — see `kernel-language-extensions.md` §2.4).
+- **Multiple FSMs in one widget** — a single widget with two distinct state enums is not yet supported.  Split into sub-widgets, each with its own state DFF.  No widgets in the current corpus need this.
+- **Match guards** aren't handled (they're a kernel-language extension that hasn't shipped yet — see `kernel-language-extensions.md` §2.4).
+- **Cross-DFF over-approximation** — when a kernel has multiple state DFFs and the FSM-tagged one is gated by a condition reading a different state field (e.g., `if q.other_state == X { d.field = Y }`), the extractor includes the `Y` edge for every source variant of the FSM-tagged state, even though by construction only some combinations are reachable.  Sound but verbose in the rendered diagram.  Documented in `fsm-architecture.md` §5.4 #5.
 
-These are tracked as v2 follow-ups in `fsm-architecture.md` §10.
+These (and the soundness-rigor follow-up in §5.4.2) are tracked in `fsm-architecture.md` §5.
 
 [`FsmDescriptor`]: ../api/fsm.html

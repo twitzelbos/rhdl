@@ -190,96 +190,156 @@ Per `CLAUDE.md` §11.1:
 
 ## 5 — Layer 2: static reachability and dead-state analysis
 
-### 5.1 What it analyzes
+### 5.1 What the extractor produces (formal definition)
 
-Once the macro layer has identified a kernel as an FSM, a new RHIF pass walks the kernel's match-on-state opcodes and constructs a directed graph:
+Given an RHDL kernel `K` with declared FSM state field `<state_field>` of enum type `E`, the FSM transition graph `G(K) ⊆ Variants(E) × Variants(E)` is the relation
 
-- **Nodes**: the variants of the state enum.
-- **Edges**: `(source variant, target variant)` pairs derivable from the match arms — for each arm `State::A => /* expr that may return State::B */`, the analysis traces the expression's potential return values and adds an edge `A → B` for each.
+```text
+(s, t) ∈ G(K)  ⟺  ∃ input I such that
+                      evaluating K under (q.<state_field> = s, other inputs = I, cr.reset = false)
+                      produces  d.<state_field> = t
+```
 
-The graph is then walked to produce diagnostics:
+This definition is about the kernel's I/O behaviour (a pure function of `(cr, i, q) → (o, d)` per the kernel-as-pure-fn invariant in `architecture.md` §1), not about its syntactic structure.  Whether the kernel uses `match q.<state>`, multiple matches, nested `if`s, a `dont_care()` + field-set construction, or any other RHDL-legal shape, the transition graph is determined by the *function* the kernel computes — not the AST that defines it.
 
-- **Unreachable states.** Any state that cannot be reached from the initial state via any path. Surfaced as a `miette` warning by default, escalatable to error via attribute. Catches "I added a variant to the enum but forgot to wire any transition into it."
-- **Dead transitions.** Any transition whose source is itself unreachable. These are correctness-irrelevant but indicate dead code.
-- **Deadlock candidates.** Any state with no outgoing transitions and not marked `terminal` via `#[fsm_state(terminal)]`. The classic "I forgot to add a transition out of this state" bug. False positives if the user *meant* a self-absorbing state, hence the explicit terminal annotation.
-- **Non-deterministic transitions.** Any `(state, input)` pair where multiple match arms produce different next-states. With current RHDL this is impossible because match arms are tried in order and the first match wins, but once guards land it becomes a real concern: `State::A if cond1 => B`, `State::A if cond2 => C` — what if both `cond1` and `cond2` hold? Layer 2 reports this as a structural warning, regardless of whether `cond1 ∧ cond2` is actually satisfiable.
-- **Self-loop saturation.** A state with no transitions other than self-loops, not marked `terminal`. Often a bug.
+Three load-bearing properties:
+
+1. **It is about the kernel's I/O, not its syntax.**  Production widgets have between 1 and 5 `match q.<state>` expressions per kernel; only one (or sometimes zero) is the FSM-transition function, with the others doing output computation, phase classification, or similar non-transition logic.  The extractor identifies the relevant data flow by walking back from `d.<state_field>`, not by guessing at syntactic position.
+2. **It is about reachability in one cycle, not over time.**  `(s, t)` is in the graph iff the kernel can move from `s` to `t` in a single evaluation.  Multi-cycle reachability is derived by composition — that lives in the leaf analyses (unreachable states, deadlock candidates), not in the extractor.
+3. **It excludes the reset path.**  The `cr.reset = false` constraint reflects the convention that reset is treated as out-of-band rather than as a per-state edge.  The canonical RHDL reset pattern `if cr.reset.any() { d.<state_field> = INIT; ... }` lowers to a `Select` whose condition reads `cr.reset`; the extractor recognises this shape and skips the reset-override branch.
+
+The leaf analyses (unreachable states, dead transitions, deadlock candidates, non-deterministic transitions, self-loop saturation) consume the extracted graph; their definitions are unchanged from earlier revisions of this section.
 
 ### 5.2 Implementation
 
-A new RHIF pass `analyze_fsm_structure` in `crates/rhdl-core/src/compiler/rhif_passes/`. Implements `Pass` per `architecture.md` §3. Reads the `FsmState` trait metadata via the macro-layer registration; walks the RHIF for kernels whose return value is `(O, D)` where `D` contains a state field; builds the transition graph; emits miette diagnostics.
+The extractor lives in `crates/rhdl-core/src/fsm/extraction.rs` and implements the algorithm in §5.3 below.  It is a pure function from `(ops, return_slot, descriptor, literal_lookup)` to `ExtractionResult { transitions, unanalyzable }` — no IR mutation, no `Pass` registry entry.  The leaf analyses (`analyze_fsm_structure`) consume its output and emit miette diagnostics.
 
-The pass is *advisory only* — it does not transform the IR. Diagnostics surface as warnings unless the user opts into errors via `#[fsm(strict)]` on the widget struct.
+The pass is *advisory only* — it does not transform the IR.  Diagnostics surface as warnings unless the user opts into errors via `#[fsm(strict)]` on the widget struct.
 
-### 5.3 Algorithm sketch
+### 5.3 Algorithm (principled, §5.1-derived)
 
 ```
-input: kernel K with declared state-DFF field S of type E
-output: set of diagnostics
+input:  kernel K (RHIF), FSM descriptor (state_field, variants, initial)
+output: TransitionGraph G, list of Unanalyzable diagnostics
 
-1. extract the state-update expression from K's kernel body
-   (the expression assigned to D.S, after the match-on-state)
-2. for each match arm "State::Variant_i => expr_i":
-   2a. compute the set of state values that expr_i can produce,
-       by recursive case analysis through nested match/if/let
-   2b. for each producible state value State::Variant_j:
-       add edge (Variant_i, Variant_j) to graph G
-3. run BFS from State::INITIAL on G; mark visited variants
-4. for each unvisited variant:
-   emit "unreachable state" diagnostic
-5. for each variant V with no outgoing edges and not terminal:
-   emit "deadlock candidate" diagnostic
-6. for each pair of arms in the match producing different targets
-   under the same pattern but different guards:
-   emit "potentially non-deterministic transition" diagnostic
+1. Locate the state slot.
+   Let R be K's return value (a Tuple slot).  Let D be the slot for
+   the d-component of R.  The state slot is the slot S such that
+   walking D backward through Splices and Structs, S is the most
+   recent value spliced into path [<state_field>] of D.  In SSA this
+   is unambiguous.
+
+   If D is not a Splice/Struct chain (e.g., it is a function argument
+   or comes from an opcode the locator doesn't recognise), surface a
+   single kernel-level Unanalyzable diagnostic and stop.
+
+2. For each source variant s in the descriptor:
+
+   2a. Compute the set T(s) of values d.<state_field> can take under
+       constraint q.<state_field> = s.  Backward data-flow walk from
+       S with constraint propagation:
+
+       - Literal of state type → singleton set {variant index}
+       - OpCode::Enum producing a discriminant value → singleton set
+         (or per-arm Unanalyzable if discriminant matches no variant)
+       - OpCode::Index reading q.<state_field> under constraint
+         q.<state_field>=s → {s}  (a self-loop produced by the
+         canonical kernel-top default `d.<state_field> = q.<state_field>`)
+       - OpCode::Assign → recurse on rhs
+       - OpCode::Splice with path = [<state_field>] → recurse on subst
+         (an explicit override)
+       - OpCode::Splice with non-state path → recurse on orig (state held)
+       - OpCode::Struct with explicit <state_field> → recurse on its value
+       - OpCode::Struct without explicit <state_field> → empty
+         (field comes from template, typically dont_care)
+       - OpCode::Select with reset condition → walk false-branch only
+         (skip reset-override; see §5.1 property 3)
+       - OpCode::Select with non-reset condition → union of both branches;
+         empty branch contributes a self-loop on s
+       - OpCode::Case with discriminant reading q.<state_field> → only
+         the arm whose CaseArgument matches s's discriminant (or the
+         Wild arm) contributes; other arms are constraint-eliminated.
+         This distinguishes the FSM-transition Case from
+         output-computation Cases on q.<state>.
+       - OpCode::Case with non-state discriminant → union of all arms;
+         empty arm contributes a self-loop on s
+       - Any other opcode: empty (no info from this slot)
+
+   2b. For each t in T(s), add (s, t) to G.
+
+   2c. If T(s) is empty (only happens when the chain doesn't mention
+       q.<state_field> AND no explicit override along any path), add
+       (s, s) — pure implicit self-loop from the kernel-top default.
+
+3. Return G and the list of Unanalyzable diagnostics.
 ```
 
-Step 2a is the only non-trivial part — it requires walking arbitrary kernel expressions to compute the set of state values they can produce. For the canonical idiom (`if-else` and nested `match`) this is straightforward. For pathological cases (computing a state via field assignment to a `dont_care()`), the analysis falls back to "could be any variant" and warns conservatively. Worst case: false positives reported; never false negatives that hide real bugs.
+The two structural innovations relative to the heuristic that shipped in PR #2 / PR #6:
+
+1. **Start from `d.<state_field>` (the kernel's output), not from the first `match` (a syntactic guess).**  This is what makes the algorithm robust to multi-match kernels — every production protocol-PHY widget has 2–5 `match q.<state>` expressions, only one of which is the next-state function.
+2. **Propagate the constraint `q.<state_field> = s` through Cases and Selects.**  This is what lets the algorithm distinguish the FSM-transition Case from a `match q.<state>` used for output computation: under the constraint, the output-computation Case's result reduces to a single value (which isn't a state-typed value anyway, so it's irrelevant), while the FSM-transition Case's result reduces to the s-th arm's result (which IS a state value).
 
 ### 5.4 Acceptance criteria for Layer 2
 
-1. Pass produces zero false negatives — every unreachable state is reported.
-2. Pass produces zero false positives on the existing widget corpus — no spurious "unreachable" warnings for any committed FSM widget.
-3. Pass handles the core idioms: `match` on state, nested `if/else` returning state values, struct-field assignment via `dont_care()` then field-set.
-4. Each diagnostic includes a span pointing at the offending source line.
-5. New chapter `doc/book/src/fsm/static_analysis.md` documenting the pass and its diagnostics.
-6. CHANGELOG entry per §16.
+1. **Corpus equivalence (the gold standard).**  For every widget in the FSM corpus, the extractor produces output without `Unanalyzable` diagnostics, and the derived graph is pinned by an `expect_test` snapshot that the reviewer verifies against the kernel.  Corpus snapshots ship with the widget reorganization PR (the production corpus widgets do not yet exist on main); on main, the synthetic adversarial integration tests in `crates/rhdl-fpga/src/doc.rs` cover the same kernel-language idioms.
+2. **No silent miscompiles.**  Where the extractor cannot derive a sound answer (kernel return shape unrecognised, malformed enum discriminant), it surfaces a precise `Unanalyzable` diagnostic naming the offending construct.  Silently producing a wrong graph is a contract violation.
+3. **Required kernel patterns.**  The extractor MUST handle: multiple `match q.<state>` expressions per kernel; conditional code paths nested arbitrarily deep around the transition logic; let-binding form; side-effect form; the canonical kernel-top default + selective override pattern; arms with payload-bound variants; or-pattern arms; `Wild` arms; the canonical `if cr.reset.any() { d.<state_field> = INIT }` reset block.
+4. **Soundness.**  Every transition the kernel can actually produce (excluding reset, per §5.1 property 3) must be in the graph (zero false negatives).
+5. **Documented over-approximation budget.**  The extractor MAY conservatively over-approximate by including edges the kernel could in principle reach but won't under reasonable inputs due to *cross-DFF invariants* the extractor can't see (e.g., `can_master`'s outer `if q.state == CanState::Idle && i.start { d.field = Sof }` makes every `CanField` state appear to have an edge back to `Sof`, even though by construction `q.state == Idle` only co-occurs with `q.field == Sof`).  Such over-approximation is sound; it produces extra edges in the rendered diagram but never missed transitions.
+6. **Diagnostics actionable for LLM-driven workflows.**  Every `Unanalyzable` diagnostic carries (a) the source variant name (or `<kernel>` for kernel-level diagnostics), (b) the unrecognised opcode or pattern, (c) a hint pointing the user at the supported alternatives.
+7. **No widget snapshot regressions.**  `cargo test --all` on the workspace produces zero HDL snapshot diffs.  The extractor is purely advisory and additive; no IR opcode changes, no codegen changes.
 
-### 5.5 Status (2026-04-29) — side-effect-form support shipped
+### 5.4.1 Implicit self-loops: opt-in via `#[fsm(allow_implicit)]`
 
-The v1 canonical extractor that landed in PR #2 only recognised the **let-binding form** (`let next = match q.state { … }; d.state = next;`).  Per Phase 3b's first widget-corpus survey, this excluded ~95 % of real RHDL widgets, which all use the **side-effect form** (canonical RHDL idiom per CLAUDE.md): `match q.state { State::A => { d.state = State::B; } }`.
+The canonical RHDL kernel pattern (kernel-top default `d.<state_field> = q.<state_field>` + selective override) makes a state's "no explicit transition" path produce an implicit self-loop that's structurally indistinguishable from "no transitions at all."  An earlier revision of this section flagged this as a NECESSARY follow-up because the Layer 2 `DeadlockCandidate` diagnostic couldn't fire for any state — every variant got at least an implicit self-loop, masking the deadlock.
 
-PR `feat/fsm-extractor-side-effects` extends `extract_canonical_transitions` to handle both forms by walking the RHIF data-flow graph backward from each arm's result slot through:
+**Resolved by structural opt-in.**  The `FsmWidgetTag` carries an `allow_implicit: bool` flag, parsed from `#[fsm(allow_implicit)]` on the widget struct.  The extractor honours it:
 
-- `OpCode::Splice` matching the state-field path → recurse on the substituted value
-- `OpCode::Splice` with a different path → recurse on the original (state preserved)
-- `OpCode::Select` (if-else) → union of both branches
-- `OpCode::Case` (nested match) → union of all arm results
-- `OpCode::Struct` with explicit state field → recurse on the field's value
-- `OpCode::Index` reading `q.state` → emit a self-loop to the arm's source variant
-- `OpCode::Assign` → forwarded recursion
+- **`allow_implicit = false` (default).**  The extractor only emits transitions for *explicit* writes to `d.<state_field>` inside an arm.  Arms that fall through to the kernel-top default — including `Index`-reads of `q.<state_field>` produced by that default — contribute nothing to the graph.  A state whose only would-be outgoing edge was an implicit self-loop appears with zero outgoing edges; the analysis layer fires `DeadlockCandidate` for it.
+- **`allow_implicit = true`.**  The canonical "default + selective override" pattern is recognised; the extractor adds `(s, s)` for every arm that holds the state in place via the kernel-top default.  This is what the corpus widgets need; they opt in explicitly.
 
-The extension is conservative: each arm tries the value-form walker first, falls back to the d-struct-form walker if that comes up empty, and surfaces an `Unanalyzable` diagnostic only if both fail.  Returns are deduplicated per-arm so two paths producing the same target collapse into one transition.
+This pushes the choice to the widget author.  Authors who use the canonical pattern declare it explicitly; the attribute documents intent.  Authors who don't get strict deadlock checking by default — forgotten transitions are caught loudly.
 
-**Test coverage:** 11 new synthetic-RHIF unit tests in `rhdl_core::fsm::extraction::tests` cover the full opcode-level matrix (basic splice, default-then-override, nested if-else, splice-into-different-field, back-to-back splices, struct-explicit-field, struct-template-only, q.state self-loop, opaque arms, branch dedup, mixed walkers).  7 new adversarial integration tests in `rhdl_fpga::doc::tests` exercise real `Synchronous + FsmWidget` kernels covering distinct kernel-language idioms (side-effect-with-conditional, nested if-else, let-binding, computed-then-assigned, empty-arm, mixed-arms, let-binding-with-self-loop-branch).
+**Composition with `strict`.**  A widget with `#[fsm(strict, allow_implicit)]` still gets the strict-mode error escalation, just on a graph that includes the implicit holds.  Without `allow_implicit`, deadlock-on-no-explicit-transitions becomes a hard error at synthesis time.
 
-**Acceptance status after this PR:**
+**Migration impact.**  Every existing FSM-tagged widget had to add the attribute (or accept that arms relying on the implicit hold would now appear as zero-outgoing-edge states and fire `DeadlockCandidate`).  On main this was just the synthetic adversarial widgets in `doc.rs`; on the refactor branch this is all 27 corpus widgets — each one's `#[fsm(...)]` line gets the additional flag.
 
-- ✅ #1 (zero false negatives): every transition the test corpus expects is recovered.
-- ✅ #2 (zero false positives on the existing widget corpus): synthetic tests cover the side-effect idiom directly.  Once the cleanup PR for `refactor/use-fsm-and-or-patterns` lands, the real 27-widget corpus will be the bigger validation.
-- ✅ #3 (core idioms): both forms now handled, including dont_care-then-field-set via the `OpCode::Splice` path.
+**Test coverage.**  `fsm::extraction::tests` covers both modes:
 
-### 5.6 Status (2026-04-29) — implicit-self-loop support shipped
+- `principled_implicit_hold_masks_deadlock_state` (legacy name) — pins the `allow_implicit = true` behaviour: implicit self-loops emitted, deadlock-y state appears with self-loop edge, analysis layer sees no deadlock.
+- `strict_mode_kernel_top_default_alone_yields_no_transitions` — pins the new default: with `allow_implicit = false`, kernel-top default alone produces zero transitions for any variant.
+- `strict_mode_guarded_transition_emits_only_explicit_edge` — pins the can_master `Id`-arm shape under strict mode: only the explicit `Idle → Running` edge is emitted; the else-branch's implicit hold doesn't appear.
+- `strict_mode_explicit_self_loop_via_literal_is_preserved` — documents the design's trade-off: writing `d.state = State::A` literally inside arm `A` IS a real explicit self-loop and stays in the graph.
 
-The PR-#6 extractor handled both let-binding and side-effect forms but assumed every match arm explicitly wrote `d.state` somewhere on every path.  First validation against `core::can_master` (the motivating real-world widget shape) showed this assumption breaks for ~all production protocol-PHY kernels: arms with guarded transitions whose else-branches only update auxiliary state (a bit counter, a CRC register, etc.) leave `d.<state_field>` un-overridden.  Pre-fix, such arms surfaced as `Unanalyzable` with diagnostic *"neither value-form nor d-struct-form walker found a state assignment in this arm"* — even though the kernel-top default `d.<state_field> = q.<state_field>` (CLAUDE.md §3 canonical pattern) means the omission is well-defined: hold the state.
+### 5.4.2 Soundness rigor (status: items 1 + 2 shipped; item 3 deferred)
 
-PR `feat/fsm-extractor-implicit-self-loops` closes the gap with a single semantic change in `extract_canonical_transitions`: when both walkers run cleanly (no genuine error) but find no state-overriding op for an arm, the arm is interpreted as a self-loop on the source variant rather than `Unanalyzable`.  The Select / Case union points in the d-struct walker apply the same convention per branch (so a guarded arm where the then-branch transitions and the else-branch holds correctly produces both the explicit edge and the self-loop).  The leaf paths (`find_definer` returns None, unrecognised opcode, Struct-without-state-field) keep their `Ok(vec![])` return so the value-form walker's analysis can still win when called on a state-typed slot — i.e., the implicit-self-loop only triggers at union points where the d-struct context is unambiguous, plus the top-level fallback for kernels with no Select / Case wrapping at all.
+The current extractor's soundness against the principled definition (§5.1) rests on three load-bearing claims that started as *structurally plausible* but not *provably sound*.  This PR resolves the first two:
 
-`Unanalyzable` is now reserved exclusively for genuinely malformed IR — for example, an Enum opcode whose discriminant value matches no variant in the descriptor.  Pinned by a negative test (`arm_with_unmatched_enum_discriminant_yields_unanalyzable`) so a future loosening that re-broadens the Unanalyzable surface fails loudly.
+1. **`Select` constraint propagation for `q.<state_field> == X` comparisons (✅ shipped this PR).**  When a `Select`'s condition is a `Binary(Eq)` whose operands trace to `q.<state_field>` and a state-typed literal, the walker statically resolves the condition under the source-variant constraint and walks only the matching branch.  Implemented in `resolve_state_eq_condition`; pinned by `principled_select_constraint_propagation_on_state_eq`, `principled_select_constraint_propagation_handles_swapped_operands`, and `principled_select_constraint_propagation_falls_back_on_opaque_cond` in `fsm::extraction::tests`.  An FSM with `if q.<state_field> == StateX { ... }` inside transition logic now produces the tight constraint-propagated graph instead of the union over-approximation.
+2. **Property-based testing against the RHDL simulator (✅ shipped this PR).**  Two property-based tests in `rhdl_fpga::doc::tests` enumerate every `(source variant, input)` combination for representative adversarial widgets, call the kernel function directly via `DigitalFn3::func()`, observe `d.<state_field>` after the call, and assert that every simulator-observed transition is in the extractor's output (soundness — no false negatives against the executable semantics).  This converts the algorithm's correctness from "structurally plausible against the documented kernel patterns" to "empirically validated against RHDL's simulator on synthetic widgets exercising the algorithm's main features."  Tests: `adv_sideeffect_conditional::property_simulator_observed_is_subset_of_extractor_output` (canonical 3-state cycle with implicit holds + guarded transitions) and `adv_can_master_guarded_else_writes_other_field::property_simulator_observed_is_subset_of_extractor_output` (the can_master shape with else-branch writing a different field).
+3. **Constraint propagation through `Case` is intuitively right but not formally proven** (still deferred).  The algorithm asserts: "if a `Case`'s discriminant traces back to `Index(q, [<state_field>])`, only the arm whose `CaseArgument` matches the source variant's discriminant contributes to the result."  This presupposes the RHIF lowering preserves the dispatch semantics through the discriminant-extraction chain.  No formal proof; the property-based tests above empirically validate this on the test widgets, but a future RHIF pass that reuses or aliases the discriminant slot in unexpected ways could silently break it.
 
-**Test coverage:** 4 new synthetic-RHIF unit tests in `rhdl_core::fsm::extraction::tests` (kernel-top-default + guarded transition; guarded transition with implicit-else-writes-other-field — the can_master shape verbatim; arm with no state write at all; the negative malformed-discriminant test) plus 3 existing tests reframed for the new semantics (no-recognisable-target, struct-without-state-field, opaque arm).  2 new adversarial integration tests in `rhdl_fpga::doc::tests` exercise real `Synchronous + FsmWidget` kernels covering the can_master-shaped guarded transition and a nested-conditional kernel where two paths inside one arm independently omit the d.state write.
+The remaining acceptance gap is **structural**: the algorithm is validated against the executable semantics for the canonical kernel patterns and against the RHIF data-flow shape it expects, but soundness for *arbitrary* kernels (and stability against future RHIF lowering changes) requires the formal-semantics work below.
 
-**Acceptance status after this PR:** the same three criteria from §5.5 hold, and #2 (zero false positives on the existing widget corpus) now extends to cover the canonical "kernel-top default + arms with guarded transitions and implicit-hold else-branches" pattern that every production FSM widget uses.
+#### Reset detection is a structural pattern match (status: shipped, structural by construction)
+
+The algorithm recognises `Select(Unary(OrReduce, Index(_, [.reset])), ...)` as the canonical reset block.  A kernel that writes reset detection in a non-canonical form (e.g., `let r = cr.reset.any(); if r { ... }` with intermediate let-bindings, or a different boolean-reduction op, or `cr.reset.0` instead of `.any()`) would either be missed (producing extra edges) or false-positive (skipping a non-reset condition that happens to read `.reset`).  The corpus uses one pattern; the extractor handles that pattern; widgets that drift from it silently drift from the spec.  Mitigation: a future Layer 2 advisory diagnostic could flag non-canonical reset shapes (filed as a non-NECESSARY follow-up since CLAUDE.md §3 documents the canonical pattern as required).
+
+#### Research-grade follow-up (deferred, not committed)
+
+**Formal RHIF semantics + a proof of the algorithm's soundness.**  RHDL doesn't have a formal RHIF semantics yet.  Without it, every static analysis on RHIF is "structurally plausible against the patterns we tested" rather than "proven sound for all kernels."  This is the rigorous endpoint — Coq/Lean formalisation of the RHIF small-step semantics, then a proof that the extractor's output relates correctly to every kernel's behaviour.  6+ months of research-grade work; flagged as the asymptote, not committed for this follow-up cycle.
+
+After items 1 + 2 shipped, treat the extractor's output as "validated against the corpus, the documented kernel patterns, and the executable semantics for representative widgets; sound by construction within that envelope; sound-for-arbitrary-kernels remains plausible but only proven when item 3 lands."
+
+### 5.5 Prior implementations and their limitations
+
+Three iterations preceded the current principled algorithm:
+
+- **PR #2 (`feat/fsm-architecture`)** shipped the v1 extractor recognising only the *let-binding form* (`let next = match q.state { ... }; d.state = next;`) by finding the first `Case` opcode and reading its arms.  Excluded ~95% of real RHDL widgets, which use the side-effect form.
+- **PR #6 (`feat/fsm-extractor-side-effects`)** extended the heuristic with a side-effect-form walker (Splice path-targeting `[<state_field>]` etc.).  Validated only against synthetic widgets in `doc.rs`; the per-PR §5.5 status note explicitly acknowledged that "the real 27-widget corpus will be the bigger validation."  First live test against `core::can_master` then produced spurious `Unanalyzable` on 4 of 13 arms (guarded transitions with implicit-hold else-branches).
+- **PR #7 (`feat/fsm-extractor-implicit-self-loops`)** added implicit-self-loop semantics to fix the `can_master` `Unanalyzable` regression, but the heuristic was still "find the first Case opcode" — which on real `can_master` selects the `raw_bit` output-computation match instead of the FSM-transition match, producing 13 wrong transitions out of 20.
+
+The principled algorithm replaces all of this with the data-flow walk in §5.3, validated against the full 27-widget corpus per §5.4 #1.  The `Unanalyzable` surface is now reserved exclusively for kernel-level shape problems and per-arm malformed-IR cases, pinned by negative tests in `rhdl_core::fsm::extraction::tests`.
 
 ---
 

@@ -1,76 +1,107 @@
 //! Extract the FSM transition graph from a kernel's RHIF.
 //!
 //! Layer 2's analysis pass needs to know, for each FSM-tagged
-//! kernel, the set of `(source variant, target variant)` pairs
-//! the kernel's match-on-state can produce.  This module is the
-//! extractor: it walks the RHIF opcodes, recognises the
-//! canonical FSM idiom, and emits the extracted transitions in
-//! the format that [`super::analysis::analyze_fsm_structure`]
-//! consumes.
+//! kernel, the set of `(source variant, target variant)` pairs the
+//! kernel's next-state function can produce.  This module is the
+//! extractor: it computes that set by static data-flow analysis on
+//! the kernel's RHIF, in the format that
+//! [`super::analysis::analyze_fsm_structure`] consumes.
 //!
-//! ## What "canonical" means
+//! ## Definition (per `fsm-architecture.md` §5.1)
 //!
-//! The extractor recognises the pattern:
+//! Given an RHDL kernel `K` with declared FSM state field
+//! `<state_field>` of enum type `E`, the FSM transition graph
+//! `G(K) ⊆ Variants(E) × Variants(E)` is the relation
 //!
-//! ```ignore
-//! let next = match q.<state_field> {
-//!     State::A => /* expr that constructs State::B */,
-//!     State::B => /* expr that constructs State::C */,
-//!     ...
-//! };
-//! d.<state_field> = next;
+//! ```text
+//! (s, t) ∈ G(K)  ⟺  ∃ input I such that
+//!                       evaluating K under (q.<state_field> = s, other inputs = I)
+//!                       produces  d.<state_field> = t
 //! ```
 //!
-//! Mechanically this lowers to:
-//! - An `Index` on `q` with `path = [<state_field>]` producing the
-//!   state's slot.  The state's discriminant is then the input to
-//!   a `Case` opcode.
-//! - One arm per source variant, each with a result slot whose
-//!   defining opcode is an `Enum` constructing the target
-//!   variant.
+//! This definition is about the kernel's I/O (a pure function of
+//! `(cr, i, q) → (o, d)` per the kernel-as-pure-fn invariant in
+//! `architecture.md` §1), not about its syntactic structure.
+//! Whether the kernel uses `match q.state`, multiple matches,
+//! nested `if`s, a `dont_care()` + field-set construction, or any
+//! other RHDL-legal shape, the transition graph is determined by
+//! the *function* the kernel computes — not the AST that defines
+//! it.
 //!
-//! For arms whose result isn't a simple `Enum` (e.g., the next
-//! state is computed across multiple sub-paths), the extractor
-//! reports the source variant as `unanalyzable` and the leaf
-//! analysis will skip over it for the deadlock check.
+//! ## Algorithm (per `fsm-architecture.md` §5.3)
 //!
-//! ## Implicit self-loops
+//! 1. **Locate the state slot.**  Walk the kernel's return slot
+//!    backward through the Tuple → Struct/Splice chain to find the
+//!    slot whose value becomes `d.<state_field>` at the kernel's
+//!    return point.  In SSA this is unambiguous: every D-component
+//!    chain terminates in either a Splice with `path = [<state_field>]`
+//!    or a Struct with an explicit `<state_field>` member.  If the
+//!    walk fails (return shape isn't recognised), surface a single
+//!    kernel-level `Unanalyzable` and stop.
+//!
+//! 2. **For each source variant `s`:** walk the data-flow graph
+//!    backward from the state slot under the constraint
+//!    `q.<state_field> = s`.  Constraint propagation is the key:
+//!    - At each `Case` opcode whose discriminant is `Index(q,
+//!      [<state_field>])`, only the arm whose `CaseArgument` matches
+//!      `s`'s discriminant contributes.  Other arms are
+//!      constraint-eliminated.  This is what distinguishes the
+//!      FSM-transition `Case` from output-computation `match q.<state>`
+//!      expressions.
+//!    - At each `Splice` with `path = [<state_field>]`, the result
+//!      is the substituted value (an explicit transition).
+//!    - At each `Splice` with a non-state path, recurse on the
+//!      original (the state field is held).
+//!    - At each `Index` reading `q.<state_field>`, the result is
+//!      `s` itself — this produces the implicit self-loop from the
+//!      canonical kernel-top default `d.<state_field> = q.<state_field>`.
+//!    - All other ops are walked transparently (`Assign` forwards;
+//!      `Select` unions branches; `Case` with non-state discriminant
+//!      unions arms).  Opcodes the walker doesn't recognise
+//!      contribute empty (no info from this slot).
+//!
+//! ## What "implicit self-loop" means
 //!
 //! Production RHDL widgets follow CLAUDE.md §3's "construct via
 //! `dont_care()`, then assign every meaningful field" pattern,
-//! which for FSM widgets typically means writing
-//! `d.<state_field> = q.<state_field>` once at the top of the
-//! kernel and only overriding it in arms that actually
-//! transition.  An arm with no `d.<state_field>` write — or a
-//! conditional inside an arm whose else-branch quietly omits the
-//! assignment — is therefore *not* a bug; it means "hold the
-//! state in place this cycle."
+//! which for FSM widgets typically means writing `d.<state_field>
+//! = q.<state_field>` once at the top of the kernel and only
+//! overriding it in arms that actually transition.  An arm with no
+//! `d.<state_field>` write — or a conditional inside an arm whose
+//! else-branch quietly omits the assignment — is therefore *not* a
+//! bug; the data-flow walk falls through to the kernel-top default
+//! and reads `q.<state_field>` (which under the constraint
+//! `q.<state_field> = s` evaluates to `s`).  The resulting `(s, s)`
+//! self-loop is what the principled algorithm computes; no
+//! special-case logic is required.
 //!
-//! The extractor encodes this convention: when both walkers
-//! (value-form and side-effect-form) run cleanly but find no
-//! state-overriding op for an arm, the arm is interpreted as a
-//! self-loop on its source variant.  Only when a walker hits a
-//! genuine error (an enum template with no resolvable
-//! discriminant, etc.) does the extractor surface
-//! `Unanalyzable`.  This makes the canonical CAN/SPI/UART/I²C
-//! kernel shape (guarded transitions with implicit hold
-//! else-branches) extractable without per-widget rewrites.
+//! ## Diagnostics
 //!
-//! ## Limitations (v1)
+//! `Unanalyzable` is reserved for cases where the static analysis
+//! cannot derive a sound answer:
 //!
-//! - Only the immediate-defining opcode of an arm result is
-//!   inspected.  Nested `if/else` (which lowers to additional
-//!   `Case` or `Select` opcodes) is conservatively flagged as
-//!   unanalyzable.  Once Layer 5 (BMC) lands, the extractor can
-//!   be extended to do deeper case analysis.
-//! - Match arms with payload bindings (`State::Running { counter
-//!   } => ...`) are recognised; the binding is ignored when
-//!   determining the source variant.
-//! - The extractor does not yet handle transitions encoded as
-//!   field-by-field assignment to a `dont_care()`-constructed
-//!   state struct (the "non-canonical" pattern called out in
-//!   `fsm-architecture.md` §10).  Such patterns produce a single
-//!   `Unanalyzable` diagnostic for the entire kernel.
+//! - **Kernel-level**: the return shape isn't a Tuple containing a
+//!   D struct built by recognised ops.
+//! - **Arm-level**: a source variant's walk encounters a malformed
+//!   IR construct (e.g., an `Enum` template whose discriminant
+//!   matches no variant).
+//!
+//! Each diagnostic carries the source-variant name and a short
+//! reason string.  Genuine "no transition info" (an arm that simply
+//! holds the state in place via the canonical kernel-top default)
+//! is *not* `Unanalyzable` — it's an implicit self-loop, which the
+//! principled algorithm computes correctly.
+//!
+//! ## Acceptance criterion
+//!
+//! Per `fsm-architecture.md` §5.4: for every FSM-tagged widget in
+//! the production corpus, the extractor produces a derived graph
+//! without `Unanalyzable` diagnostics, pinned by snapshot tests.
+//! The corpus snapshot suite ships with the widget reorganization
+//! PR (the corpus widgets do not exist on main yet); the Tier-1
+//! adversarial integration tests in `crates/rhdl-fpga/src/doc.rs`
+//! cover the same kernel-language idioms via synthetic widgets
+//! built directly against the extractor on main.
 
 use crate::fsm::analysis::Transition;
 use crate::fsm::descriptor::FsmDescriptor;
@@ -198,226 +229,575 @@ fn path_targets_state_field(path: &Path, state_field: &str) -> bool {
     }
 }
 
-/// Walk a slot's data-flow graph backward to find every state
-/// variant the slot can possibly hold *as a state-typed value*.
+/// Step 1 of the algorithm: locate the slot that becomes
+/// `d.<state_field>` at the kernel's return point.
 ///
-/// Handles:
-/// - Literal of the state type (the "no-payload variant" case).
-/// - `OpCode::Enum` whose template encodes a known discriminant.
-/// - `OpCode::Assign` (forwarded — recurse on rhs).
-/// - `OpCode::Select` (if-else expression — union of both branches).
-/// - `OpCode::Case` (a nested match — union of all arm results).
-/// - `OpCode::Index` reading `<some_q>.<state_field>` — yields
-///   `[hint_self_loop_to]` if a hint is supplied (the value is the
-///   state at the start of the arm we're inside, i.e., the matched
-///   variant), else empty.
+/// The kernel's return slot is a `Tuple` op for `(o, d)`.  Walking
+/// the d-component slot backward through Splice / Struct / Assign
+/// ops yields the most recent value spliced into the `<state_field>`
+/// path — that is the state slot for the per-variant walks in step 2.
 ///
-/// Returns `Ok(set of variant indices)`, deduplicated and sorted.
-/// `Err((source_name, reason))` is reserved for cases the walker
-/// cannot make any sense of (used by the caller to emit an
-/// `Unanalyzable` diagnostic).  An empty `Ok` set means "the slot
-/// doesn't define a state value here, but the walker isn't
-/// confused" — typically used when the slot's defining op is
-/// just plumbing the state through unchanged.
-fn variants_in_state_value_slot(
+/// Returns `Err(reason)` if the return shape isn't recognised
+/// (e.g., the kernel returns a non-Tuple slot, or the d-component's
+/// chain never sets `<state_field>`).  Per `fsm-architecture.md`
+/// §5.3 step 1, this surfaces as a single kernel-level
+/// `Unanalyzable` diagnostic with no per-variant walks attempted.
+fn find_kernel_return_d_state_slot(
+    ops: &[OpCode],
+    return_slot: Slot,
+    state_field: &str,
+) -> Result<Slot, &'static str> {
+    // Trace through Assigns to find the actual definer.
+    let mut current = return_slot;
+    loop {
+        match find_definer(ops, current) {
+            Some(OpCode::Assign(a)) => current = a.rhs,
+            Some(OpCode::Tuple(t)) => {
+                // Synchronous kernels return (O, D); the D component
+                // is at index 1.
+                let d_slot = t
+                    .fields
+                    .get(1)
+                    .copied()
+                    .ok_or("kernel return tuple has fewer than 2 elements")?;
+                return locate_state_field_slot(ops, d_slot, state_field);
+            }
+            _ => return Err("kernel return slot is not a (O, D) Tuple"),
+        }
+    }
+}
+
+/// Walk a d-struct slot backward to find the slot whose value is
+/// `d.<state_field>`.  Handles the canonical Splice-chain lowering
+/// of `let mut d = D::dont_care(); d.<state_field> = ...; ...`.
+fn locate_state_field_slot(
+    ops: &[OpCode],
+    slot: Slot,
+    state_field: &str,
+) -> Result<Slot, &'static str> {
+    let mut current = slot;
+    // Walk back through ops, looking for the most recent Splice
+    // whose path targets <state_field>, or a Struct with explicit
+    // <state_field> member, or an Assign forward.  Loop bound is
+    // op count to prevent infinite loops on malformed IR.
+    for _ in 0..ops.len().saturating_add(1) {
+        let Some(definer) = find_definer(ops, current) else {
+            // Current slot has no definer — it's a function arg or
+            // literal.  We never found a <state_field> write.
+            return Err("kernel d-struct chain never overrides the state field");
+        };
+        match definer {
+            OpCode::Splice(s) if path_targets_state_field(&s.path, state_field) => {
+                // Found the most recent override of d.<state_field>.
+                // The substituted value IS the state slot.
+                return Ok(s.subst);
+            }
+            OpCode::Splice(s) => {
+                // A splice on a non-state field; state held from `orig`.
+                current = s.orig;
+            }
+            OpCode::Assign(a) => {
+                current = a.rhs;
+            }
+            OpCode::Struct(struct_op) => {
+                // Explicit struct construction.  If <state_field> is
+                // in the explicit field list, that's the state slot;
+                // otherwise it comes from the `template` (dont_care)
+                // and we have no state slot to walk.
+                for fv in &struct_op.fields {
+                    if let Member::Named(name) = &fv.member {
+                        if name.as_str() == state_field {
+                            return Ok(fv.value);
+                        }
+                    }
+                }
+                return Err(
+                    "kernel d-struct constructed without explicit state field — \
+                     state slot is the template value (typically dont_care)",
+                );
+            }
+            OpCode::Select(sel) => {
+                // The d-struct itself is conditional (e.g., if-else
+                // returning two distinct d's).  We can't reduce this
+                // to a single state slot at the locate step, but the
+                // per-variant walker handles it via Select union, so
+                // we use the slot as-is (the walker dispatches on the
+                // Select).
+                let _ = sel;
+                return Ok(current);
+            }
+            OpCode::Case(case) => {
+                // Same as Select — d-struct returned by a nested
+                // match.  Walker handles via Case union.
+                let _ = case;
+                return Ok(current);
+            }
+            _ => {
+                // Some other op produced the d-struct.  Hand it to
+                // the walker as-is and let it bottom out empty if
+                // the chain has nothing useful.
+                return Ok(current);
+            }
+        }
+    }
+    Err("locate_state_field_slot exceeded op-count bound (malformed IR)")
+}
+
+/// True if `slot` is reached, transitively through a chain of
+/// extraction / boolean ops, from an `Index` reading `.reset` of
+/// some struct.  This identifies the canonical RHDL reset block
+/// shape: `if cr.reset.any() { d.<state_field> = INIT; ... }`,
+/// which lowers to `Select(Unary(OrReduce, Index(cr, [.reset])),
+/// d_with_reset_override, d_normal)`.
+///
+/// The principled FSM transition graph is *non-reset* (per the
+/// scoping doc / `fsm-architecture.md` §5 refinement): the manual
+/// `FSM_TRANSITIONS` consts in the corpus list only the kernel's
+/// non-reset transitions, since reset is conventionally treated as
+/// out-of-band rather than as a per-state edge.  When the walker
+/// hits a `Select` whose condition is a reset signal, it skips the
+/// true-branch and only walks the false-branch.
+///
+/// Walks back through:
+/// - `Assign` (forwards rhs)
+/// - `Unary` (e.g., `|r70` = OrReduce, the `.any()` lowering)
+/// - `Index` of any kind
+/// - Any chain ending in `Index(_, [.reset])`
+fn slot_reads_reset_field(ops: &[OpCode], slot: Slot) -> bool {
+    let mut current = slot;
+    for _ in 0..ops.len().saturating_add(1) {
+        let Some(definer) = find_definer(ops, current) else {
+            return false;
+        };
+        match definer {
+            OpCode::Index(idx) => {
+                // Check if this Index targets the .reset field.
+                let mut it = idx.path.iter();
+                if let Some(PathElement::Field(f)) = it.next() {
+                    if f.as_str() == "reset" && it.next().is_none() {
+                        return true;
+                    }
+                }
+                // Otherwise, walk back through the indexed slot.
+                current = idx.arg;
+            }
+            OpCode::Assign(a) => current = a.rhs,
+            OpCode::Unary(u) => current = u.arg1,
+            _ => return false,
+        }
+    }
+    false
+}
+
+/// Try to statically resolve a `Select` condition slot under the
+/// constraint `q.<state_field> = source_variant`.  Returns:
+/// - `Some(true)` if the condition definitely holds under the constraint.
+/// - `Some(false)` if the condition definitely doesn't hold.
+/// - `None` if the condition isn't of a recognised statically-resolvable
+///   shape, or the literal operand doesn't decode to a known variant.
+///
+/// Recognised shape: `Binary(Eq, lhs, rhs)` where one of `lhs`/`rhs`
+/// traces back to an `Index` reading `q.<state_field>` (possibly
+/// through an EnumDiscriminant extraction Index) and the other is a
+/// state-typed literal whose discriminant decodes via the descriptor.
+///
+/// This implements `fsm-architecture.md` §5.3 step 2a's constraint
+/// propagation through Select on state-equality comparisons.  It
+/// tightens the over-approximation budget for kernels with
+/// `if q.<state_field> == StateX { ... }` inside transition logic
+/// (per §5.4.2 #1).  Sound by construction: returning `None` is
+/// always safe (the caller falls back to union).
+fn resolve_state_eq_condition(
+    desc: &FsmDescriptor,
+    ops: &[OpCode],
+    cond: Slot,
+    state_field: &str,
+    source_variant: usize,
+    literal_lookup: &impl Fn(Slot) -> Option<TypedBits>,
+) -> Option<bool> {
+    let definer = find_definer(ops, cond)?;
+    let bin = match definer {
+        OpCode::Binary(b) if matches!(b.op, crate::rhif::spec::AluBinary::Eq) => b,
+        _ => return None,
+    };
+
+    // Identify which arg reads q.<state_field> and which is the literal.
+    let arg1_is_state = slot_reads_state_field(ops, bin.arg1, state_field);
+    let arg2_is_state = slot_reads_state_field(ops, bin.arg2, state_field);
+    let lit_arg = match (arg1_is_state, arg2_is_state) {
+        (true, false) => bin.arg2,
+        (false, true) => bin.arg1,
+        _ => return None, // both or neither — not a state-eq comparison
+    };
+
+    // Resolve the literal arg's discriminant.  May be a literal slot
+    // OR an Enum opcode constructing the discriminant.
+    let lit_disc = if let Some(tb) = literal_lookup(lit_arg) {
+        typed_bits_to_discriminant(&tb)?
+    } else {
+        match find_definer(ops, lit_arg)? {
+            OpCode::Enum(e) => typed_bits_to_discriminant(&e.template)?,
+            _ => return None,
+        }
+    };
+
+    let lit_variant = variant_index_for_discriminant(desc, lit_disc)?;
+    Some(lit_variant == source_variant)
+}
+
+/// True if `slot` is reached, transitively through a chain of
+/// extraction ops, from `Index(_, [<state_field>])` — i.e., the
+/// slot's value is computed from the state field of some struct
+/// (typically `q`).  Used by the constraint-propagation logic to
+/// recognise `q.<state_field>` reads in Case discriminants and
+/// Select conditions.
+///
+/// Walks back through:
+/// - `Assign` (forwards rhs)
+/// - `Index(_, [#])` — the discriminant-extracting Index that the
+///   compiler inserts in front of every `match q.state` Case to
+///   feed its discriminant input.  The chain `Case ← Index([#]) ←
+///   Index([.state]) ← q` is the canonical lowering.
+/// - `Index` with any other path: also traversed (the extraction
+///   chain may include further nested field accesses).
+///
+/// Returns `true` when the chain bottoms out at an `Index` whose
+/// path targets `<state_field>`; `false` if it bottoms out at any
+/// other op (a binary op, a function arg with no path, etc.).
+fn slot_reads_state_field(ops: &[OpCode], slot: Slot, state_field: &str) -> bool {
+    let mut current = slot;
+    for _ in 0..ops.len().saturating_add(1) {
+        let Some(definer) = find_definer(ops, current) else {
+            return false;
+        };
+        match definer {
+            OpCode::Index(idx) if path_targets_state_field(&idx.path, state_field) => {
+                return true;
+            }
+            OpCode::Index(idx) => {
+                // Any other Index (e.g., EnumDiscriminant extraction
+                // `r#` that the compiler inserts in front of every
+                // Case on an enum) — walk back through its `arg`.
+                current = idx.arg;
+            }
+            OpCode::Assign(a) => current = a.rhs,
+            _ => return false,
+        }
+    }
+    false
+}
+
+/// Step 2 of the algorithm: walk the data-flow graph backward from
+/// `slot` and collect all possible values of `d.<state_field>`
+/// under the constraint `q.<state_field> == source_variant`.
+///
+/// Constraint propagation is the key.  Without it, a kernel with
+/// multiple `match q.<state>` expressions (output computation +
+/// transition logic) would produce an over-approximation that
+/// includes targets from the wrong matches.  With it:
+///
+/// - At a `Case` opcode whose discriminant reads `q.<state_field>`,
+///   only the arm matching the source variant's discriminant
+///   contributes (a `Wild` arm catches if no specific arm matches).
+///   Other arms are constraint-eliminated.
+/// - At a `Select`, both branches are unioned (we don't yet
+///   resolve `q.<state_field> == X` comparisons in Select
+///   conditions; conservative over-approximation is sound).
+/// - At an `Index` reading `q.<state_field>`, the result is the
+///   source variant index — this is the implicit self-loop from
+///   the canonical kernel-top default `d.<state_field> = q.<state_field>`.
+///
+/// Returns `Ok(set of variant indices)` on success, or `Err(reason)`
+/// for an arm-level Unanalyzable.  An empty `Ok` set means "no
+/// state-typed value flows from this slot under the constraint" —
+/// the caller treats this as a contributing self-loop at union
+/// points (Select / Case branches) and as a single self-loop edge
+/// at the top level.
+fn possible_state_values_under_constraint(
     desc: &FsmDescriptor,
     ops: &[OpCode],
     slot: Slot,
     state_field: &str,
+    source_variant: usize,
     literal_lookup: &impl Fn(Slot) -> Option<TypedBits>,
-    hint_self_loop_to: Option<usize>,
-) -> Result<Vec<usize>, &'static str> {
+    allow_implicit: bool,
+) -> Result<std::collections::BTreeSet<usize>, &'static str> {
+    use std::collections::BTreeSet;
+
     // Literal of the state type — direct discriminant lookup.
     if let Some(tb) = literal_lookup(slot) {
         if let Some(disc) = typed_bits_to_discriminant(&tb) {
             if let Some(idx) = variant_index_for_discriminant(desc, disc) {
-                return Ok(vec![idx]);
+                return Ok(BTreeSet::from([idx]));
             }
         }
     }
+
     let Some(definer) = find_definer(ops, slot) else {
-        return Ok(vec![]);
+        // Slot is a function argument or unresolved literal; no
+        // state value flows from here.
+        return Ok(BTreeSet::new());
     };
+
     match definer {
+        // --- terminal: explicit state value construction ---
+
         OpCode::Enum(e) => {
             let disc = typed_bits_to_discriminant(&e.template)
                 .ok_or("enum template has no resolvable discriminant")?;
             let idx = variant_index_for_discriminant(desc, disc)
                 .ok_or("enum discriminant doesn't match any variant")?;
-            Ok(vec![idx])
+            Ok(BTreeSet::from([idx]))
         }
-        OpCode::Assign(a) => {
-            variants_in_state_value_slot(desc, ops, a.rhs, state_field, literal_lookup, hint_self_loop_to)
-        }
-        OpCode::Select(sel) => {
-            let mut t = variants_in_state_value_slot(
-                desc, ops, sel.true_value, state_field, literal_lookup, hint_self_loop_to,
-            )?;
-            let f = variants_in_state_value_slot(
-                desc, ops, sel.false_value, state_field, literal_lookup, hint_self_loop_to,
-            )?;
-            for v in f {
-                if !t.contains(&v) {
-                    t.push(v);
-                }
-            }
-            t.sort();
-            Ok(t)
-        }
-        OpCode::Case(case) => {
-            // A nested match — union of every arm's result.
-            let mut all = Vec::new();
-            for (_arg, arm_slot) in &case.table {
-                let arm = variants_in_state_value_slot(
-                    desc, ops, *arm_slot, state_field, literal_lookup, hint_self_loop_to,
-                )?;
-                for v in arm {
-                    if !all.contains(&v) {
-                        all.push(v);
-                    }
-                }
-            }
-            all.sort();
-            Ok(all)
-        }
-        OpCode::Index(idx) if path_targets_state_field(&idx.path, state_field) => {
-            // Reading `.state` of some struct (typically `q`).  If we
-            // have a self-loop hint, it points at the matched variant
-            // of the arm we're inside.
-            Ok(hint_self_loop_to.into_iter().collect())
-        }
-        // Anything else producing a state-typed slot is opaque.
-        _ => Ok(vec![]),
-    }
-}
 
-/// Walk a slot's data-flow graph backward to find every state
-/// variant the `state_field` of that slot can hold.  This is the
-/// side-effect-style walker for kernels whose match arms produce
-/// a `D`-struct as the arm result rather than a state value
-/// directly.
-///
-/// Handles the canonical lowering shape:
-/// - `OpCode::Splice { orig, path, subst }` where `path = [.state]`:
-///   The state field was overwritten with `subst`.  Recurse via
-///   [`variants_in_state_value_slot`] on `subst`.
-/// - `OpCode::Splice` with a different path: state field unchanged
-///   from `orig`; recurse on `orig`.
-/// - `OpCode::Select`: union both branches.
-/// - `OpCode::Assign`: forwarded; recurse on rhs.
-/// - `OpCode::Struct`: explicit struct construction; if the named
-///   `state_field` appears in the field list, recurse on its slot;
-///   otherwise the field comes from the template (typically
-///   `dont_care()`) and we yield empty.
-fn variants_in_d_state_field(
-    desc: &FsmDescriptor,
-    ops: &[OpCode],
-    slot: Slot,
-    state_field: &str,
-    literal_lookup: &impl Fn(Slot) -> Option<TypedBits>,
-    hint_self_loop_to: Option<usize>,
-) -> Result<Vec<usize>, &'static str> {
-    // Helper: at union points (Select branches, Case arms), any
-    // sub-walk that finds no state-overriding op means "this path
-    // held the state in place" → self-loop on the source variant.
-    // The hint carries the source variant index from the enclosing
-    // arm so we can emit the self-loop without re-deriving it.
-    // We deliberately do NOT apply this at leaf return points
-    // (find_definer-None, unrecognised opcode, Struct-without-state-field):
-    // those are caught by the top-level fallback in
-    // [`extract_canonical_transitions`] so they don't pollute
-    // value-form analyses (e.g., the d-struct walker called on an
-    // Enum slot must return empty, not self-loop, so the value
-    // walker's interpretation wins).
-    let self_loop_or_empty = || -> Vec<usize> { hint_self_loop_to.into_iter().collect() };
-    let Some(definer) = find_definer(ops, slot) else {
-        return Ok(vec![]);
-    };
-    match definer {
+        // --- terminal: implicit self-loop from kernel-top default ---
+
+        // Index reading <some>.<state_field>: this is the
+        // `q.<state_field>` read that the canonical kernel-top
+        // default `d.<state_field> = q.<state_field>` produces.
+        // Under the constraint q.<state_field> == s, it evaluates
+        // to s — emit the self-loop iff the widget opts in via
+        // `#[fsm(allow_implicit)]`.  When the widget didn't opt
+        // in, this path contributes nothing, so a state whose
+        // only would-be outgoing edge was the implicit self-loop
+        // ends up with no outgoing edges → DeadlockCandidate
+        // fires (per `fsm-architecture.md` §5.4.1, closing the
+        // gap by structural opt-in).
+        OpCode::Index(idx) if path_targets_state_field(&idx.path, state_field) => {
+            if allow_implicit {
+                Ok(BTreeSet::from([source_variant]))
+            } else {
+                Ok(BTreeSet::new())
+            }
+        }
+
+        // --- forwarding cases ---
+
+        OpCode::Assign(a) => possible_state_values_under_constraint(
+            desc,
+            ops,
+            a.rhs,
+            state_field,
+            source_variant,
+            literal_lookup,
+            allow_implicit,
+        ),
+
+        // --- Splice: state-field-aware ---
+
         OpCode::Splice(s) => {
             if path_targets_state_field(&s.path, state_field) {
-                variants_in_state_value_slot(
-                    desc, ops, s.subst, state_field, literal_lookup, hint_self_loop_to,
+                // Explicit override of d.<state_field> by `subst`.
+                possible_state_values_under_constraint(
+                    desc,
+                    ops,
+                    s.subst,
+                    state_field,
+                    source_variant,
+                    literal_lookup,
+                    allow_implicit,
                 )
             } else {
-                variants_in_d_state_field(
-                    desc, ops, s.orig, state_field, literal_lookup, hint_self_loop_to,
+                // Splice into a different field; state held from `orig`.
+                possible_state_values_under_constraint(
+                    desc,
+                    ops,
+                    s.orig,
+                    state_field,
+                    source_variant,
+                    literal_lookup,
+                    allow_implicit,
                 )
             }
         }
-        OpCode::Select(sel) => {
-            // Walk both branches.  For each branch that finds no
-            // state-overriding op, treat it as a self-loop
-            // contribution (per the implicit-self-loop convention)
-            // — silently dropping the empty branch would lose the
-            // "this branch held state in place" information at the
-            // union point.
-            let mut t = variants_in_d_state_field(
-                desc, ops, sel.true_value, state_field, literal_lookup, hint_self_loop_to,
-            )?;
-            if t.is_empty() {
-                t = self_loop_or_empty();
-            }
-            let mut f = variants_in_d_state_field(
-                desc, ops, sel.false_value, state_field, literal_lookup, hint_self_loop_to,
-            )?;
-            if f.is_empty() {
-                f = self_loop_or_empty();
-            }
-            for v in f {
-                if !t.contains(&v) {
-                    t.push(v);
-                }
-            }
-            t.sort();
-            Ok(t)
-        }
-        OpCode::Assign(a) => variants_in_d_state_field(
-            desc, ops, a.rhs, state_field, literal_lookup, hint_self_loop_to,
-        ),
-        OpCode::Case(case) => {
-            // Nested match producing a D struct.  Union all arms;
-            // each empty arm contributes a self-loop per the
-            // implicit-self-loop convention.
-            let mut all = Vec::new();
-            for (_arg, arm_slot) in &case.table {
-                let mut arm = variants_in_d_state_field(
-                    desc, ops, *arm_slot, state_field, literal_lookup, hint_self_loop_to,
-                )?;
-                if arm.is_empty() {
-                    arm = self_loop_or_empty();
-                }
-                for v in arm {
-                    if !all.contains(&v) {
-                        all.push(v);
-                    }
-                }
-            }
-            all.sort();
-            Ok(all)
-        }
-        OpCode::Struct(s) => {
-            for fv in &s.fields {
+
+        // --- Struct: explicit field set or template fall-through ---
+
+        OpCode::Struct(struct_op) => {
+            for fv in &struct_op.fields {
                 if let Member::Named(name) = &fv.member {
                     if name.as_str() == state_field {
-                        return variants_in_state_value_slot(
-                            desc, ops, fv.value, state_field, literal_lookup, hint_self_loop_to,
+                        return possible_state_values_under_constraint(
+                            desc,
+                            ops,
+                            fv.value,
+                            state_field,
+                            source_variant,
+                            literal_lookup,
+                            allow_implicit,
                         );
                     }
                 }
             }
-            // Field not in explicit list — comes from template
-            // (e.g., dont_care()).  Return empty; the top-level
-            // fallback applies the self-loop interpretation if
-            // the value-form walker also returns empty.
-            Ok(vec![])
+            // Field comes from template — no state value here.
+            Ok(BTreeSet::new())
         }
-        // Anything else (e.g., a slot defined by an Enum, Add, or
-        // any opcode the d-struct walker doesn't recognise) is
-        // opaque w.r.t. d-struct interpretation — return empty
-        // and let the value-form walker's analysis win at the top
-        // level if it has a state-value reading of this slot.
-        _ => Ok(vec![]),
+
+        // --- Select: conditional ---
+        // ---   (1) reset-condition special case → skip true     ---
+        // ---   (2) q.<state_field> == X comparison              ---
+        // ---       statically resolvable under constraint       ---
+        // ---   (3) otherwise: union both branches               ---
+
+        OpCode::Select(sel) => {
+            // (1) Reset special case: the canonical RHDL kernel pattern
+            // `if cr.reset.any() { d.<state_field> = INIT; ... }`
+            // lowers to a Select where the condition reads
+            // cr.reset.  Per the FSM transition graph convention
+            // (manual FSM_TRANSITIONS lists are non-reset), skip
+            // the true-branch and only walk the false-branch.
+            if slot_reads_reset_field(ops, sel.cond) {
+                return possible_state_values_under_constraint(
+                    desc,
+                    ops,
+                    sel.false_value,
+                    state_field,
+                    source_variant,
+                    literal_lookup,
+                    allow_implicit,
+                );
+            }
+
+            // (2) q.<state_field> == X comparison: try to statically
+            // resolve under the constraint q.<state_field> = source_variant.
+            // If the comparison's discriminant matches source_variant,
+            // only the true-branch contributes; if it explicitly doesn't,
+            // only the false-branch.  This tightens the over-approximation
+            // budget for kernels with `if q.<state_field> == StateX { ... }`
+            // inside transition logic (per fsm-architecture.md §5.4.2 #1).
+            if let Some(resolved) = resolve_state_eq_condition(
+                desc,
+                ops,
+                sel.cond,
+                state_field,
+                source_variant,
+                literal_lookup,
+            ) {
+                let chosen = if resolved { sel.true_value } else { sel.false_value };
+                return possible_state_values_under_constraint(
+                    desc,
+                    ops,
+                    chosen,
+                    state_field,
+                    source_variant,
+                    literal_lookup,
+                    allow_implicit,
+                );
+            }
+
+            // (3) Default: union both branches.
+            let mut t = possible_state_values_under_constraint(
+                desc,
+                ops,
+                sel.true_value,
+                state_field,
+                source_variant,
+                literal_lookup,
+                allow_implicit,
+            )?;
+            let mut f = possible_state_values_under_constraint(
+                desc,
+                ops,
+                sel.false_value,
+                state_field,
+                source_variant,
+                literal_lookup,
+                allow_implicit,
+            )?;
+            // Empty branch contributes a self-loop at the union iff
+            // the widget opts in via `#[fsm(allow_implicit)]`.  When
+            // it doesn't, the branch's "no state write" stays "no
+            // contribution" — the analysis layer will see the
+            // missing edge and fire DeadlockCandidate if appropriate.
+            if allow_implicit {
+                if t.is_empty() {
+                    t.insert(source_variant);
+                }
+                if f.is_empty() {
+                    f.insert(source_variant);
+                }
+            }
+            t.extend(f);
+            Ok(t)
+        }
+
+        // --- Case: nested match, with constraint propagation ---
+
+        OpCode::Case(case) => {
+            // Critical step: if this Case's discriminant reads
+            // q.<state_field>, only the arm matching the source
+            // variant contributes.  Other arms are
+            // constraint-eliminated.  This is what makes the
+            // extractor work on multi-match kernels (output
+            // computation matches don't pollute the transition
+            // graph).
+            if slot_reads_state_field(ops, case.discriminant, state_field) {
+                let source_disc = desc.variants()[source_variant].discriminant;
+                let mut matched_arm: Option<Slot> = None;
+                let mut wild_arm: Option<Slot> = None;
+                for (arg, arm_slot) in &case.table {
+                    match arg {
+                        CaseArgument::Wild => {
+                            wild_arm = Some(*arm_slot);
+                        }
+                        CaseArgument::Slot(disc_slot) => {
+                            if let Some(tb) = literal_lookup(*disc_slot) {
+                                if let Some(disc) = typed_bits_to_discriminant(&tb) {
+                                    if disc == source_disc {
+                                        matched_arm = Some(*arm_slot);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                let arm_slot = matched_arm
+                    .or(wild_arm)
+                    .ok_or("Case on q.<state_field> has no arm matching this variant and no wild arm")?;
+                let mut result = possible_state_values_under_constraint(
+                    desc,
+                    ops,
+                    arm_slot,
+                    state_field,
+                    source_variant,
+                    literal_lookup,
+                    allow_implicit,
+                )?;
+                // Empty arm contributes a self-loop iff the widget
+                // opts in via `#[fsm(allow_implicit)]`.
+                if allow_implicit && result.is_empty() {
+                    result.insert(source_variant);
+                }
+                Ok(result)
+            } else {
+                // Case on a non-state discriminant (e.g., match on
+                // q.dlc_reg, or i.start, or a computed bool).  Union
+                // all arms — the result depends on input we can't
+                // constrain.
+                let mut union = BTreeSet::new();
+                for (_arg, arm_slot) in &case.table {
+                    let mut arm = possible_state_values_under_constraint(
+                        desc,
+                        ops,
+                        *arm_slot,
+                        state_field,
+                        source_variant,
+                        literal_lookup,
+                        allow_implicit,
+                    )?;
+                    if allow_implicit && arm.is_empty() {
+                        arm.insert(source_variant);
+                    }
+                    union.extend(arm);
+                }
+                Ok(union)
+            }
+        }
+
+        // --- Anything else: no state value flows from here ---
+
+        _ => Ok(BTreeSet::new()),
     }
 }
 
@@ -430,136 +810,93 @@ fn variants_in_d_state_field(
 /// extractor doesn't have to depend on the symtab's internals.
 pub type LiteralLookup<'a> = &'a dyn Fn(Slot) -> Option<TypedBits>;
 
-/// Extract transitions from a sequence of RHIF opcodes for one
-/// FSM-tagged kernel.
+/// Extract the FSM transition graph from a kernel's RHIF.
 ///
-/// `ops` is the kernel's full op list.  `desc` is the FSM
-/// descriptor for this widget.  `literal_lookup` resolves
-/// `Slot::Literal` slots to their underlying `TypedBits` (the
-/// caller wires this up from the kernel `Object`'s symbol table).
+/// `ops` is the kernel's full op list.  `return_slot` is the slot
+/// that holds the kernel's return value (per the RHIF `Object`'s
+/// `return_slot` field).  `desc` is the FSM descriptor for this
+/// widget.  `literal_lookup` resolves `Slot::Literal` slots to
+/// their underlying `TypedBits` (the caller wires this up from the
+/// kernel `Object`'s symbol table).
 ///
-/// The current heuristic recognises the first `Case` opcode
-/// whose discriminant is reached by a single-step `Index` from
-/// the kernel argument named `q` with a path matching the
-/// state-field name in `desc`.  This is the canonical FSM
-/// pattern; other shapes produce no transitions and a single
-/// "could not analyze" diagnostic.
+/// Implements the principled algorithm per the module-level
+/// docstring and `fsm-architecture.md` §5.3:
+///
+/// 1. Locate the slot that becomes `d.<state_field>` at the
+///    kernel's return point.
+/// 2. For each source variant `s`, walk that slot's data flow
+///    backward under constraint `q.<state_field> = s` and collect
+///    all possible target values.
+/// 3. Emit transitions for each `(s, t)` found; emit per-variant
+///    `Unanalyzable` diagnostics for arms whose walk fails.
+///
+/// The output is `ExtractionResult { transitions, unanalyzable }`
+/// with transitions deduplicated and a per-variant diagnostic for
+/// any source variant whose walk produced an error.
 pub fn extract_canonical_transitions(
     ops: &[OpCode],
+    return_slot: Slot,
     desc: &FsmDescriptor,
     literal_lookup: LiteralLookup<'_>,
 ) -> ExtractionResult {
+    use std::collections::BTreeSet;
     let mut result = ExtractionResult::default();
-
-    // Find the first Case opcode.  In v1 we assume there's exactly
-    // one match-on-state per kernel; multi-match kernels are out of
-    // scope for this iteration of Layer 2.
-    let case = ops.iter().find_map(|op| match op {
-        OpCode::Case(c) => Some(c),
-        _ => None,
-    });
-
-    let Some(case) = case else {
-        // No `match` at all in this kernel — nothing to analyze.
-        // We don't emit an Unanalyzable diagnostic for this since
-        // the user's widget just doesn't have a state-machine
-        // shape (could be a pure dataflow kernel).  Return empty.
-        return result;
-    };
 
     let state_field = desc.widget.state_field;
 
-    for (arg, result_slot) in &case.table {
-        let source = source_variant_for_case_arg(desc, arg, &literal_lookup);
-        let Some(source_idx) = source else {
-            // Wild arm or unresolvable case argument.  Wild arms
-            // commonly cover unmatched variants — we don't add an
-            // Unanalyzable diagnostic here because the leaf
-            // analysis would also see the wild arm as "any
-            // target".  Skip silently.
-            continue;
-        };
-        let source_name = desc.variants()[source_idx].name;
-        let hint = Some(source_idx);
+    // Step 1: locate the state slot at the kernel's return point.
+    let state_slot = match find_kernel_return_d_state_slot(ops, return_slot, state_field) {
+        Ok(s) => s,
+        Err(reason) => {
+            // Kernel-level Unanalyzable: the return shape isn't
+            // recognised, so we can't even start the per-variant
+            // walks.  Surface a single diagnostic against a
+            // synthetic source-name "<kernel>" so the analysis
+            // pass can flag the whole kernel.
+            result.unanalyzable.push(("<kernel>", reason));
+            return result;
+        }
+    };
 
-        // Try interpretation 1: the arm's result slot IS the new
-        // state value (let-binding form: `let next = match ... { A => B }`).
-        let value_path = variants_in_state_value_slot(
+    // Step 2: per-variant constrained walk.
+    let allow_implicit = desc.widget.allow_implicit;
+    let mut seen: BTreeSet<(usize, usize)> = BTreeSet::new();
+    for (source_idx, source_desc) in desc.variants().iter().enumerate() {
+        let walk_result = possible_state_values_under_constraint(
             desc,
             ops,
-            *result_slot,
+            state_slot,
             state_field,
+            source_idx,
             &literal_lookup,
-            hint,
+            allow_implicit,
         );
-        // Try interpretation 2: the arm's result slot is a D struct
-        // and the state was updated via Splice (side-effect form:
-        // `match ... { A => { d.state = B; } }`).
-        let d_path = variants_in_d_state_field(
-            desc,
-            ops,
-            *result_slot,
-            state_field,
-            &literal_lookup,
-            hint,
-        );
-
-        let mut found: Vec<usize> = Vec::new();
-        let mut errors: Vec<&'static str> = Vec::new();
-        match value_path {
-            Ok(vs) => {
-                for v in vs {
-                    if !found.contains(&v) {
-                        found.push(v);
+        match walk_result {
+            Ok(targets) => {
+                let targets = if targets.is_empty() && allow_implicit {
+                    // The state slot's chain made no mention of
+                    // q.<state_field> AND no explicit override
+                    // along any path.  Per the implicit-self-loop
+                    // convention (opt-in via #[fsm(allow_implicit)]),
+                    // this is a self-loop.  Without the opt-in,
+                    // the empty result stays empty — the analysis
+                    // layer will see no outgoing edges and fire
+                    // DeadlockCandidate.
+                    BTreeSet::from([source_idx])
+                } else {
+                    targets
+                };
+                for target_idx in targets {
+                    if seen.insert((source_idx, target_idx)) {
+                        result.transitions.push(Transition {
+                            source_index: source_idx,
+                            target_index: target_idx,
+                        });
                     }
                 }
             }
-            Err(e) => errors.push(e),
-        }
-        match d_path {
-            Ok(vs) => {
-                for v in vs {
-                    if !found.contains(&v) {
-                        found.push(v);
-                    }
-                }
-            }
-            Err(e) => errors.push(e),
-        }
-
-        if found.is_empty() {
-            if errors.is_empty() {
-                // Both walkers ran cleanly but found no
-                // state-overriding op in this arm.  Per RHDL's
-                // canonical "construct via dont_care(), then
-                // assign every meaningful field" pattern
-                // (CLAUDE.md §3), an FSM kernel typically writes
-                // `d.<state_field> = q.<state_field>` at the top
-                // and only overrides it in arms that transition.
-                // An arm that produces no state override therefore
-                // means "hold the state in place" — emit a
-                // self-loop on the source variant.  This handles
-                // the most common real-world widget shape, where
-                // a guard's else-branch quietly omits the d.state
-                // assignment (e.g., `if guard { d.state = X } else
-                // { d.other = ... }`).
-                result.transitions.push(Transition {
-                    source_index: source_idx,
-                    target_index: source_idx,
-                });
-            } else {
-                // A walker hit a real error (e.g., an enum
-                // template with no resolvable discriminant).
-                // Surface it — silence here would hide a real bug.
-                let reason = errors.first().copied().unwrap();
-                result.unanalyzable.push((source_name, reason));
-            }
-        } else {
-            for target_idx in found {
-                result.transitions.push(Transition {
-                    source_index: source_idx,
-                    target_index: target_idx,
-                });
+            Err(reason) => {
+                result.unanalyzable.push((source_desc.name, reason));
             }
         }
     }
@@ -573,7 +910,7 @@ mod tests {
     use crate::fsm::descriptor::{FsmKernelTag, FsmWidgetTag};
     use crate::fsm::state::FsmVariantDescriptor;
     use crate::common::slot_vec::SlotKey;
-    use crate::rhif::rhif_builder::{op_assign, op_case, op_enum};
+    use crate::rhif::rhif_builder::{op_assign, op_case, op_enum, op_index, op_select, op_splice, op_tuple};
     use crate::rhif::spec::Slot;
     use crate::types::typed_bits::TypedBits;
     use std::collections::BTreeMap;
@@ -603,11 +940,37 @@ mod tests {
     ];
 
     fn three_state_descriptor() -> FsmDescriptor {
+        // Default: allow_implicit = true.  The vast majority of
+        // pre-existing tests pin the canonical RHDL kernel pattern
+        // (kernel-top default + implicit self-loops on un-overridden
+        // arms), which corresponds to widgets that have opted in
+        // via #[fsm(allow_implicit)].  Tests that exercise the
+        // strict mode use `three_state_strict_descriptor()`.
         FsmDescriptor {
             widget_name: "test::Three",
             widget: FsmWidgetTag {
                 state_field: "state",
                 strict: false,
+                allow_implicit: true,
+            },
+            kernel: FsmKernelTag {
+                state_var: "q.state",
+            },
+            variants_fn: || THREE,
+            initial_fn: || 0,
+        }
+    }
+
+    /// Strict-mode descriptor: `allow_implicit = false`.  Used by
+    /// tests that exercise the strict deadlock-detection mode where
+    /// only explicitly-written transitions count.
+    fn three_state_strict_descriptor() -> FsmDescriptor {
+        FsmDescriptor {
+            widget_name: "test::ThreeStrict",
+            widget: FsmWidgetTag {
+                state_field: "state",
+                strict: false,
+                allow_implicit: false,
             },
             kernel: FsmKernelTag {
                 state_var: "q.state",
@@ -648,890 +1011,109 @@ mod tests {
         Slot::Register(crate::common::symtab::RegisterId::new(reg as u64, reg))
     }
 
-    #[test]
-    fn extracts_three_simple_transitions() {
-        // Synthetic kernel:
-        //   r0 <- enum(disc=1)        // State::Running
-        //   r1 <- enum(disc=2)        // State::Done
-        //   r2 <- enum(disc=0)        // State::Idle
-        //   r3 <- case(state, [
-        //       (lit_disc=0) => r0,   // Idle    → Running
-        //       (lit_disc=1) => r1,   // Running → Done
-        //       (lit_disc=2) => r2,   // Done    → Idle
-        //   ])
-        let r0 = make_register(0);
-        let r1 = make_register(1);
-        let r2 = make_register(2);
-        let r3 = make_register(3);
-        let state = make_register(4); // the discriminant slot
-        let lit0 = make_slot(0);
-        let lit1 = make_slot(1);
-        let lit2 = make_slot(2);
-
-        let mut lookup = BTreeMap::new();
-        lookup.insert(lit0, lit_disc_unsigned(0, 2));
-        lookup.insert(lit1, lit_disc_unsigned(1, 2));
-        lookup.insert(lit2, lit_disc_unsigned(2, 2));
-
-        let ops = vec![
-            op_enum(r0, vec![], lit_disc_unsigned(1, 2)),
-            op_enum(r1, vec![], lit_disc_unsigned(2, 2)),
-            op_enum(r2, vec![], lit_disc_unsigned(0, 2)),
-            op_case(
-                r3,
-                state,
-                vec![
-                    (CaseArgument::Slot(lit0), r0),
-                    (CaseArgument::Slot(lit1), r1),
-                    (CaseArgument::Slot(lit2), r2),
-                ],
-            ),
-        ];
-        let lookup_fn = make_lookup(lookup);
-        let result = extract_canonical_transitions(
-            &ops,
-            &three_state_descriptor(),
-            &lookup_fn,
-        );
-        assert_eq!(result.unanalyzable.len(), 0, "got: {:?}", result.unanalyzable);
-        let mut transitions = result.transitions.clone();
-        transitions.sort();
-        assert_eq!(
-            transitions,
-            vec![
-                Transition { source_index: 0, target_index: 1 },
-                Transition { source_index: 1, target_index: 2 },
-                Transition { source_index: 2, target_index: 0 },
-            ]
-        );
-    }
-
-    #[test]
-    fn no_match_kernel_yields_no_transitions() {
-        // A kernel without a Case opcode is not an FSM kernel.
-        // Extractor should emit zero transitions and zero
-        // unanalyzable diagnostics.
-        let r0 = make_register(0);
-        let r1 = make_register(1);
-        let ops = vec![op_assign(r0, r1)];
-        let lookup_fn = make_lookup(BTreeMap::new());
-        let result = extract_canonical_transitions(
-            &ops,
-            &three_state_descriptor(),
-            &lookup_fn,
-        );
-        assert_eq!(result.transitions.len(), 0);
-        assert_eq!(result.unanalyzable.len(), 0);
-    }
-
-    #[test]
-    fn arm_with_no_recognisable_target_yields_implicit_self_loop() {
-        // One arm targets a recognisable Enum (Idle → Running), the
-        // other targets a slot whose definer isn't found in the op
-        // list (Running → ???).  Per the implicit-self-loop
-        // convention, the latter is interpreted as Running → Running
-        // (the kernel did not produce a state-overriding op for that
-        // arm, so the state holds in place).  No Unanalyzable
-        // diagnostic — that is reserved for genuinely malformed IR
-        // (see [`arm_with_malformed_enum_template_yields_unanalyzable`]).
-        let r0 = make_register(0);
-        let r1 = make_register(1);
-        let r2 = make_register(2);
-        let r3 = make_register(3); // no defining op: implicit self-loop
-        let state = make_register(4);
-        let lit0 = make_slot(0);
-        let lit1 = make_slot(1);
-
-        let mut lookup = BTreeMap::new();
-        lookup.insert(lit0, lit_disc_unsigned(0, 2));
-        lookup.insert(lit1, lit_disc_unsigned(1, 2));
-
-        let ops = vec![
-            op_enum(r0, vec![], lit_disc_unsigned(1, 2)),
-            op_enum(r1, vec![], lit_disc_unsigned(2, 2)),
-            op_case(
-                r2,
-                state,
-                vec![
-                    (CaseArgument::Slot(lit0), r0),
-                    (CaseArgument::Slot(lit1), r3),
-                ],
-            ),
-        ];
-        let lookup_fn = make_lookup(lookup);
-        let result = extract_canonical_transitions(
-            &ops,
-            &three_state_descriptor(),
-            &lookup_fn,
-        );
-        let mut t = result.transitions.clone();
-        t.sort();
-        assert_eq!(
-            t,
-            vec![
-                Transition { source_index: 0, target_index: 1 }, // Idle → Running (explicit)
-                Transition { source_index: 1, target_index: 1 }, // Running → Running (implicit self-loop)
-            ]
-        );
-        assert!(
-            result.unanalyzable.is_empty(),
-            "got: {:?}",
-            result.unanalyzable
-        );
-    }
-
-    #[test]
-    fn assign_forwarding_is_traced_through() {
-        // r1 = Enum(disc=2)
-        // r2 = Assign(r1)       // forwarded
-        // case [ (Slot(lit0)) => r2 ]  // Idle → Done via assign
-        let r1 = make_register(1);
-        let r2 = make_register(2);
-        let r3 = make_register(3);
-        let state = make_register(4);
-        let lit0 = make_slot(0);
-
-        let mut lookup = BTreeMap::new();
-        lookup.insert(lit0, lit_disc_unsigned(0, 2));
-
-        let ops = vec![
-            op_enum(r1, vec![], lit_disc_unsigned(2, 2)),
-            op_assign(r2, r1),
-            op_case(
-                r3,
-                state,
-                vec![(CaseArgument::Slot(lit0), r2)],
-            ),
-        ];
-        let lookup_fn = make_lookup(lookup);
-        let result = extract_canonical_transitions(
-            &ops,
-            &three_state_descriptor(),
-            &lookup_fn,
-        );
-        assert_eq!(result.transitions.len(), 1);
-        assert_eq!(result.transitions[0].source_index, 0);
-        assert_eq!(result.transitions[0].target_index, 2);
-    }
-
-    #[test]
-    fn wild_arms_are_skipped_silently() {
-        let r0 = make_register(0);
-        let r3 = make_register(3);
-        let state = make_register(4);
-        let lit0 = make_slot(0);
-
-        let mut lookup = BTreeMap::new();
-        lookup.insert(lit0, lit_disc_unsigned(0, 2));
-
-        let ops = vec![
-            op_enum(r0, vec![], lit_disc_unsigned(1, 2)),
-            op_case(
-                r3,
-                state,
-                vec![
-                    (CaseArgument::Slot(lit0), r0),
-                    (CaseArgument::Wild, r0),
-                ],
-            ),
-        ];
-        let lookup_fn = make_lookup(lookup);
-        let result = extract_canonical_transitions(
-            &ops,
-            &three_state_descriptor(),
-            &lookup_fn,
-        );
-        // Only the explicit (lit0 → r0) arm produces a transition.
-        // The wild arm is skipped.
-        assert_eq!(result.transitions.len(), 1);
-    }
-
-    // ---------------------------------------------------------------
-    // Adversarial test matrix for the side-effect-form walker
-    // (PR `feat/fsm-extractor-side-effects`).  Each test covers a
-    // distinct kernel-language construct that lowers into a
-    // particular RHIF shape the walker must handle correctly.
-    // ---------------------------------------------------------------
-
-    use crate::rhif::rhif_builder::{op_select, op_splice, op_struct};
-    use crate::rhif::spec::{FieldValue, Member};
-    use crate::types::path::PathElement;
-
-    /// Build a `Path` referencing a single named field — the canonical
-    /// path produced by `d.state = ...` lowering.
+    /// Path `.state` — the standard state-field path used in test descriptors.
     fn state_path() -> Path {
         Path::default().field("state")
     }
 
-    /// Build a typed-bits literal of the D struct (a stub — we only
-    /// need it for the literal-table; the extractor never reads its
-    /// value when it's the rest-template of a Struct opcode).
+    /// Build a literal `dont_care` D struct for use as the kernel's
+    /// initial d value (typically the start of a Splice chain).
     fn lit_d_dont_care() -> TypedBits {
-        // We use the same width-2 bits stub as the discriminant
-        // literals.  The extractor only cares whether the discriminant
-        // path resolves; the rest-template here is opaque.
-        lit_disc_unsigned(0, 2)
+        // Empty bytes; kind is irrelevant for the walker.
+        TypedBits::new(vec![], crate::types::kind::Kind::Empty)
     }
 
-    /// A descriptor whose `state_field` matches what the new walker
-    /// expects.  Reuses THREE's variants.
-    fn three_state_d_descriptor() -> FsmDescriptor {
-        three_state_descriptor()
-    }
-
-    /// (A1) Side-effect form: each arm splices a literal into d.state.
-    ///   r0 = enum(Running)
-    ///   r1 = enum(Done)
-    ///   r2 = enum(Idle)
-    ///   r3 = D::dont_care()             (literal sl_d)
-    ///   r4 = splice(r3, .state, r0)      // for arm Idle
-    ///   r5 = splice(r3, .state, r1)      // for arm Running
-    ///   r6 = splice(r3, .state, r2)      // for arm Done
-    ///   r7 = case(state, [Idle=>r4, Running=>r5, Done=>r6])
-    #[test]
-    fn side_effect_form_three_unconditional_splices() {
-        let r0 = make_register(0);
-        let r1 = make_register(1);
-        let r2 = make_register(2);
-        let r3 = make_register(3);
-        let r4 = make_register(4);
-        let r5 = make_register(5);
-        let r6 = make_register(6);
-        let r7 = make_register(7);
-        let state = make_register(8);
-        let lit0 = make_slot(0);
-        let lit1 = make_slot(1);
-        let lit2 = make_slot(2);
-        let sl_d = make_slot(3);
-
-        let mut lookup = BTreeMap::new();
-        lookup.insert(lit0, lit_disc_unsigned(0, 2));
-        lookup.insert(lit1, lit_disc_unsigned(1, 2));
-        lookup.insert(lit2, lit_disc_unsigned(2, 2));
-        lookup.insert(sl_d, lit_d_dont_care());
-
-        let ops = vec![
-            op_enum(r0, vec![], lit_disc_unsigned(1, 2)),
-            op_enum(r1, vec![], lit_disc_unsigned(2, 2)),
-            op_enum(r2, vec![], lit_disc_unsigned(0, 2)),
-            op_assign(r3, sl_d),
-            op_splice(r4, r3, state_path(), r0),
-            op_splice(r5, r3, state_path(), r1),
-            op_splice(r6, r3, state_path(), r2),
-            op_case(
-                r7,
-                state,
-                vec![
-                    (CaseArgument::Slot(lit0), r4),
-                    (CaseArgument::Slot(lit1), r5),
-                    (CaseArgument::Slot(lit2), r6),
-                ],
-            ),
-        ];
-        let lookup_fn = make_lookup(lookup);
-        let result =
-            extract_canonical_transitions(&ops, &three_state_d_descriptor(), &lookup_fn);
-        assert!(
-            result.unanalyzable.is_empty(),
-            "got: {:?}",
-            result.unanalyzable
-        );
-        let mut t = result.transitions.clone();
-        t.sort();
-        assert_eq!(
-            t,
-            vec![
-                Transition { source_index: 0, target_index: 1 },
-                Transition { source_index: 1, target_index: 2 },
-                Transition { source_index: 2, target_index: 0 },
-            ]
-        );
-    }
-
-    /// (A2) Side-effect default + conditional override:
-    ///   for arm Idle: r_default = splice(r_d, .state, r_q_state)   // d.state = q.state
-    ///                 r_taken   = splice(r_d, .state, r_running)   // d.state = Running
-    ///                 arm_result = select(cond, r_taken, r_default)
-    /// Should yield Idle→Idle (self-loop via q.state) AND Idle→Running.
-    #[test]
-    fn side_effect_with_default_then_conditional_override_yields_self_loop_plus_target() {
-        let r_running = make_register(0);
-        let r_d = make_register(1);
-        let r_q_state = make_register(2);
-        let r_default = make_register(3);
-        let r_taken = make_register(4);
-        let r_select = make_register(5);
-        let r_case = make_register(6);
-        let q_register = make_register(7);
-        let cond = make_register(8);
-        let state = make_register(9);
-        let lit0 = make_slot(0);
-        let sl_d = make_slot(1);
-
-        let mut lookup = BTreeMap::new();
-        lookup.insert(lit0, lit_disc_unsigned(0, 2));
-        lookup.insert(sl_d, lit_d_dont_care());
-
-        let ops = vec![
-            op_enum(r_running, vec![], lit_disc_unsigned(1, 2)),
-            op_assign(r_d, sl_d),
-            // r_q_state = q.state (an Index from q)
-            crate::rhif::rhif_builder::op_index(r_q_state, q_register, state_path()),
-            op_splice(r_default, r_d, state_path(), r_q_state),
-            op_splice(r_taken, r_d, state_path(), r_running),
-            op_select(r_select, cond, r_taken, r_default),
-            op_case(
-                r_case,
-                state,
-                vec![(CaseArgument::Slot(lit0), r_select)],
-            ),
-        ];
-        let lookup_fn = make_lookup(lookup);
-        let result =
-            extract_canonical_transitions(&ops, &three_state_d_descriptor(), &lookup_fn);
-        assert!(
-            result.unanalyzable.is_empty(),
-            "got: {:?}",
-            result.unanalyzable
-        );
-        let mut t = result.transitions.clone();
-        t.sort();
-        assert_eq!(
-            t,
-            vec![
-                Transition { source_index: 0, target_index: 0 }, // Idle → Idle (self-loop)
-                Transition { source_index: 0, target_index: 1 }, // Idle → Running
-            ]
-        );
-    }
-
-    /// (B1) Nested if-else inside an arm body:
-    ///   match q.state { Idle => if c1 { d.state = Running } else if c2 { d.state = Done } }
-    /// Lowers to nested Selects.  Walker should yield {Idle, Running, Done}.
-    #[test]
-    fn nested_if_else_in_side_effect_arm_unions_all_branches() {
-        let r_running = make_register(0);
-        let r_done = make_register(1);
-        let r_d = make_register(2);
-        let r_q_state = make_register(3);
-        let r_default = make_register(4);
-        let r_to_running = make_register(5);
-        let r_to_done = make_register(6);
-        let r_inner_select = make_register(7);
-        let r_outer_select = make_register(8);
-        let r_case = make_register(9);
-        let q_register = make_register(10);
-        let cond1 = make_register(11);
-        let cond2 = make_register(12);
-        let state = make_register(13);
-        let lit0 = make_slot(0);
-        let sl_d = make_slot(1);
-
-        let mut lookup = BTreeMap::new();
-        lookup.insert(lit0, lit_disc_unsigned(0, 2));
-        lookup.insert(sl_d, lit_d_dont_care());
-
-        let ops = vec![
-            op_enum(r_running, vec![], lit_disc_unsigned(1, 2)),
-            op_enum(r_done, vec![], lit_disc_unsigned(2, 2)),
-            op_assign(r_d, sl_d),
-            crate::rhif::rhif_builder::op_index(r_q_state, q_register, state_path()),
-            op_splice(r_default, r_d, state_path(), r_q_state),
-            op_splice(r_to_running, r_d, state_path(), r_running),
-            op_splice(r_to_done, r_d, state_path(), r_done),
-            // inner = if c2 { to_done } else { default }
-            op_select(r_inner_select, cond2, r_to_done, r_default),
-            // outer = if c1 { to_running } else { inner }
-            op_select(r_outer_select, cond1, r_to_running, r_inner_select),
-            op_case(
-                r_case,
-                state,
-                vec![(CaseArgument::Slot(lit0), r_outer_select)],
-            ),
-        ];
-        let lookup_fn = make_lookup(lookup);
-        let result =
-            extract_canonical_transitions(&ops, &three_state_d_descriptor(), &lookup_fn);
-        assert!(
-            result.unanalyzable.is_empty(),
-            "got: {:?}",
-            result.unanalyzable
-        );
-        let mut t = result.transitions.clone();
-        t.sort();
-        assert_eq!(
-            t,
-            vec![
-                Transition { source_index: 0, target_index: 0 }, // self-loop
-                Transition { source_index: 0, target_index: 1 }, // → Running
-                Transition { source_index: 0, target_index: 2 }, // → Done
-            ]
-        );
-    }
-
-    /// (C1) Splice into a different field preserves the state field.
-    ///   r_d = D::dont_care()
-    ///   r_with_state = splice(r_d, .state, r_running)
-    ///   r_with_other = splice(r_with_state, .other_field, r_x)
-    ///   case [ Idle => r_with_other ]
-    /// Walker should still report Idle→Running because .state was set
-    /// before the unrelated splice.
-    #[test]
-    fn splice_into_unrelated_field_preserves_state_walker_result() {
-        let r_running = make_register(0);
-        let r_x = make_register(1);
-        let r_d = make_register(2);
-        let r_with_state = make_register(3);
-        let r_with_other = make_register(4);
-        let r_case = make_register(5);
-        let state = make_register(6);
-        let lit0 = make_slot(0);
-        let sl_d = make_slot(1);
-
-        let mut lookup = BTreeMap::new();
-        lookup.insert(lit0, lit_disc_unsigned(0, 2));
-        lookup.insert(sl_d, lit_d_dont_care());
-
-        let other_path = Path::default().field("other_field");
-
-        let ops = vec![
-            op_enum(r_running, vec![], lit_disc_unsigned(1, 2)),
-            op_assign(r_x, r_running), // dummy
-            op_assign(r_d, sl_d),
-            op_splice(r_with_state, r_d, state_path(), r_running),
-            op_splice(r_with_other, r_with_state, other_path, r_x),
-            op_case(
-                r_case,
-                state,
-                vec![(CaseArgument::Slot(lit0), r_with_other)],
-            ),
-        ];
-        let lookup_fn = make_lookup(lookup);
-        let result =
-            extract_canonical_transitions(&ops, &three_state_d_descriptor(), &lookup_fn);
-        assert!(
-            result.unanalyzable.is_empty(),
-            "got: {:?}",
-            result.unanalyzable
-        );
-        assert_eq!(
-            result.transitions,
-            vec![Transition { source_index: 0, target_index: 1 }]
-        );
-    }
-
-    /// (C2) Two splices into .state in the same arm — last write wins.
-    ///   r_with_running = splice(r_d, .state, r_running)
-    ///   r_with_done    = splice(r_with_running, .state, r_done)
-    ///   case [ Idle => r_with_done ]
-    /// Walker should report Idle→Done only (the last splice).
-    #[test]
-    fn back_to_back_splices_into_state_last_write_wins() {
-        let r_running = make_register(0);
-        let r_done = make_register(1);
-        let r_d = make_register(2);
-        let r_with_running = make_register(3);
-        let r_with_done = make_register(4);
-        let r_case = make_register(5);
-        let state = make_register(6);
-        let lit0 = make_slot(0);
-        let sl_d = make_slot(1);
-
-        let mut lookup = BTreeMap::new();
-        lookup.insert(lit0, lit_disc_unsigned(0, 2));
-        lookup.insert(sl_d, lit_d_dont_care());
-
-        let ops = vec![
-            op_enum(r_running, vec![], lit_disc_unsigned(1, 2)),
-            op_enum(r_done, vec![], lit_disc_unsigned(2, 2)),
-            op_assign(r_d, sl_d),
-            op_splice(r_with_running, r_d, state_path(), r_running),
-            op_splice(r_with_done, r_with_running, state_path(), r_done),
-            op_case(
-                r_case,
-                state,
-                vec![(CaseArgument::Slot(lit0), r_with_done)],
-            ),
-        ];
-        let lookup_fn = make_lookup(lookup);
-        let result =
-            extract_canonical_transitions(&ops, &three_state_d_descriptor(), &lookup_fn);
-        assert!(result.unanalyzable.is_empty());
-        assert_eq!(
-            result.transitions,
-            vec![Transition { source_index: 0, target_index: 2 }]
-        );
-    }
-
-    /// (D1) Arm result built via explicit Struct opcode with .state field.
-    #[test]
-    fn struct_opcode_with_explicit_state_field_resolves() {
-        let r_running = make_register(0);
-        let r_struct = make_register(1);
-        let r_case = make_register(2);
-        let state = make_register(3);
-        let lit0 = make_slot(0);
-
-        let mut lookup = BTreeMap::new();
-        lookup.insert(lit0, lit_disc_unsigned(0, 2));
-
-        let ops = vec![
-            op_enum(r_running, vec![], lit_disc_unsigned(1, 2)),
-            op_struct(
-                r_struct,
-                vec![FieldValue {
-                    member: Member::Named("state".to_string().into()),
-                    value: r_running,
-                }],
-                None,
-                lit_d_dont_care(),
-            ),
-            op_case(
-                r_case,
-                state,
-                vec![(CaseArgument::Slot(lit0), r_struct)],
-            ),
-        ];
-        let lookup_fn = make_lookup(lookup);
-        let result =
-            extract_canonical_transitions(&ops, &three_state_d_descriptor(), &lookup_fn);
-        assert!(result.unanalyzable.is_empty());
-        assert_eq!(
-            result.transitions,
-            vec![Transition { source_index: 0, target_index: 1 }]
-        );
-    }
-
-    /// (D2) Struct opcode WITHOUT explicit state field
-    /// (template-only): the d-struct walker confirms no state field
-    /// override, no error.  Per the implicit-self-loop convention
-    /// (the canonical kernel keeps state in place when no override
-    /// is emitted), this becomes a self-loop on the arm's source
-    /// variant rather than an Unanalyzable diagnostic.
-    #[test]
-    fn struct_opcode_without_state_field_yields_implicit_self_loop() {
-        let r_struct = make_register(0);
-        let r_case = make_register(1);
-        let state = make_register(2);
-        let lit0 = make_slot(0);
-
-        let mut lookup = BTreeMap::new();
-        lookup.insert(lit0, lit_disc_unsigned(0, 2));
-
-        let ops = vec![
-            op_struct(r_struct, vec![], None, lit_d_dont_care()),
-            op_case(
-                r_case,
-                state,
-                vec![(CaseArgument::Slot(lit0), r_struct)],
-            ),
-        ];
-        let lookup_fn = make_lookup(lookup);
-        let result =
-            extract_canonical_transitions(&ops, &three_state_d_descriptor(), &lookup_fn);
-        assert!(
-            result.unanalyzable.is_empty(),
-            "got: {:?}",
-            result.unanalyzable
-        );
-        assert_eq!(
-            result.transitions,
-            vec![Transition { source_index: 0, target_index: 0 }]
-        );
-    }
-
-    /// (E1) Bare `d.state = q.state` (default + nothing else) yields
-    /// a self-loop transition.
-    #[test]
-    fn d_state_eq_q_state_alone_yields_self_loop() {
-        let r_d = make_register(0);
-        let r_q_state = make_register(1);
-        let r_with_state = make_register(2);
-        let r_case = make_register(3);
-        let q_register = make_register(4);
-        let state = make_register(5);
-        let lit0 = make_slot(0);
-        let sl_d = make_slot(1);
-
-        let mut lookup = BTreeMap::new();
-        lookup.insert(lit0, lit_disc_unsigned(0, 2));
-        lookup.insert(sl_d, lit_d_dont_care());
-
-        let ops = vec![
-            op_assign(r_d, sl_d),
-            crate::rhif::rhif_builder::op_index(r_q_state, q_register, state_path()),
-            op_splice(r_with_state, r_d, state_path(), r_q_state),
-            op_case(
-                r_case,
-                state,
-                vec![(CaseArgument::Slot(lit0), r_with_state)],
-            ),
-        ];
-        let lookup_fn = make_lookup(lookup);
-        let result =
-            extract_canonical_transitions(&ops, &three_state_d_descriptor(), &lookup_fn);
-        assert!(result.unanalyzable.is_empty());
-        assert_eq!(
-            result.transitions,
-            vec![Transition { source_index: 0, target_index: 0 }]
-        );
-    }
-
-    /// (F1) Both walkers run cleanly but find no state-overriding
-    /// op — interpreted as an implicit self-loop, not Unanalyzable.
-    /// The arm result is a register defined by Add (an opaque
-    /// arithmetic op).  Neither walker recognises Add as producing
-    /// a state value or a d-struct override, so both return
-    /// `Ok(vec![])`.  Per the implicit-self-loop convention, this
-    /// is the canonical "this arm doesn't transition" shape.
+    /// Helper: assemble a synthetic kernel return.  Wraps the
+    /// caller's d-struct slot in a Tuple `(o, d)` so the principled
+    /// algorithm's locate-step can find the d-component.
     ///
-    /// For the truly-malformed case where a walker hits a real
-    /// error, see [`arm_with_malformed_enum_template_yields_unanalyzable`].
-    #[test]
-    fn opaque_arm_result_yields_implicit_self_loop() {
-        let r_opaque = make_register(0);
-        let r_case = make_register(1);
-        let state = make_register(2);
-        let lit0 = make_slot(0);
-
-        let mut lookup = BTreeMap::new();
-        lookup.insert(lit0, lit_disc_unsigned(0, 2));
-
-        let ops = vec![
-            // r_opaque is defined by Add — neither walker recognises this.
-            crate::rhif::rhif_builder::op_binary(
-                crate::rhif::spec::AluBinary::Add,
-                r_opaque,
-                state,
-                state,
-            ),
-            op_case(
-                r_case,
-                state,
-                vec![(CaseArgument::Slot(lit0), r_opaque)],
-            ),
-        ];
-        let lookup_fn = make_lookup(lookup);
-        let result =
-            extract_canonical_transitions(&ops, &three_state_d_descriptor(), &lookup_fn);
-        assert!(
-            result.unanalyzable.is_empty(),
-            "got: {:?}",
-            result.unanalyzable
-        );
-        assert_eq!(
-            result.transitions,
-            vec![Transition { source_index: 0, target_index: 0 }]
-        );
+    /// Returns the appended ops and the slot to pass as `return_slot`.
+    fn wrap_return(
+        ops: &mut Vec<OpCode>,
+        next_reg: usize,
+        d_slot: Slot,
+        o_slot: Slot,
+    ) -> Slot {
+        let return_slot = make_register(next_reg);
+        ops.push(op_tuple(return_slot, vec![o_slot, d_slot]));
+        return_slot
     }
 
-    /// (F2) Side-effect form deduplicates: the same target reached via
-    /// two distinct paths in the if-else inside an arm should produce
-    /// one transition entry, not two.
-    #[test]
-    fn side_effect_form_deduplicates_targets_across_branches() {
-        let r_running = make_register(0);
-        let r_d = make_register(1);
-        let r_taken_a = make_register(2);
-        let r_taken_b = make_register(3);
-        let r_select = make_register(4);
-        let r_case = make_register(5);
-        let cond = make_register(6);
-        let state = make_register(7);
-        let lit0 = make_slot(0);
-        let sl_d = make_slot(1);
-
-        let mut lookup = BTreeMap::new();
-        lookup.insert(lit0, lit_disc_unsigned(0, 2));
-        lookup.insert(sl_d, lit_d_dont_care());
-
-        let ops = vec![
-            op_enum(r_running, vec![], lit_disc_unsigned(1, 2)),
-            op_assign(r_d, sl_d),
-            op_splice(r_taken_a, r_d, state_path(), r_running),
-            op_splice(r_taken_b, r_d, state_path(), r_running),
-            op_select(r_select, cond, r_taken_a, r_taken_b),
-            op_case(
-                r_case,
-                state,
-                vec![(CaseArgument::Slot(lit0), r_select)],
-            ),
-        ];
-        let lookup_fn = make_lookup(lookup);
-        let result =
-            extract_canonical_transitions(&ops, &three_state_d_descriptor(), &lookup_fn);
-        assert!(result.unanalyzable.is_empty());
-        assert_eq!(
-            result.transitions,
-            vec![Transition { source_index: 0, target_index: 1 }]
-        );
-    }
-
-    /// (F3) Mixed walkers — value form and d-struct form both recognise
-    /// the arm.  E.g., a `let x = State::Done; d.state = x;` pattern
-    /// where the arm result happens to be the d-struct.  Ensure
-    /// transitions are merged + deduplicated, no duplicates emitted.
-    #[test]
-    fn value_and_d_struct_walkers_unioned_without_duplicates() {
-        // Synthetic arm result reachable from BOTH walkers via the same
-        // target Running.  The d-struct walker traces splice→r_running.
-        // The value walker (if interpreted state-typed) returns empty
-        // because the arm result isn't a state-typed slot.  So we just
-        // get one transition from d-struct.
-        let r_running = make_register(0);
-        let r_d = make_register(1);
-        let r_with_state = make_register(2);
-        let r_case = make_register(3);
-        let state = make_register(4);
-        let lit0 = make_slot(0);
-        let sl_d = make_slot(1);
-
-        let mut lookup = BTreeMap::new();
-        lookup.insert(lit0, lit_disc_unsigned(0, 2));
-        lookup.insert(sl_d, lit_d_dont_care());
-
-        let ops = vec![
-            op_enum(r_running, vec![], lit_disc_unsigned(1, 2)),
-            op_assign(r_d, sl_d),
-            op_splice(r_with_state, r_d, state_path(), r_running),
-            op_case(
-                r_case,
-                state,
-                vec![(CaseArgument::Slot(lit0), r_with_state)],
-            ),
-        ];
-        let lookup_fn = make_lookup(lookup);
-        let result =
-            extract_canonical_transitions(&ops, &three_state_d_descriptor(), &lookup_fn);
-        assert!(result.unanalyzable.is_empty());
-        assert_eq!(result.transitions.len(), 1);
-        assert_eq!(result.transitions[0].source_index, 0);
-        assert_eq!(result.transitions[0].target_index, 1);
-    }
-
-    /// (F4) Existing let-binding-form tests must still pass after the
-    /// refactor — sanity check that we haven't regressed the
-    /// `target_variant_for_result` → `variants_in_state_value_slot`
-    /// conversion.  This is a trivial duplicate of
-    /// `extracts_three_simple_transitions` to make the regression
-    /// guarantee explicit in the adversarial section.
-    #[test]
-    fn let_binding_form_still_works_after_refactor() {
-        let r0 = make_register(0);
-        let r1 = make_register(1);
-        let r2 = make_register(2);
-        let r3 = make_register(3);
-        let state = make_register(4);
-        let lit0 = make_slot(0);
-        let lit1 = make_slot(1);
-        let lit2 = make_slot(2);
-
-        let mut lookup = BTreeMap::new();
-        lookup.insert(lit0, lit_disc_unsigned(0, 2));
-        lookup.insert(lit1, lit_disc_unsigned(1, 2));
-        lookup.insert(lit2, lit_disc_unsigned(2, 2));
-
-        let ops = vec![
-            op_enum(r0, vec![], lit_disc_unsigned(1, 2)),
-            op_enum(r1, vec![], lit_disc_unsigned(2, 2)),
-            op_enum(r2, vec![], lit_disc_unsigned(0, 2)),
-            op_case(
-                r3,
-                state,
-                vec![
-                    (CaseArgument::Slot(lit0), r0),
-                    (CaseArgument::Slot(lit1), r1),
-                    (CaseArgument::Slot(lit2), r2),
-                ],
-            ),
-        ];
-        let lookup_fn = make_lookup(lookup);
-        let result =
-            extract_canonical_transitions(&ops, &three_state_d_descriptor(), &lookup_fn);
-        assert!(result.unanalyzable.is_empty());
-        let mut t = result.transitions;
-        t.sort();
-        assert_eq!(
-            t,
-            vec![
-                Transition { source_index: 0, target_index: 1 },
-                Transition { source_index: 1, target_index: 2 },
-                Transition { source_index: 2, target_index: 0 },
-            ]
-        );
-    }
-
-    // ===========================================================
-    // Implicit-self-loop adversarial coverage (PR
-    // `feat/fsm-extractor-implicit-self-loops`)
+    // =====================================================
+    // Tests for the principled algorithm.
     //
-    // These tests pin the new "no state-overriding op found =>
-    // self-loop" semantics that fixes the can_master /
-    // i2c_master / spi_master class of widget where a guarded
-    // transition's else-branch silently omits the d.state write.
-    // The kernel-top default `d.<state_field> = q.<state_field>`
-    // makes the omission well-defined RHDL code; the extractor
-    // honours that convention.
-    // ===========================================================
+    // Each test constructs a synthetic kernel matching a specific
+    // RHIF shape (output computation match, transition match,
+    // implicit self-loop via kernel-top default, etc.) and verifies
+    // the extractor produces the right transition graph under
+    // constraint propagation.
+    // =====================================================
 
-    /// Canonical CAN-master shape: kernel-top default `d.field =
-    /// q.field`, then the FSM match has one arm that contains a
-    /// guarded transition (`if cond { d.field = X }`).  The
-    /// then-branch produces an explicit transition; the
-    /// else-branch produces no d.field write and must be
-    /// interpreted as a self-loop.
-    ///
-    /// Lowering shape:
-    ///   d_default = Splice(d_dont_care, [field], q.field)
-    ///   d_taken   = Splice(d_default,   [field], Running)
-    ///   d_arm     = Select(cond, d_taken, d_default)
-    ///   case [ Idle => d_arm ]
-    ///
-    /// Expected: { Idle → Running (taken), Idle → Idle (held) }.
-    /// Without the implicit-self-loop fix, the else-branch would
-    /// recurse to the d_default, which IS a state-overriding
-    /// Splice (q.field), and the value-form walker would emit a
-    /// self-loop via hint_self_loop_to.  This test isn't the
-    /// motivating one — see [`guarded_transition_with_implicit_else_yields_self_loop`]
-    /// for that — but pins this shape too.
+    /// Most basic test: kernel with a single FSM-transition Case
+    /// whose discriminant reads q.state.  Each arm assigns
+    /// d.state = <constant> (side-effect form via Splice).
+    /// Verifies the principled algorithm recovers the canonical
+    /// 3-state cycle.
     #[test]
-    fn kernel_top_default_plus_guarded_transition_yields_both_edges() {
-        let r_running = make_register(0);
-        let r_d = make_register(1);
-        let r_q_field = make_register(2);
-        let r_default = make_register(3);
-        let r_taken = make_register(4);
-        let r_select = make_register(5);
-        let r_case = make_register(6);
-        let q_register = make_register(7);
-        let cond = make_register(8);
-        let state = make_register(9);
-        let lit0 = make_slot(0);
-        let sl_d = make_slot(1);
+    fn principled_extracts_canonical_three_state_cycle() {
+        let q_reg = make_register(100); // function arg q
+        let o_dummy = make_register(101); // dummy output
+
+        let r_d_init = make_register(0); // d = dont_care
+        let r_q_state = make_register(1); // q.state
+        let r_d_default = make_register(2); // d.state = q.state (kernel-top default)
+        let r_to_running = make_register(3); // d.state = Running
+        let r_to_done = make_register(4); // d.state = Done
+        let r_to_idle = make_register(5); // d.state = Idle
+        let r_arm_idle = make_register(6); // d after Idle arm
+        let r_arm_running = make_register(7); // d after Running arm
+        let r_arm_done = make_register(8); // d after Done arm
+        let r_running_enum = make_register(10); // Enum(Running)
+        let r_done_enum = make_register(11); // Enum(Done)
+        let r_idle_enum = make_register(12); // Enum(Idle)
+        let r_d_after_case = make_register(13); // d after the FSM Case
+        let sl_dont_care = make_slot(50);
+        let lit_idle = make_slot(51); // CaseArgument for Idle (disc=0)
+        let lit_running = make_slot(52); // CaseArgument for Running (disc=1)
+        let lit_done = make_slot(53); // CaseArgument for Done (disc=2)
 
         let mut lookup = BTreeMap::new();
-        lookup.insert(lit0, lit_disc_unsigned(0, 2));
-        lookup.insert(sl_d, lit_d_dont_care());
+        lookup.insert(sl_dont_care, lit_d_dont_care());
+        lookup.insert(lit_idle, lit_disc_unsigned(0, 2));
+        lookup.insert(lit_running, lit_disc_unsigned(1, 2));
+        lookup.insert(lit_done, lit_disc_unsigned(2, 2));
 
-        let ops = vec![
-            op_enum(r_running, vec![], lit_disc_unsigned(1, 2)),
-            op_assign(r_d, sl_d),
-            crate::rhif::rhif_builder::op_index(r_q_field, q_register, state_path()),
-            // Kernel-top default: d.field = q.field
-            op_splice(r_default, r_d, state_path(), r_q_field),
-            // Inside the arm: d.field = Running
-            op_splice(r_taken, r_default, state_path(), r_running),
-            // if cond { d.field = Running } else { /* d.field unchanged */ }
-            op_select(r_select, cond, r_taken, r_default),
+        let mut ops = vec![
+            op_assign(r_d_init, sl_dont_care),
+            op_index(r_q_state, q_reg, state_path()),
+            op_splice(r_d_default, r_d_init, state_path(), r_q_state),
+            op_enum(r_running_enum, vec![], lit_disc_unsigned(1, 2)),
+            op_enum(r_done_enum, vec![], lit_disc_unsigned(2, 2)),
+            op_enum(r_idle_enum, vec![], lit_disc_unsigned(0, 2)),
+            // d in each arm: splice on top of the kernel-top default.
+            op_splice(r_arm_idle, r_d_default, state_path(), r_running_enum),
+            op_splice(r_arm_running, r_d_default, state_path(), r_done_enum),
+            op_splice(r_arm_done, r_d_default, state_path(), r_idle_enum),
+            // FSM Case: discriminant is q.state, arms are the per-arm d's.
             op_case(
-                r_case,
-                state,
-                vec![(CaseArgument::Slot(lit0), r_select)],
+                r_d_after_case,
+                r_q_state,
+                vec![
+                    (CaseArgument::Slot(lit_idle), r_arm_idle),
+                    (CaseArgument::Slot(lit_running), r_arm_running),
+                    (CaseArgument::Slot(lit_done), r_arm_done),
+                ],
             ),
         ];
+        let return_slot = wrap_return(&mut ops, 14, r_d_after_case, o_dummy);
+
         let lookup_fn = make_lookup(lookup);
-        let result =
-            extract_canonical_transitions(&ops, &three_state_d_descriptor(), &lookup_fn);
+        let result = extract_canonical_transitions(
+            &ops,
+            return_slot,
+            &three_state_descriptor(),
+            &lookup_fn,
+        );
         assert!(
             result.unanalyzable.is_empty(),
             "got: {:?}",
@@ -1542,72 +1124,111 @@ mod tests {
         assert_eq!(
             t,
             vec![
-                Transition { source_index: 0, target_index: 0 }, // Idle → Idle (else-branch)
-                Transition { source_index: 0, target_index: 1 }, // Idle → Running (then-branch)
+                Transition { source_index: 0, target_index: 1 }, // Idle → Running
+                Transition { source_index: 1, target_index: 2 }, // Running → Done
+                Transition { source_index: 2, target_index: 0 }, // Done → Idle
             ]
         );
     }
 
-    /// The motivating real-world shape: a guarded transition where
-    /// the else-branch writes to a *different* field (e.g.,
-    /// `d.field_bit_idx`) but does NOT touch `d.field`.  This is
-    /// the can_master `Id` arm verbatim: `if bit_idx == 10 {
-    /// d.field = Rtr; d.field_bit_idx = 0 } else { d.field_bit_idx
-    /// = next_idx }`.
+    /// THE MOTIVATING TEST.  Multi-match kernel: an output-computation
+    /// Case appears BEFORE the transition Case in the op list.  Per
+    /// the principled algorithm, the constraint propagation
+    /// distinguishes the two — only the transition Case (whose result
+    /// flows into d.state) contributes to the graph.  The output
+    /// Case is irrelevant.
     ///
-    /// Lowering shape (no kernel-top d.field default — the d
-    /// going into the arm comes from upstream Splices that don't
-    /// touch field):
-    ///   d_in     = (some unrelated splice chain, no state field)
-    ///   d_taken  = Splice(d_in, [field], Running)
-    ///   d_other  = Splice(d_in, [other_field], <something>)
-    ///   d_arm    = Select(cond, d_taken, d_other)
-    ///   case [ Idle => d_arm ]
-    ///
-    /// The else-branch recurses to d_other → recurses to d_in,
-    /// which has no state-field Splice anywhere.  Walker returns
-    /// Ok(empty).  Per the implicit-self-loop convention, this
-    /// becomes Idle → Idle.
+    /// Pre-fix, the heuristic extractor would have read the FIRST
+    /// Case (output computation, returning bool) and produced
+    /// nonsense edges.  This test pins that the principled algorithm
+    /// ignores the output Case entirely (it's not on the d.state
+    /// data path).
     #[test]
-    fn guarded_transition_with_implicit_else_yields_self_loop() {
-        use crate::types::path::Path;
-        let r_running = make_register(0);
-        let r_d_in = make_register(1);
-        let r_other_value = make_register(2);
-        let r_taken = make_register(3);
-        let r_other = make_register(4);
-        let r_select = make_register(5);
-        let r_case = make_register(6);
-        let cond = make_register(7);
-        let state = make_register(8);
-        let lit0 = make_slot(0);
-        let sl_d = make_slot(1);
+    fn principled_ignores_output_computation_match_on_q_state() {
+        let q_reg = make_register(100);
+        let o_dummy = make_register(101);
+
+        // --- the output-computation match (returns bool, not state) ---
+        let r_q_state_a = make_register(20);
+        let r_false_lit = make_register(21);
+        let r_true_lit = make_register(22);
+        let r_output_bool = make_register(23); // result of the output Case
+        let lit_idle_a = make_slot(60);
+        let lit_running_a = make_slot(61);
+        let lit_done_a = make_slot(62);
+
+        // --- the transition match (returns d-struct) ---
+        let r_d_init = make_register(0);
+        let r_q_state_b = make_register(1);
+        let r_d_default = make_register(2);
+        let r_to_running = make_register(3);
+        let r_to_done = make_register(4);
+        let r_to_idle = make_register(5);
+        let r_arm_idle = make_register(6);
+        let r_arm_running = make_register(7);
+        let r_arm_done = make_register(8);
+        let r_d_after_case = make_register(9);
+        let sl_dont_care = make_slot(50);
+        let sl_false = make_slot(63);
+        let sl_true = make_slot(64);
+        let lit_idle_b = make_slot(51);
+        let lit_running_b = make_slot(52);
+        let lit_done_b = make_slot(53);
 
         let mut lookup = BTreeMap::new();
-        lookup.insert(lit0, lit_disc_unsigned(0, 2));
-        lookup.insert(sl_d, lit_d_dont_care());
+        lookup.insert(sl_dont_care, lit_d_dont_care());
+        lookup.insert(lit_idle_a, lit_disc_unsigned(0, 2));
+        lookup.insert(lit_running_a, lit_disc_unsigned(1, 2));
+        lookup.insert(lit_done_a, lit_disc_unsigned(2, 2));
+        lookup.insert(lit_idle_b, lit_disc_unsigned(0, 2));
+        lookup.insert(lit_running_b, lit_disc_unsigned(1, 2));
+        lookup.insert(lit_done_b, lit_disc_unsigned(2, 2));
+        lookup.insert(sl_false, lit_disc_unsigned(0, 1));
+        lookup.insert(sl_true, lit_disc_unsigned(1, 1));
 
-        let other_path = Path::default().field("other_field");
-
-        let ops = vec![
-            op_enum(r_running, vec![], lit_disc_unsigned(1, 2)),
-            op_assign(r_d_in, sl_d),
-            // Some unrelated value driving d.other_field in the else-branch.
-            op_assign(r_other_value, sl_d),
-            // then-branch: d.field = Running (state-overriding)
-            op_splice(r_taken, r_d_in, state_path(), r_running),
-            // else-branch: d.other_field = something (NOT state-overriding)
-            op_splice(r_other, r_d_in, other_path, r_other_value),
-            op_select(r_select, cond, r_taken, r_other),
+        let mut ops = vec![
+            // Output computation: let bool_out = match q.state { Idle => false, ... }
+            op_index(r_q_state_a, q_reg, state_path()),
+            op_assign(r_false_lit, sl_false),
+            op_assign(r_true_lit, sl_true),
             op_case(
-                r_case,
-                state,
-                vec![(CaseArgument::Slot(lit0), r_select)],
+                r_output_bool,
+                r_q_state_a,
+                vec![
+                    (CaseArgument::Slot(lit_idle_a), r_false_lit),
+                    (CaseArgument::Slot(lit_running_a), r_true_lit),
+                    (CaseArgument::Slot(lit_done_a), r_false_lit),
+                ],
+            ),
+            // Transition logic: same shape as the canonical test above.
+            op_assign(r_d_init, sl_dont_care),
+            op_index(r_q_state_b, q_reg, state_path()),
+            op_splice(r_d_default, r_d_init, state_path(), r_q_state_b),
+            op_enum(r_to_running, vec![], lit_disc_unsigned(1, 2)),
+            op_enum(r_to_done, vec![], lit_disc_unsigned(2, 2)),
+            op_enum(r_to_idle, vec![], lit_disc_unsigned(0, 2)),
+            op_splice(r_arm_idle, r_d_default, state_path(), r_to_running),
+            op_splice(r_arm_running, r_d_default, state_path(), r_to_done),
+            op_splice(r_arm_done, r_d_default, state_path(), r_to_idle),
+            op_case(
+                r_d_after_case,
+                r_q_state_b,
+                vec![
+                    (CaseArgument::Slot(lit_idle_b), r_arm_idle),
+                    (CaseArgument::Slot(lit_running_b), r_arm_running),
+                    (CaseArgument::Slot(lit_done_b), r_arm_done),
+                ],
             ),
         ];
+        let return_slot = wrap_return(&mut ops, 30, r_d_after_case, o_dummy);
+
         let lookup_fn = make_lookup(lookup);
-        let result =
-            extract_canonical_transitions(&ops, &three_state_d_descriptor(), &lookup_fn);
+        let result = extract_canonical_transitions(
+            &ops,
+            return_slot,
+            &three_state_descriptor(),
+            &lookup_fn,
+        );
         assert!(
             result.unanalyzable.is_empty(),
             "got: {:?}",
@@ -1618,114 +1239,1121 @@ mod tests {
         assert_eq!(
             t,
             vec![
-                Transition { source_index: 0, target_index: 0 }, // Idle → Idle (else: no state write)
-                Transition { source_index: 0, target_index: 1 }, // Idle → Running (then-branch)
+                Transition { source_index: 0, target_index: 1 }, // Idle → Running
+                Transition { source_index: 1, target_index: 2 }, // Running → Done
+                Transition { source_index: 2, target_index: 0 }, // Done → Idle
+            ],
+            "output-computation Case must NOT contribute to the transition graph"
+        );
+    }
+
+    /// Implicit self-loop from the canonical kernel-top default.
+    /// Kernel writes `d.state = q.state` at the top, then has no
+    /// further d.state writes.  Every variant should produce a
+    /// self-loop (held state).
+    #[test]
+    fn principled_kernel_top_default_alone_yields_all_self_loops() {
+        let q_reg = make_register(100);
+        let o_dummy = make_register(101);
+
+        let r_d_init = make_register(0);
+        let r_q_state = make_register(1);
+        let r_d_default = make_register(2);
+        let sl_dont_care = make_slot(50);
+
+        let mut lookup = BTreeMap::new();
+        lookup.insert(sl_dont_care, lit_d_dont_care());
+
+        let mut ops = vec![
+            op_assign(r_d_init, sl_dont_care),
+            op_index(r_q_state, q_reg, state_path()),
+            op_splice(r_d_default, r_d_init, state_path(), r_q_state),
+        ];
+        let return_slot = wrap_return(&mut ops, 3, r_d_default, o_dummy);
+
+        let lookup_fn = make_lookup(lookup);
+        let result = extract_canonical_transitions(
+            &ops,
+            return_slot,
+            &three_state_descriptor(),
+            &lookup_fn,
+        );
+        assert!(result.unanalyzable.is_empty());
+        let mut t = result.transitions.clone();
+        t.sort();
+        assert_eq!(
+            t,
+            vec![
+                Transition { source_index: 0, target_index: 0 },
+                Transition { source_index: 1, target_index: 1 },
+                Transition { source_index: 2, target_index: 2 },
             ]
         );
     }
 
-    /// Bare arm with no state write at all (no Splice on state
-    /// path, no kernel-top default visible to the walker).  Per
-    /// the implicit-self-loop convention, this is a self-loop on
-    /// the source variant.
-    ///
-    /// Concretely: arm result is the bare d_dont_care (e.g.,
-    /// `match q.state { Idle => { d.unrelated = X } }` where the
-    /// d-struct chain never touches the state field).
+    /// Guarded transition with implicit-hold else-branch (the
+    /// can_master Id-arm shape).  Kernel: `d.state = q.state;
+    /// match q.state { Idle => if cond { d.state = Running } else
+    /// { /* no d.state write */ } ... }`.  Verifies the principled
+    /// algorithm produces (Idle → Running) AND (Idle → Idle) from
+    /// the one arm.
     #[test]
-    fn arm_with_no_state_write_at_all_yields_self_loop() {
-        use crate::types::path::Path;
+    fn principled_guarded_transition_emits_explicit_plus_self_loop() {
+        let q_reg = make_register(100);
+        let o_dummy = make_register(101);
+        let cond_reg = make_register(102);
+
+        let r_d_init = make_register(0);
+        let r_q_state = make_register(1);
+        let r_d_default = make_register(2);
+        let r_to_running = make_register(3);
+        let r_d_taken = make_register(4); // d after taken-branch splice
+        let r_arm_idle = make_register(5); // Select(cond, taken, default)
+        let r_d_after_case = make_register(6);
+        let sl_dont_care = make_slot(50);
+        let lit_idle = make_slot(51);
+        let lit_running = make_slot(52);
+        let lit_done = make_slot(53);
+
+        let mut lookup = BTreeMap::new();
+        lookup.insert(sl_dont_care, lit_d_dont_care());
+        lookup.insert(lit_idle, lit_disc_unsigned(0, 2));
+        lookup.insert(lit_running, lit_disc_unsigned(1, 2));
+        lookup.insert(lit_done, lit_disc_unsigned(2, 2));
+
+        let mut ops = vec![
+            op_assign(r_d_init, sl_dont_care),
+            op_index(r_q_state, q_reg, state_path()),
+            op_splice(r_d_default, r_d_init, state_path(), r_q_state),
+            op_enum(r_to_running, vec![], lit_disc_unsigned(1, 2)),
+            // taken: d.state = Running
+            op_splice(r_d_taken, r_d_default, state_path(), r_to_running),
+            // arm body: if cond { taken } else { default (state held) }
+            op_select(r_arm_idle, cond_reg, r_d_taken, r_d_default),
+            op_case(
+                r_d_after_case,
+                r_q_state,
+                vec![
+                    (CaseArgument::Slot(lit_idle), r_arm_idle),
+                    (CaseArgument::Slot(lit_running), r_d_default),
+                    (CaseArgument::Slot(lit_done), r_d_default),
+                ],
+            ),
+        ];
+        let return_slot = wrap_return(&mut ops, 7, r_d_after_case, o_dummy);
+
+        let lookup_fn = make_lookup(lookup);
+        let result = extract_canonical_transitions(
+            &ops,
+            return_slot,
+            &three_state_descriptor(),
+            &lookup_fn,
+        );
+        assert!(
+            result.unanalyzable.is_empty(),
+            "got: {:?}",
+            result.unanalyzable
+        );
+        let mut t = result.transitions.clone();
+        t.sort();
+        assert_eq!(
+            t,
+            vec![
+                Transition { source_index: 0, target_index: 0 }, // Idle → Idle (else)
+                Transition { source_index: 0, target_index: 1 }, // Idle → Running (then)
+                Transition { source_index: 1, target_index: 1 }, // Running → Running (held)
+                Transition { source_index: 2, target_index: 2 }, // Done → Done (held)
+            ]
+        );
+    }
+
+    /// Or-pattern arm: a single Case arm matches multiple variants.
+    /// The principled algorithm's constraint propagation should
+    /// produce the same transition for every source variant in the
+    /// or-pattern.  Modelled by giving the same `arm_slot` to two
+    /// CaseArguments with different discriminants.
+    #[test]
+    fn principled_or_pattern_arm_distributes_per_source() {
+        let q_reg = make_register(100);
+        let o_dummy = make_register(101);
+
+        let r_d_init = make_register(0);
+        let r_q_state = make_register(1);
+        let r_d_default = make_register(2);
+        let r_to_done = make_register(3);
+        let r_arm_combined = make_register(4); // d.state = Done
+        let r_d_after_case = make_register(5);
+        let sl_dont_care = make_slot(50);
+        let lit_idle = make_slot(51);
+        let lit_running = make_slot(52);
+        let lit_done = make_slot(53);
+
+        let mut lookup = BTreeMap::new();
+        lookup.insert(sl_dont_care, lit_d_dont_care());
+        lookup.insert(lit_idle, lit_disc_unsigned(0, 2));
+        lookup.insert(lit_running, lit_disc_unsigned(1, 2));
+        lookup.insert(lit_done, lit_disc_unsigned(2, 2));
+
+        let mut ops = vec![
+            op_assign(r_d_init, sl_dont_care),
+            op_index(r_q_state, q_reg, state_path()),
+            op_splice(r_d_default, r_d_init, state_path(), r_q_state),
+            op_enum(r_to_done, vec![], lit_disc_unsigned(2, 2)),
+            op_splice(r_arm_combined, r_d_default, state_path(), r_to_done),
+            // Or-pattern: Idle | Running both go to Done; Done holds.
+            op_case(
+                r_d_after_case,
+                r_q_state,
+                vec![
+                    (CaseArgument::Slot(lit_idle), r_arm_combined),
+                    (CaseArgument::Slot(lit_running), r_arm_combined),
+                    (CaseArgument::Slot(lit_done), r_d_default),
+                ],
+            ),
+        ];
+        let return_slot = wrap_return(&mut ops, 6, r_d_after_case, o_dummy);
+
+        let lookup_fn = make_lookup(lookup);
+        let result = extract_canonical_transitions(
+            &ops,
+            return_slot,
+            &three_state_descriptor(),
+            &lookup_fn,
+        );
+        assert!(result.unanalyzable.is_empty());
+        let mut t = result.transitions.clone();
+        t.sort();
+        assert_eq!(
+            t,
+            vec![
+                Transition { source_index: 0, target_index: 2 }, // Idle → Done
+                Transition { source_index: 1, target_index: 2 }, // Running → Done
+                Transition { source_index: 2, target_index: 2 }, // Done → Done (held)
+            ]
+        );
+    }
+
+    /// Wild arm: the catch-all `_ =>` branch should apply to any
+    /// source variant not explicitly listed.
+    #[test]
+    fn principled_wild_arm_catches_unmatched_variants() {
+        let q_reg = make_register(100);
+        let o_dummy = make_register(101);
+
+        let r_d_init = make_register(0);
+        let r_q_state = make_register(1);
+        let r_d_default = make_register(2);
+        let r_to_idle = make_register(3);
+        let r_arm_to_idle = make_register(4); // wild arm body: d.state = Idle
+        let r_d_after_case = make_register(5);
+        let sl_dont_care = make_slot(50);
+        let lit_idle = make_slot(51);
+
+        let mut lookup = BTreeMap::new();
+        lookup.insert(sl_dont_care, lit_d_dont_care());
+        lookup.insert(lit_idle, lit_disc_unsigned(0, 2));
+
+        let mut ops = vec![
+            op_assign(r_d_init, sl_dont_care),
+            op_index(r_q_state, q_reg, state_path()),
+            op_splice(r_d_default, r_d_init, state_path(), r_q_state),
+            op_enum(r_to_idle, vec![], lit_disc_unsigned(0, 2)),
+            op_splice(r_arm_to_idle, r_d_default, state_path(), r_to_idle),
+            // Idle holds (default); everything else goes to Idle via Wild.
+            op_case(
+                r_d_after_case,
+                r_q_state,
+                vec![
+                    (CaseArgument::Slot(lit_idle), r_d_default),
+                    (CaseArgument::Wild, r_arm_to_idle),
+                ],
+            ),
+        ];
+        let return_slot = wrap_return(&mut ops, 6, r_d_after_case, o_dummy);
+
+        let lookup_fn = make_lookup(lookup);
+        let result = extract_canonical_transitions(
+            &ops,
+            return_slot,
+            &three_state_descriptor(),
+            &lookup_fn,
+        );
+        assert!(result.unanalyzable.is_empty());
+        let mut t = result.transitions.clone();
+        t.sort();
+        assert_eq!(
+            t,
+            vec![
+                Transition { source_index: 0, target_index: 0 }, // Idle → Idle (held)
+                Transition { source_index: 1, target_index: 0 }, // Running → Idle (Wild)
+                Transition { source_index: 2, target_index: 0 }, // Done → Idle (Wild)
+            ]
+        );
+    }
+
+    /// Negative test: kernel return slot is not a Tuple.  Surface a
+    /// kernel-level Unanalyzable diagnostic with synthetic source
+    /// "<kernel>".
+    #[test]
+    fn principled_non_tuple_return_yields_kernel_level_unanalyzable() {
         let r_d = make_register(0);
-        let r_other_value = make_register(1);
-        let r_other = make_register(2);
-        let r_case = make_register(3);
-        let state = make_register(4);
-        let lit0 = make_slot(0);
-        let sl_d = make_slot(1);
+        let sl_dont_care = make_slot(50);
 
         let mut lookup = BTreeMap::new();
-        lookup.insert(lit0, lit_disc_unsigned(0, 2));
-        lookup.insert(sl_d, lit_d_dont_care());
+        lookup.insert(sl_dont_care, lit_d_dont_care());
 
-        let other_path = Path::default().field("other_field");
+        // Return slot is r_d directly (not a Tuple).
+        let ops = vec![op_assign(r_d, sl_dont_care)];
 
-        let ops = vec![
-            op_assign(r_d, sl_d),
-            op_assign(r_other_value, sl_d),
-            op_splice(r_other, r_d, other_path, r_other_value),
-            op_case(
-                r_case,
-                state,
-                vec![(CaseArgument::Slot(lit0), r_other)],
-            ),
-        ];
         let lookup_fn = make_lookup(lookup);
-        let result =
-            extract_canonical_transitions(&ops, &three_state_d_descriptor(), &lookup_fn);
-        assert!(
-            result.unanalyzable.is_empty(),
-            "got: {:?}",
-            result.unanalyzable
+        let result = extract_canonical_transitions(
+            &ops,
+            r_d,
+            &three_state_descriptor(),
+            &lookup_fn,
         );
-        assert_eq!(
-            result.transitions,
-            vec![Transition { source_index: 0, target_index: 0 }]
-        );
-    }
-
-    /// Negative test: a genuinely malformed arm — the value-form
-    /// walker hits an Enum opcode whose discriminant value matches
-    /// no variant in the descriptor (e.g., the kernel emits a
-    /// state value the type system says shouldn't exist).  This is
-    /// the path that still produces an `Unanalyzable` diagnostic
-    /// after the implicit-self-loop change.  Without this
-    /// distinction, every kind of malformed IR would be silently
-    /// re-interpreted as a self-loop, which would mask real bugs.
-    #[test]
-    fn arm_with_unmatched_enum_discriminant_yields_unanalyzable() {
-        let r_bad = make_register(0);
-        let r_case = make_register(1);
-        let state = make_register(2);
-        let lit0 = make_slot(0);
-
-        let mut lookup = BTreeMap::new();
-        lookup.insert(lit0, lit_disc_unsigned(0, 2));
-
-        let ops = vec![
-            // Enum producing discriminant 99 — no variant in the
-            // 3-state descriptor has that.  variant_index_for_discriminant
-            // returns None and the walker's `.ok_or(...)?` propagates
-            // "enum discriminant doesn't match any variant".
-            op_enum(r_bad, vec![], lit_disc_unsigned(99, 8)),
-            op_case(
-                r_case,
-                state,
-                vec![(CaseArgument::Slot(lit0), r_bad)],
-            ),
-        ];
-        let lookup_fn = make_lookup(lookup);
-        let result =
-            extract_canonical_transitions(&ops, &three_state_d_descriptor(), &lookup_fn);
-        assert!(
-            result.transitions.is_empty(),
-            "got: {:?}",
-            result.transitions
-        );
+        assert!(result.transitions.is_empty());
         assert_eq!(result.unanalyzable.len(), 1);
-        assert_eq!(result.unanalyzable[0].0, "Idle");
-        // Pin the diagnostic message — this is what the user/LLM
-        // sees and acts on.
+        assert_eq!(result.unanalyzable[0].0, "<kernel>");
         assert!(
-            result.unanalyzable[0].1.contains("discriminant")
-                || result.unanalyzable[0].1.contains("variant"),
-            "diagnostic should mention 'discriminant' or 'variant'; got: {}",
+            result.unanalyzable[0].1.contains("Tuple"),
+            "diagnostic should mention 'Tuple'; got: {}",
             result.unanalyzable[0].1
         );
     }
 
-    // Suppress unused-import warning for PathElement; it's part of
-    // the public extraction API surface but only used implicitly via
-    // `Path::field()` constructor in tests.
+    /// Negative test: Enum opcode whose discriminant matches no
+    /// variant.  The walker propagates the error; per-arm
+    /// Unanalyzable is surfaced.
+    #[test]
+    fn principled_enum_with_unknown_discriminant_yields_arm_unanalyzable() {
+        let q_reg = make_register(100);
+        let o_dummy = make_register(101);
+
+        let r_d_init = make_register(0);
+        let r_q_state = make_register(1);
+        let r_d_default = make_register(2);
+        let r_bad_enum = make_register(3); // disc=99 — not in 3-state descriptor
+        let r_arm_idle = make_register(4);
+        let r_d_after_case = make_register(5);
+        let sl_dont_care = make_slot(50);
+        let lit_idle = make_slot(51);
+
+        let mut lookup = BTreeMap::new();
+        lookup.insert(sl_dont_care, lit_d_dont_care());
+        lookup.insert(lit_idle, lit_disc_unsigned(0, 2));
+
+        let mut ops = vec![
+            op_assign(r_d_init, sl_dont_care),
+            op_index(r_q_state, q_reg, state_path()),
+            op_splice(r_d_default, r_d_init, state_path(), r_q_state),
+            op_enum(r_bad_enum, vec![], lit_disc_unsigned(99, 8)),
+            op_splice(r_arm_idle, r_d_default, state_path(), r_bad_enum),
+            // Only Idle arm is malformed; other variants hold via default.
+            op_case(
+                r_d_after_case,
+                r_q_state,
+                vec![
+                    (CaseArgument::Slot(lit_idle), r_arm_idle),
+                    (CaseArgument::Wild, r_d_default),
+                ],
+            ),
+        ];
+        let return_slot = wrap_return(&mut ops, 6, r_d_after_case, o_dummy);
+
+        let lookup_fn = make_lookup(lookup);
+        let result = extract_canonical_transitions(
+            &ops,
+            return_slot,
+            &three_state_descriptor(),
+            &lookup_fn,
+        );
+        // Idle should produce Unanalyzable; Running and Done hold.
+        assert_eq!(result.unanalyzable.len(), 1);
+        assert_eq!(result.unanalyzable[0].0, "Idle");
+        let mut t = result.transitions.clone();
+        t.sort();
+        assert_eq!(
+            t,
+            vec![
+                Transition { source_index: 1, target_index: 1 }, // Running → Running (Wild → default → q.state)
+                Transition { source_index: 2, target_index: 2 }, // Done → Done
+            ]
+        );
+    }
+
+    // =====================================================
+    // Failure-mode-specific Tier-1 tests
+    //
+    // Each of these pins a specific algorithm behaviour that
+    // would otherwise only be tested implicitly via the doc.rs
+    // adversarial widgets.  Direct Tier-1 tests give localised
+    // diagnostics when an extractor change breaks one of these
+    // failure modes.
+    // =====================================================
+
+    /// Reset detection: the canonical RHDL reset block
+    /// `if cr.reset.any() { d.<state_field> = INIT; ... }` lowers
+    /// to `Select(Unary(OrReduce, Index(cr, [.reset])), d_with_reset_override, d_normal)`.
+    /// The principled algorithm recognises this shape and skips
+    /// the reset-override branch (per `fsm-architecture.md` §5.1
+    /// property 3).  Without this, every state would have an edge
+    /// to the initial state.
+    ///
+    /// Synthetic kernel: kernel-top default (every variant
+    /// self-loops), with a reset block that overrides d.state to
+    /// Idle (variant 0).  Expected result: only the self-loops
+    /// from the kernel-top default; NO reset-induced edges to
+    /// state 0.
+    #[test]
+    fn principled_skips_reset_block() {
+        let cr_reg = make_register(100);
+        let q_reg = make_register(101);
+        let o_dummy = make_register(102);
+
+        let r_d_init = make_register(0);
+        let r_q_state = make_register(1);
+        let r_d_default = make_register(2); // d.state = q.state
+        let r_to_idle = make_register(3); // Enum(Idle)
+        let r_d_reset = make_register(4); // d after reset override
+        let r_cr_reset = make_register(5); // cr.reset (the bool field)
+        let r_reset_any = make_register(6); // OrReduce(cr.reset) = .any()
+        let r_d_final = make_register(7); // Select(reset_any, reset_d, default_d)
+        let sl_dont_care = make_slot(50);
+
+        let mut lookup = BTreeMap::new();
+        lookup.insert(sl_dont_care, lit_d_dont_care());
+
+        let reset_path = Path::default().field("reset");
+
+        let mut ops = vec![
+            op_assign(r_d_init, sl_dont_care),
+            op_index(r_q_state, q_reg, state_path()),
+            op_splice(r_d_default, r_d_init, state_path(), r_q_state),
+            op_enum(r_to_idle, vec![], lit_disc_unsigned(0, 2)),
+            op_splice(r_d_reset, r_d_default, state_path(), r_to_idle),
+            // The reset condition: cr.reset → OrReduce → bool.
+            op_index(r_cr_reset, cr_reg, reset_path),
+            crate::rhif::rhif_builder::op_unary(
+                crate::rhif::spec::AluUnary::Any,
+                r_reset_any,
+                r_cr_reset,
+            ),
+            op_select(r_d_final, r_reset_any, r_d_reset, r_d_default),
+        ];
+        let return_slot = wrap_return(&mut ops, 8, r_d_final, o_dummy);
+
+        let lookup_fn = make_lookup(lookup);
+        let result = extract_canonical_transitions(
+            &ops,
+            return_slot,
+            &three_state_descriptor(),
+            &lookup_fn,
+        );
+        assert!(result.unanalyzable.is_empty());
+        let mut t = result.transitions.clone();
+        t.sort();
+        // Only self-loops from the kernel-top default; NO edges
+        // back to state 0 (Idle) from the reset override.  If the
+        // reset detection breaks, we'd see (1, 0) and (2, 0)
+        // appearing here.
+        assert_eq!(
+            t,
+            vec![
+                Transition { source_index: 0, target_index: 0 },
+                Transition { source_index: 1, target_index: 1 },
+                Transition { source_index: 2, target_index: 2 },
+            ]
+        );
+    }
+
+    /// EnumDiscriminant chain: in real RHIF, a `Case` on `q.state`
+    /// has its discriminant defined by an `Index` op with path
+    /// `[#]` (EnumDiscriminant), which itself indexes the result
+    /// of `Index(q, [.state])`.  The constraint propagation must
+    /// follow this two-step Index chain to recognise the FSM
+    /// transition Case.
+    ///
+    /// Without the chain traversal, the walker would treat the
+    /// Case as having a non-state discriminant, fall back to "union
+    /// all arms," and produce universal Cartesian-product
+    /// over-approximation.
+    #[test]
+    fn principled_traverses_enum_discriminant_index_chain() {
+        let q_reg = make_register(100);
+        let o_dummy = make_register(101);
+
+        let r_q_state = make_register(0); // Index(q, [.state])
+        let r_q_state_disc = make_register(1); // Index(r_q_state, [#])
+        let r_d_init = make_register(2);
+        let r_d_default = make_register(3);
+        let r_to_running = make_register(4);
+        let r_to_done = make_register(5);
+        let r_to_idle = make_register(6);
+        let r_arm_idle = make_register(7);
+        let r_arm_running = make_register(8);
+        let r_arm_done = make_register(9);
+        let r_d_after_case = make_register(10);
+        let sl_dont_care = make_slot(50);
+        let lit_idle = make_slot(51);
+        let lit_running = make_slot(52);
+        let lit_done = make_slot(53);
+
+        let mut lookup = BTreeMap::new();
+        lookup.insert(sl_dont_care, lit_d_dont_care());
+        lookup.insert(lit_idle, lit_disc_unsigned(0, 2));
+        lookup.insert(lit_running, lit_disc_unsigned(1, 2));
+        lookup.insert(lit_done, lit_disc_unsigned(2, 2));
+
+        let disc_path = Path::default().discriminant();
+
+        let mut ops = vec![
+            op_index(r_q_state, q_reg, state_path()),
+            // The `#` extraction — real RHIF inserts this in front of every Case on an enum.
+            op_index(r_q_state_disc, r_q_state, disc_path),
+            op_assign(r_d_init, sl_dont_care),
+            op_splice(r_d_default, r_d_init, state_path(), r_q_state),
+            op_enum(r_to_running, vec![], lit_disc_unsigned(1, 2)),
+            op_enum(r_to_done, vec![], lit_disc_unsigned(2, 2)),
+            op_enum(r_to_idle, vec![], lit_disc_unsigned(0, 2)),
+            op_splice(r_arm_idle, r_d_default, state_path(), r_to_running),
+            op_splice(r_arm_running, r_d_default, state_path(), r_to_done),
+            op_splice(r_arm_done, r_d_default, state_path(), r_to_idle),
+            // Case discriminant is r_q_state_disc, NOT r_q_state directly.
+            op_case(
+                r_d_after_case,
+                r_q_state_disc,
+                vec![
+                    (CaseArgument::Slot(lit_idle), r_arm_idle),
+                    (CaseArgument::Slot(lit_running), r_arm_running),
+                    (CaseArgument::Slot(lit_done), r_arm_done),
+                ],
+            ),
+        ];
+        let return_slot = wrap_return(&mut ops, 11, r_d_after_case, o_dummy);
+
+        let lookup_fn = make_lookup(lookup);
+        let result = extract_canonical_transitions(
+            &ops,
+            return_slot,
+            &three_state_descriptor(),
+            &lookup_fn,
+        );
+        assert!(result.unanalyzable.is_empty());
+        let mut t = result.transitions.clone();
+        t.sort();
+        // Constraint propagation must work even with the EnumDiscriminant
+        // chain in front of the Case discriminant.  If it breaks, we'd
+        // see all 9 (3x3) edges instead of the expected 3.
+        assert_eq!(
+            t,
+            vec![
+                Transition { source_index: 0, target_index: 1 },
+                Transition { source_index: 1, target_index: 2 },
+                Transition { source_index: 2, target_index: 0 },
+            ]
+        );
+    }
+
+    /// Locate-step: the kernel's d-component is a Splice chain
+    /// where the most recent <state_field> override happens after
+    /// several non-state Splices.  The locate-step must walk back
+    /// through every non-state Splice to find the state-field
+    /// Splice — verifies the chain-walk in `locate_state_field_slot`.
+    #[test]
+    fn principled_locate_step_walks_through_non_state_splices() {
+        let q_reg = make_register(100);
+        let o_dummy = make_register(101);
+
+        let r_d_init = make_register(0);
+        let r_q_state = make_register(1);
+        let r_d_with_state = make_register(2); // d.state = q.state
+        let r_other_value = make_register(3);
+        let r_d_with_other = make_register(4); // d.other_field = X (state untouched)
+        let sl_dont_care = make_slot(50);
+
+        let mut lookup = BTreeMap::new();
+        lookup.insert(sl_dont_care, lit_d_dont_care());
+
+        let other_path = Path::default().field("other_field");
+
+        let mut ops = vec![
+            op_assign(r_d_init, sl_dont_care),
+            op_index(r_q_state, q_reg, state_path()),
+            op_splice(r_d_with_state, r_d_init, state_path(), r_q_state),
+            op_assign(r_other_value, sl_dont_care),
+            // Splice on a different field, AFTER the state-field splice.
+            // The locate-step must walk through this to find the state-field Splice.
+            op_splice(r_d_with_other, r_d_with_state, other_path, r_other_value),
+        ];
+        let return_slot = wrap_return(&mut ops, 5, r_d_with_other, o_dummy);
+
+        let lookup_fn = make_lookup(lookup);
+        let result = extract_canonical_transitions(
+            &ops,
+            return_slot,
+            &three_state_descriptor(),
+            &lookup_fn,
+        );
+        assert!(result.unanalyzable.is_empty());
+        // All variants self-loop from the kernel-top default.
+        let mut t = result.transitions.clone();
+        t.sort();
+        assert_eq!(
+            t,
+            vec![
+                Transition { source_index: 0, target_index: 0 },
+                Transition { source_index: 1, target_index: 1 },
+                Transition { source_index: 2, target_index: 2 },
+            ]
+        );
+    }
+
+    /// Locate-step failure: the kernel's d-component chain never
+    /// overrides the state field.  Per the locator's contract, this
+    /// surfaces a kernel-level Unanalyzable diagnostic.  Distinct
+    /// from the non-Tuple-return failure mode.
+    #[test]
+    fn principled_locate_failure_when_state_field_never_overridden() {
+        let o_dummy = make_register(101);
+
+        let r_d_init = make_register(0);
+        let sl_dont_care = make_slot(50);
+
+        let mut lookup = BTreeMap::new();
+        lookup.insert(sl_dont_care, lit_d_dont_care());
+
+        // d is just dont_care, no Splices — state field never set.
+        let mut ops = vec![op_assign(r_d_init, sl_dont_care)];
+        let return_slot = wrap_return(&mut ops, 1, r_d_init, o_dummy);
+
+        let lookup_fn = make_lookup(lookup);
+        let result = extract_canonical_transitions(
+            &ops,
+            return_slot,
+            &three_state_descriptor(),
+            &lookup_fn,
+        );
+        assert!(result.transitions.is_empty());
+        assert_eq!(result.unanalyzable.len(), 1);
+        assert_eq!(result.unanalyzable[0].0, "<kernel>");
+        assert!(
+            result.unanalyzable[0].1.contains("never overrides")
+                || result.unanalyzable[0].1.contains("state field"),
+            "diagnostic should explain the locate failure; got: {}",
+            result.unanalyzable[0].1
+        );
+    }
+
+    /// Pinning the **implicit-hold-masks-deadlock** acceptance gap
+    /// documented in `fsm-architecture.md` §5.4 "Known acceptance
+    /// gaps".  This test demonstrates the gap by construction:
+    /// a state with NO explicit transitions and NO explicit
+    /// self-loop (no `d.state = q.state` written inside any arm
+    /// for this state) still ends up with a self-loop in the
+    /// extracted graph because of the canonical kernel-top default
+    /// `d.state = q.state`.
+    ///
+    /// **What the gap means.** The Layer 2 analysis pass's
+    /// `DeadlockCandidate` diagnostic (`fsm::analysis`) cannot fire
+    /// for such a state — the implicit self-loop makes it look
+    /// like the author intended a stay-in-place behaviour, when in
+    /// fact they may have just forgotten to wire transitions out.
+    /// This is a real correctness concern (deadlocks ship
+    /// undetected) and is named as a NECESSARY follow-up, not an
+    /// optional refinement.
+    ///
+    /// **Synthetic construction.** Three states (Idle, Running,
+    /// Done).  Kernel-top default writes `d.state = q.state`.  Then
+    /// a Case on `q.state` where:
+    ///   - Idle arm: `d.state = Running` (transition out)
+    ///   - Running arm: empty (no body, no d.state write)
+    ///       ← intended deadlock that becomes implicit self-loop
+    ///   - Done arm: `d.state = Idle` (transition out)
+    ///
+    /// The extractor produces (Idle → Running, Running → Running,
+    /// Done → Idle).  The Running → Running edge IS the masking:
+    /// to a downstream deadlock check, Running looks like it has
+    /// an outgoing edge (to itself), so it isn't flagged.
+    ///
+    /// When the follow-up lands (track explicit vs implicit
+    /// self-loops separately), the extractor's output should
+    /// distinguish these so the analysis layer can flag the
+    /// implicit-only case.  When that happens, this test will
+    /// need updating to reflect the new contract.
+    #[test]
+    fn principled_implicit_hold_masks_deadlock_state() {
+        let q_reg = make_register(100);
+        let o_dummy = make_register(101);
+
+        let r_d_init = make_register(0);
+        let r_q_state = make_register(1);
+        let r_d_default = make_register(2);
+        let r_to_running = make_register(3);
+        let r_to_idle = make_register(4);
+        let r_arm_idle = make_register(5);
+        let r_arm_done = make_register(6);
+        let r_d_after_case = make_register(7);
+        let sl_dont_care = make_slot(50);
+        let lit_idle = make_slot(51);
+        let lit_running = make_slot(52);
+        let lit_done = make_slot(53);
+
+        let mut lookup = BTreeMap::new();
+        lookup.insert(sl_dont_care, lit_d_dont_care());
+        lookup.insert(lit_idle, lit_disc_unsigned(0, 2));
+        lookup.insert(lit_running, lit_disc_unsigned(1, 2));
+        lookup.insert(lit_done, lit_disc_unsigned(2, 2));
+
+        let mut ops = vec![
+            op_assign(r_d_init, sl_dont_care),
+            op_index(r_q_state, q_reg, state_path()),
+            op_splice(r_d_default, r_d_init, state_path(), r_q_state),
+            op_enum(r_to_running, vec![], lit_disc_unsigned(1, 2)),
+            op_enum(r_to_idle, vec![], lit_disc_unsigned(0, 2)),
+            op_splice(r_arm_idle, r_d_default, state_path(), r_to_running),
+            op_splice(r_arm_done, r_d_default, state_path(), r_to_idle),
+            // The deadlock-y arm: Running maps to r_d_default
+            // (the kernel-top default), meaning no transition
+            // happens and the implicit self-loop fires.
+            op_case(
+                r_d_after_case,
+                r_q_state,
+                vec![
+                    (CaseArgument::Slot(lit_idle), r_arm_idle),
+                    (CaseArgument::Slot(lit_running), r_d_default),
+                    (CaseArgument::Slot(lit_done), r_arm_done),
+                ],
+            ),
+        ];
+        let return_slot = wrap_return(&mut ops, 8, r_d_after_case, o_dummy);
+
+        let lookup_fn = make_lookup(lookup);
+        let result = extract_canonical_transitions(
+            &ops,
+            return_slot,
+            &three_state_descriptor(),
+            &lookup_fn,
+        );
+        assert!(result.unanalyzable.is_empty());
+        let mut t = result.transitions.clone();
+        t.sort();
+        // Running → Running is the implicit self-loop that masks
+        // the deadlock.  Until the spec's NECESSARY follow-up
+        // lands (explicit vs implicit self-loop tracking), the
+        // analysis layer cannot distinguish this from an
+        // intentional self-loop, so DeadlockCandidate cannot fire.
+        assert_eq!(
+            t,
+            vec![
+                Transition { source_index: 0, target_index: 1 }, // Idle → Running (explicit)
+                Transition { source_index: 1, target_index: 1 }, // Running → Running (IMPLICIT — masks deadlock)
+                Transition { source_index: 2, target_index: 0 }, // Done → Idle (explicit)
+            ]
+        );
+    }
+
+    /// Select constraint propagation: when the Select condition is
+    /// `q.<state_field> == StateX`, only the matching branch
+    /// contributes per the source-variant constraint.  This test
+    /// verifies the over-approximation budget §5.4 #5 doesn't
+    /// loosen for the `q.<state_field> == X` pattern inside
+    /// transition logic (per §5.4.2 #1 fix).
+    ///
+    /// Synthetic kernel:
+    ///   d.state = q.state                    // kernel-top default
+    ///   if q.state == Idle { d.state = Running }     // matches only when source=Idle
+    ///
+    /// Without constraint propagation: every variant would get an
+    /// edge to Running (union of both branches).
+    /// With constraint propagation: only Idle → Running, plus
+    /// implicit self-loops for Running and Done.
+    #[test]
+    fn principled_select_constraint_propagation_on_state_eq() {
+        let q_reg = make_register(100);
+        let o_dummy = make_register(101);
+
+        let r_d_init = make_register(0);
+        let r_q_state = make_register(1);
+        let r_d_default = make_register(2);
+        let r_to_running = make_register(3);
+        let r_d_taken = make_register(4);
+        let r_idle_lit = make_register(5);
+        let r_eq_idle = make_register(6); // q.state == Idle
+        let r_d_after_select = make_register(7);
+        let sl_dont_care = make_slot(50);
+        let lit_idle = make_slot(51);
+
+        let mut lookup = BTreeMap::new();
+        lookup.insert(sl_dont_care, lit_d_dont_care());
+        lookup.insert(lit_idle, lit_disc_unsigned(0, 2));
+
+        let mut ops = vec![
+            op_assign(r_d_init, sl_dont_care),
+            op_index(r_q_state, q_reg, state_path()),
+            op_splice(r_d_default, r_d_init, state_path(), r_q_state),
+            op_enum(r_to_running, vec![], lit_disc_unsigned(1, 2)),
+            op_splice(r_d_taken, r_d_default, state_path(), r_to_running),
+            op_enum(r_idle_lit, vec![], lit_disc_unsigned(0, 2)),
+            // q.state == Idle: should resolve true only when source=Idle.
+            crate::rhif::rhif_builder::op_binary(
+                crate::rhif::spec::AluBinary::Eq,
+                r_eq_idle,
+                r_q_state,
+                r_idle_lit,
+            ),
+            op_select(r_d_after_select, r_eq_idle, r_d_taken, r_d_default),
+        ];
+        let return_slot = wrap_return(&mut ops, 8, r_d_after_select, o_dummy);
+
+        let lookup_fn = make_lookup(lookup);
+        let result = extract_canonical_transitions(
+            &ops,
+            return_slot,
+            &three_state_descriptor(),
+            &lookup_fn,
+        );
+        assert!(result.unanalyzable.is_empty());
+        let mut t = result.transitions.clone();
+        t.sort();
+        // Only Idle → Running (constraint resolves true), plus
+        // implicit self-loops for Running and Done (constraint
+        // resolves false → false-branch is the kernel-top default).
+        // Pre-fix: Running and Done would also have edges to
+        // Running because we'd union both branches.
+        assert_eq!(
+            t,
+            vec![
+                Transition { source_index: 0, target_index: 1 }, // Idle → Running (resolved true)
+                Transition { source_index: 1, target_index: 1 }, // Running → Running (resolved false → default)
+                Transition { source_index: 2, target_index: 2 }, // Done → Done (resolved false → default)
+            ]
+        );
+    }
+
+    /// Companion test: the comparison's literal operand is on the
+    /// LEFT side (`Idle == q.state`), not the right.  The
+    /// constraint propagation must work regardless of operand order.
+    #[test]
+    fn principled_select_constraint_propagation_handles_swapped_operands() {
+        let q_reg = make_register(100);
+        let o_dummy = make_register(101);
+
+        let r_d_init = make_register(0);
+        let r_q_state = make_register(1);
+        let r_d_default = make_register(2);
+        let r_to_done = make_register(3);
+        let r_d_taken = make_register(4);
+        let r_running_lit = make_register(5);
+        let r_eq_swapped = make_register(6);
+        let r_d_after_select = make_register(7);
+        let sl_dont_care = make_slot(50);
+
+        let mut lookup = BTreeMap::new();
+        lookup.insert(sl_dont_care, lit_d_dont_care());
+
+        let mut ops = vec![
+            op_assign(r_d_init, sl_dont_care),
+            op_index(r_q_state, q_reg, state_path()),
+            op_splice(r_d_default, r_d_init, state_path(), r_q_state),
+            op_enum(r_to_done, vec![], lit_disc_unsigned(2, 2)),
+            op_splice(r_d_taken, r_d_default, state_path(), r_to_done),
+            op_enum(r_running_lit, vec![], lit_disc_unsigned(1, 2)),
+            // Running == q.state — operand order swapped.
+            crate::rhif::rhif_builder::op_binary(
+                crate::rhif::spec::AluBinary::Eq,
+                r_eq_swapped,
+                r_running_lit,
+                r_q_state,
+            ),
+            op_select(r_d_after_select, r_eq_swapped, r_d_taken, r_d_default),
+        ];
+        let return_slot = wrap_return(&mut ops, 8, r_d_after_select, o_dummy);
+
+        let lookup_fn = make_lookup(lookup);
+        let result = extract_canonical_transitions(
+            &ops,
+            return_slot,
+            &three_state_descriptor(),
+            &lookup_fn,
+        );
+        assert!(result.unanalyzable.is_empty());
+        let mut t = result.transitions.clone();
+        t.sort();
+        assert_eq!(
+            t,
+            vec![
+                Transition { source_index: 0, target_index: 0 }, // Idle hold (false)
+                Transition { source_index: 1, target_index: 2 }, // Running → Done (true)
+                Transition { source_index: 2, target_index: 2 }, // Done hold (false)
+            ]
+        );
+    }
+
+    /// Negative test: when the Select condition is opaque (e.g.,
+    /// reads an input bool or an arithmetic expression), constraint
+    /// propagation correctly bails and falls back to union of both
+    /// branches.  This prevents the Select-handler from
+    /// false-positively constraining when the condition isn't
+    /// actually a state-eq comparison.
+    #[test]
+    fn principled_select_constraint_propagation_falls_back_on_opaque_cond() {
+        let q_reg = make_register(100);
+        let o_dummy = make_register(101);
+        let opaque_cond = make_register(102); // some unrelated bool input
+
+        let r_d_init = make_register(0);
+        let r_q_state = make_register(1);
+        let r_d_default = make_register(2);
+        let r_to_running = make_register(3);
+        let r_d_taken = make_register(4);
+        let r_d_after_select = make_register(5);
+        let sl_dont_care = make_slot(50);
+
+        let mut lookup = BTreeMap::new();
+        lookup.insert(sl_dont_care, lit_d_dont_care());
+
+        let mut ops = vec![
+            op_assign(r_d_init, sl_dont_care),
+            op_index(r_q_state, q_reg, state_path()),
+            op_splice(r_d_default, r_d_init, state_path(), r_q_state),
+            op_enum(r_to_running, vec![], lit_disc_unsigned(1, 2)),
+            op_splice(r_d_taken, r_d_default, state_path(), r_to_running),
+            // Opaque condition (function arg) — not a state-eq comparison.
+            op_select(r_d_after_select, opaque_cond, r_d_taken, r_d_default),
+        ];
+        let return_slot = wrap_return(&mut ops, 6, r_d_after_select, o_dummy);
+
+        let lookup_fn = make_lookup(lookup);
+        let result = extract_canonical_transitions(
+            &ops,
+            return_slot,
+            &three_state_descriptor(),
+            &lookup_fn,
+        );
+        assert!(result.unanalyzable.is_empty());
+        let mut t = result.transitions.clone();
+        t.sort();
+        // Every variant gets an edge to Running (true-branch) AND
+        // its self-loop (false-branch).  Sound over-approximation.
+        assert_eq!(
+            t,
+            vec![
+                Transition { source_index: 0, target_index: 0 },
+                Transition { source_index: 0, target_index: 1 },
+                Transition { source_index: 1, target_index: 1 },
+                Transition { source_index: 2, target_index: 1 },
+                Transition { source_index: 2, target_index: 2 },
+            ]
+        );
+    }
+
+    // =====================================================
+    // allow_implicit = false (strict mode) tests
+    //
+    // Pin the new opt-in behaviour: when the widget descriptor
+    // sets allow_implicit=false, implicit self-loops disappear
+    // from the graph.  States whose only would-be outgoing edge
+    // was an implicit self-loop end up with no outgoing edges,
+    // surfacing as DeadlockCandidate in the analysis layer.
+    //
+    // This closes `fsm-architecture.md` §5.4.1.
+    // =====================================================
+
+    /// Strict mode: kernel-top default alone yields NO transitions
+    /// (vs `allow_implicit=true` which yields 3 self-loops).  Every
+    /// variant has zero outgoing edges; the analysis layer would
+    /// fire DeadlockCandidate for each.
+    #[test]
+    fn strict_mode_kernel_top_default_alone_yields_no_transitions() {
+        let q_reg = make_register(100);
+        let o_dummy = make_register(101);
+
+        let r_d_init = make_register(0);
+        let r_q_state = make_register(1);
+        let r_d_default = make_register(2);
+        let sl_dont_care = make_slot(50);
+
+        let mut lookup = BTreeMap::new();
+        lookup.insert(sl_dont_care, lit_d_dont_care());
+
+        let mut ops = vec![
+            op_assign(r_d_init, sl_dont_care),
+            op_index(r_q_state, q_reg, state_path()),
+            op_splice(r_d_default, r_d_init, state_path(), r_q_state),
+        ];
+        let return_slot = wrap_return(&mut ops, 3, r_d_default, o_dummy);
+
+        let lookup_fn = make_lookup(lookup);
+        let result = extract_canonical_transitions(
+            &ops,
+            return_slot,
+            &three_state_strict_descriptor(),
+            &lookup_fn,
+        );
+        assert!(result.unanalyzable.is_empty());
+        // Strict: NO transitions.  Analysis layer sees zero
+        // outgoing edges per variant → DeadlockCandidate fires.
+        assert_eq!(
+            result.transitions,
+            Vec::<Transition>::new(),
+            "strict mode should produce no transitions for kernel-top default alone; \
+             got {:?}",
+            result.transitions
+        );
+    }
+
+    /// Strict mode: a guarded transition with implicit-hold
+    /// else-branch produces ONLY the explicit edge, not the
+    /// implicit self-loop.  The else-branch's "no state write"
+    /// stays "no contribution" — the analysis layer will see the
+    /// missing self-loop edge and won't be misled into thinking
+    /// the state has an intentional stay-in-place behaviour.
+    ///
+    /// This is the can_master `Id`-arm shape verbatim, but with
+    /// allow_implicit=false instead of true.
+    #[test]
+    fn strict_mode_guarded_transition_emits_only_explicit_edge() {
+        let q_reg = make_register(100);
+        let o_dummy = make_register(101);
+        let cond_reg = make_register(102);
+
+        let r_d_init = make_register(0);
+        let r_q_state = make_register(1);
+        let r_d_default = make_register(2);
+        let r_to_running = make_register(3);
+        let r_d_taken = make_register(4);
+        let r_arm_idle = make_register(5);
+        let r_d_after_case = make_register(6);
+        let sl_dont_care = make_slot(50);
+        let lit_idle = make_slot(51);
+        let lit_running = make_slot(52);
+        let lit_done = make_slot(53);
+
+        let mut lookup = BTreeMap::new();
+        lookup.insert(sl_dont_care, lit_d_dont_care());
+        lookup.insert(lit_idle, lit_disc_unsigned(0, 2));
+        lookup.insert(lit_running, lit_disc_unsigned(1, 2));
+        lookup.insert(lit_done, lit_disc_unsigned(2, 2));
+
+        let mut ops = vec![
+            op_assign(r_d_init, sl_dont_care),
+            op_index(r_q_state, q_reg, state_path()),
+            op_splice(r_d_default, r_d_init, state_path(), r_q_state),
+            op_enum(r_to_running, vec![], lit_disc_unsigned(1, 2)),
+            op_splice(r_d_taken, r_d_default, state_path(), r_to_running),
+            op_select(r_arm_idle, cond_reg, r_d_taken, r_d_default),
+            op_case(
+                r_d_after_case,
+                r_q_state,
+                vec![
+                    (CaseArgument::Slot(lit_idle), r_arm_idle),
+                    (CaseArgument::Slot(lit_running), r_d_default),
+                    (CaseArgument::Slot(lit_done), r_d_default),
+                ],
+            ),
+        ];
+        let return_slot = wrap_return(&mut ops, 7, r_d_after_case, o_dummy);
+
+        let lookup_fn = make_lookup(lookup);
+        let result = extract_canonical_transitions(
+            &ops,
+            return_slot,
+            &three_state_strict_descriptor(),
+            &lookup_fn,
+        );
+        assert!(result.unanalyzable.is_empty());
+        let mut t = result.transitions.clone();
+        t.sort();
+        // Strict: ONLY the explicit Idle → Running edge.  No
+        // implicit self-loops on Idle (else branch) nor on
+        // Running / Done (their arms hold via default).  The
+        // Running and Done states have no outgoing edges →
+        // DeadlockCandidate fires for both in the analysis layer.
+        assert_eq!(
+            t,
+            vec![
+                Transition { source_index: 0, target_index: 1 }, // Idle → Running (explicit)
+            ]
+        );
+    }
+
+    /// Strict mode + explicit self-loop is preserved.  When the
+    /// kernel author writes `d.state = q.state` *inside an arm*
+    /// (not just at the kernel top), that's an explicit self-loop
+    /// and IS included in the graph regardless of allow_implicit.
+    /// The data-flow walk reaches the Index-on-q.<state_field>
+    /// terminal, which under allow_implicit=false returns empty
+    /// — so even an explicit `d.state = q.state` inside an arm
+    /// disappears in strict mode.  This is the design's
+    /// trade-off: "explicit self-loop" requires writing
+    /// `d.state = State::A` (as a literal) inside arm A, not
+    /// `d.state = q.state`.  Documented here.
+    ///
+    /// (A future enhancement could track explicit-via-literal
+    /// vs implicit-via-default separately and treat them
+    /// distinctly.  See `fsm-architecture.md` §5.4.1.)
+    #[test]
+    fn strict_mode_explicit_self_loop_via_literal_is_preserved() {
+        let q_reg = make_register(100);
+        let o_dummy = make_register(101);
+
+        let r_d_init = make_register(0);
+        let r_q_state = make_register(1);
+        let r_d_default = make_register(2);
+        let r_to_idle = make_register(3); // Enum(Idle) — the literal self-loop
+        let r_arm_idle = make_register(4);
+        let r_d_after_case = make_register(5);
+        let sl_dont_care = make_slot(50);
+        let lit_idle = make_slot(51);
+
+        let mut lookup = BTreeMap::new();
+        lookup.insert(sl_dont_care, lit_d_dont_care());
+        lookup.insert(lit_idle, lit_disc_unsigned(0, 2));
+
+        let mut ops = vec![
+            op_assign(r_d_init, sl_dont_care),
+            op_index(r_q_state, q_reg, state_path()),
+            op_splice(r_d_default, r_d_init, state_path(), r_q_state),
+            op_enum(r_to_idle, vec![], lit_disc_unsigned(0, 2)),
+            // Idle arm explicitly writes d.state = Idle (via literal).
+            op_splice(r_arm_idle, r_d_default, state_path(), r_to_idle),
+            // Wild catches Running and Done (which under strict
+            // mode contribute nothing — they hold via the
+            // kernel-top default but the implicit self-loop
+            // doesn't fire).
+            op_case(
+                r_d_after_case,
+                r_q_state,
+                vec![
+                    (CaseArgument::Slot(lit_idle), r_arm_idle),
+                    (CaseArgument::Wild, r_d_default),
+                ],
+            ),
+        ];
+        let return_slot = wrap_return(&mut ops, 6, r_d_after_case, o_dummy);
+
+        let lookup_fn = make_lookup(lookup);
+        let result = extract_canonical_transitions(
+            &ops,
+            return_slot,
+            &three_state_strict_descriptor(),
+            &lookup_fn,
+        );
+        assert!(result.unanalyzable.is_empty());
+        // Only Idle → Idle: the explicit Splice with r_to_idle
+        // (an Enum literal) writes the state field explicitly.
+        // Running and Done (Wild arm) hold via the kernel-top
+        // default — under strict mode their implicit self-loops
+        // are NOT included.  The analysis layer would fire
+        // DeadlockCandidate for Running and Done.
+        assert_eq!(
+            result.transitions,
+            vec![Transition { source_index: 0, target_index: 0 }]
+        );
+    }
+
+    // Suppress unused-import warning for PathElement.
     #[allow(dead_code)]
     fn _path_element_marker(_: PathElement) {}
 }

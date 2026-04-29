@@ -65,7 +65,12 @@ where
         slot.lit().map(|lit_id| object.symtab[lit_id].clone())
     };
     let desc = W::fsm_descriptor();
-    Ok(extraction::extract_canonical_transitions(&ops, &desc, &lookup))
+    Ok(extraction::extract_canonical_transitions(
+        &ops,
+        object.return_slot,
+        &desc,
+        &lookup,
+    ))
 }
 
 /// Strict variant of [`extract_widget_transitions`]: returns the
