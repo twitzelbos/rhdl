@@ -31,6 +31,35 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-04-29 — FSM extractor handles side-effect `d.state` form (+ adversarial diagnostic & SVA tests)
+
+**Paths:** `crates/rhdl-core/src/fsm/extraction.rs`, `crates/rhdl-core/src/fsm/analysis.rs`, `crates/rhdl-core/src/fsm/property.rs`, `crates/rhdl-fpga/src/doc.rs`
+
+**Why this, why now:** The v1 canonical extractor (PR #4) only handled the let-binding kernel form (`let next = match ... ; d.state = next`). Every shipped FSM widget actually writes the side-effect form (`match q.state { Foo => d.state = Bar }`) — ~95% of the tree. Without this, every FSM widget that wasn't manually re-shaped emitted an empty `FSM_TRANSITIONS` and the auto-injected diagram had zero edges. This PR closes that gap and pins the diagnostic + SVA emission contracts with adversarial tests, so future loosenings of either surface fail loudly.
+
+**Design decisions:**
+- **Two cooperating walkers, unioned per arm.** `variants_in_state_value_slot` (let-binding form) and `variants_in_d_state_field` (side-effect form) run independently for each match arm. The result set is the union — a kernel can use one form per arm and the extractor handles both. Per-arm dedup so a `Splice → Select → Splice` in the same arm doesn't double-count.
+- **Self-loop detection via `Index` reading `q.state`.** When an arm assigns `d.state = q.state` (idiomatic stay-in-state), the walker resolves the `Index` to the source arm's variant and emits a self-loop transition. This is what makes `SelfLoopSaturation` distinguishable from `DeadlockCandidate` — the analysis layer can see the loop edge.
+- **Diagnostic message text is now part of the test contract.** Every `FsmDiagnosticKind` has at least one test asserting on the rendered `message()` string — required vocabulary, fix hint, source/widget localization. Previously the tests only matched on `kind`, so message text could drift silently (and a bad message is the LLM-facing failure surface that matters most).
+- **SVA emission tested against IEEE 1800-2017 §16 structurally.** A `parse_property_line` helper decomposes each rendered line into (verb, label, bound, expr); a `is_valid_sv_simple_identifier` helper enforces §5.6. Tests cover bound=0, bound=u64::MAX, bound=None, identifier validity (letter/`_`/`$` rules), pragma markers, line-count exactness, canonical clock label, keyword-collision passthrough.
+
+**Surprises and gotchas:**
+- **The first time we ran the unioned walkers, we got duplicate transitions** when a widget used both forms in the same arm (rare but legal). Per-arm dedup fixed it without changing the per-FSM dedup that was already there.
+- **`property_label_with_digit_prefix_is_invalid_per_sv_spec` is an inverted test** — it asserts the v1 renderer DOES produce SV-invalid output for a label starting with a digit. This is *intentional documentation* of a v1 limitation; tightening the renderer to reject/sanitize will surface as a test failure that prompts an explicit decision rather than silently changing emitted Verilog under widgets.
+- **`unanalyzable_message_includes_extractor_reason_string_unedited` pins the layering boundary.** The analysis layer must not reformat the extractor's reason string; future refactors that try to "make the message nicer" by rewriting it will fail this test. Keeps the diagnostic chain auditable end-to-end.
+
+**Validation:**
+- `cargo test --package rhdl-core fsm::` — 61 tests passing, including 11 new extractor adversarial tests, 10 new diagnostic-message adversarial tests, 16 new SVA emission adversarial tests.
+- 7 new integration tests in `crates/rhdl-fpga/src/doc.rs` exercise real `Synchronous` + `FsmWidget` kernels through the full pipeline (extract → analyze → render).
+- `cargo test --all` — no regressions; every shipped widget's HDL snapshot unchanged (extractor changes are additive, not lowering changes).
+
+**Follow-ups:**
+- **Layer 2 RHIF-extraction wired into rustdoc emission** — once the auto-extractor is the source of truth for FSM_TRANSITIONS, drop the author-curated consts from every widget. Tracked in `widget-roadmap.md`. This PR makes it possible by fixing the side-effect-form gap.
+- **SVA renderer hardening** — sanitize labels (digit-prefix → `_<label>`), escape SV keyword collisions, validate expression syntax. The inverted test above will fail when this lands and document the new behavior.
+- **Phase 4b SymbiYosys integration** — deferred (works on Mac but tooling matrix is not stable yet); the property emitter is ready for it.
+
+---
+
 ## 2026-04-29 — Bus-attached UART (16550A-style register interface, v1)
 
 **Path:** `crates/rhdl-fpga/src/core/bus_uart.rs` (+ example, doc, vcd)
