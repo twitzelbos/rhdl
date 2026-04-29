@@ -3,6 +3,7 @@
 pub mod audio_pwm;
 pub mod barrel_shifter;
 pub mod can_master;
+pub mod cga_rgbi;
 pub mod comparator;
 pub mod constant;
 pub mod counter;
@@ -30,6 +31,7 @@ pub mod pwm;
 pub mod ram;
 pub mod register_file;
 pub mod round_robin_arbiter;
+pub mod sent_rx;
 pub mod slice;
 pub mod spi_master;
 pub mod spi_slave;
