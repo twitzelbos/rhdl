@@ -1,0 +1,1 @@
+TraceInfo({"top.busy":Bits(1),"top.data_out":Bits(8),"top.dst_clock":Clock,"top.src_clock":Clock,"top.src_data":Signal(Bits(8),Red),"top.src_send":Signal(Bits(1),Red)})

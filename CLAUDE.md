@@ -2,20 +2,23 @@
 
 This file is the operating contract for any AI agent (Claude Code, the Claude Agent SDK, or otherwise) extending the RHDL widget library, building new circuits, fixing bugs, or producing documentation in this repository.
 
-> **Read this in full before writing any code.** The conventions here are not stylistic preferences. They encode invariants the RHDL compiler relies on, the only validation paths that catch subtle hardware bugs, and the documentation contract users depend on. Skipping any of them produces silently broken hardware.
+> **STOP. Before you read further: open `architecture.md` and read it in full.** That document is the structural blueprint of the workspace — crate layout, dependency rules, IR layering, and the non-negotiable architectural decisions. CLAUDE.md (this file) tells you *how to build a widget correctly*. `architecture.md` tells you *what must not change in the way the codebase is organized*. **Both are required reading before you implement anything**, including a fix, a refactor, or a new file. Skipping `architecture.md` produces work that may be locally correct but structurally wrong — and structural drift is far more expensive to undo than to prevent.
+>
+> **Then read this file in full before writing any code.** The conventions here are not stylistic preferences. They encode invariants the RHDL compiler relies on, the only validation paths that catch subtle hardware bugs, and the documentation contract users depend on. Skipping any of them produces silently broken hardware.
 
 ---
 
 ## TL;DR — The Non-Negotiable Contract
 
-A feature, widget, or fix is **not complete** until it satisfies all four of:
+A feature, widget, or fix is **not complete** until it satisfies all five of:
 
 1. **Code** — compiles cleanly, type-checks under `cargo check --all`, no `cargo clippy --all` regressions.
 2. **Tests at every applicable tier** — direct kernel unit tests, iterator-based simulation tests, HDL emission snapshot, and `iverilog` round-trip (RTL and NTL).
 3. **Documentation** — module rustdoc with schematic symbol, internal block diagram (when non-trivial), runnable example, and committed waveform markdown.
 4. **Validation artifacts committed** — `expect_test` snapshots, VCD digest hashes, and the trace `.md` file under `doc/`.
+5. **CHANGELOG entry** — every widget, fix, or design pivot lands with a build-narrative entry in `CHANGELOG.md`. **See §16 — this is mandatory and not optional.**
 
-If any of those four are missing, **the work is in progress, not done**. State this honestly when reporting status. Do not mark a task complete, do not raise a PR, do not say "this is ready for review" until all four are satisfied.
+If any of those five are missing, **the work is in progress, not done**. State this honestly when reporting status. Do not mark a task complete, do not raise a PR, do not say "this is ready for review" until all five are satisfied.
 
 The full rules below expand each item. Every section has examples drawn from existing widgets (`Counter`, `DFF`, `Delay`, `Sync1Bit`, `FIFOWriteCore`, `SyncFIFO`, `Map`) so you can use them as templates.
 
@@ -57,6 +60,20 @@ crates/rhdl-fpga/
 ```
 
 Categories that already exist: `core`, `cdc`, `fifo`, `gray`, `lid`, `pipe`, `reset`, `rng`, `dsp`, `stream`, `axi4lite`, `tristate`. Reuse one of those before inventing a new top-level module.
+
+### Strategic design documents at the repository root
+
+**`architecture.md` is mandatory reading before any implementation work**, full stop. Everything else in this list is consulted as needed.
+
+- **`architecture.md`** — **READ FIRST, EVERY TIME.** The structural blueprint: workspace layout, crate dependency graph, IR layering (RHIF → RTL → NTL), the proc-macro split, the kernel-as-pure-fn invariant, the ten architectural decisions that must not change without sign-off, and the patterns for evolving the architecture correctly. Whenever you are about to add a crate, add a top-level module, change a dependency edge, introduce a new IR layer, add a widget category, or bypass an established mechanism (e.g., write Verilog as strings, depend on `rhdl-core` from `rhdl-macro-core`, thread a target generic through widgets), `architecture.md` tells you whether what you are about to do is allowed and, if not, what the correct alternative is. Treat it as a blocking gate on structural decisions.
+- **`widget-roadmap.md`** — the prioritized list of widgets to build, organized by dependency depth. Every new widget should pick its tier and check what depends on it.
+- **`auto-pipelining-plan.md`** — design for automatic pipeline-register insertion to meet a target clock frequency. Widgets with long combinational paths (integer divider, MAC unit, wide CRC, AXI4 burst logic) should note when they would benefit from auto-pipelining once it ships, so they can be re-shaped cleanly.
+- **`kernel-language-extensions.md`** — design for expanding the subset of Rust accepted inside `#[kernel]`. If a widget kernel would read more naturally with `let-else`, or-patterns, range patterns, `?` on `Option`, or new `Bits<N>` methods (`count_ones`, `leading_zeros`, `reverse_bits`, saturating arithmetic), record the dependency in the widget's CHANGELOG entry.
+- **`vendor-primitive-architecture.md`** — design for the `Target` trait system that lets a single widget emit vendor-specific primitives (Xilinx DSP slices, Lattice EBR, etc.) on targets that have them and fall back to portable Verilog elsewhere. **Decision recorded:** widgets that benefit from vendor primitives are written *once*, target-agnostic, and use the `primitive!` macro (or compiler-recognized arithmetic patterns) to request the primitive. The widget's API does not carry a target generic. Targets are supplied at the codegen step via `Descriptor::hdl_for(&target)`. Default-impl trait fallback guarantees every widget compiles on every target. See the doc for the phased rollout plan and the validation matrix.
+
+If your widget would benefit from work in any of these tracks but the relevant feature has not landed, build the portable version *now* (per the contract in the TL;DR) and note the future-improvement opportunity in the CHANGELOG entry. Do not block on parallel-track work that hasn't shipped.
+
+**Order of reading for a fresh agent:** `architecture.md` first, this file (CLAUDE.md) second, then the relevant design plan(s) for the specific work at hand. Do not skip steps; do not reorder them.
 
 ---
 
@@ -230,6 +247,11 @@ Key invariants:
 - Floating-point types.
 
 When in doubt: write the kernel, run `cargo check`. The compiler produces `miette`-decorated errors with source spans. Read them; they are precise.
+
+### Subtle semantics to internalize
+
+- **`if`/`else` lowers to a combinational mux. Both branches always evaluate.** A guard like `if amount == 0 { safe_value } else { expr_using(amount) }` will *still execute* `expr_using(amount)` in hardware (and in the kernel VM); only the result is selected. If `expr_using(amount)` would panic, overflow, or trip the VM's `shift < N` check for the guarded-out input, *clamp the operand itself*, not just the result. Pattern: `let safe_x = if guard { fallback_x } else { x }; ... use(safe_x)`. See the barrel-shifter widget for a worked example. The same principle applies to `match` arms.
+- **Direct Rust calls to a kernel are *more permissive* than the kernel VM.** `Bits<N> << k` for `k >= N` wraps gracefully in Rust but errors in the VM. Tier-1 unit tests can therefore mask shift-bound bugs that only `test_kernel_vm_and_verilog_synchronous` catches. Add VM cross-validation to every combinational kernel that uses variable shifts or any other operation with VM-enforced bounds.
 
 ---
 
@@ -438,6 +460,7 @@ The `crates/Justfile` exposes `just coverage` for a coverage HTML report.
 
 Step-by-step. Follow it in order. Skipping or reordering steps loses ground-truth checking.
 
+0. **Read `architecture.md` and this file (CLAUDE.md) in full.** This is not optional and not a step you skip "because you've done it once before." Architecture decisions evolve; the documents are the source of truth, not your memory of them. If you cannot recall the crate dependency rules, the IR layering, or the categories of `rhdl-fpga`, re-read.
 1. **Sketch the schematic symbol** as ASCII art before writing any Rust. This forces clarity on the I/O contract and is the docstring you'll commit anyway.
 2. **Define `In` and `Out` structs** with full per-field doc comments.
 3. **Write the kernel function** with `#[kernel]`. Keep the body small; factor sub-functions if it grows. Apply the "reset comes last" rule.
@@ -460,6 +483,7 @@ Step-by-step. Follow it in order. Skipping or reordering steps loses ground-trut
 
 ## 10 — How to Fix a Bug
 
+0. **Read `architecture.md` first.** Even bug fixes can drift the architecture if the fix introduces an unintended dependency, splits responsibilities across crates incorrectly, or smuggles widget-specific logic into the compiler. Confirm the fix lives in the right crate before you write any code.
 1. **Reproduce with a failing test** at the lowest applicable tier. If the bug shows up only in `iverilog` round-trip, it is a Tier-4 bug; write the failing Tier-1 test that *would have caught it* whenever possible — bugs that only emerge late are signs of insufficient lower-tier coverage.
 2. Fix the code.
 3. Confirm the failing test now passes; confirm no other tests regressed.
@@ -473,11 +497,81 @@ Step-by-step. Follow it in order. Skipping or reordering steps loses ground-trut
 
 If your task is in `rhdl-core` (a new pass, an IR change, a fix in lowering):
 
+- **Read `architecture.md` §3 (Inside `rhdl-core`) before touching anything.** The IR-stage boundaries, the pass-registry pattern, and the symbol-table invariant are architectural; they are easy to violate by accident.
 - Each pass implements `trait Pass { fn run(Object) -> Result<Object, RHDLError> }` and is registered in the appropriate stage driver (`stage1.rs`, `stage2.rs`, `stage3.rs`).
 - Every pass needs unit tests with before/after IR snapshots via `expect_test`.
 - IR changes propagate forward: a new RHIF op needs a lowering to RTL; a new RTL op needs a lowering to NTL; a new NTL op needs a Verilog emission rule.
 - After any compiler change, `cargo test --all` must pass — including every widget's Tier-3 snapshot. Snapshot diffs are the canary; review them before mass-accepting via `UPDATE_EXPECT=1`.
 - The `compile_design::<K>()` driver should still work for arbitrary `K: DigitalFn` after your change.
+
+### 11.1 — Critical requirements for compiler-level changes
+
+Compiler-level changes are categorically different from widget work. A widget that misbehaves affects one widget. A compiler-level change that misbehaves silently corrupts every kernel that compiles through it — past, present, and future. The blast radius is the entire codebase plus every downstream user. The bar for landing such a change is therefore much higher.
+
+**The credo this section protects.** RHDL's value proposition rests on a small number of guarantees:
+
+- **Compile-time correctness.** If a `#[kernel]` compiles, the type system and the compiler passes have already excluded entire classes of hardware bug — clock-domain mixing, bit-width mismatches, use-before-write, partial-init reads, undriven nets, single-driver violations.
+- **Kernel-as-pure-fn.** Every kernel is a pure function over `Digital` types. No references, no heap, no captured closures, no I/O. This is what makes auto-pipelining sound, retiming sound, and `cargo test` a complete simulation harness.
+- **Three-IR layering.** RHIF (typed SSA) → RTL (untyped SSA) → NTL (netlist). Each IR has invariants that downstream passes assume.
+- **Verilog through the AST, never strings.** Type information flows from kernel through every IR to the emitted Verilog without lossy stringification.
+- **Single-IR for vendor primitives.** One widget source, target chosen at codegen via `Descriptor::hdl_for(&target)`.
+
+A compiler-level change can quietly weaken any of these. A loosened type check, a bypassed pass invariant, a new IR opcode without forward lowering, an escape hatch in the kernel subset, a partial-init read accepted, a cross-domain operation accepted without explicit `Retime` — every one is a silent loophole that violates the credo and ships broken hardware to users who trust the compiler.
+
+The following requirements are **non-negotiable** for any change to `rhdl-core`, `rhdl-macro-core`, `rhdl-vlog`, or any other crate involved in the compile pipeline.
+
+#### One feature per PR
+
+A "feature" here is a single, atomically-described change to the compiler:
+
+- one new pass, OR
+- one new IR opcode (with all its lowerings), OR
+- one new diagnostic, OR
+- one new kernel-language extension, OR
+- one bug fix at one IR level.
+
+Do not bundle. Do not submit a PR titled "various compiler improvements." Do not add an unrelated rename or refactor in the same PR. Each PR is reviewable in isolation; each commit within the PR is reviewable in isolation. If you are tempted to combine — because "they're related" or "it'd be more efficient" or "the diff is small" — split. The reviewer's job is to spot loopholes, and loopholes hide in compound diffs.
+
+If a single feature genuinely requires touching multiple IR levels (e.g., a new RHIF op needs lowering to RTL, then to NTL, then to Verilog), that is one PR. The unit is "the smallest atomic change that makes sense in isolation." The four lowerings are the same atomic change; the new feature plus an unrelated typo fix is two atomic changes.
+
+#### Everything has to be tested — at every level the change touches
+
+Compiler tests come in tiers, mirroring the widget validation stack but with stricter requirements:
+
+1. **Pass-level unit test.** For every new or modified pass, an `expect_test` snapshot of the IR before and after the pass on a hand-crafted minimal input. The test lives next to the pass file.
+2. **IR-spec test.** For every new opcode, a test that constructs the opcode, exercises every field, and round-trips it through display/parse/visitor.
+3. **Lowering test.** For every new opcode, a test that lowers a minimal program containing it through every downstream IR and verifies the lowered form (`expect_test` snapshots at each level).
+4. **Kernel-level integration test.** For every change that affects a `#[kernel]`-accepted construct, a test in `crates/rhdl/tests/` that compiles a kernel exercising the change end-to-end and verifies the emitted Verilog passes `iverilog` round-trip.
+5. **Widget-snapshot regression check.** `cargo test --all` must pass *without* `UPDATE_EXPECT=1`. Every widget's Tier-3 HDL snapshot is part of the contract; a compiler change that bumps every snapshot is the canary that something semantic shifted. Audit every diff before re-blessing — and if you re-bless, the PR description must explain *why* every widget's emitted Verilog changed.
+6. **Negative test.** For changes that tighten a check (e.g., reject a previously-accepted construct), a test demonstrating the rejection produces a `miette` diagnostic with the right span and a useful message. For changes that introduce a new escape hatch (rare; require strong justification), a test demonstrating the escape hatch is *only* available where intended.
+
+A compiler change that adds tests at one tier but not the others is incomplete. State this honestly in the PR description.
+
+#### Extensive justification — the design-rationale section
+
+Every compiler-level PR description must include a **Justification** section that answers, in order:
+
+1. **What guarantee does this change preserve, strengthen, or introduce?** Name the guarantee from the credo above (or argue for a new one). If the change weakens a guarantee, do not submit the PR — open a design-doc issue first.
+2. **What loophole does this *not* introduce?** Walk through the obvious adjacent paths a clever user (or a clever LLM) could try once this change lands. For each, explain why it is closed off — either by an existing invariant or by a new check this PR also adds.
+3. **What downstream code does this affect, and why is the effect intentional?** If `cargo test --all` shows snapshot diffs, list them. For each, explain why the new emitted Verilog is correct.
+4. **What is the alternative design considered and rejected?** Compiler decisions are nearly always under-determined; explicit rejection of alternatives is the audit trail.
+5. **Is this change reversible?** Some compiler changes are essentially permanent because they enter the IR and become depended-upon by downstream tools. If your change is irreversible, say so prominently.
+
+The Justification section is part of the PR contract. A PR without it does not get reviewed.
+
+#### Extensive documentation — beyond the doc comments
+
+Compiler-level changes ship with documentation in *three* places:
+
+1. **Code-level rustdoc** on every new public item, every new opcode, every new pass — same as for widgets.
+2. **A new chapter or chapter section in `doc/book/src/`** if the change is user-visible (a new kernel-language feature, a new diagnostic, a new attribute). Rule of thumb: if a user could write code that exercises the change, document it in the book.
+3. **An entry in the relevant design plan.** If the change implements (or alters) something in `auto-pipelining-plan.md`, `kernel-language-extensions.md`, `vendor-primitive-architecture.md`, or `architecture.md`, update that document in the same PR. The design plans are not aspirational; they are the as-shipped contract once a feature lands.
+
+Plus the standard CHANGELOG entry per §16. Compiler-level CHANGELOG entries get extra scrutiny — they typically require a "what guarantee changed" subsection and a list of every widget whose snapshot was re-blessed.
+
+#### Why this is structured this way
+
+A widget can be wrong in one place and the rest of the codebase still works. A compiler can be wrong in one place and *every kernel that touches that path* is silently wrong. That asymmetry is the entire reason for this section's existence. The PR-isolation rule, the test-everything rule, the justification-section rule, and the documentation rule together make compiler-level loopholes visible *before* they ship and create an audit trail for the ones that did. There is no shortcut. Treating a compiler change like a widget change is the single most expensive mistake possible in this codebase.
 
 ---
 
@@ -485,6 +579,7 @@ If your task is in `rhdl-core` (a new pass, an IR change, a fix in lowering):
 
 These are the rules whose violation will get a PR rejected without further discussion.
 
+0. **No implementation without first reading `architecture.md` and CLAUDE.md.** This rule is numbered zero because it precedes every other rule. If you cannot quote the relevant architectural constraint for the change you are making, re-read. Saying "I think it's fine" is not a substitute for consulting the document — the whole point of `architecture.md` is to make architectural drift visible *before* code lands.
 1. **No undocumented public API.** Every `pub` item has a doc comment.
 2. **No widget without all four/five test tiers** (1, 2, 3, 4, 5 if applicable). Tier 1 covers algorithmic correctness, Tier 2 covers sequencing, Tier 3 covers codegen, Tier 4 is the Verilog ground-truth, Tier 5 is regression detection.
 3. **No commit that breaks `cargo test --all`.** Local environment may lack `iverilog`; in that case run `cargo test --all -- --skip iverilog` before pushing AND ensure CI catches it.
@@ -497,11 +592,13 @@ These are the rules whose violation will get a PR rejected without further discu
 10. **No "the test is flaky" workarounds.** RHDL tests are deterministic by design (seeded RNGs, fixed clock periods, hash-stable simulation). A flaky test is a real bug. Find it.
 11. **Every `#[kernel]` must compile cleanly under `cargo check`.** A kernel that fails to compile is broken hardware. There is no warning level for this.
 12. **Reset semantics belong at the end of the kernel.** Compute everything as if reset weren't asserted, then unconditionally overwrite with reset values inside the `if cr.reset.any()` block. This is reviewed.
+13. **Compiler-level changes follow §11.1, without exception.** One feature per PR. Tests at every IR level the change touches. A Justification section in the PR description answering the five questions in §11.1. Documentation in code, in the book, and in the relevant design plan. A CHANGELOG entry naming the guarantee preserved. A compiler PR that does not satisfy these is rejected on sight — not because reviewers are pedantic, but because compiler loopholes silently corrupt every downstream user's hardware and there is no recovering from one once it ships.
 
 ---
 
 ## 13 — When You're Stuck
 
+- **First, re-open `architecture.md` and search it for the concept you're stuck on.** Most "I'm not sure where this goes" questions have a direct answer there.
 - Read three existing widgets in the same category before asking. The pattern is almost always there. Suggested starting points: `crates/rhdl-fpga/src/core/counter.rs` (simplest synchronous), `crates/rhdl-fpga/src/core/delay.rs` (parameterized over depth and type), `crates/rhdl-fpga/src/fifo/write_logic.rs` (state machine with reset).
 - Read the LATTE '24 and LATTE '25 papers in `doc/latte24/latte.tex` and `doc/latte25/latte.tex` for the design rationale.
 - Read the relevant chapter in `doc/book/src/`. The `kernels/` and `circuits/` chapters cover the trait machinery.
@@ -523,11 +620,62 @@ These are the rules whose violation will get a PR rejected without further discu
 
 When you finish a task, report status using exactly these labels:
 
-- **Done.** All four contract clauses satisfied. Tests passing. Snapshots committed. Docs complete. Ready for human review.
+- **Done.** All five contract clauses satisfied. Tests passing. Snapshots committed. Docs complete. CHANGELOG entry added. Ready for human review.
 - **In progress: <what's left>.** Anything else. Do not say "mostly done." Say what's left.
 - **Blocked on <X>.** When you cannot proceed without an external decision or resource.
 
-Never claim a feature is done if any tier of testing is missing, any documentation layer is absent, or any snapshot is out of date. The contract is non-negotiable.
+Never claim a feature is done if any tier of testing is missing, any documentation layer is absent, any snapshot is out of date, or the CHANGELOG entry is missing. The contract is non-negotiable.
+
+---
+
+## 16 — CHANGELOG.md is mandatory
+
+> **Every widget, fix, or design pivot ships with a CHANGELOG entry in the same commit.** No exceptions. If you forget the CHANGELOG, the work is *not done* — see §15.
+
+`CHANGELOG.md` at the repository root is the **build narrative**: the running record of *why* RHDL is the way it is, *what* was tried and discarded, *what surprised us*, and *what's deferred*. It is not a `git log` substitute. `git log` answers *what changed and when*; the CHANGELOG answers *what we were trying to do and what we discovered*.
+
+This is load-bearing. Future agents and humans will use the CHANGELOG to understand:
+
+- Why a widget is shaped the way it is (the design decision and what was rejected).
+- Which framework workarounds are intentional (e.g. `.skip(!0)` on async testbenches, `.skip(2)` on non-zero DFF resets) and which need to be cleaned up later.
+- What gotchas to expect when extending or composing the widget (e.g. "`q.<subcore>` for DFF-fronted subcores is one cycle delayed").
+- Why a feature was deferred (and what would unblock it).
+
+### What requires a CHANGELOG entry
+
+- Every new widget added to `crates/rhdl-fpga/src/`.
+- Every bug fix that changed observable behavior.
+- Every compiler/IR change in `crates/rhdl-core/`.
+- Every new test convention, validation tier, or framework primitive.
+- Every workaround that depends on a framework limitation (call it out and link to the follow-up in `widget-roadmap.md`).
+- Every design pivot — when you write code, throw it away, and rewrite it differently, the CHANGELOG entry explains why so the next person doesn't repeat the dead end.
+
+### What does **not** need a CHANGELOG entry
+
+- Pure formatting (`cargo fmt`) commits.
+- Renaming a private helper.
+- Comment-only changes that don't change a load-bearing fact.
+- Routine dependency bumps with no semantic impact.
+
+### Entry format
+
+The template lives at the top of `CHANGELOG.md`. Required sections: **Why this, why now**, **Design decisions**, **Surprises and gotchas**, **Validation**, **Follow-ups**. Skip a section only when it is genuinely empty (no follow-ups), not because writing it is annoying.
+
+Group entries by date, newest first. One widget = one entry, even if multiple commits.
+
+### How to know if your entry is good enough
+
+A good CHANGELOG entry passes the **"new agent" test**: a fresh AI agent (or a new human contributor) who has never seen the diff should, after reading your entry, be able to:
+
+1. Explain *why* the widget exists.
+2. Predict the next several questions they'd want to ask before extending it.
+3. Avoid the specific gotcha you hit during development.
+
+If your entry doesn't pass that test, expand it before committing.
+
+### Enforcement
+
+Reviewers (human or agent) will reject PRs that change `crates/rhdl-fpga/src/` (or any of the other paths listed under "What requires a CHANGELOG entry") without a corresponding CHANGELOG update. If you find yourself wanting to defer the CHANGELOG, you are wrong — the cost of remembering and writing it later is always higher than doing it now while context is fresh.
 
 ---
 
