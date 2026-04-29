@@ -31,6 +31,66 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-04-28 — NEC IR remote receiver
+
+**Path:** `crates/rhdl-fpga/src/core/ir_nec_rx.rs` (+ example, doc, vcd)
+
+**Why this, why now:** Roadmap row #30 (the receive half) — Tier 3 protocol PHY. The most-used consumer infrared protocol; covers the bulk of TVs, set-top boxes, fans, and simple AV remotes. Pairs with a $0.50 TSOP4838 / VS1838B 38 kHz IR receiver module (which strips the carrier so this widget sees a clean digital input). RC5 / RC6 receivers and the NEC transmitter are tracked as v2 follow-ups.
+
+**Design decisions:**
+- **NEC protocol only**, 32-bit codes (the typical address + ~address + command + ~command layout). No address/command split inside the widget — host masks `code` as needed. RC5 (Manchester, 14 bits) and RC6 (variable-length, longer leader) are different enough state-machine-wise that a separate widget per protocol beats a parameterized superset.
+- **Receiver only**, no transmitter in v1. The TX side composes the existing `core::pwm` widget at 38 kHz with a small bit-pattern FSM; the bit pattern is identical to what this RX decodes, so it's a self-contained spinoff.
+- **Edge-driven FSM with a per-state `tick` counter.** State transitions happen on rising/falling edges of `ir_in` (kernel keeps `prev_ir` to detect them); the duration measured between edges is compared against threshold fields in the `NecTimings` struct to classify burst length, leading-space type (data vs repeat), and bit value (0 vs 1).
+- **6-state machine** (`Idle`, `LeadingBurst`, `LeadingSpace`, `DataBurst`, `DataSpace`, `FinalBurst`). Repeat-code detection lives entirely in `LeadingSpace`: a long high-period (~4.5 ms) → data frame; a short one (~2.25 ms) → `repeat_pulse` + back to `Idle`.
+- **Bit-shift convention:** new bits shift into the LSB of `code_reg`. After 32 shifts, the first received bit (NEC sends MSB-first) sits at `code_reg[31]`. The host gets a code already in conventional MSB-first numeric layout.
+- **Bundle-into-Constant** pattern again: 6 timing fields go into one `NecTimings` struct held in a single `Constant`. Brings the field count to 8 (well under the 12-tuple ceiling).
+- Reset comes last (CLAUDE.md §12), forces FSM to `Idle`, clears `prev_ir = true`, and clears all latched state.
+
+**Surprises and gotchas:**
+- **NEC's "MSB-first wire, LSB-first sample-into-shifter" trick.** First-received bit is the MSB of the final code; my shifter pushes bits into the LSB and shifts left. After 32 shifts, the first-received bit is at MSB. This is the cleanest pattern for any MSB-first wire protocol — same idiom used by SPI, UART (LSB-first variant), and I2C — but it always feels backwards on first read. Test `test_decodes_data_frame` round-trips `0x12345678` to verify.
+- **`prev_ir` initial value matters.** If it defaulted to `false`, the very first cycle would look like a falling edge and prematurely arm `LeadingBurst`. Used `dff::DFF::new(true)` to initialize idle-high. Same fix is needed for any edge-detected widget on a normally-high line.
+
+**Validation:** All 5 tiers, 7 tests including: idle emits no pulses, full data-frame decode (round-trips `0x12345678`), repeat-code detection (no spurious data valid), short-burst rejection (frames shorter than `t_lead_burst_min` ignored). Tier 3 HDL emission length 14371 chars; Tier 4 iverilog RTL clean; Tier 5 VCD digest blessed.
+
+**Follow-ups:**
+- **NEC transmitter** (`IrNecTx`). Composes (22) `core::pwm` at 38 kHz with the same bit pattern this widget decodes, gated by an FSM that walks SOF → 32 bits → stop. ~150 LOC.
+- **RC5 receiver** (Manchester-encoded, 14 bits at 1.778 ms per half-bit). Different state-machine shape — needs a Manchester-decode primitive.
+- **RC6 receiver** (similar to RC5 with extensions and a longer leader). Same Manchester primitive.
+- **Tolerance windows** — current widget uses bare-min thresholds (`t_lead_burst_min`, `t_data_zero_one_threshold`). Real-world remotes vary; a "min/max" pair per timing with explicit error-frame emission would be more robust. Not needed for v1 demos.
+- **Address/command split helper.** Most NEC users want `(address, command)` not raw 32 bits; a small `core::ir_nec_decode` kernel that does the unpacking + the byte/inverse-byte validation would close the loop.
+
+---
+
+## 2026-04-28 — Dallas / Maxim 1-Wire master (single-byte v1)
+
+**Path:** `crates/rhdl-fpga/src/core/one_wire_master.rs` (+ example, doc, vcd)
+
+**Why this, why now:** Roadmap row #27 — Tier 3 protocol PHY. The third widget that exercises the open-drain (oe, out) tristate pattern after I2C and half-SPI; closes the "every electronics hobbyist has a DS18B20 in a drawer" use case. Designed so the same widget covers DS18B20 standard speed, the DS28E01 overdrive mode, and the DS2401 silicon-serial-number flow by varying the timings struct rather than changing the kernel.
+
+**Design decisions:**
+- **Three operations:** `Reset` (with presence-pulse latch), `WriteByte` (8 bits LSB-first), `ReadByte` (8 bits LSB-first). Each takes one `start` strobe; multi-byte transactions are sequenced by the host. Keeps the widget small; ROM-search algorithm and full DS18B20 command sequencing live above this layer.
+- **Bus timings as a single `Constant<OneWireTimings<T_W>>` struct** — eight named fields (`t_rst_low`, `t_rst_sample`, `t_rst_total`, `t_w0`, `t_w1`, `t_read_low`, `t_read_sample`, `t_slot`) all in *FPGA cycles*, not microseconds. The user pre-scales. This bundling is what keeps the widget at 8 sub-circuit fields total, well under the 12-tuple `Synchronous` derive ceiling.
+- **8-state FSM** (`Idle`, `ResetLow`, `ResetSample`, `WriteBitLow`, `WriteBitWait`, `ReadBitLow`, `ReadBitSample`, `Stop`). Single `tick: Bits<T_W>` counter increments by 1 each cycle; states transition when `tick` matches a timing-struct field. State-transition `tick = zero_t` resets are explicit.
+- **`(bus_oe, bus_out)` open-drain pair** matching the I2C / half-SPI convention. `bus_out` is hardwired `false` because the master only ever pulls the line low; the host wraps with `tristate::simple` (or just gates an open-drain pad directly).
+- **Read-bit shift register** — sampled bit captures into MSB (bit 7) of `data_reg`; right-shifted at end of each non-final slot. After 8 bits, the byte sits LSB-first at bit 0, which matches the wire convention. Same `data_reg` is used for writes, where the LSB drives the low-pulse-width selector and is right-shifted at end of each slot.
+- Reset comes last (per CLAUDE.md §12), forces the FSM to `Idle` and clears `presence_ok`.
+
+**Surprises and gotchas:**
+- **`data_reg.into::<u128>()` doesn't exist** in `Bits<8>` — the conversion to u128 is via `.raw()`, not `.into()`. Used the same pattern as `spi_slave::tests::test_*` to be consistent. Worth a small docs PR to clarify the canonical Bits→primitive conversion in tests.
+- **`include_str!` requires the `.md` to exist at build time**, not just at doc-generation time. Solved by writing a one-line stub `doc/one_wire_master.md` before first build, then letting the example overwrite it. This applies to every new widget; consider adding a "create the stub" line to the §9 widget-build workflow.
+
+**Validation:** All 5 tiers, 9 tests including: idle releases bus, reset completes with presence-pulse latch, reset low pulse meets minimum duration (≥ `t_rst_low`), write byte completes, read byte captures expected value when bus held low. Tier 3 HDL emission length 16431 chars; Tier 4 iverilog RTL clean; Tier 5 VCD digest blessed.
+
+**Follow-ups:**
+- **CRC-8 polynomial `0x31` engine** — every 1-Wire device uses this CRC for ROM ID validation and EEPROM page integrity. Composes with the existing `core::crc::CrcEngine` parameterized over polynomial; would validate the CRC engine's polynomial flexibility.
+- **ROM Search algorithm** — the binary-tree walk that enumerates every slave on a multi-device 1-Wire bus. Lives above this layer (uses Reset / Write / Read primitives) but worth a dedicated widget since the search-step state machine is ~100 LOC of its own.
+- **Overdrive auto-switch** — DS18B20 supports both standard (~80 kbit/s) and overdrive (~640 kbit/s); the protocol to switch is "send overdrive ROM command at standard speed, then re-clock at overdrive timings." Would require swappable `Constant<OneWireTimings>` or a runtime-mux of two timing sets.
+- **Parasitic-power strong pull-up** — DS18B20 in parasitic-power mode needs the master to actively drive the line *high* (not just release it) during temperature conversion, to provide power. v1 has no provision for this; would add a `strong_pullup` mode to `bus_out` and a `t_strong_pullup` timing field.
+- **1-Wire slave** (`OneWireSlave`) — for FPGA emulation of a slave device. Different state machine (sample master pulse widths, respond to ROM commands).
+- **DS18B20 driver layer** — composes (this widget) + (CRC-8) + (ROM search) into a "convert temperature, read scratchpad, return °C" black box. The natural demo.
+
+---
+
 ## 2026-04-28 — CAN master (Classical CAN 2.0A, TX-only v1)
 
 **Path:** `crates/rhdl-fpga/src/core/can_master.rs` (+ example, doc, vcd)
