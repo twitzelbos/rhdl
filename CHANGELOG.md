@@ -167,6 +167,22 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-04-28 — Tier-3 batch 3: MIDI wire layer + Video timing core
+
+#### MIDI interface — `core::midi`
+
+Roadmap row #37 (wire layer v1).  Composes `core::uart` verbatim and adds a small `last_status` DFF that latches every received status byte (MSB=1).  Three outputs: the inner UART's TX/RX, plus an `is_status` flag and a held `last_status` value.  This is the substrate for downstream message-level parsing (Note On / SysEx / running-status etc.) — that FSM consumes the byte stream this widget exposes.  4 tests including a Tier-2 test that decodes a 0x90 (Note On status) byte and verifies `is_status` fires.
+
+#### Video timing core — `core::video_timing`
+
+Roadmap rows #32 (MDA), #33 (CGA), #34 (VGA) — *all three* covered by a single parameterized widget.  H/V counter pair plus four sync-region boundaries and two active-region ends (all runtime constants).  Reference timings for MDA, VGA 640×480, and VGA 800×600 are documented in the rustdoc table.  4 tests including an exhaustive sweep over a 10×4 mini-mode that verifies every cycle's hsync, vsync, and active outputs match the expected (x, y) → flags lookup.
+
+The video core is the **sync-and-coordinate spine** of any video output widget.  Framebuffer, character ROM, palette LUT, and DAC drive all compose on top — those are mode-specific and deferred per-target (CGA framebuffer != VGA framebuffer != MDA framebuffer).  Shipping this one widget closes three roadmap rows because the frequently-shared part *is* the timing core.
+
+**Surprise:** my first attempt at the struct used `#[derive(Default)]` because it has only DFF + Constant subcores.  But `Constant<T>` does not implement `Default` (it always needs a value), so `Default` doesn't derive cleanly.  Removed `Default` from the derive list; the explicit `new()` constructor stays.  Recorded as a follow-up to `core::constant`: optionally implement `Default` for `Constant<T>` when `T: Default`, which would let composing widgets keep `#[derive(Default)]` clean.
+
+---
+
 ## 2026-04-28 — Tier-3 composition batch: full-duplex UART, LIN master
 
 Two more Tier-3 widgets, both pure compositions of earlier work — the reusability dividend in action.

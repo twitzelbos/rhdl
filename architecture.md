@@ -30,6 +30,7 @@ rhdl/                                           # Cargo workspace root
 ├── auto-pipelining-plan.md                     # auto-pipelining design plan
 ├── kernel-language-extensions.md               # #[kernel] subset extensions plan
 ├── vendor-primitive-architecture.md            # target-provider trait design plan
+├── fsm-architecture.md                         # FSM ergonomics + analysis + formal verification
 ├── rhdl-deep-dive.md                           # narrative architecture walkthrough
 ├── manifesto.md                                # essay on Rust HDL + LLM-assisted dev
 │
@@ -402,6 +403,7 @@ When new structural needs arise, follow these patterns rather than improvising.
 | `auto-pipelining-plan.md` | Future auto-pipelining feature | Updated as the feature is built |
 | `kernel-language-extensions.md` | Future kernel-language extensions | Updated as extensions ship |
 | `vendor-primitive-architecture.md` | Future target-provider system | Updated as primitives are added |
+| `fsm-architecture.md` | Future FSM ergonomics + analysis + formal verification | Updated as phases ship |
 | `rhdl-deep-dive.md` | Narrative architecture walkthrough (descriptive) | Updated when major architectural shifts happen |
 | `manifesto.md` | Why Rust HDL + LLM-assisted dev | Reference document; rarely changes |
 | `CHANGELOG.md` | Build narrative — every shipped change | Append-only |
