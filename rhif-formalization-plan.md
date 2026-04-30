@@ -289,13 +289,13 @@ Do not commit. Sketch as the long-term destination. The work is not justified un
 
 We commit to Levels 1 and 2. We sketch Levels 3–5 as research targets.
 
-| Phase | Deliverable | Effort | Dependencies |
-|---|---|---|---|
-| 1 | Prose RHIF specification: `doc/rhif-spec/` directory + per-opcode pages + invariants + lowering relations | ~3 weeks | nothing |
-| 2 | Property-based VM testing: random-program generators + per-property tests + widget-corpus shadowing | ~4 weeks | Phase 1 |
-| 3 (research) | PLT Redex / K Framework operational semantics | ~2 months | Phase 1 |
-| 4 (research) | Coq mechanization with soundness theorems | ~6 months | Phase 3 |
-| 5 (research) | Verified extraction | ~2 years | Phase 4 |
+| Phase | Deliverable | Effort | Dependencies | Status |
+|---|---|---|---|---|
+| 1 | Prose RHIF specification: `doc/rhif-spec/` directory + per-opcode pages + invariants + lowering relations | ~3 weeks | nothing | **Shipped 2026-04-30** ([`doc/rhif-spec/`](./doc/rhif-spec/)) |
+| 2 | Property-based VM testing: random-program generators + per-property tests + widget-corpus shadowing | ~4 weeks | Phase 1 | not yet started |
+| 3 (research) | PLT Redex / K Framework operational semantics | ~2 months | Phase 1 | sketched |
+| 4 (research) | Coq mechanization with soundness theorems | ~6 months | Phase 3 | sketched |
+| 5 (research) | Verified extraction | ~2 years | Phase 4 | sketched |
 
 Phases 1 and 2 are engineering tasks with definite deliverables. Phases 3–5 are research collaboration — they ship if a researcher picks them up. The plan documents what they'd look like so a researcher has somewhere to start.
 
