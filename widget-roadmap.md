@@ -115,6 +115,7 @@ These are what users *want*. They become straightforward once Tiers 0–2 exist.
 | 57 | **Wishbone classic + pipelined** | Alternative open bus. |
 | 58 | **DMA engine** | Composes (12) round-robin arbiter, (17) register file, (56) AXI4. |
 | 59 | **Ethernet MAC frontend** | The killer demo. Composes (16) CRC32, framing logic, CDC. |
+| 64 | **APB (AMBA Peripheral Bus)** v3 / v4 | The simple peripheral bus from Arm's AMBA family.  32-bit address + 32-bit data, single-cycle transfers (SETUP → ACCESS → IDLE), strobed write data on `PWRITE`, slave-driven ready (`PREADY`) and error (`PSLVERR`) signals.  Master and slave widgets, plus an N-slave decoder/mux that uses the address-MSBs to route transactions.  APB is the canonical "low-bandwidth peripheral interconnect" — every Cortex-M SoC has one bridging from AHB / AXI to its UART / SPI / I²C / GPIO peripherals.  ~400 LOC for the master, ~400 LOC for the slave with a wrapped register-file, ~200 LOC for the decoder.  Composes (17) generic memory-mapped register file as the typical slave-side body.  References: ARM AMBA APB Protocol Specification v2.0 (IHI 0024C); ARM AMBA 5 AHB Protocol Specification (which covers the AHB-to-APB bridge); Cortex-M3/M4/M0 Technical Reference Manual (shows the canonical APB peripheral block); LiteX `litex.soc.interconnect.wishbone2csr` (a CSR / APB-style bridge in the open-source LiteX project, useful as a structural reference). |
 
 ### 4b — SERDES-based serial interfaces
 
