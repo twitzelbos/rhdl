@@ -19,3 +19,7 @@ pub mod video;
 
 #[cfg(test)]
 mod fsm_corpus_regression;
+#[cfg(test)]
+mod widget_property_corpus;
+#[cfg(test)]
+mod widget_well_formedness;

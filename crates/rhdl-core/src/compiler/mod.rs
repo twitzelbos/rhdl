@@ -1,11 +1,12 @@
 pub mod driver;
 pub use driver::compile_design;
 pub mod mir;
-mod rhif_passes;
+pub mod rhif_passes;
 mod rtl_passes;
 mod stage1;
 mod stage2;
 mod stage3;
+pub use stage1::CheckpointFn;
 pub use stage1::CompilationMode;
 mod lower_rhif_to_rtl;
 mod ntl_passes;

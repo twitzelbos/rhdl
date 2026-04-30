@@ -39,6 +39,114 @@ fn wrap_pass<P: Pass>(obj: Object) -> Result<Object> {
     Ok(obj)
 }
 
+/// Per-pass observation hook used by [`compile_with_checkpoints`].
+///
+/// The closure receives `(pass_name, post_pass_object)` after every
+/// `wrap_pass` invocation in the compile pipeline.  It is called for
+/// every pass in the order they execute (including ones that run in
+/// the fixed-point loops), so a single compile may invoke the
+/// callback dozens of times.
+///
+/// This is an intentionally simple-and-flexible signature: returning
+/// `Result<()>` lets the observer abort the compile early (e.g., on
+/// detecting a property violation), and the `pass_name` is the static
+/// `Pass::description()` string, so observers can filter by pass.
+pub type CheckpointFn<'a> = dyn FnMut(&'static str, &Object) -> Result<()> + 'a;
+
+fn wrap_pass_observed<P: Pass>(obj: Object, hook: &mut CheckpointFn<'_>) -> Result<Object> {
+    let obj = wrap_pass::<P>(obj)?;
+    hook(P::description(), &obj)?;
+    Ok(obj)
+}
+
+/// Like [`compile`], but invokes `hook` after every pass (with the
+/// pass's `description` and a reference to the post-pass `Object`).
+///
+/// Used by Phase 2 of `rhif-formalization-plan.md` to verify that
+/// well-formedness and semantic-preservation invariants hold after
+/// every pass in the pipeline, not just at the end.  Producing an
+/// `Err` from the hook short-circuits the rest of the compile.
+///
+/// The pass ordering and fixed-point-loop structure exactly mirror
+/// [`compile`]; only the checkpoint instrumentation differs.
+pub(crate) fn compile_with_checkpoints(
+    kernel: &KernelFn,
+    mode: CompilationMode,
+    hook: &mut CheckpointFn<'_>,
+) -> Result<Object> {
+    let mir = compile_mir(kernel, mode)?;
+    let mut obj = infer(mir)?;
+    obj = SymbolTableIsComplete::run(obj)?;
+    hook("infer", &obj)?;
+    obj = wrap_pass_observed::<CheckForRolledTypesPass>(obj, hook)?;
+    let mut hash = obj.hash_value();
+    loop {
+        obj = wrap_pass_observed::<RemoveUnneededMuxesPass>(obj, hook)?;
+        obj = wrap_pass_observed::<RemoveExtraRegistersPass>(obj, hook)?;
+        obj = wrap_pass_observed::<RemoveUnusedLiterals>(obj, hook)?;
+        obj = wrap_pass_observed::<RemoveUselessCastsPass>(obj, hook)?;
+        obj = wrap_pass_observed::<RemoveEmptyCasesPass>(obj, hook)?;
+        obj = wrap_pass_observed::<RemoveUnusedRegistersPass>(obj, hook)?;
+        obj = wrap_pass_observed::<PropagateLiteralsPass>(obj, hook)?;
+        obj = wrap_pass_observed::<DeadCodeEliminationPass>(obj, hook)?;
+        let new_hash = obj.hash_value();
+        if new_hash == hash {
+            break;
+        }
+        hash = new_hash;
+    }
+    if matches!(mode, CompilationMode::Asynchronous) {
+        debug!(
+            "Running Stage 1 Compiler Pass {}",
+            CheckClockDomain::description()
+        );
+        obj = CheckClockDomain::run(obj)?;
+        hook(CheckClockDomain::description(), &obj)?;
+    }
+    let mut hash = obj.hash_value();
+    loop {
+        obj = wrap_pass_observed::<PropagateLiteralsPass>(obj, hook)?;
+        obj = wrap_pass_observed::<RemoveUnneededMuxesPass>(obj, hook)?;
+        obj = wrap_pass_observed::<RemoveExtraRegistersPass>(obj, hook)?;
+        obj = wrap_pass_observed::<RemoveUnusedLiterals>(obj, hook)?;
+        obj = wrap_pass_observed::<PreCastLiterals>(obj, hook)?;
+        obj = wrap_pass_observed::<RemoveUselessCastsPass>(obj, hook)?;
+        obj = wrap_pass_observed::<RemoveEmptyCasesPass>(obj, hook)?;
+        obj = wrap_pass_observed::<RemoveUnusedRegistersPass>(obj, hook)?;
+        obj = wrap_pass_observed::<DeadCodeEliminationPass>(obj, hook)?;
+        obj = wrap_pass_observed::<PrecomputeDiscriminantPass>(obj, hook)?;
+        obj = wrap_pass_observed::<LowerInferredCastsPass>(obj, hook)?;
+        obj = wrap_pass_observed::<PrecastIntegerLiteralsInBinops>(obj, hook)?;
+        obj = wrap_pass_observed::<LowerInferredRetimesPass>(obj, hook)?;
+        obj = wrap_pass_observed::<LowerDynamicIndicesWithConstantArguments>(obj, hook)?;
+        obj = wrap_pass_observed::<ConstantPropagation>(obj, hook)?;
+        let new_hash = obj.hash_value();
+        if new_hash == hash {
+            break;
+        }
+        hash = new_hash;
+    }
+    debug!(
+        "Running Stage 1 Compiler Pass {}",
+        TypeCheckPass::description()
+    );
+    obj = TypeCheckPass::run(obj)?;
+    hook(TypeCheckPass::description(), &obj)?;
+    debug!(
+        "Running Stage 1 Compiler Pass {}",
+        DataFlowCheckPass::description()
+    );
+    obj = DataFlowCheckPass::run(obj)?;
+    hook(DataFlowCheckPass::description(), &obj)?;
+    debug!(
+        "Running Stage 1 Compiler Pass {}",
+        PartialInitializationCheck::description()
+    );
+    obj = PartialInitializationCheck::run(obj)?;
+    hook(PartialInitializationCheck::description(), &obj)?;
+    Ok(obj)
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum CompilationMode {
     Asynchronous,
