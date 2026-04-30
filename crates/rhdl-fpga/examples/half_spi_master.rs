@@ -1,10 +1,15 @@
 use rhdl::prelude::*;
 use rhdl_fpga::{
-    core::half_spi_master::{HalfSpiMaster, In},
-    doc::write_svg_as_markdown,
+    doc::{write_fsm_diagram, write_svg_as_markdown},
+    serial_bus::half_spi_master::{HalfSpiMaster, In},
 };
 
 fn main() -> Result<(), RHDLError> {
+    // Emit the FSM diagram first — required by CLAUDE.md §12 rule 14.
+    write_fsm_diagram::<HalfSpiMaster<8, 4>>(
+        "half_spi_master_fsm.md",
+    )?;
+
     let uut = HalfSpiMaster::<8, 4>::default();
     // Simulate writing 0xA5 (8 bits), turnaround for 4 cycles, then reading
     // 8 bits with the slave returning 0x55.

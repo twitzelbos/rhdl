@@ -1,10 +1,13 @@
 use rhdl::prelude::*;
 use rhdl_fpga::{
-    core::i2c_master::{I2cMaster, In},
-    doc::write_svg_as_markdown,
+    doc::{write_fsm_diagram, write_svg_as_markdown},
+    serial_bus::i2c_master::{I2cMaster, In},
 };
 
 fn main() -> Result<(), RHDLError> {
+    // Emit the FSM diagram first — required by CLAUDE.md §12 rule 14.
+    write_fsm_diagram::<I2cMaster<4>>("i2c_master_fsm.md")?;
+
     let mut stream_in: Vec<In> = vec![In {
         addr: bits(0x42),
         data: bits(0x55),

@@ -1,10 +1,13 @@
 use rhdl::prelude::*;
 use rhdl_fpga::{
-    core::sent_rx::{In, SentRx, SentTimings},
-    doc::write_svg_as_markdown,
+    doc::{write_fsm_diagram, write_svg_as_markdown},
+    serial_bus::sent_rx::{In, SentRx, SentTimings},
 };
 
 fn main() -> Result<(), RHDLError> {
+    // Emit the FSM diagram first — required by CLAUDE.md §12 rule 14.
+    write_fsm_diagram::<SentRx<10>>("sent_rx_fsm.md")?;
+
     // Compact test timings — 1 SENT tick = 4 FPGA cycles.
     let tick_cycles: u32 = 4;
     let timings = SentTimings::<10> {

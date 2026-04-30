@@ -526,16 +526,18 @@ Specific test requirements per layer:
 | Phase | Deliverable | Status | Depends on |
 |---|---|---|---|
 | 1 | `#[derive(Fsm)]` macro + 3 widget rewrites | shipped (PR #2) | Nothing |
-| 2 | Static reachability + dead-state pass (RHIF-level extractor + analyzer) | shipped (PR #2) | Phase 1 |
+| 2 | Static reachability + dead-state pass (RHIF-level extractor + analyzer) | shipped (PR #2; side-effect-form support added in PR #6) | Phase 1 |
 | 3a | Diagram renderer + JSON / SVG / dot emitters | shipped (PR #2) | Phase 1, 2 |
 | 3b | Kernel→diagram connector: `extract_widget_transitions` + `write_fsm_diagram` (no manual `FSM_TRANSITIONS` const) | shipped (`feat/fsm-auto-transitions`, PR #4) | Phase 1, 2, 3a |
-| 3c | `#[fsm_doc]` attribute macro auto-injects `#[doc = include_str!(...)]` into the widget's rustdoc — removes the per-widget boilerplate line | shipped (`feat/fsm-rustdoc-autoinject`) | Phase 3b |
-| 3d | `cargo test`-driven auto-refresh via `refresh_and_check_fsm_diagram` (`cargo run --example` step no longer needed) | shipped (`feat/fsm-rustdoc-autoinject`) | Phase 3c |
+| 3c | `#[fsm_doc]` attribute macro auto-injects `#[doc = include_str!(...)]` into the widget's rustdoc — removes the per-widget boilerplate line | shipped (`feat/fsm-rustdoc-autoinject`, PR #5) | Phase 3b |
+| 3d | `cargo test`-driven auto-refresh via `refresh_and_check_fsm_diagram` (`cargo run --example` step no longer needed) | shipped (`feat/fsm-rustdoc-autoinject`, PR #5) | Phase 3c |
 | 4 | `#[fsm_properties(...)]` + SVA emission | shipped (PR #2) | Phase 1, 2 |
 | 4b | `cargo rhdl prove` SymbiYosys driver + corpus proofs | not yet shipped | Phase 4 |
 | 5 | Built-in bounded model checker | not yet shipped (research-grade) | Phase 4b |
 
-Phases 1+2+3a ship together as PR #2 ("FSM ergonomics + analysis substrate"). Phase 3b ships as `feat/fsm-auto-transitions` (this branch) and lets every widget drop its author-curated `FSM_TRANSITIONS` const. Phase 3c is the rustdoc auto-include follow-on. Phase 4 is its own track. Phase 5 is research-grade, not committed.
+Phases 1+2+3a ship together as PR #2 ("FSM ergonomics + analysis substrate"). Phase 3b ships as `feat/fsm-auto-transitions` (PR #4) and lets every widget drop its author-curated `FSM_TRANSITIONS` const. Phase 3c+3d ship as `feat/fsm-rustdoc-autoinject` (PR #5). PR #6 (`feat/fsm-extractor-side-effects`) extended the Phase-2 extractor to handle the side-effect `d.state = X` form (the canonical idiom used by ~95% of widgets). Phase 4 is its own track. Phase 5 is research-grade, not committed.
+
+The first widget rewrites that opt into the FSM derives ship in `refactor/use-fsm-and-or-patterns` (post-merge of PR #2 and PR #3): `core::can_master` (CanField as the FSM enum, plus or-pattern collapse of three field-classification matches) and `core::one_wire_master` (OneWireState).  See the relevant CHANGELOG entries for the detailed before/after.
 
 ---
 

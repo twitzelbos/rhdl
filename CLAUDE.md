@@ -267,6 +267,7 @@ Key invariants:
 - `Option<T>`. `Result<T, E>`.
 - Arithmetic, bitwise, comparison, shift operators. Note `Bits<N>` operations wrap (2's complement, no panic).
 - `if`/`else` as statements *and* expressions. `match` (must be exhaustive). `let` bindings (including `let mut`). Re-assignment of `mut` locals. `let-else` is currently NOT supported across the board — prefer `match`.
+- **Top-level or-patterns** in match arms — `Foo::A | Foo::B => ...` desugars to one arm per alternative. Nested or-patterns inside tuple/struct/slice patterns (e.g. `(A | B, C)`) are rejected with a specific diagnostic; rewrite to manually distributed form (`(A, C) | (B, C)`). See `doc/book/src/kernels/match.md`.
 - Loops with constant bounds: `for i in 0..N { ... }` where `N` is a constant or const-generic. No `while`, no `loop`, no break-with-value.
 - Calls to other `#[kernel]` functions, calls to `signal()`, `bits()`, `signed()`, `clock()`, `reset()`, etc.
 - `dont_care()` constructors for any `Digital` type.
@@ -633,6 +634,15 @@ These are the rules whose violation will get a PR rejected without further discu
 11. **Every `#[kernel]` must compile cleanly under `cargo check`.** A kernel that fails to compile is broken hardware. There is no warning level for this.
 12. **Reset semantics belong at the end of the kernel.** Compute everything as if reset weren't asserted, then unconditionally overwrite with reset values inside the `if cr.reset.any()` block. This is reviewed.
 13. **Compiler-level changes follow §11.1, without exception.** One feature per PR. Tests at every IR level the change touches. A Justification section in the PR description answering the five questions in §11.1. Documentation in code, in the book, and in the relevant design plan. A CHANGELOG entry naming the guarantee preserved. A compiler PR that does not satisfy these is rejected on sight — not because reviewers are pedantic, but because compiler loopholes silently corrupt every downstream user's hardware and there is no recovering from one once it ships.
+
+14. **CRITICAL — every widget that uses `#[derive(Fsm)]` and `#[derive(FsmWidget)]` MUST emit an FSM diagram SVG and include it in its rustdoc.** The whole point of opting into the FSM derives is the auto-generated diagram; a widget that takes the derive without surfacing the diagram has paid the metadata cost and skipped the user-visible payoff. Concretely:
+
+    - Each FSM-tagged widget defines a private `FSM_TRANSITIONS` constant (a `&[Transition]`) that lists every `(source_index, target_index)` pair the kernel can produce. Until Layer 2's RHIF-extraction pass is wired into the rustdoc emission pipeline, this list is **author-curated**.
+    - The widget's runnable example calls [`rhdl_fpga::doc::write_fsm_diagram_as_markdown`] — passing the widget's `FsmDescriptor` and `FSM_TRANSITIONS` — to generate `doc/<name>_fsm.md` (a self-contained inline-SVG markdown fragment). The example commits both this and the regular waveform trace.
+    - The widget source file MUST include the FSM diagram in its rustdoc via a separate `#![doc = include_str!("../../doc/<name>_fsm.md")]`, in addition to the existing waveform-trace include.
+    - A new `test_fsm_diagram_matches_descriptor` test in the widget verifies that the committed SVG markdown agrees with what `write_fsm_diagram_as_markdown` would produce from the current `FSM_TRANSITIONS` and descriptor — protecting against drift if the source enum or transitions change without re-running the example.
+
+    **Rationale:** the diagram is the load-bearing artifact for FSM-aware code review and LLM-assisted refactor. A future contributor (or agent) reading the widget's rustdoc should see the state-transition graph alongside the source — that's what makes structural changes reviewable at a glance. Skipping the diagram defeats the entire FSM track. **No `#[derive(FsmWidget)]` widget ships without it.**
 
 ---
 

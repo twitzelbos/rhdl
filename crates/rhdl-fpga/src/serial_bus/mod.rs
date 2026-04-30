@@ -1,0 +1,59 @@
+#![warn(missing_docs)]
+//! Serial-bus and protocol-PHY widgets.
+//!
+//! Each widget in this category drives or receives data over a
+//! serial wire protocol — either a true bus (UART, SPI, I²C, CAN,
+//! LIN) or a single-wire sensor / device protocol (1-Wire, DHT22,
+//! IR-remote, SENT, MIDI, WS2812).  The shared shape is "produce
+//! a digital pin signal that, when fed into the right physical
+//! transceiver, communicates with off-chip silicon."
+//!
+//! Most widgets here pair with an external level-shifter,
+//! transceiver, or driver IC — for example, a CAN widget needs an
+//! external TJA1050; a 1-Wire widget needs an external pull-up
+//! resistor and the host wraps the open-drain output with
+//! `tristate::simple` at the pad.  The `core::tristate` family is
+//! the canonical way to expose a true bidirectional bus to the
+//! I/O pads.
+pub mod battery_monitor;
+pub mod can_master;
+pub mod dht22;
+pub mod epaper_ssd16xx;
+pub mod half_spi_master;
+pub mod hd44780;
+pub mod i2c_master;
+pub mod ieee1284_negotiator;
+pub mod ir_nec_rx;
+pub mod lin_master;
+pub mod mfm_encoder;
+pub mod midi;
+pub mod midi_parser;
+pub mod mipi_dbi_type_b;
+pub mod mipi_dbi_type_c;
+pub mod modbus_rtu_master;
+pub mod nand_flash_async;
+pub mod one_wire_master;
+pub mod parallel_port_centronics;
+pub mod parallel_port_ecp;
+pub mod parallel_port_epp;
+pub mod ps2_device_tx;
+pub mod ps2_host_tx;
+pub mod ps2_keyboard;
+pub mod ps2_keyboard_decoder;
+pub mod ps2_keyboard_encoder;
+pub mod ps2_mouse;
+pub mod ps2_mouse_encoder;
+pub mod ps2_mouse_intellimouse;
+pub mod rs485_master;
+pub mod sent_rx;
+pub mod smbus_host;
+pub mod smpte_ltc_decoder;
+pub mod smpte_ltc_encoder;
+pub mod spi_master;
+pub mod spi_slave;
+pub mod ti_hdq;
+pub mod uart;
+pub mod uart_16550;
+pub mod uart_rx;
+pub mod uart_tx;
+pub mod ws2812;

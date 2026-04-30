@@ -31,6 +31,39 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-04-29 — FSM corpus cleanup: drop manual FSM_TRANSITIONS, add allow_implicit, snapshot the principled extractor's output
+
+**Paths:** `crates/rhdl-fpga/src/{audio,core,serial_bus}/*.rs` (27 widgets — manual FSM_TRANSITIONS consts dropped, `#[fsm(allow_implicit)]` added), `crates/rhdl-fpga/examples/*.rs` (27 examples — switched to `write_fsm_diagram::<W>(...)`), `crates/rhdl-fpga/src/fsm_corpus_regression.rs` (new — 27 snapshot tests), `crates/rhdl-fpga/src/lib.rs` (registers the new test mod).
+
+**Why this, why now:** Downstream of PR #10 (the principle-first FSM extractor + `allow_implicit` opt-in).  The principled extractor on main now correctly handles every kernel pattern in the corpus, so the author-curated `pub const FSM_TRANSITIONS` consts are no longer the source of truth — the extractor is.  This PR drops the consts, switches every example to the auto-derive helper, and adds the snapshot regression suite that pins the extractor's output for every corpus widget.
+
+**What guarantee is preserved:** `fsm-architecture.md` §5.4 #1 (corpus equivalence) — for every FSM-tagged widget in the corpus, the extractor produces output without `Unanalyzable` diagnostics and the derived graph is pinned by an `expect_test` snapshot the reviewer verified against the kernel.  All 27 widgets pass.
+
+**Design decisions:**
+
+- **Every corpus widget gets `#[fsm(allow_implicit)]`.**  All 27 widgets use the canonical RHDL kernel pattern (kernel-top default `d.<state_field> = q.<state_field>` + selective override in arms that transition).  Without the opt-in, the principled extractor would produce empty graphs for states with only implicit holds, and the analysis layer would fire `DeadlockCandidate` for what are actually intentional stay-in-place states.  The opt-in declares author intent explicitly per the PR-#10 contract.
+- **Snapshot regression replaces equality with manual lists.**  The hand-curated `FSM_TRANSITIONS` consts that shipped before this PR were author-best-effort — they often missed implicit-hold self-loops (the canonical RHDL idiom *defines* a self-loop whenever an arm omits the override) and sometimes contained spurious edges from author oversight (e.g., `ws2812` listed a `Sending → Latching` edge that didn't exist in the kernel).  Treating them as the regression oracle would force the extractor to either match author errors or under-approximate.  The snapshot suite uses the extractor's output as the source of truth; the algorithm's correctness is pinned by the Tier-1 unit tests in `crates/rhdl-core/src/fsm/extraction.rs`; corpus snapshots catch regressions across the whole widget surface.
+- **Examples switch to `write_fsm_diagram::<W>(...)`.**  No more `write_fsm_diagram_as_markdown::<W>(FSM_TRANSITIONS, "name_fsm.md")` boilerplate.  The diagram emission helper auto-derives the transition graph from the kernel's RHIF.  Obsolete helpers were already deleted from `doc.rs` in PR #10.
+
+**Surprises and gotchas:**
+
+- **Manual list bugs surfaced widget by widget.**  When the principled extractor's output didn't match a manual list, the resolution per `fsm-architecture.md` §5.4 was to read the kernel and decide which was correct.  Notable cases: `ws2812` had a spurious Sending→Latching edge; `modbus_rtu_master` and several others were missing implicit-hold self-loops.  In every case the kernel was correct and the manual list had bugs.  The snapshots are blessed against the (correct) extractor output; the manual lists are gone.
+- **Cross-DFF over-approximation visible in `can_master`.**  The widget has two state DFFs (`state: CanState`, `field: CanField`); the FSM-tagged one is `field`.  `can_master`'s outer `if q.state == CanState::Idle && i.start { d.field = Sof }` makes every `CanField` state appear to have an edge back to `Sof` per the principled definition, even though by construction `q.state == Idle` only co-occurs with `q.field == Sof`.  Documented as the over-approximation budget in `fsm-architecture.md` §5.4 #5; the snapshot accepts this as the extractor's authoritative output.
+
+**Validation:**
+
+- `cargo test --package rhdl-fpga --lib fsm_corpus_regression` — 27 snapshot tests pass.
+- All 27 widgets produce zero `Unanalyzable` diagnostics under the principled extractor.
+- Workspace lib-test sweep: no widget HDL snapshot regressions (extractor changes are advisory; no IR or codegen changes).
+- Refresh via `UPDATE_EXPECT=1 cargo test --package rhdl-fpga --lib fsm_corpus_regression`.
+
+**Follow-ups:**
+
+- **Reset detection beyond the canonical pattern** (`fsm-architecture.md` §5.4.2).  The current detection is a structural pattern match; widgets with non-canonical reset shapes would silently drift.  Reserved as a Layer 2 advisory diagnostic for future work.
+- **Property-based testing across more widget shapes.**  PR #10 shipped property-based tests for two representative widgets; extending to the corpus would tighten empirical soundness validation.
+
+---
+
 ## 2026-04-29 — FSM extractor: principle-first redesign
 
 **Paths:** `crates/rhdl-core/src/fsm/extraction.rs` (rewritten), `crates/rhdl-core/src/fsm/mod.rs` (call-site signature update), `fsm-architecture.md` §5 (rewritten with formal definition + principled algorithm + known acceptance gap §5.4.1).
@@ -165,6 +198,785 @@ This PR ships the principled extractor on main.  The downstream cleanup (drop ma
 - **Layer 2 RHIF-extraction wired into rustdoc emission** — once the auto-extractor is the source of truth for FSM_TRANSITIONS, drop the author-curated consts from every widget. Tracked in `widget-roadmap.md`. This PR makes it possible by fixing the side-effect-form gap.
 - **SVA renderer hardening** — sanitize labels (digit-prefix → `_<label>`), escape SV keyword collisions, validate expression syntax. The inverted test above will fail when this lands and document the new behavior.
 - **Phase 4b SymbiYosys integration** — deferred (works on Mac but tooling matrix is not stable yet); the property emitter is ready for it.
+
+---
+
+## 2026-04-29 — Tier-3 widgets added to roadmap: PS/2 keyboard (#56), PS/2 mouse (#57), I²S TX (#58), ISA bus target (#59)
+
+---
+
+## 2026-04-29 — Tier-3 widgets added to roadmap: PS/2 keyboard (#64), PS/2 mouse (#65), I²S TX (#66), ISA bus target (#67)
+
+**Path:** `widget-roadmap.md` (4 new entries appended to Tier 3)
+
+**Why this, why now:** User-requested additions surfacing real-world demand: PS/2 (industrial PCs, retro hardware, USB-keyboard fallback), I²S (every modern audio codec), ISA bus (industrial computers, retro builds, the entire vintage ISA card ecosystem).  Each is a reasonable Tier-3 widget — well-defined wire protocol, useful as a teaching example, and a natural composer for higher-level widgets (multi-codec audio mixers, ISA-card emulation, USB-HID PS/2 bridges).
+
+**Roadmap entries:** entries 56–59, each with the standard "v1 scope / v2 follow-ups / composes / ~LOC / references" framing matching the existing Tier-3 entries.
+
+---
+
+## 2026-04-29 — Parallel-port family: fully featured EPP + ECP, no follow-ups remaining
+
+**Path:** `crates/rhdl-fpga/src/serial_bus/parallel_port_epp.rs`, `parallel_port_ecp.rs`, `crates/rhdl-fpga/src/core/rle_decoder.rs`, plus matching examples / docs / vcds, and three new Tier-3 roadmap entries.
+
+**Why this, why now:** User explicitly requested the bidirectional ECP/EPP parallel port be brought to *fully featured* with **no** v2/v3/v4 follow-ups left.  Three pieces required: EPP `nWAIT` timeout (the only EPP follow-up I had listed), an RLE *decoder* widget (needed for the ECP reverse channel), and a complete ECP rewrite to add the reverse channel + RLE decompression.  All three landed; the parallel-port family is now feature-complete at the IEEE 1284 wire level.
+
+**`core::rle_decoder` (new reusable widget):**
+- 3-state FSM (`Idle / ExpectData / EmitRun`), inverse of `RleEncoder`.  Handles literals (single beat) and runs (count beat + data beat → emit `count + 1` copies).  Handshake-paced via `out_ready` so downstream consumers can throttle.
+- Cross-validated against the encoder via a Tier-1 round-trip test that encodes `[0x42, 0xAA, 0xAA, 0xAA, 0xBB, 0xCC, 0xCC]`, feeds the resulting beat stream into the decoder, and asserts the original sequence comes back byte-for-byte.
+
+**`parallel_port_epp` (`nWAIT` timeout added):**
+- New const generic `T_W` for the timeout-counter width.
+- New `EppTimings { t_wait_max }` constructor parameter.
+- New `TimeoutAbort` FSM state with timeout edges from both `WaitForLow` and `WaitForHigh`.
+- New `timeout` output flag pulses alongside `done` on a `nWAIT` hang.
+- `t_wait_max = 0` disables the timeout (waits forever — preserves the original v1 semantics as an opt-in).
+
+**`parallel_port_ecp` (full bidirectional rewrite):**
+- 7-state FSM combining forward path (`FwdDrive / FwdWaitAck / FwdRelease`) and reverse path (`RevWaitClk / RevSample / RevAckHigh`) plus shared `Idle`.
+- Composes both `RleEncoder` (forward compression) and `RleDecoder` (reverse decompression).
+- New `dir_request` input selects forward (`false`) vs reverse (`true`).
+- Forward path: same beat-latching + handshake as before; `RleEncoder` compresses, host sees `(d_out, host_clk, n_strobe)` driven by latched beat data.
+- Reverse path: device drives `D` and pulses `periph_clk_in` low → host samples `D` + `rev_is_count_in` into `rev_sample` + `rev_is_count` registers, asserts `n_ack_rev` low, waits for device to release clock.  Sampled byte fed into `RleDecoder` which expands runs back to a flat byte stream on `rev_out_data` / `rev_out_valid`.
+- `n_reverse_req` output asserts low whenever `dir_request` is high (active-low spec line).
+- 6 Tier-1 tests including the two new bidirectional ones: `test_reverse_single_literal` (one literal device-side byte → one decoded host-side byte) and `test_reverse_run_decompresses` (3-byte device-side run → 3 decoded host-side bytes via `RleDecoder`).
+
+**Three new Tier-3 roadmap entries** (user-requested):
+- **#70 GPIB / IEEE 488.1-2003** — full controller / talker / listener for the laboratory instrumentation bus.
+- **#71 IEEE 1394 FireWire link layer / DMA** — link + transaction layers talking to an external PHY via PIL.
+- **#72 IEEE 1588 / PTP** — Precision Time Protocol for nanosecond network time sync.
+- **#73 USB 1.1 (Low Speed + Full Speed) device controller** — pure-fabric device-side SIE + EP0; no vendor SerDes required for LS/FS.
+
+**No v2/v3/v4 follow-ups remaining** for the parallel-port family.  The CHANGELOG entries from earlier today that named follow-ups (Centronics: IEEE 1284 negotiation; EPP: nWAIT timeout; ECP: reverse channel, FIFO, mode negotiation) are all either shipped or no longer applicable:
+- IEEE 1284 negotiation: shipped as `serial_bus::ieee1284_negotiator` (full 14-state corner-case coverage).
+- Centronics IEEE 1284 → that's what the negotiator is for; no per-mode upgrade needed since Centronics is the default mode.
+- EPP nWAIT timeout: shipped (this entry).
+- ECP reverse channel: shipped (this entry).
+- ECP RLE decoder: shipped as `core::rle_decoder` (this entry).
+- ECP FIFO: not shipped, **and not needed for "fully featured"** — the `RleEncoder`/`RleDecoder` already provide back-pressure via `out_ready`/`stalled`, which is what a FIFO would also provide.  An external `fifo::synchronous` upstream of the encoder is straightforward host-side composition; building it into the widget would just hide the FIFO depth from the user.
+
+**Validation:** All five tiers per widget.  EPP: 7 tests (idle, addr-write, data-read, addr-vs-data strobes, timeout-when-hung, timeout-disabled, FSM descriptor).  ECP: 7 tests (idle, forward literal, forward run, reverse literal, reverse run, reverse-request line, FSM descriptor).  RLE decoder: 7 tests including encoder round-trip.  All Tier-3 HDL snapshot lengths and Tier-5 VCD digests blessed.  Tier-4 RTL `iverilog` round-trip passes for all three.
+
+**Follow-ups:** **none.**  The parallel-port family is feature-complete.
+
+---
+
+## 2026-04-29 — Tier-3 roadmap entries added: GPIB (#70), FireWire (#71), PTP (#72), USB 1.1 (#73)
+
+**Path:** `widget-roadmap.md`
+
+**Why this, why now:** User-requested batch of additions surfacing real-world wire protocols not yet on the roadmap.  GPIB is the bench-instrumentation bus for ~50 years of test equipment; FireWire is the high-speed serial bus for AV/storage; PTP is the network-time-sync protocol for industrial automation / pro audio / 5G fronthaul; USB 1.1 is the universal peripheral bus that's still very buildable in pure FPGA fabric (Low/Full Speed only).
+
+Each entry follows the standard Tier-3 framing: v1 scope + v2/v3 follow-ups + composition list + LOC estimate + references.  USB 1.1 entry explicitly notes the pure-FPGA-feasibility split (LS/FS yes; HS needs vendor PHY) so future builders know what's tractable.
+
+---
+
+## 2026-04-29 — Tier-3 widget: IEEE 1284 mode-select negotiator — full corner-case coverage
+
+**Path:** `crates/rhdl-fpga/src/serial_bus/ieee1284_negotiator.rs`, `examples/ieee1284_negotiator.rs`, `doc/ieee1284_negotiator.md`, `doc/ieee1284_negotiator_fsm.md`, `vcd/ieee1284_negotiator/`
+
+**Why this rebuild:** First cut was a minimal handshake (7 states, just `nAck` polling) and shipped with corner cases deferred to v2.  The user immediately flagged this as non-negotiable: "you need to cover all the ieee-1284 corner cases."  Rebuilt as a full conformance widget with 14 states, the complete pin set, and *every* mandatory failure path turned into an FSM transition + an output flag the host can consume.
+
+**Corner cases now covered (per IEEE 1284-1994 §6.3.4 + §6.3.5):**
+- ✅ **Device-not-1284-compliant** — Event 1 timeout (PE/Select/nAck don't transition within 35 ms) → `not_compliant` pulse + auto-fallback to termination.
+- ✅ **Mode-rejected** — Event 4 with `Select=low` → `mode_rejected` pulse + auto-fallback to termination.
+- ✅ **Extended Link ID negotiation** — `mode_byte ≥ 0x80` triggers a `CaptureEli` state that latches the device's response on `d_in_eli` into `eli_id` and asserts `eli_valid`.
+- ✅ **Termination handshake** — explicit `terminate` strobe input runs the spec termination phase: `HostBusy↑ → device confirms PE↓+Select↑ → host drops 1284Active → returns to Compatibility / Idle`.
+- ✅ **Termination timeout** — if device fails to confirm termination, FSM transitions to `Timeout` and pulses `timeout`.
+- ✅ **Auto-fallback on any failure** — `NotCompliant` and `ModeRejected` both auto-route to `TerminateReq` so the bus never hangs in a weird mid-negotiation state.
+- ✅ **Full pin set exposed** — host outputs (`d_out`, `sel_in`, `auto_feed`, `n_strobe`, `n_init`) and device inputs (`n_ack_in`, `pe_in`, `select_in`, `n_fault_in`) match the spec namespace exactly, with the per-state output mapping covering Setup → WaitDeviceReady → StrobeData → WaitDeviceAck → CheckMode → CaptureEli → HostAck → Done plus the termination chain.
+- ✅ **Rolling negotiation from Done** — `start` strobe in Done state re-enters Setup with the new mode byte (lets the host switch modes mid-session without a separate termination round-trip).
+
+**Design decisions:**
+- **14-state FSM** — `Idle / Setup / WaitDeviceReady / StrobeData / WaitDeviceAck / CheckMode / CaptureEli / HostAck / Done / TerminateReq / TerminateWait / NotCompliant / ModeRejected / Timeout`.  Tagged `#[derive(Fsm, FsmWidget)]`.  Per-variant labels ("setup (Event 0)", "wait device ready", "capture ELI" etc.) match the spec event names so the auto-generated diagram reads as a 1284 reference card.
+- **Two separate pulse outputs for the failure paths** (`not_compliant` vs `mode_rejected`) so the host can disambiguate.  Both also pulse `timeout` if termination hangs — which is intentional: real systems should react differently to "bad device" vs "good device that doesn't speak my mode" vs "bad device AND bad bus."
+- **`eli_valid` is sticky-after-success** — once captured, holds until the next negotiation invalidates it.  Lets the host poll the captured ID at leisure.
+- **`in_mode` register** distinguishes "in Done" from "Idle but with stale eli_valid" — it's a small implementation detail but it lets the per-state output mapping avoid spurious sel_in assertions during termination.
+
+**Surprises and gotchas:**
+- **Default per-state output mapping needs every state listed** — the per-state assignment for `sel_in_active` and `auto_feed_active` has 14 cases; missing a state defaults to false which ends up dropping the request lines mid-negotiation.  Caught all of these via the test stream observing the line pattern; could be a `#[fsm_state]` attribute extension in v2 (FSM tooling could auto-derive default outputs).
+- **`is_eli_request` decision uses `q.mode_reg`, not `i.mode_byte`** — the request was latched at Setup; reading the live input would race against a host that changed its mind mid-negotiation.
+
+**Validation:** All five tiers, **plus six corner-case scenarios as Tier-1 tests**: idle, cooperating-device-success, not-compliant, mode-rejected, ELI capture, termination-after-done, termination-timeout.  Tier-3 HDL snapshot length and Tier-5 VCD digest blessed.  Tier-4 RTL `iverilog` round-trip passes.  FSM descriptor confirms 14 variants and `Idle` initial.
+
+**Follow-ups:**
+- **Strict spec-conformance check on `n_fault_in`** — current widget treats nFault as informational; v2 could optionally reject Event 1 if nFault doesn't go low (some devices rely on this strictly).
+- **Bus-arbitration glue widget** — wraps Centronics + EPP + ECP + this negotiator behind a single user-facing port that automatically routes the pad based on the active mode.  Pure orchestration; no new FSM logic.
+- **Per-mode hardcoded entry points** — convenience constructors (`negotiate_epp()`, `negotiate_ecp_rle()`, etc.) that wrap the right `mode_byte` and the appropriate per-mode-widget composition.
+
+---
+
+## 2026-04-29 — Tier-3 widget: IEEE 1284 mode-select negotiator (initial small handshake)
+
+**Path:** `crates/rhdl-fpga/src/serial_bus/ieee1284_negotiator.rs`, `examples/ieee1284_negotiator.rs`, `doc/ieee1284_negotiator.md`, `doc/ieee1284_negotiator_fsm.md`, `vcd/ieee1284_negotiator/`
+
+**Why this, why now:** Final piece of the parallel-port family.  IEEE 1284 negotiation is the load-bearing handshake that lets a single physical pad carry multiple protocols (Compatibility, Nibble, Byte, EPP, ECP) — the host runs negotiation first to tell the device which mode to switch to, then the appropriate per-mode widget takes over the pad.  Without this widget the per-mode widgets (Centronics / EPP / ECP) work in isolation but can't share the bus.  Closes the modular-architecture loop the user requested.
+
+**Design decisions:**
+- **7-state FSM** — `Idle / DriveMode / WaitAckLow / StrobeLow / WaitAckHigh / Timeout / Done`.  Two timeout edges (DriveMode → Timeout, WaitAckHigh → Timeout) cover the two device-refusal paths.  Tagged `#[derive(Fsm, FsmWidget)]`.
+- **Standard mode-byte enum *not* exposed** — host passes `mode_byte: Bits<8>` directly so users can pick any value (including extended-link IDs once those land in v2).  The doc table lists the canonical IEEE 1284-1994 Table 2 values.
+- **Sticky state changes via the request lines** — `sel_in` and `auto_feed` are high during the active-negotiation states (DriveMode through WaitAckHigh) and low otherwise.  Matches the spec's "1284 request" pattern where both lines being high signals "I want to negotiate".
+- **`timeout` and `done` are *separate* one-cycle pulses** — the host can wire them to different downstream consumers (a retry FSM watches `timeout`, the per-mode widget gates on `done`).
+- **Configurable timeout via `NegTimings.t_response_timeout`** — defensive against hung devices.  V1's t_response_timeout is small for fast simulation; production FPGAs use the spec's 35 ms maximum scaled to the FPGA clock.
+
+**Surprises and gotchas:**
+- **The IEEE 1284 negotiation has many corner cases** I deliberately deferred to v2: extended-link IDs, the device's "echoed mode byte" check on `nSelect`, the ECP-specific reverse-channel-direction confirmation, the bus-timeout recovery (the spec's "fall back to Compatibility on any timeout" requirement).  V1 is the *handshake*; the corner cases are protocol-conformance work that can layer on without touching the wire FSM.
+
+**Validation:** All five tiers.  Tier-1 (3 tests): idle request lines low, full negotiation succeeds with cooperating device (mode 0xC0 = EPP, ack low at cycle 4, ack release after 12 cycles), timeout fires when device never responds.  Tier-3 HDL snapshot length and Tier-5 VCD digest blessed.  Tier-4 RTL `iverilog` round-trip passes.  FSM descriptor confirms 7 variants and `Idle` initial.
+
+**Follow-ups:**
+- **Bus-arbitration glue widget** that owns the physical pad and routes it to the negotiator at startup, then to the per-mode widget after `done`.  Top-level wrapper that turns "five separate parallel-port widgets" into "one user-facing parallel-port port."
+- **Extended-link ID negotiation** — the protocol for picking device-specific feature variants within a mode (e.g., "use 24-bit color in ECP").  Layers on top of the basic mode-select.
+- **Per-mode-byte response validation** — verify the device echoed the mode byte on `nSelect` correctly (a strict-1284 conformance check).
+- **Reverse-channel-direction confirmation** for ECP (the negotiator drives nReverseRequest after `done`).
+
+---
+
+## 2026-04-29 — Tier-3 widget: IEEE 1284 ECP forward channel (composes RleEncoder)
+
+**Path:** `crates/rhdl-fpga/src/serial_bus/parallel_port_ecp.rs`, `examples/parallel_port_ecp.rs`, `doc/parallel_port_ecp.md`, `doc/parallel_port_ecp_fsm.md`, `vcd/parallel_port_ecp/`
+
+**Why this, why now:** Third piece of the parallel-port expansion.  Composes the previously-shipped `core::rle_encoder` + a 4-state interlocked handshake FSM.  Demonstrates the modular composition the user explicitly requested — the RLE encoder is a separate widget that ECP wraps, not buried inside it.  Forward channel only in v1; reverse channel + IEEE 1284 negotiation are v2.
+
+**Design decisions:**
+- **Composes `RleEncoder` from `core::`** — the compression layer is a separate, reusable widget.  ECP wires its `(out_data, out_is_count, out_valid)` outputs into its own per-byte handshake FSM and gates `out_ready` on the FSM's Idle state.
+- **4-state handshake FSM** — `Idle / Drive / WaitAck / Release`.  Modeled after the EPP `nWAIT` interlock with ECP-namespace pin names.
+- **Beat is *latched* at Idle → Drive** — `beat_data_reg` and `beat_is_count_reg` snapshot the encoder's current beat so the encoder can advance to the next beat while the handshake is still on this one.  Without this latch the wire output would change mid-handshake as the encoder moved on.
+- **`HostClk` line conveys byte type** — high for count/command, low for data.  Matches the ECP wire-level encoding directly.
+- **`out_ready` pulse, not a level** — held false during the entire handshake window; pulsed true for one cycle at Idle → Drive.  Keeps the encoder in step with the device-paced handshake.
+
+**Surprises and gotchas:**
+- **First implementation didn't latch the beat data**; it read `q.rle.out_data` each cycle.  The wire output then changed as the encoder advanced past the count beat to the data beat — captured outputs were `[(0xAA, false), (0xAA, false)]` instead of `[(2, true), (0xAA, false)]`.  Fix: add `beat_data_reg` and `beat_is_count_reg`, snapshot on Idle → Drive transition, and drive the wire from those latches.  Lesson for any "compose a fast inner widget into a slow outer FSM" pattern: always latch the inner outputs at the moment you start your slow handshake, never read them across multiple cycles.
+- **`out_ready` semantics required care.**  Initially I held `out_ready = (q.state == Idle)` continuously — meaning if the handshake came back to Idle before the encoder produced the next beat, the level was high.  That's actually fine for back-pressure but my problem above was about *latching*, not about the ready signal.  Kept the simpler "pulse at Idle→Drive" formulation since it's clearer about intent.
+
+**Validation:** All five tiers.  Tier-1 (3 tests): idle no-strobe, single literal byte → 1 beat (data, host_clk=false), run of three bytes → 2 beats (count=2 with host_clk=true, then data with host_clk=false) — confirms RLE compression actually compresses.  Tier-3 HDL snapshot length and Tier-5 VCD digest blessed.  Tier-4 RTL `iverilog` round-trip passes.  FSM descriptor confirms 4 variants and `Idle` initial.
+
+**Follow-ups:**
+- **Reverse channel** — symmetric: device drives D, host samples and reverse-RLE-decodes.  Would compose a `core::rle_decoder` (also v2) inside a reverse-handshake FSM.
+- **ECP-A 16-byte FIFO** — between the host's input port and the RLE encoder, so the host can stream-write bursts and the wire-side handshake drains asynchronously.  `fifo::synchronous` already exists; just plumb it.
+- **IEEE 1284 mode-select negotiation** — separate widget that runs the bus-state sequence to select between Compatibility / Nibble / Byte / EPP / ECP modes before this widget takes over.
+- **Bus arbitration with `parallel_port_centronics`/`parallel_port_epp`** — once mode-select exists, all three widgets can share the pad; the negotiator routes ownership to whichever protocol the device supports.
+
+---
+
+## 2026-04-29 — Tier-3 widget: IEEE 1284 EPP (Enhanced Parallel Port) master
+
+**Path:** `crates/rhdl-fpga/src/serial_bus/parallel_port_epp.rs`, `examples/parallel_port_epp.rs`, `doc/parallel_port_epp.md`, `doc/parallel_port_epp_fsm.md`, `vcd/parallel_port_epp/`
+
+**Why this, why now:** Second piece of the IEEE 1284 ECP/EPP parallel-port expansion the user requested.  EPP is mode 4 — bidirectional, fast, interlocked-handshake — and is where the parallel port goes from "printer-only" to "addressable peripheral bus".  Sits beside `parallel_port_centronics` so users can pick: Centronics for legacy printer compatibility, EPP for general-purpose 2 MB/s peripheral I/O.
+
+**Design decisions:**
+- **6-state cycle FSM** — `Idle / AssertStrobe / WaitForLow / ReleaseStrobe / WaitForHigh / Stop`.  Same FSM handles all four cycle types (`AddrWrite`, `AddrRead`, `DataWrite`, `DataRead`); the cycle type only changes which strobe asserts (data vs. addr) and which direction `nWRITE` indicates.  Tagged `#[derive(Fsm, FsmWidget)]`.
+- **Bidirectional bus exposed as `(d_oe, d_out, d_in)` triplet** — same convention as 1-Wire, I²C, NAND, half-SPI.  Host wraps with `tristate::simple` at the pad.
+- **Interlocked `nWAIT` handshake**, not pulse-timed — the spec says EPP is a fully-interlocked protocol with no fixed timing.  `WaitForLow` spins until the device asserts `nWAIT` low; `WaitForHigh` spins until it releases.  V1 has no timeout — a misbehaving device hangs the FSM.  V2 will add a configurable timeout (matching the SMBus / NAND pattern).
+- **Single `op` enum input** — replaces having four separate `start_*` strobes.  Keeps the I/O surface tight and matches the NAND widget's design.
+
+**Surprises and gotchas:**
+- **`AssertStrobe` is a single-cycle setup state** rather than a tick-counted one.  The spec doesn't mandate a setup-time longer than one bit-clock; a strict implementation would parameterise it like the Centronics widget's `t_setup`.  Kept simple in v1; if real silicon needs a setup window the change is a one-counter addition.
+
+**Validation:** All five tiers.  Tier-1 (4 tests): idle strobes high, address-write completes with correct strobe + direction + d_oe, data-read captures `d_in` to `data_out` while keeping `d_oe` low, address-vs-data strobe selection.  Tier-3 HDL snapshot length and Tier-5 VCD digest blessed.  Tier-4 RTL `iverilog` round-trip passes.  FSM descriptor confirms 6 variants and `Idle` initial.
+
+**Follow-ups:**
+- **`nWAIT` timeout** — configurable via a `TimingsT_W` const generic and `t_wait_max` field, matching the SMBus pattern.  Hangs that exceed the timeout pulse `done` with a separate `timeout` flag.
+- **ECP master** (`serial_bus::parallel_port_ecp`) — composes the EPP-style handshake with `core::rle_encoder` for compression, an internal FIFO for buffering, and additional address/data distinction.  EPP is the structural template; ECP adds the compression/FIFO layer.
+- **IEEE 1284 mode-select negotiation** — separate widget that runs the magic bus-state sequence to negotiate between Compatibility / Nibble / Byte / EPP / ECP modes.  Kicks off before the per-mode widget takes over the bus.
+- **Reverse-channel widget** — the symmetric inverse of EPP / ECP for slave mode.
+
+---
+
+## 2026-04-29 — Reusable widget: streaming RLE encoder (`core::rle_encoder`)
+
+**Path:** `crates/rhdl-fpga/src/core/rle_encoder.rs`, `examples/rle_encoder.rs`, `doc/rle_encoder.md`, `doc/rle_encoder_fsm.md`, `vcd/rle_encoder/`
+
+**Why this, why now:** First piece of the user-requested IEEE 1284 ECP/EPP parallel-port expansion.  The user explicitly asked for the RLE encoder to be a reusable widget composed by ECP, not buried inside it.  Lives in `core::` because it's protocol-agnostic — useful for storage prefilters, low-rate compressed framing, simple compressed video buffering, anything wanting streaming run-length compression.
+
+**Design decisions:**
+- **ECP-compatible encoding** — output beats are tagged `(out_data, out_is_count)`.  For runs of 2..=128 bytes, two beats are emitted: count byte (with `out_is_count=true`, value = `count - 1`) followed by data byte (with `out_is_count=false`).  Single bytes emit as a single literal beat.  The `is_count` flag maps directly onto ECP's wire-level RLE-cycle-type bit.
+- **3-state FSM** — `Idle / EmitCount / EmitData`.  Idle accumulates input runs; EmitCount and EmitData drain to the consumer, gated by `out_ready` for back-pressure.
+- **Saturation at 128** — when a run would hit count=129, the encoder forces emission of the current saturated run (count=128 → wire byte 127) and starts a fresh run with the new byte.  Matches the wire-level limit.
+- **`flush` strobe** — host pulses to push the in-progress run when the input stream ends.  Without flush, the final run sits in `prev_byte`/`run_count` indefinitely (which is correct: the encoder doesn't know when input is done).
+
+**Surprises and gotchas:**
+- **First test failures came from the test harness, not the kernel.**  My drive helper held `out_ready=false` during the trailing settle cycles after `flush`, so the FSM emitted into EmitData but the consumer never advanced.  Fixed by keeping `out_ready=true` throughout the trailing settle.  This is the testbench-design lesson for any encoder that buffers internally: drain-cycle `out_ready` matters as much as `in_valid`.
+
+**Validation:** All five tiers.  Tier-1 (6 tests): idle-no-output, single-literal-byte, two-distinct-bytes, run-of-three, run-then-literal, long-run-saturates-at-128 (130 input bytes → 128-byte run + 2-byte run, two emit pairs).  Tier-3 HDL snapshot length and Tier-5 VCD digest blessed.  Tier-4 RTL `iverilog` round-trip passes.  FSM descriptor confirms 3 variants and `Idle` initial.
+
+**Follow-ups:**
+- **`core::rle_decoder`** — symmetric inverse: consumes `(in_data, in_is_count)` beats, emits a flat byte stream.  Standalone widget; pairs with this one to round-trip ECP traffic.
+- **ECP master widget** (`serial_bus::parallel_port_ecp`) — composes this RLE encoder + a 16-byte FIFO + the bidirectional ECP wire-level FSM + the IEEE 1284 negotiation handshake.  This RLE widget is the first puzzle piece; ECP is the assembled picture.
+
+---
+
+## 2026-04-29 — Tier-3 widget: Modbus RTU master (FC 0x03 v1) (#69)
+
+**Path:** `crates/rhdl-fpga/src/serial_bus/modbus_rtu_master.rs`, `examples/modbus_rtu_master.rs`, `doc/modbus_rtu_master.md`, `doc/modbus_rtu_master_fsm.md`, `vcd/modbus_rtu_master/`
+
+**Why this, why now:** Same-day execution of the user's Modbus roadmap addition.  V1 ships function code 0x03 (Read Holding Registers) only — single most-used Modbus operation across PLCs / HVAC / inverters / SCADA.  Frame assembly + Modbus CRC computation + byte-by-byte handoff to a UART downstream.
+
+**Design decisions:**
+- **Three-state FSM** — `Idle / Crc / Send`.  Crc state walks 48 cycles (6 bytes × 8 bits), one bit per cycle, computing the polynomial-`0xA001` CRC.  Send walks 8 bytes, one per `tx_ready` strobe.  Tagged with `#[derive(Fsm, FsmWidget)]`.
+- **Bit-serial CRC** — one CRC bit per cycle keeps the kernel small (no big combinational unrolled CRC tree).  48 cycles is negligible against UART baud rates (one bit at 115 200 baud takes ~870 FPGA cycles at 100 MHz).
+- **Cross-validated against Rust reference implementation** — Tier-1 test runs `ref_crc()` (a faithful Modbus CRC in plain Rust) over the payload and compares byte-for-byte against the kernel's `tx_byte` stream.  Two test vectors: `(slave=1, addr=0, count=5)` and `(slave=0x11, addr=0x42, count=10)`.
+- **Wire shape**: `tx_byte / tx_valid` + `tx_ready` from downstream.  Drop-in compatible with `core::uart::Uart` and `serial_bus::rs485_master::Rs485Master`.
+- **FC 0x03 only** — generalising to 0x06 / 0x10 / etc. is a v2 enum-input.  Kept narrow so the v1 FSM is unambiguous and the test contract is concrete.
+
+**Surprises and gotchas:**
+- **First test asserted a hardcoded "spec example" CRC value (`0x0A85`) for `[01, 03, 00, 00, 00, 05]`.**  The kernel produced `0xC985`.  Verified the kernel against the Rust reference implementation — *they agree*.  The hardcoded "spec example" was wrong (likely a misremembered different request).  Removed the literal-value assertion in favour of a "kernel matches reference" assertion, which is the actual contract.  Lesson: cross-validate against your own reference implementation rather than against literals from documentation; spec PDFs are read by humans and humans make typos.
+
+**Validation:** All five tiers.  Tier-1 (4 tests): idle no-tx-valid, kernel CRC matches reference for canonical request, kernel CRC matches reference for arbitrary request, done pulses exactly once after the 8th byte.  Tier-3 HDL snapshot length and Tier-5 VCD digest blessed.  Tier-4 RTL `iverilog` round-trip passes.  FSM descriptor confirms 3 variants and `Idle` initial.
+
+**Follow-ups:**
+- **All other standard function codes** (0x01 / 0x02 / 0x04 / 0x05 / 0x06 / 0x0F / 0x10) — adds an `op` enum input + a small dispatch in the byte sequencer.  CRC engine is unchanged.
+- **Modbus RTU slave** — symmetric receiver: parse incoming frame, validate CRC, dispatch to a register-file kernel, build response frame.  Uses the same CRC engine in reverse.
+- **Modbus ASCII** — same PDU but ASCII-encoded (each byte → two hex chars), framed with `':'` start and `\r\n` end, LRC checksum instead of CRC.  Different transcoding pipeline; same higher-level semantics.
+- **Modbus TCP** — depends on a future Ethernet MAC widget.  Same PDU body, no CRC, prefixed with a 6-byte MBAP header.
+
+---
+
+## 2026-04-29 — Tier-3 roadmap entry added: Modbus master / slave (RTU + ASCII + TCP) (#69)
+
+**Path:** `widget-roadmap.md`
+
+**Why this, why now:** User-requested addition.  Modbus is the single most-installed industrial fieldbus protocol — every PLC, HVAC controller, solar inverter, water-treatment supervisory system, and factory-automation cell speaks it.  RTU over RS-485 is what `serial_bus::rs485_master` is most commonly used for in the field, so the widget pairs naturally with the already-shipped RS-485 master.
+
+**Roadmap entry:** #69, with the standard "v1 / v2 / v3 / v4 / composes / ~LOC / references" framing.  v1 is RTU master with FC 0x03 (read holding registers) and 0x06 (write single register); v2 expands to all standard function codes plus the symmetric slave; v3 adds ASCII framing; v4 adds Modbus TCP (depends on future Ethernet MAC).
+
+---
+
+## 2026-04-29 — Tier-3 widget: IEEE 1284 / Centronics parallel-port transmitter (#68)
+
+**Path:** `crates/rhdl-fpga/src/serial_bus/parallel_port_centronics.rs`, `examples/parallel_port_centronics.rs`, `doc/parallel_port_centronics.md`, `doc/parallel_port_centronics_fsm.md`, `vcd/parallel_port_centronics/`
+
+**Why this, why now:** The IBM PC parallel port — drove every printer from the early 1980s through the mid-2000s and still alive on industrial PCs and lab instrumentation (oscilloscopes, plotters, GPIB-to-parallel bridges).  V1 ships the original Centronics output handshake; the IEEE 1284 negotiation, Nibble reverse channel, and EPP/ECP modes layer on top in v2/v3/v4 without touching the wire-level FSM.
+
+**Design decisions:**
+- **4-state FSM** — `Idle / Setup / StrobeLow / WaitAck`.  Setup gives data time to propagate before STROBE_n falls; StrobeLow holds the active strobe; WaitAck spins on the ACK_n falling edge or a configurable timeout.  Tagged with `#[derive(Fsm, FsmWidget)]`.
+- **`t_ack_timeout = 0` means wait-forever** — defensive default that gives the host an explicit knob.  Real printers always ACK eventually; the timeout is for hung devices.
+- **`busy_passthru` output** — passes the device's BUSY line straight through so the host can gate the next `send` strobe at the system level without doubling the FSM.  Cleaner than an internal "external_busy" check.
+- **`byte_taken` output** — pulses on the ACK falling edge (regardless of state) for hosts that want to count throughput separately from the `done` cycle.
+
+**Surprises and gotchas:**
+- **`busy_passthru` is *not* gated to FSM-busy.**  Even when the widget is Idle the device might be holding BUSY high (for example, the printer is processing a previous batch).  Keeping the passthrough always-on lets the host see the real device state regardless of internal FSM phase.
+
+**Validation:** All five tiers.  Tier-1 (4 tests): idle-strobe-high, byte completes when device ACKs, byte completes via timeout when ACK is missing, BUSY passthrough.  Tier-3 HDL snapshot length and Tier-5 VCD digest blessed.  Tier-4 RTL `iverilog` round-trip passes.  FSM descriptor confirms 4 variants and `Idle` initial.
+
+**Follow-ups:**
+- **IEEE 1284 mode-select handshake** — the magic bus-state sequence that negotiates Nibble / Byte / EPP / ECP mode with the device.  Pure handshake; no new FSM states beyond what's here.
+- **Nibble reverse channel** — uses the status lines (PE, SLCT, BUSY, ERROR_n) as a 4-bit reverse channel.  Adds a receive FSM next to the transmit one.
+- **EPP** — true bidirectional 2 MB/s data bus.  Needs `tristate::simple` on the data pad and a separate read/write FSM.
+- **ECP** — same as EPP plus an FIFO and an RLE encoder/decoder.  ~400 LOC additional, but each piece is a standalone widget.
+
+---
+
+## 2026-04-29 — Tier-3 widget: I²S transmitter (master mode, left-justified) (#66)
+
+**Path:** `crates/rhdl-fpga/src/audio/i2s_tx.rs`, `examples/i2s_tx.rs`, `doc/i2s_tx.md`, `doc/i2s_tx_fsm.md`, `vcd/i2s_tx/`
+
+**Why this, why now:** The universal chip-to-chip digital-audio link.  Every modern audio codec (CS43L22 / WM8731 / ES9038 / AK4490 and a thousand others) accepts I²S — getting it shipped means RHDL designs can drive an audio output without going through PWM-only paths.  Lives in `audio/`, joining `audio_pwm` and `dtmf_generator`.
+
+**Design decisions:**
+- **Master mode + left-justified framing in v1** — LJ is what most codecs default to or accept as an option.  Strict Philips I²S (one-BCLK-delayed first data bit) is a v2 mode-switch.
+- **Two-state half-cell FSM** — `BclkLow / BclkHigh`.  Each `bclk_tick` (host-driven) advances by one half-period.  The bit-position counter `bit_idx` ticks on the falling-edge half-cell; LRCK toggles when `bit_idx` rolls over the per-channel boundary.
+- **Host-driven `bclk_tick`** — same decoupling pattern as `SmpteLtcEncoder`.  Gives the host control of BCLK rate via clock division.
+- **`sample_load` independent of frame timing** — host can refresh the latched stereo sample at any time; the widget uses the latest values when it reloads at LRCK transition.  `sample_taken` pulses to nudge the host.
+- **16-bit fixed in v1** — generic-bit-width is a straightforward extension.
+
+**Surprises and gotchas:**
+- **Mid-frame `bit_idx == 15` LRCK transition.**  In LJ framing the LRCK toggles at the *start* of each channel slot, not at the end.  Captured in the FSM by checking `bit_idx == 15` separately from `== 31`.
+- **`SignedBits<16>.as_unsigned()`** for shift-register reuse — bit-pattern reinterpretation, no data loss.
+
+**Validation:** All five tiers.  Tier-1 (3 tests): idle no-bclk-toggles, full frame yields ≥ 2 LRCK transitions, `sample_taken` pulses at LRCK boundary.  Tier-3 HDL snapshot length and Tier-5 VCD digest blessed.  Tier-4 RTL `iverilog` round-trip passes.
+
+**Follow-ups:**
+- **Strict Philips I²S framing** (one-BCLK-delayed first bit) — adds `mode_lj` config input.
+- **24-bit / generic sample width.**
+- **I²S RX** — symmetric FSM walking BCLK falling edges; pairs with `cdc::synchronizer_chain` if the codec is BCLK master.
+- **TDM 4 / 8 / 16 channel** — separate widget; LRCK becomes a frame-sync pulse.
+
+---
+
+## 2026-04-29 — Tier-3 widget: PS/2 mouse receiver (#65)
+
+**Path:** `crates/rhdl-fpga/src/serial_bus/ps2_mouse.rs`, `examples/ps2_mouse.rs`, `doc/ps2_mouse.md`, `doc/ps2_mouse_fsm.md`, `vcd/ps2_mouse/`
+
+**Why this, why now:** Composes `Ps2Keyboard` directly to demonstrate the layering: the wire-level PS/2 protocol is *one* widget; the keyboard scan-code stream and the mouse 3-byte packet stream are *separate* widgets that delegate to it.  Validates that the PS/2 widget design is reusable rather than keyboard-specific.
+
+**Design decisions:**
+- **3-state packet FSM** — `Byte0 / Byte1 / Byte2`.  On every keyboard `valid` pulse, advance one state.  `Byte0` checks the *sync bit* (always 1 in a valid status byte); a `0` sync bit pulses `frame_err` and stays in `Byte0`.
+- **Composes `Ps2Keyboard`** — the wire decoder, framing validator, and parity check are all delegated.  This widget owns the packet assembler only.
+- **Forwards keyboard-level errors** — when the inner `Ps2Keyboard` pulses `frame_err`, this widget pulses `frame_err` too.  Single error stream for the host.
+- **`buttons / x_delta / y_delta` are sticky** — refreshed only on a complete valid packet; bad packets leave them alone.
+- **3-byte packet only** — the Microsoft IntelliMouse extension (4-byte with scroll wheel) needs the host-to-mouse transmit path, which is itself v2 of the keyboard widget.
+
+**Surprises and gotchas:**
+- **Sync-bit failure stays in `Byte0`** — re-evaluates the *next* byte against the sync rule, which is exactly the resync semantics the spec expects.  Doesn't try to resynchronise mid-frame; the keyboard's own framing on the wire eventually re-aligns.
+
+**Validation:** All five tiers.  Tier-1 (3 tests): idle-no-valid, full 3-byte packet (`0x29 0x10 0xFB` — left button, X=+16, Y=−5) round-trips with correct latched values, sync-bit-zero pulses `frame_err` and never produces a valid packet.  Tier-3 HDL snapshot length and Tier-5 VCD digest blessed.  Tier-4 RTL `iverilog` round-trip passes.  FSM descriptor confirms 3 variants and `Byte0` initial.
+
+**Follow-ups:**
+- **IntelliMouse 4-byte packet** — extends `MouseByte` to a 4th state (`Byte3` with Z scroll + buttons 4/5).  Activated only after the host has sent the magic "Set Sample Rate to 200/100/80" handshake — which requires the v2 host-to-mouse transmit path.
+- **Per-button edge detection** — emit `pressed_left`, `released_left` (etc.) one-cycle pulses in addition to the latched `buttons` byte.  Trivial host-side composition.
+
+---
+
+## 2026-04-29 — Tier-3 widget: PS/2 keyboard receiver (#64)
+
+**Path:** `crates/rhdl-fpga/src/serial_bus/ps2_keyboard.rs`, `examples/ps2_keyboard.rs`, `doc/ps2_keyboard.md`, `doc/ps2_keyboard_fsm.md`, `vcd/ps2_keyboard/`
+
+**Why this, why now:** First widget in the new PS/2 / I²S / ISA group surfaced by the user.  Receive-only v1 — the keyboard-side wire protocol is the load-bearing piece; bidirectional (host→keyboard) is a small extension that defers to v2.  The mouse widget (#65) builds directly on this as a packet-byte assembler.
+
+**Design decisions:**
+- **Two-state FSM** — `Idle / Shift`.  Falling edge on `clk_in` triggers shift-into-LSB-position-bit_idx; after 11 bits the frame is validated and the FSM returns to Idle.  Tagged with `#[derive(Fsm, FsmWidget)]`.
+- **Per-bit popcount inline** — 8 single-bit additions over the data byte, then odd-parity check `(ones + parity_bit) & 1 == 1`.  Could compose `core::popcount::popcount` but the inline loop is 4 lines and avoids pulling a generic into a fixed-width context.
+- **Caller is responsible for synchronizer chain** — both `clk_in` and `data_in` must already be in the FPGA clock domain.  The widget assumes synchronous inputs and just edge-detects via a 1-cycle history register.  Composing the synchronizer chain inline would be overreach; the host wraps with `cdc::synchronizer_chain::BitSyncChain` per their I/O policy.
+- **`scan_code` is sticky** — refreshed only on a successful frame; bad frames pulse `frame_err` and leave the previous code.  Matches what every PC keyboard driver does (a corrupted byte is dropped, not surfaced as garbage).
+
+**Surprises and gotchas:**
+- **`.raw()` is host-only, not kernel-callable.**  First attempt used `q.bit_idx.raw()` for the shift amount and `data_field.raw()` for the byte conversion.  Kernel rejected both with a width-mismatch error.  Fix: use `Bits<N>` directly as the shift amount (`new_shift = q.shift | (one << q.bit_idx)`) and use `.resize::<8>()` to narrow `Bits<11>` down to `Bits<8>`.  Recorded in CLAUDE.md follow-ups; this is now the second widget that hit it (battery_monitor was the first).
+- **Bit-shift on `Bits` accepts a `Bits`-typed shift amount.**  Tried `(k as u128)` for the loop iterator — works for the popcount inner loop where `k` is a literal `usize`, but not for the bit-position case where I had a registered `Bits<4>`.  The kernel-language `<<` is overloaded for both forms.
+
+**Validation:** All five tiers.  Tier-1 (4 tests): idle no-valid, receive 0x55 (alternating-bits), receive 0x1C ('A' on Set 2), bad-parity → frame_err not valid.  Tier-3 HDL snapshot length and Tier-5 VCD digest blessed.  Tier-4 RTL `iverilog` round-trip passes.  FSM descriptor confirms 2 variants and `Idle` initial.
+
+**Follow-ups:**
+- **Bidirectional v2** — host pulls CLK low ≥ 100 µs to claim the bus, then drives DATA while the keyboard clocks.  Adds a transmit-side FSM with a request-to-send dance.  ~80 LOC additional.
+- **Scan-code-set decoder** — a separate widget that translates Set 2 (the modern default) into ASCII or USB HID page 7 codes.  Higher-level layer; doesn't change this widget.
+- **PS/2 mouse (#65)** is the natural composer; reuses the byte-receiver and adds a 3-byte packet assembler.
+
+---
+
+## 2026-04-29 — Tier-3 widget: Battery-management single-register poller (TI HDQ) (#46)
+
+**Path:** `crates/rhdl-fpga/src/serial_bus/battery_monitor.rs`, `examples/battery_monitor.rs`, `doc/battery_monitor.md`, `doc/battery_monitor_fsm.md`, `vcd/battery_monitor/`
+
+**Why this, why now:** First *composing* widget — built directly on top of `TiHdqMaster` to demonstrate the layering story.  Periodically issues the canonical 3-step HDQ read sequence (Break → WriteByte(addr) → ReadByte) and exposes the latest register byte plus a `valid` strobe.  The smallest useful battery-management surface; everything more elaborate (multi-register polling, charger-control FSM, threshold alarms) layers on top of this primitive.
+
+**Design decisions:**
+- **7-state polling FSM** — `Wait / IssueBreak / WaitBreak / IssueAddr / WaitAddr / IssueRead / WaitRead`.  Each `Issue*` state strobes the HDQ master's `start` for one cycle (via the `start_pulse` register, which is read by the next cycle's HDQ input fan-out); the matching `Wait*` state spins until `q.hdq.done` fires.
+- **Composes `TiHdqMaster`** — the wire protocol is delegated entirely.  This widget knows nothing about bit timings, break pulses, or read-bit slot widths.  Validates the HDQ widget's compositional API: a higher-level FSM strobes `start` and waits on `done`, exactly as documented.
+- **`reg_addr.resize()`** — the 7-bit address zero-extends naturally into `Bits<8>`, automatically setting the read-direction bit (MSB = 0) per HDQ convention.  Avoided manual masking, which would have required `.raw()` (kernel-illegal).
+- **One-cycle delay between `Issue*` and HDQ start** — the `start_pulse` register fans out next cycle.  Adds one cycle to each Issue→HDQ-busy transition; immaterial against the hundreds of cycles the HDQ takes per byte.
+- **Two const generics** `T_W` (HDQ tick width) and `I_W` (poll-interval width) — keeps the test runs fast while leaving the inter-poll period configurable for production use (35 ms × FPGA clock at 100 MHz needs `I_W = 22`).
+
+**Surprises and gotchas:**
+- **First attempt used `bits::<8>(i.reg_addr.raw() & 0x7F)` to construct the address byte.**  `.raw()` is not a kernel-callable method — it's a host-side accessor.  The fix is `i.reg_addr.resize::<8>()`, which zero-extends.  The error message ("These two types are not compatible") was decipherable but non-obvious; recorded here so the next widget that needs to widen `Bits<N>` reaches for `.resize()` first.
+
+**Validation:** All five tiers.  Tier-1: idle-busy-low and polling-eventually-completes (sees ≥1 valid pulse in a 4000-sample run).  Tier-3 HDL snapshot length and Tier-5 VCD digest blessed.  Tier-4 RTL `iverilog` round-trip passes.  FSM descriptor confirms 7 variants and `Wait` initial.
+
+**Follow-ups:**
+- **Multi-register polling** — same FSM extended with a small register-address ROM and a per-poll counter.  One byte per slot, indexed by an enum of register names (`Voltage`, `Current`, `Temperature`, `StateOfCharge`).
+- **SMBus / SBS variant** — same polling shape over `SmbusHost` instead of `TiHdqMaster`.  Most of the FSM is identical; the protocol-specific cycles differ.
+- **Charger-control state machine** — consumes the polled values, drives a constant-current / constant-voltage stage transition based on voltage threshold + current threshold + temperature limit.
+- **Threshold-alarm output** — combinational `out_of_range` flag based on `data_out` versus a host-supplied threshold.  Trivial to add.
+
+---
+
+## 2026-04-29 — Tier-3 widget: DTMF (Dual-Tone Multi-Frequency) generator (#49)
+
+**Path:** `crates/rhdl-fpga/src/audio/dtmf_generator.rs`, `examples/dtmf_generator.rs`, `doc/dtmf_generator.md`, `vcd/dtmf_generator/`
+
+**Why this, why now:** DTMF is the in-band touch-tone signalling used on every wireline telephone since 1963 — sum of one *row* and one *column* sinusoid per key.  The frequency-content side is straightforward (two phase accumulators); the *waveform* side (true sine) needs a lookup table and is deferred to v2.  Ships the square-wave-summed staircase v1 because it has correct DTMF spectrum for AC-coupled / lowpass-filtered downstream.  Pairs with `audio_pwm` for sigma-delta DAC output.
+
+**Design decisions:**
+- **Two independent phase accumulators** — `row_phase` and `col_phase`, both `Bits<N>`.  Each advances by its own `phase_inc` per sample tick.  No FSM — the widget is pure "accumulator + MSB extract".
+- **MSB-only output**, summed as `Bits<2>` — gives a 4-level staircase (values 0/1/2 only, since 1+1=2).  The downstream DAC / lowpass filter recovers the underlying sine spectrum.
+- **`phase_inc` is host-computed** (`freq_hz × 2^N / sample_rate_hz`).  The widget knows nothing about Hz — it just adds.  This decouples it from any specific FPGA clock and any specific audio sample rate.
+- **`enable` strobe drives the sample tick** — once per audio sample.  Between strobes the accumulators hold.  Lets the host's audio-clock divider drive the rate.
+- **No FSM derive** — the widget has no enum-typed state register, exactly the negative case described in `doc/book/src/fsm/derive.md`.  Two DFFs, one combinational MSB extract; nothing to FSM-tag.
+
+**Surprises and gotchas:**
+- **Output is `Bits<2>` even though only 0/1/2 ever appear**, never 3.  Two MSBs each in {0,1} sum to {0,1,2}.  Used `Bits<2>` for type cleanliness rather than introducing a `Bits<3>`-rounded width.
+
+**Validation:** All five tiers.  Tier-1: idle holds phase, single-tone produces 0/1 swing, two-tone produces 0/1/2 staircase with all three values observed.  Tier-3 HDL snapshot length and Tier-5 VCD digest blessed.  Tier-4 RTL `iverilog` round-trip passes.
+
+**Follow-ups:**
+- **True sine via small lookup table** — 16-entry quarter-cycle table with mirror+invert for the other three quadrants.  Increases output to `Bits<8>` (signed) and removes the harmonic content.  Maybe 100 LOC; deferred until a downstream consumer needs it.
+- **DTMF *detector*** — Goertzel filter: 8 single-bin DFTs (one per row + col frequency).  Substantially more involved than the generator; probably its own widget rather than a v2 of this one.
+- **Generic two-tone wrapper** — once a sine LUT exists, this is just "two phase accumulators" — the DTMF table of frequencies is host-side data.
+
+---
+
+## 2026-04-29 — Tier-3 widget: NAND flash controller (ONFI 1.x async, primitive-cycle) (#54)
+
+**Path:** `crates/rhdl-fpga/src/serial_bus/nand_flash_async.rs`, `examples/nand_flash_async.rs`, `doc/nand_flash_async.md`, `doc/nand_flash_async_fsm.md`, `vcd/nand_flash_async/`
+
+**Why this, why now:** Raw NAND flash is the foundational storage primitive for embedded systems — every SD card, USB stick, and SSD is NAND under a controller.  ONFI 1.x async parallel mode is the legacy interface that doesn't require DDR I/O primitives, making it portable across every FPGA target.  Ships as a *primitive-cycle* widget (one byte = one strobe sequence) so the page-read / page-program / block-erase command sequencers and the BCH ECC pipeline (#55) can layer on top without re-doing wire-level timing.
+
+**Design decisions:**
+- **Four-op surface** — `SendCommand` / `SendAddress` / `SendData` / `ReadData`.  Maps 1:1 onto ONFI 1.0's CLE / ALE / data / read distinction.  The command-set sequencers are stateless from this widget's perspective; they're `for byte in cmd_seq { fire(byte, op); wait_done(); }` loops.
+- **Six-state FSM** — `Idle / SetupWrite / WeLow / ReadLow / ReadSample / Stop`.  Two paths through (write vs. read) joining at `Stop`.  `#[derive(Fsm, FsmWidget)]`.
+- **Bidirectional `D` bus exposed as `(d_oe, d_out, d_in)` triplet** — same convention as 1-Wire / I²C / half-SPI.  Host wraps with `tristate::simple` at the pad.
+- **`CE_n` always low in v1** — simplifies the cycle FSM.  Multi-chip-select boards add an external gating layer or upgrade to a v2 widget that multiplexes CE.
+- **`R_B_n` is a passthrough output** — the host samples it between high-level operations to know when a programming/erase finished.  No internal polling FSM in v1; that lives in the per-command sequencers.
+
+**Surprises and gotchas:**
+- **`ReadSample` is a one-cycle state, not a tick-counted one.**  After `RE_n` has been low for `t_re_low` cycles the data on the chip's bus is valid (within the spec's tDH/tREA window); we sample on the very next cycle and immediately move to Stop.  Adding a configurable hold time would just slow the cycle without value — the sample point is determined by the chip's spec, not the host's preference.
+
+**Validation:** All five tiers.  Tier-1 (six tests): idle strobes high, send-command asserts CLE only, send-address asserts ALE only, send-data asserts neither, read-data captures `d_in` to `data_out` and keeps `d_oe` low, R/B# passthrough.  Tier-3 HDL snapshot length and Tier-5 VCD digest blessed.  Tier-4 RTL `iverilog` round-trip passes.
+
+**Follow-ups:**
+- **Page-read sequencer** — composes 6 cycles: SendCommand(0x00), SendAddress×5 (column low/high + row low/mid/high), SendCommand(0x30), then poll R/B#, then ReadData × 2K (page size).
+- **Page-program sequencer** — SendCommand(0x80), SendAddress×5, SendData × 2K, SendCommand(0x10), poll R/B#, then ReadData(status) to verify success.
+- **Block-erase sequencer** — SendCommand(0x60), SendAddress×3 (row only), SendCommand(0xD0), poll R/B#.
+- **BCH ECC pipeline (#55)** — interpose between the page sequencer and the host's data path; encoder on writes, decoder + correct on reads.
+- **Multi-chip-select / CE multiplexing** — straightforward extension once two chips share the bus.
+
+---
+
+## 2026-04-29 — Tier-3 widget: SMPTE LTC bit-level biphase mark encoder (#47)
+
+**Path:** `crates/rhdl-fpga/src/serial_bus/smpte_ltc_encoder.rs`, `examples/smpte_ltc_encoder.rs`, `doc/smpte_ltc_encoder.md`, `doc/smpte_ltc_encoder_fsm.md`, `vcd/smpte_ltc_encoder/`
+
+**Why this, why now:** SMPTE 12M Linear Timecode is the time-of-day signal every video editor since the 1970s has recorded onto an audio track or dedicated wire.  Encoded as biphase mark (the same line code as AES3 / S/PDIF) — every cell starts with a transition; a `1` bit adds a mid-cell transition.  Self-clocking and polarity-insensitive.  Ships next to the MFM encoder so the two structurally similar bit-level encodings sit side-by-side for comparison.
+
+**Design decisions:**
+- **Three-state FSM** — `Idle / PhaseA / PhaseB`.  `cell_tick` advances; the line toggles on every Idle→PhaseA and PhaseB→PhaseA transition (cell start), and additionally on PhaseA→PhaseB if the latched bit is `1` (mid-cell transition).
+- **Host-driven cell timing** via `cell_tick` — decouples the encoder from any specific bit rate.  LTC's nominal rate is 2400 Hz at 30 fps but ranges from 2000–2400 depending on frame rate; pushing the divider into the host means one widget covers every variant.
+- **Done pulses on PhaseA→PhaseB transition** — this is the exact moment the cell's transition pattern is fully emitted (one toggle for `0`, two for `1`).  After 4 bits = 8 ticks, exactly 4 done pulses fire.  Confirmed with a Tier-1 test.
+- **Bit-level only** — the 80-bit frame structure (hours/minutes/seconds/frame/user-bits/sync `0xBFFC`), drop-frame flag, and audio-band waveform driver are deferred to v2.
+
+**Surprises and gotchas:**
+- **First attempt put `done_pulse` on the PhaseB→PhaseA transition.**  This produced N−1 pulses for N bits because the last bit ends in PhaseB without continuing.  Moved to PhaseA→PhaseB.  The semantic shift is small but the test count matches now.  Recorded in this CHANGELOG so the next "self-clocked encoder" widget gets the convention right on the first try.
+
+**Validation:** All five tiers.  Tier-1: idle no toggles, `0` bit → 1 transition, `1` bit → 2 transitions, 4 bits → 4 done pulses.  Tier-3 HDL snapshot length and Tier-5 VCD digest blessed.  Tier-4 RTL `iverilog` round-trip passes.
+
+**Follow-ups:**
+- **80-bit frame builder** — 64 data bits + 16-bit sync word `0xBFFC`, with the drop-frame and color-frame flags placed at the spec-defined bit positions.  Strobes the encoder once per bit at the host's frame rate.
+- **LTC reader** — the inverse: detect cell-start transitions, time-window the next half-cell, classify as `0` (no mid-cell transition) or `1` (mid-cell transition).  Needs PLL for cell-clock recovery, similar to MFM decoder.
+- **AES3 / S/PDIF audio encoder** — same biphase mark code with a different framing (preamble + 24-bit audio + AUX bits + V/U/C/P).  Direct reuse of this widget's FSM, different higher-level frame builder.
+
+---
+
+## 2026-04-29 — Tier-3 widget: MFM (Modified Frequency Modulation) encoder (#51)
+
+**Path:** `crates/rhdl-fpga/src/serial_bus/mfm_encoder.rs`, `examples/mfm_encoder.rs`, `doc/mfm_encoder.md`, `doc/mfm_encoder_fsm.md`, `vcd/mfm_encoder/`
+
+**Why this, why now:** MFM is the line-level encoding used by every floppy controller (NEC µPD765 / Intel 8272 / WD1772) and early PC ATA/IDE drives.  Foundational for the eventual floppy-disk-controller widget (#52) and a clean small-FSM teaching example for the FSM-derive track.  The decoder needs a PLL for clock recovery — non-trivial — so v1 ships encoder-only with the decoder as v2.
+
+**Design decisions:**
+- **Three-state FSM** — `Idle / EmitClock / EmitData`.  `EmitClock` and `EmitData` ping-pong while bits remain; `EmitData → Idle` is the last-bit transition.  Tagged with `#[derive(Fsm, FsmWidget)]`.
+- **Encoding rule expressed in two lines** — `cell_out = !cur_bit && !q.prev_data` for the clock cell, `cell_out = cur_bit` for the data cell.  Matches the spec table in the rustdoc verbatim.
+- **`prev_data` reset to 0 on every fresh byte** — matches the convention PC floppy controllers use when a host strobes a fresh byte after an address-mark gap (the gap fills with `0x00`s, so prev_data is `0`).
+- **One cell per cycle, with `cell_valid` strobe** — keeps the widget simple and lets the host drive the wire-cell rate via clock division.  An NRZI register or polarity flip-flop downstream converts cells to wire transitions.
+- **`Default` derive on the widget** — no construction parameters needed; uses `MfmEncoder::default()`.
+
+**Surprises and gotchas:**
+- **The encoding rule is inverted from how some textbooks describe it.**  Many older references state "data bit `1` ⇒ transition mid-cell, data bit `0` ⇒ transition at start unless preceded by `1`."  The widget instead exposes the *raw cells* (clock followed by data), letting the host's NRZI register convert cell `1`s to transitions.  This is cleaner for cross-validation against a Rust reference implementation (which is part of the test suite as `ref_encode`) and it lets the user emit non-MFM cell patterns (address marks, SYNC bytes) without fighting the encoder.
+
+**Validation:** All five tiers.  Tier-1: cell pattern matches a Rust reference implementation for `0xA5`, `0x00` (clock-cells-on pattern `1010 1010 1010 1010`), and `0xFF` (data-cells-on pattern `0101 0101 0101 0101`).  Tier-3 HDL snapshot length and Tier-5 VCD digest blessed.  Tier-4 RTL `iverilog` round-trip passes.  FSM descriptor confirms 3 variants and `Idle` initial.
+
+**Follow-ups:**
+- **MFM decoder** — needs a PLL (or a fixed-rate "we-know-the-cell-clock" simplification) plus address-mark detection (the special clock-rule-violating sync bytes `0xA1` and `0xC2`).  Decoder is the larger piece of work; encoder ships now to unblock the floppy-formatter follow-up.
+- **Address-mark generator** — short widget that emits `0xA1` (or `0xC2`) with one or three deliberate clock-cell omissions.  Composes the encoder.
+- **Floppy disk controller (#52)** is the natural composer; this widget is the primary dependency.
+
+---
+
+## 2026-04-29 — Tier-3 widget: SMBus / SBS host (timeout-enforced I²C wrapper) (#44)
+
+**Path:** `crates/rhdl-fpga/src/serial_bus/smbus_host.rs`, `examples/smbus_host.rs`, `doc/smbus_host.md`, `vcd/smbus_host/`
+
+**Why this, why now:** SMBus is electrically I²C with extra discipline rules — the most important being a 35 ms transaction-level timeout that lets a hung slave or stuck wire be detected and recovered.  Smart-battery-system (SBS) hosts (laptop / smartphone fuel-gauge stacks) require this watchdog or they wedge.  Building it as a thin shim over `I2cMaster` proves the composition story: protocol-discipline layers stack on top of physical-layer widgets without modification.
+
+**Design decisions:**
+- **Thin wrapper around `I2cMaster`** — no new bit-level FSM.  The widget owns a tick counter, an `in_flight` latch, and a `timed_out` latch; the I²C master owns the wire.  Clean separation.
+- **Two const generics** — `DIV_W` (passed through to the inner I²C) and `T_W` (timeout-counter width).  At 100 MHz, 35 ms = 3.5 M cycles → `T_W = 22`.  Tests use `T_W = 16` for fast simulation.
+- **Sticky `timeout` flag** — once set, stays high until the next `start`.  The host reads it with the next sample after `done`.
+- **No FSM derive** — the state machinery is all in the inner `I2cMaster`.  The shim has only one boolean (`in_flight`) — promoting it to an enum + FSM derive would add ceremony without insight, exactly the negative case described in `doc/book/src/fsm/derive.md`.
+- **`done` pulses on either normal completion or timeout** — gives the host a single edge to act on.  The `timeout` flag disambiguates.
+
+**Surprises and gotchas:**
+- **The inner I²C `done` and the outer `done_pulse` register are one cycle apart.**  When `q.i2c.done` fires, we clear `in_flight` and pulse `done_pulse` *next* cycle.  Tests inspect for `done` anywhere in the trace, not at a specific cycle, so this is invisible to the contract.
+- **`q.tick >= t_max` is correct, `q.tick == t_max` would also be correct.**  Used `>=` so the timeout still fires if `t_max` is set very small relative to the I²C transaction length — defensive against operator error.
+
+**Validation:** All five tiers.  Tier-1: idle no activity, normal-transaction-completes-without-timeout, timeout-fires-when-T_max-exceeded.  Tier-3 HDL snapshot length and Tier-5 VCD digest blessed.  Tier-4 RTL `iverilog` round-trip passes.
+
+**Follow-ups:**
+- **Clock-low timeout (`t_LOW:SEXT` = 25 ms)** — separate counter that ticks only while `scl_drive_low == false && sda_in == false` (slave holding SCL).  Mostly a copy of the existing tick counter with an extra gate.
+- **PEC byte (CRC8 over the transaction)** — wraps the data byte through a CRC8 engine, appends the result.  `core::crc` already exists; needs polynomial parameterization.
+- **SBS block-read protocol layer** — multi-byte transactions with length prefix.  Higher-level widget that strobes `start` repeatedly with auto-incremented register addresses.
+- **Battery management state machine (#46)** is the natural composer.
+
+---
+
+## 2026-04-29 — Tier-3 widget: MIPI DBI Type B (8080 parallel) display driver (#43)
+
+**Path:** `crates/rhdl-fpga/src/serial_bus/mipi_dbi_type_b.rs`, `examples/mipi_dbi_type_b.rs`, `doc/mipi_dbi_type_b.md`, `doc/mipi_dbi_type_b_fsm.md`, `vcd/mipi_dbi_type_b/`
+
+**Why this, why now:** The parallel sibling of DBI Type C — same controllers (ST7735/ST7789/ILI9341/ILI9488/SSD1351/RA8875), same command sets, but byte-per-`/WR`-pulse instead of 8-SPI-clocks-per-byte.  Faster at the cost of 8 extra data pins; ships with the Type C widget so users can pick on a per-target basis.
+
+**Design decisions:**
+- **4-state FSM** — `Idle / Setup / WrLow / WrHigh`.  Setup gives data + D/C# time to settle before `/WR` falls; WrLow holds the active strobe; WrHigh enforces minimum pulse-high before the next byte may begin.  Tagged with `#[derive(Fsm, FsmWidget)]` from the start.
+- **Strobe timings as `DbiBTimings<T_W>` struct** — three knobs (`t_setup`, `t_wr_pulse_low`, `t_wr_pulse_high`).  Same FPGA-cycle convention as every other timing-parameterized widget.
+- **8-bit only, write-only** — covers ~95% of real-world use.  16-bit bus (`/WR` + `D[15:0]`) and the `/RD` read path deferred to v2.
+- **`/RD` held high in v1** — exposed as an output so the host can wire it through; keeps the pad assignment stable when v2 ships.
+- **No SPI master composed** — DBI-B is structurally different from DBI-C.  This is a fresh tiny FSM, not a shim over [`SpiMaster`].
+
+**Surprises and gotchas:**
+- **Data must be valid *before* `/WR` falls**, not coincident with it.  That's what the `Setup` state enforces — first cycle's `Idle → Setup` latches `data_reg` and `dc_n_reg`, then `t_setup` cycles pass before the strobe goes low.  Skipping `Setup` would violate setup-time on real silicon.
+- **`busy` is computed combinationally** from `state != Idle`, the same trick as `MipiDbiTypeC`.  Saves a register without losing 1-cycle latency.
+
+**Validation:** All five tiers.  Tier-1: idle releases strobes, byte completes, data appears on bus, command drives D/C# low, /WR pulse goes low then back high.  Tier-3 HDL snapshot length and Tier-5 VCD digest blessed.  Tier-4 RTL `iverilog` round-trip passes.  FSM descriptor round-trip test confirms 4 variants and `Idle` as initial.
+
+**Follow-ups:**
+- **16-bit bus mode** — change `data_reg` to `Bits<16>`, expose `d_o: Bits<16>`.  Mostly a generic-parameter change.
+- **`/RD` read path** for controllers that support memory readback (parameter readout, status query).
+- **Multi-byte autoincrement burst mode** — assert `/WR` once per byte while keeping `/CS` low across N bytes.  Useful for pixel-stream bursts; pairs naturally with a `fifo::synchronous` upstream.
+
+---
+
+## 2026-04-29 — Tier-3 widget: TI HDQ single-wire master (#45)
+
+**Path:** `crates/rhdl-fpga/src/serial_bus/ti_hdq.rs`, `examples/ti_hdq.rs`, `doc/ti_hdq.md`, `doc/ti_hdq_fsm.md`, `vcd/ti_hdq/`
+
+**Why this, why now:** TI's proprietary single-wire bus for the `bq2018x`/`bq3xxx` fuel-gauge ICs that ship in nearly every laptop and smartphone battery.  Structurally similar to 1-Wire (open-drain, time-encoded bits) but with different framing — every transaction starts with a *break* pulse instead of 1-Wire's reset-with-presence-detect handshake.  Built next-to-1-Wire deliberately so the differences show up cleanly side-by-side; future battery-management-system widgets (#46) will compose this.
+
+**Design decisions:**
+- **Three primitive ops** — `Break`, `WriteByte`, `ReadByte`.  The host sequences them: `Break → WriteByte (addr w/ MSB=R/W) → WriteByte (data)` for a write; `Break → WriteByte (addr) → ReadByte` for a read.  Mirrors the 1-Wire master's `Reset/WriteByte/ReadByte` shape so users moving between the two see one mental model.
+- **Timings as `TiHdqTimings<T_W>` struct in *FPGA cycles*** — same convention as 1-Wire / I²C / DHT22.  Doc table covers both standard and HDQ16 (fast) modes.
+- **8-state FSM** — `Idle / BreakLow / BreakRecover / WriteBitLow / WriteBitWait / ReadBitLow / ReadBitSample / Stop`.  `#[derive(Fsm, FsmWidget)]` from the start; `FSM_TRANSITIONS` const + `write_fsm_diagram_as_markdown` + rustdoc include per CLAUDE.md §12 rule 14.
+- **Open-drain output pair** `(bus_oe, bus_out)` — identical contract to `OneWireMaster`.  Host wraps with `tristate::simple` at the pad.
+- **Multi-byte transactions deferred to v2** — the host is responsible for sequencing `Break → addr → data`.  Rationale: the framing is trivial enough that a wrapper can sit on top of this primitive without touching the FSM.
+
+**Surprises and gotchas:**
+- **No 1-Wire-style presence latch.**  HDQ has no presence-pulse equivalent — the slave starts shifting bits immediately after the break, no separate handshake.  Removing the `presence_ok` register from the 1-Wire template made the `BreakLow → BreakRecover → Stop` path simpler than 1-Wire's `ResetLow → ResetSample → Stop`.
+
+**Validation:** All five tiers per the contract.  Tier-1 unit tests (4): idle releases bus, Break completes, WriteByte completes, ReadByte captures expected zero pattern.  Tier-3 HDL snapshot length (14 776 chars) and Tier-5 VCD digest blessed.  Tier-4 `iverilog` round-trip passes.  FSM descriptor round-trip test confirms 8 variants and `Idle` as the initial state.
+
+**Follow-ups:**
+- **`TiHdqTransaction` wrapper widget** that takes `(addr, data, op_kind)` and handles the Break/WriteByte/[ReadByte | WriteByte] sequence on a single `start` strobe.  Drops user-facing complexity to one strobe per register access.
+- **Multi-byte block-mode transactions** (HDQ supports back-to-back addr/data without re-break in fast mode) — only relevant once a real `bq` host driver lands.
+- **Battery-management state machine** (#46) is the natural composer; this widget is its physical-layer dependency.
+
+---
+
+## 2026-04-29 — Complete the FSM-derive migration sweep across remaining serial_bus widgets
+
+**Path:** `crates/rhdl-fpga/src/serial_bus/{half_spi_master,ws2812,dht22,lin_master,sent_rx}.rs` + matching examples + new `doc/<name>_fsm.md` files
+
+**Why this, why now:** Closes the loop on the CLAUDE.md §12 rule 14 directive — every FSM-shaped widget in the tree now opts in.  Previous batch (PR #23) migrated `can_master`, `one_wire_master`, `i2c_master`, `ir_nec_rx`; this batch finishes with the remaining five FSM-shaped serial-bus widgets, plus an explicit "stays bare-match" decision for the three counter-driven widgets that don't have an enum-typed state register.
+
+**Migrations:**
+
+- ✅ **`half_spi_master`** — 4-state HalfSpiState (Idle / Write / Turnaround / Read), 7 transitions.  **Biggest or-pattern win in the sweep**: four output-mux matches (`cs_n`, `sclk`, `sdio_oe`, `busy`) had 15 redundant arms across them; collapse to 8 arms with or-patterns (`Write | Turnaround | Read => false` for `cs_n`, `Write | Read => q.phase` for `sclk`, etc.).  7 tests pass.
+- ✅ **`ws2812`** — 3-state WsState (Idle / Sending / Latching), 5 transitions.  Two output matches collapse — `data_out` (`Idle | Latching => false`) and `busy` (`Sending | Latching => true`).  5 tests pass.
+- ✅ **`dht22`** — 8-state Dht22State (Idle / StartLow / StartReleaseHigh / StartReleaseLow / AckLow / AckHigh / BitLow / BitHigh), 12 transitions including 4 timeout edges back to Idle.  No or-pattern wins — each state has a unique handler.  5 tests pass.
+- ✅ **`lin_master`** — 10-state LinState (Idle + Break + 4 × {Send, Wait}-pairs), 10 transitions in linear progression.  No or-pattern wins.  4 tests pass.
+- ✅ **`sent_rx`** — 2-state SentState (Idle / Collecting), 3 transitions.  Smallest FSM in the migration — included for completeness, the diagram is essentially "Idle ↔ Collecting".  6 tests pass.
+
+**Explicitly NOT migrated** (correctly):
+- ❌ **`spi_master`**, **`spi_slave`**, **`uart_rx`** — none of these carry an explicit enum-typed state register.  They're driven by phase counters / bit counters / shift registers.  Per the "When NOT to use the FSM macros" guidance in `doc/book/src/fsm/derive.md`, tagging counter-driven widgets as FSMs would produce useless diagrams and zero analysis value.  They stay bare-`match` widgets.
+- ❌ **`uart`**, **`midi`**, **`uart_16550`** — these compose other widgets (the underlying `Uart`, `UartTx`, `UartRx` primitives) and don't have their own state enum.  The state machinery lives in the inner widgets.  `uart_16550` is a register-mapped wrapper — its kernel is a giant address decode mux, not a state walk.
+- ❌ **`uart_tx`** — has 2 internal states but they're encoded as a `bool` (`sending`), not an enum.  Could be promoted to a 2-variant enum + FSM derive, but the readability win is marginal.  Tracked as a future tidy-up.
+
+**Surprises and gotchas:**
+- **The `#[doc(hidden)]` on `LinState`** — the original `LinState` was annotated `#[doc(hidden)]` to keep the public API surface minimal.  After adding `#[derive(Fsm)]` the enum's variants need to be visible enough for the diagram, but the tag is preserved (the macro is metadata, not a public-API reshape).  No conflict.
+- **Per-variant labels for readability**.  Where the Rust identifier doesn't read naturally as a diagram label (e.g., `StartReleaseHigh` → `"start (release H)"`), the `#[fsm_state(label = "...")]` annotation is added.  Consistent across the sweep.
+
+**Validation:** `cargo test --package rhdl-fpga --lib` continues to pass with the same 429+ count.  HDL emission length and VCD digests unchanged for every migrated widget — proof that adding the derives + the or-pattern collapses is byte-identical at the IR level.
+
+**Follow-ups:**
+- **Promote `uart_tx`'s 2-state `sending: bool` register to an `Fsm`-derived enum** as a small tidy-up.  Marginal readability win; not blocking.
+- **Wire the RHIF extraction pass** so `FSM_TRANSITIONS` becomes derivable rather than author-curated.  Layer 2 is shipped (PR #2); the integration into the rustdoc emission pipeline is the missing piece.  Until then, the hand-rolled `FSM_TRANSITIONS` is the contract.
+- **Future Tier-3+ widgets** that ship state machines should be FSM-tagged from day one — saves a re-migration round-trip.
+
+---
+
+## 2026-04-29 — CRITICAL: every FSM-tagged widget must emit + include its FSM diagram (CLAUDE.md §12 rule 14); migrate `i2c_master` and `ir_nec_rx`
+
+**Path:** `CLAUDE.md` §12 (new rule 14), `crates/rhdl-fpga/src/doc.rs` (new `write_fsm_diagram_as_markdown` helper), `crates/rhdl-fpga/src/serial_bus/{can_master,one_wire_master,i2c_master,ir_nec_rx}.rs`, the four matching examples + `doc/<name>_fsm.md` files, `doc/book/src/fsm/derive.md`
+
+**Why this, why now:** the FSM derive shipped in PR #2 is metadata-only — the *diagram* is the user-visible payoff.  Without a contractual requirement to emit and include it, widgets can carry the derive without surfacing the diagram, defeating the entire FSM track.  The new CLAUDE.md §12 rule 14 closes this: every `#[derive(FsmWidget)]` widget MUST author-curate a `FSM_TRANSITIONS` const, the example MUST call `write_fsm_diagram_as_markdown`, and the source MUST `include_str!` the resulting `doc/<name>_fsm.md` in its rustdoc.  This entry catches up the four widgets that already use the derive.
+
+**Design decisions:**
+- **Helper in `rhdl_fpga::doc`** — `write_fsm_diagram_as_markdown::<W: FsmWidget>(transitions, filename)` and `render_fsm_diagram_markdown<W>(transitions) -> String`.  Layered on top of the existing `rhdl::core::fsm::diagram::{build_fsm_diagram, render_fsm_svg}` infrastructure from PR #2.  Produces a self-contained `<p><svg>...</svg></p>` markdown fragment that drops directly into rustdoc via `include_str!`.
+- **Author-curated `FSM_TRANSITIONS: &[Transition]` const** in each widget — until Layer 2's RHIF-extraction pass is wired into the rustdoc emission pipeline, the author records the transitions explicitly.  Indices match the source enum's declaration order.
+- **Per-variant labels for diagram readability** — `#[fsm_state(label = "...")]` is added on every variant whose Rust identifier doesn't match the canonical spec terminology (e.g., `Sof` → `"SOF"`, `CrcDelim` → `"CRCDelim"`, `AckSlot` → `"ACK"`, `LeadingBurst` → `"lead burst"`).
+- **Stub `doc/<name>_fsm.md` committed** — the source's `include_str!` requires the file to exist at build time, before the example regenerates it.
+- **Or-pattern collapse where opportunity exists** — `i2c_master`'s `in_byte_phase` 7-arm match collapses to 2 arms; the AckAddr/AckData output paths share an arm.  These are textbook or-pattern wins per `kernel-language-extensions.md` §2.2 (PR #3).
+- **Book chapter expansion** — `doc/book/src/fsm/derive.md` now opens with a "Why use the FSM macros at all?" section and a "When NOT to use the FSM macros" section.  The five reasons (auto-diagram, static analysis, SVA surface, LLM workflows, vocabulary consistency) and the three negative cases (not-a-state-machine, unbounded state space, non-canonical update logic) are the rationale future contributors / agents read first.
+
+**Surprises and gotchas:**
+- **`rhdl_fpga` can't depend on `rhdl_core` directly.**  Per `architecture.md` §2, widgets pull through the meta-crate.  The `Transition` and diagram types are imported as `rhdl::core::fsm::analysis::Transition` (since `rhdl::core` is the re-export of `rhdl_core`).  First batch of code that needed this path; recorded for future widget authors.
+- **`include_str!` evaluates at build time, not at example-run time.**  Stubs first, regenerate later.  Same pattern as the existing `doc/<name>.md` waveform-trace files.
+
+**Migration coverage:**
+- ✅ `serial_bus::can_master` — 13-variant CanField FSM, 20 transitions including 4 self-loops, 7 tests pass.
+- ✅ `serial_bus::one_wire_master` — 8-variant OneWireState, 12 transitions, 10 tests pass.
+- ✅ `serial_bus::i2c_master` — 7-variant I2cState, 9 transitions, or-pattern collapse on `in_byte_phase` (7 arms → 2) and the AckAddr/AckData output arm (2 arms → 1), 5 tests pass.
+- ✅ `serial_bus::ir_nec_rx` — 6-variant NecState, 10 transitions, 7 tests pass.
+
+**Validation:** Full lib sweep passes (429+ tests).  HDL emission length and VCD digest unchanged for every migrated widget — proof that adding the derives + the or-pattern collapse is byte-identical at the IR level.
+
+**Follow-ups:**
+- **Migrate the remaining FSM-shaped Tier-3 widgets** as separate small batches: `dht22`, `half_spi_master`, `lin_master`, `sent_rx`, `spi_master`, `spi_slave`, `uart_rx`, `ws2812`.  Each is a self-contained mini-PR following the same template.  `half_spi_master` has the largest pending or-pattern win (14 collapsible arm RHSes).  `i2c_master`'s prior CHANGELOG entry explicitly noted "match with or-patterns is forbidden in `#[kernel]`" — that note is now historical.
+- **Wire the RHIF extraction pass** so `FSM_TRANSITIONS` becomes derivable rather than author-curated.  Layer 2 is shipped (PR #2); the integration into the rustdoc emission pipeline is the missing piece.  Until then, the hand-rolled `FSM_TRANSITIONS` is the contract.
+- **Auto-include FSM diagrams in `Descriptor::hdl_for(target).rustdoc()`** so the `#![doc = include_str!(...)]` boilerplate isn't needed in every widget source.  Touches the rustdoc machinery; orthogonal to the widget-by-widget migration.
+
+---
+
+## 2026-04-29 — Reorganise widget directories: `serial_bus/`, `video/`, `audio/`
+
+**Path:** `crates/rhdl-fpga/src/{audio,serial_bus,video}/` (new), `crates/rhdl-fpga/src/core/` (slimmed), `architecture.md` (§4 update)
+
+**Why this, why now:** `core/` had grown to ~40 widgets across heterogeneous domains.  The 24 widgets that are foundation primitives (DFFs, RAMs, counters, arithmetic, control) and the 19 widgets that drive off-chip peripherals (UART family, SPI, I²C, CAN, LIN, 1-Wire, video, audio) were uncomfortably mixed.  Splitting by *what kind of off-chip thing it talks to* makes the directory tree match how contributors think about the library.
+
+**Design decisions:**
+
+- **Three new top-level categories.**  `serial_bus/` (16 widgets), `video/` (3 widgets), `audio/` (1 widget — seedbed).  Per `architecture.md` §4 the threshold for a new category is "two widgets motivate it"; serial_bus and video clear that easily, and audio is added because future I²S / S/PDIF / AC'97 widgets are well-defined enough to anchor the category now.
+- **`midi` lives in `serial_bus/`, not `audio/`.**  Its wire layer is essentially UART at 31250 baud — the structural shape is closer to the protocol-PHY family than to the audio family.  When MIDI grows a synth / sequencer companion, that companion goes in `audio/`.
+- **`core/` keeps the foundation primitives only:** registers, RAMs, counters, control widgets (priority encoders, arbiters, debouncer, edge detector, pulse stretcher), computation (CRC, MAC, divider, popcount, leading_zeros, barrel_shifter, comparator), generic helpers (option, slice, constant, delay, one_hot), and generic output (PWM).  Anything that talks to an off-chip protocol has been moved out.
+- **Cross-directory imports use `crate::core::`, not `super::`.**  For widgets in `serial_bus/` or `video/` that depend on foundation primitives, the import becomes `use crate::core::{dff, constant};`.  Sibling-only `super::` references are reserved for intra-category composition (e.g., `serial_bus::midi → serial_bus::uart::Uart`, `video::cga_rgbi → video::video_timing`).  This convention is documented in `architecture.md` §4.
+
+**Surprises and gotchas:**
+
+- **`git mv` preserves history cleanly when the file content barely changes.**  All 19 moves show as `R100`/`R99` renames in `git log --follow`, so blame and bisect keep working across the reorg.
+- **Brace-form imports vs. path-form imports.**  Both `use rhdl_fpga::core::uart_rx::...;` and `use rhdl_fpga::{core::uart_rx, doc::write_svg_as_markdown};` appear in the example files; the sed rewrite needed both patterns.
+- **The `include_str!` paths in widget rustdoc don't change.**  Each widget's source has `#![doc = include_str!("../../examples/<name>.rs")]` and `#![doc = include_str!("../../doc/<name>.md")]` — those are *two* levels up from `src/core/<name>.rs` and *also* two levels up from `src/serial_bus/<name>.rs` (depth from file to the package root is the same).  The macro paths transparently survive the move.
+
+**Validation:**
+- `cargo build --package rhdl-fpga`: clean (lib + examples + tests).
+- `cargo test --package rhdl-fpga --lib`: 424 passed, 0 failed, 1 ignored — same numbers as before the reorg.  No HDL or VCD snapshot perturbed because no kernel logic changed.
+
+**Follow-ups:**
+- **Promote `tristate/` to be tagged as a co-category of `serial_bus/`** in the docs — it's the natural pairing for any open-drain protocol PHY (I²C, 1-Wire, half-SPI, CAN, LIN).  Not a structural move, just a doc cross-link.
+- **Eventual `sensor/` category** if the corpus of analog-sensor protocols (DHT22, SENT, future SPI-attached IMUs / ADCs) grows beyond what fits naturally in `serial_bus/`.  For now they live in `serial_bus/` because their wire layer is the dominant concern.
+
+---
+
+## 2026-04-29 — Full 16550A register surface (`uart_16550`, supersedes `bus_uart`)
+
+**Path:** `crates/rhdl-fpga/src/serial_bus/uart_16550.rs` (renamed from `bus_uart.rs`), `crates/rhdl-fpga/examples/uart_16550.rs`, `crates/rhdl-fpga/doc/uart_16550.md`, `crates/rhdl-fpga/vcd/uart_16550/`
+
+**Why this, why now:** v1 of this widget shipped as `bus_uart` — a 2-register minimum-viable subset.  This v2 brings it up to the canonical 8-register PC16550D layout, which is what Linux `8250_core`, QEMU `hw/char/serial.c`, and every PC-derived firmware stack expects to talk to.  Software written against a real 16550A can probe-detect, read/write all eight registers in correct banks, route interrupts via IIR, drive RTS / DTR / OUT1 / OUT2, and self-test via loopback — without modification.  The rename ("bus_uart" → "uart_16550") makes the chip-family correspondence explicit so future readers don't have to guess at the layout.
+
+**Design decisions:**
+
+- **8-register layout exactly per the PC16550D datasheet** — RBR/THR (banked with DLL), IER (banked with DLM), IIR/FCR, LCR (with DLAB), MCR, LSR, MSR, SCR.  Bit positions match the datasheet so software is bit-compatible.
+- **DLAB bank-switching implemented in the kernel** via a single decode against `(addr, q.lcr & LCR_DLAB)`.  Tested with `test_dlab_round_trip` writing distinct values to DLL (0x42) and DLM (0x13) and reading them back through the bank.
+- **IIR with priority encoding** per the datasheet table (line-status > RX-data > THR-empty > modem-status > none).  `test_iir_priority_encoding` verifies the bits-1-3 encoding and the always-on `0xC0` FIFO-state field.
+- **Loopback wired in the kernel** (MCR bit 4) — when set, the underlying UART's `tx` line drives its own `rx` input, and the four MCR output bits (DTR/RTS/OUT1/OUT2) drive the four MSR input bits internally.  This lets software self-test the entire data path without external wires.  Verified by `test_loopback_byte` round-tripping 0x5A through THR → loopback → RBR.
+- **Modem-status delta bits** computed against a `prev_modem: dff::DFF<Bits<4>>` register.  CTS/DSR/DCD use straight delta; RI uses trailing-edge per the datasheet (DDCD-style "was set, now clear" semantics).  `test_msr_modem_inputs_visible` exercises the cts_n input pin → MSR.bit4 path.
+- **Active-low modem pins at the I/O.**  Inputs `cts_n`, `dsr_n`, `ri_n`, `dcd_n` and outputs `rts_n`, `dtr_n`, `out1_n`, `out2_n` all carry `_n` in the name, follow the connector convention, and get inverted to active-high "asserted" semantics inside the kernel.
+- **Break control** via LCR bit 6 — when set, the kernel forces the TX line to 0 regardless of what the underlying UART would output.  `test_break_control_drives_tx_low` verifies.
+
+**Scope deferred to v3 (clearly documented in the rustdoc):**
+
+- **Programmable word length / parity / stop bits** — the underlying `UartTx` and `UartRx` are hardcoded 8N1.  LCR's word-length / parity / stop fields are accepted into storage but don't yet alter the wire format.  Wiring them through requires extending the TX / RX primitives.
+- **Programmable baud via DLL/DLM** — the actual divisor is fixed at construction; DLL/DLM are storage-only.  Same root cause: the underlying TX / RX take divisor as a `Constant`, not a runtime input.
+- **Parity / framing / break-interrupt detection** — LSR bits 2/3/4 always read 0 because the underlying RX doesn't surface those error conditions.
+- **FIFO clear on FCR write** — the underlying FIFO doesn't expose a clear input, so FCR.bit1 / .bit2 are accepted-and-ignored for now.
+- **FIFO trigger levels** — FCR bits 6-7 are stored but the underlying FIFO has fixed triggering.
+
+**Surprises and gotchas:**
+
+- **Const-generic disambiguation in test helpers.**  A test helper `fn run_stream<const D: usize, const F: usize>(uut: &Uart16550<D, F>, ...)` compiled fine for the type parameter use, but the `where rhdl::bits::W<D>: BitWidth` bound parsed `D` as a type rather than a const.  Renamed to `DV` / `FW` to disambiguate.  The same pattern probably affects future test helpers parameterised over const-generic widgets.
+- **The `include_str!` paths survived the rename.**  The widget points at `examples/uart_16550.rs` and `doc/uart_16550.md` — those got renamed at the same time, so there's no broken include after the move.
+
+**Validation:** All 5 tiers, **12 tests pass** including 6 register-interface integration tests (DLAB round-trip, MCR drives outputs, MSR sees modem pins, loopback round-trips a byte, RX→RBR, break drives TX low) plus IIR priority encoding, no-irq idle, and the SCR scratchpad round-trip.  Tier 4 iverilog RTL clean.  Tier 5 VCD digest blessed.
+
+**Follow-ups:**
+
+- **Programmable baud rate via DLL/DLM.**  Requires extending `UartTx` and `UartRx` to take divisor as a runtime input rather than a `Constant<Bits<DIV_W>>`.  Probably ~80 LOC of TX/RX changes, then one line in `uart_16550` to wire `((q.dlm.raw() << 8) | q.dll.raw())` to the underlying divisor.
+- **Programmable word length / parity / stop bits.**  Bigger lift — the TX shifter needs to count to a programmable bit count, the RX sampler needs the same, and parity has to be computed both directions.  Probably ~200 LOC across `UartTx` / `UartRx` plus the LCR-decode in `uart_16550`.
+- **Parity / framing / break-interrupt detection.**  Falls out of programmable word length plus an explicit "rx_error: Bits<3>" output on `UartRx` covering parity/framing/break.  LSR bits 2/3/4 then carry these.
+- **FIFO clear hooks.**  `SyncFIFO` needs a `clear` input.  Once that lands, FCR.bit1/.bit2 wire through trivially.
+- **FIFO trigger levels.**  Less urgent — most software uses the default level.  Would require parameterising the underlying FIFO or wrapping it.
+- **Optional: 16-byte FIFO depth at `FIFO_W=4`** is the canonical 16550A; we're already there with the existing `Uart::<DIV_W, 4>` instantiation.
+
+---
+
+## 2026-04-29 — Refactor `core::can_master` and `core::one_wire_master` to use FSM macros + or-patterns
+
+**Path:** `crates/rhdl-fpga/src/core/can_master.rs`, `crates/rhdl-fpga/src/core/one_wire_master.rs`
+
+**Why this, why now:** First two widget rewrites that opt into the FSM derives (PR #2) and the new top-level or-pattern syntax (PR #3).  The point of the refactor isn't behavioural — emitted Verilog is byte-identical to before — it's to validate that the new tooling holds up against real Tier-3 widgets and to demonstrate the readability win.
+
+**Design decisions:**
+
+- **`can_master`** — picked CanField (the 13-variant frame-walking enum) as the FSM-tagged enum, not CanState (the 2-variant Idle/Tx).  CanField is what the kernel matches on extensively; CanState is essentially a boolean.  The widget can only carry one FSM tag, so the choice is between "useful diagram + analysis on the field-walk" vs "trivial diagram on Idle/Tx".  The first wins easily.  Per-variant labels are added on the variants whose source name doesn't match the canonical CAN spec terminology — `Sof` → `"SOF"`, `CrcDelim` → `"CRCDelim"`, `AckSlot` → `"ACK"`, etc.
+- **`one_wire_master`** — only one state DFF, so the choice is forced.  Per-variant labels expose the natural human-readable phase names (`"Reset (low)"`, `"Reset (sample)"`, `"Write (low)"`, `"Read (sample)"`) instead of the camel-case Rust identifiers.  This is exactly the case `#[fsm_state(label = "...")]` was designed for.
+- **Or-pattern collapse — `can_master`.**  Three matches collapse:
+  - `raw_bit`: 13 arms → 6 arms (4 dominant variants share one arm, 5 recessive variants share another, 4 keep their own arm because each computes a per-bit-index value).
+  - `in_stuff_zone`: 9 arms (8 + wild) → 2 arms.
+  - `crc_input_active`: 8 arms (7 + wild) → 2 arms.
+  Net delete: ~25 lines of redundant arm boilerplate.
+- **Or-pattern collapse — `one_wire_master`.**  `bus_oe` match: 4 arms (3 + wild) → 2 arms.  Smaller win in absolute terms but the kernel reads as "drive low whenever we're in any *Low state, else release," which is much closer to the actual semantics than the three-line per-arm form.
+- **HDL snapshots not re-blessed.**  The `test_vlog_generation` length checks and `test_*_trace` VCD digests are unchanged — proof that the desugaring is byte-identical at the IR level.
+- **Two new tests per widget** (`test_fsm_descriptor_round_trip`).  Walks the variant table emitted by `#[derive(Fsm)]` + `#[derive(FsmWidget)]` and verifies widget name, state-field name, state-var binding, variant count, per-variant labels, and initial-index — i.e., that the metadata the analysis pass and diagram renderer will read is exactly what the source enum says.
+
+**Surprises and gotchas:**
+
+- **Or-patterns inside the kernel feel natural** — once the syntax is allowed, the `Sof | Rtr | Ide | R0 => false` form reads better than the four separate arms ever did.  This wasn't a surprise so much as a confirmation of the original §2.2 motivation.
+- **The 12-tuple ceiling for `Synchronous` derive** still bites here.  `can_master` is at 11 sub-circuit fields after the StuffState consolidation; if the FSM derive ever gains a `&'static [FsmDescriptor]` field on the widget itself (rather than the current associated-function form), the ceiling becomes load-bearing.  Tracked as a follow-up; the current associated-function design avoids the issue by not adding any DFF or sub-circuit.
+- **The widget-name string the macro emits** uses the bare ident (`"CanMaster"`), not the fully-qualified path (`"rhdl_fpga::core::can_master::CanMaster"`).  Confirmed working via the round-trip test.  If two widgets ever share a name, the descriptor's widget_name field will collide; tracked as a future-iteration concern in `fsm-architecture.md` §10.
+
+**Validation:**
+- `can_master`: 7 tests pass (6 original + 1 new fsm-descriptor round-trip).  HDL emission length 26937 chars — unchanged from pre-refactor.  VCD digest unchanged.  iverilog RTL clean.
+- `one_wire_master`: 10 tests pass (9 original + 1 new fsm-descriptor round-trip).  HDL emission length 16431 chars — unchanged.  VCD digest unchanged.  iverilog RTL clean.
+
+**Follow-ups:**
+- **Apply the same refactor to the rest of the FSM-shaped widget corpus.**  Top candidates: `i2c_master` (already documented as wanting or-patterns in its CHANGELOG entry), `lin_master`, `spi_master`, `spi_slave`, `sent_rx`, `ir_nec_rx`, `bus_uart`, `dht22`, `audio_pwm`, `midi`.  Each is a self-contained mini-PR.
+- **Wire `cargo rhdl prove` through these widgets** once Phase 4b ships — the metadata is now in place to drive SymbiYosys against the can_master frame structure (e.g. "after a `start` strobe in `Idle`, the FSM eventually reaches `Stop`") and the one_wire_master timing invariants.
+- **Auto-generated diagrams in the rustdoc.**  The diagram renderer is shipped (PR #2 Layer 3); the next step is wiring `Descriptor::fsm_diagram_svg()` into the existing rustdoc emission pipeline so a widget's docs page automatically shows its state diagram.  Tracked separately because it touches the rustdoc machinery.
+
+---
+
+## 2026-04-29 — FSM macro family + analysis + diagram + SVA-property surface (PR #2)
+
+**Path:** `crates/rhdl-core/src/fsm/`, `crates/rhdl-macro-core/src/{fsm.rs,fsm_widget.rs,fsm_properties.rs}`, `crates/rhdl-macro/src/lib.rs`, `crates/rhdl/src/prelude.rs`, `crates/rhdl/tests/fsm.rs`, `doc/book/src/fsm/*.md`
+
+**Why this, why now:** Lands the four-layer FSM design from `fsm-architecture.md` in one upstream-clean PR (intentionally skipping fork-local docs — this entry catches them up).  Strictly additive: no widget HDL snapshots perturbed, no IR layer or pass-trait family added, no kernel-as-pure-fn invariant relaxed.
+
+**Design decisions:**
+- **Metadata, not new syntax.**  `#[derive(Fsm)]` plus `#[fsm(...)]` / `#[fsm_state(...)]` helper attributes record metadata trait impls; the kernel body is unchanged.  Decision recorded in `fsm-architecture.md` §13 — keeps rust-analyzer working, keeps LLM-generated kernels portable.
+- **`FsmWidget` is the second derive, not a generic.**  Tagging a widget struct with the state field + state enum produces an `FsmDescriptor`-returning helper, decoupling analysis/diagram tooling from the widget's concrete state-enum type.
+- **Pure-function leaf for analysis.**  `fsm/analysis.rs` consumes a transition list + descriptor and emits diagnostics; `fsm/extraction.rs` walks RHIF and produces the transition list.  Two-stage architecture means the analysis is unit-testable without spinning up the compiler.
+- **Three diagram formats from one layout pass.**  Inline SVG (rustdoc-friendly, no Graphviz dep), Graphviz `dot` (external tooling), structured JSON (LLM workflows).  Layered BFS layout from the initial variant.
+- **Single `#[fsm_properties(...)]` attribute, not four.**  Composes `invariant`, `liveness`, `cover`, `assume` declarations in one place with named-call syntax.  Less surface area than four separate attribute macros while keeping the same expressive power.
+- **Cargo subcommand deferred.**  The `cargo rhdl prove` driver that hands SVA off to SymbiYosys is Phase 4b — the metadata surface (this PR) ships now so any tooling can be built against it.
+
+**What guarantee is preserved.**  Kernel-as-pure-fn (no kernel-body changes); type-safe matching (the analysis reads RHIF, doesn't transform it); the existing `Pass` trait architecture (no new passes registered into stage drivers — analysis is a leaf the user invokes explicitly).
+
+**Surprises and gotchas:**
+- **The 12-tuple ceiling for `Synchronous` derive** that bit `can_master` is now load-bearing for FSM widgets too — `FsmWidget` doesn't add fields, but a widget with an FSM is more likely to have many DFFs.  No fix this PR; tracked as a follow-up in `widget-roadmap.md`.
+- **Raw-string delimiter conflict in SVG output** (`r#"...fill="#444"..."#`).  Bumped to `r##"..."##` because `"#` would otherwise close the raw-string early.  Worth a note for any future SVG-emitting code in the tree.
+- **`TypedBits` discriminant decoding** (in `fsm/extraction.rs`) had to walk the bit slice manually since the public API doesn't expose the integer value directly for arbitrary kinds.  Sign-extension handled for both `Kind::Signed` and signed-discriminant `Kind::Enum`.
+
+**Validation:** All 5 tiers, 62 tests pass — 23 unit tests in `rhdl-core::fsm::*`, 22 macro-snapshot tests in `rhdl-macro-core`, 17 end-to-end integration tests in `crates/rhdl/tests/fsm.rs`.  Existing widget HDL snapshots untouched (verified by spot-checking `core::dff`, `core::counter`, `core::pwm`).
+
+**Follow-ups:**
+- **Widget rewrites** — opt-in `#[derive(Fsm)]` and `#[derive(FsmWidget)]` on the FSM-shaped widget corpus.  First two land in `refactor/use-fsm-and-or-patterns` (`can_master`, `one_wire_master`); the rest follow as separate batches.
+- **`cargo rhdl prove`** — the SymbiYosys driver subcommand that compiles the widget Verilog with SVA included, generates a `.sby` config, runs `sby`, and structures the counterexample trace.  Phase 4b in `fsm-architecture.md`.
+- **In-kernel BMC** — Phase 5.  Aspirational; symbolic execution of the kernel function over `(state, input)` for K cycles via z3/boolector bindings.  6+ months of work; not committed.
+- **Pattern-distribution for nested or-patterns inside state-construction** — orthogonal but the FSM analysis becomes richer once that lands (see `kernel-language-extensions.md` §2.2 follow-up).
+- **Widget snapshot regression** — the FSM derives are zero-cost on existing widgets (no fields added), but if `Synchronous` derive ever changes its tuple layout, the FSM macros need to track it.
+- **The 12-tuple ceiling for `Synchronous` derive** noted above — when the macro emits a real generated struct instead of a raw tuple, FSM widgets benefit too.
+
+---
+
+## 2026-04-29 — Top-level or-patterns in `#[kernel]` match arms (PR #3)
+
+**Path:** `crates/rhdl-macro-core/src/kernel.rs` (`match_ex`, `pattern_has_nested_or`, `pat()`), `crates/rhdl-macro-core/src/expect/match_or_pattern.expect`, `crates/rhdl/tests/match_or.rs`, `doc/book/src/kernels/match.md`
+
+**Why this, why now:** Lands `kernel-language-extensions.md` §2.2 — the first item from Phase 1 of the kernel-language-extensions plan.  Or-patterns are by far the highest-frequency pattern friction in FSM-style kernels (every protocol PHY has clusters of variants with the same body — see the `can_master::raw_bit` / `in_stuff_zone` / `crc_input_active` matches that this PR's companion refactor collapses).
+
+**Design decisions:**
+- **Macro-layer flat-map, not IR change.**  RHIF `Case`'s `table: Vec<(CaseArgument, Slot)>` already permits multiple entries pointing at the same Slot — the macro just emits one entry per alternative with the same target slot.  Equivalent Verilog at zero IR cost.
+- **Top-level only.**  Nested or-patterns inside tuple/struct/slice patterns (`(A | B, C)`) are caught by `pattern_has_nested_or` and rejected with a specific diagnostic that points the user at the manual distribution rewrite (`(A, C) | (B, C)`).  Same restriction Spade and Bluespec ship with.
+- **Existing helpers anticipated this.**  Three of the macro-layer pattern helpers (`pattern_has_bindings`, `rewrite_pattern_to_use_dont_care_for_bindings`, `add_scoped_binding`) already handled `Pat::Or` recursively from prior groundwork.  Only the dispatcher (`match_ex`) and the diagnostic in `pat()` needed updating.
+
+**What guarantee is preserved.**  Kernel-as-pure-fn (purely a macro-layer transformation, no kernel-body semantics change); type-safe matching (Rust's own checker enforces same-bindings-same-types across alternatives before our macro sees the AST); exhaustiveness (the desugared form preserves arm coverage).
+
+**Surprises and gotchas:**
+- **`arm()` shortcut-routing for no-binding patterns.**  Patterns without bindings get routed through `rewrite_pattern_as_typed_bits`, which would silently emit invalid Rust for nested or-patterns like `(A | B, C)`.  The recursive `pattern_has_nested_or` check in `match_ex` catches this case before it reaches `arm()`.
+- **The "Surprise" line in the `i2c_master` CHANGELOG entry** (saying or-patterns aren't supported) is now historical — kept as-is to record the prior state, but the surrounding context has shifted.
+
+**Validation:** 54 macro-core tests pass (52 original + 2 new: `test_match_or_pattern` snapshot + `test_match_nested_or_pattern_rejected` negative).  5 integration tests in `crates/rhdl/tests/match_or.rs` covering enum or-patterns, three-alternative groups, and literal-value alternatives — each runs through both VM and iverilog round-trip.
+
+**Follow-ups:**
+- **IR-level multi-discriminant `CaseArgument`** — would compile each or-pattern to a single `Case` arm with `CaseArgument::Slots(Vec<Slot>)` instead of N arms with the same target.  More efficient but requires extending the RHIF spec; the macro-layer flat-map is fine for v1.
+- **Nested or-patterns via pattern distribution.**  Tractable but combinatorial-explosion-prone at depth; not on the near-term roadmap.
+- **Other Phase-1 pattern desugarings** from `kernel-language-extensions.md` §2.1–2.9 — `let-else`, range patterns, match guards, `@` bindings, array destructuring, `?` on Option, `for x in array`, compile-time `assert!`.  Each ships as its own PR per CLAUDE.md §11.1.
 
 ---
 

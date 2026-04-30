@@ -1,10 +1,13 @@
 use rhdl::prelude::*;
 use rhdl_fpga::{
-    core::ir_nec_rx::{In, IrNecRx, NecTimings},
-    doc::write_svg_as_markdown,
+    doc::{write_fsm_diagram, write_svg_as_markdown},
+    serial_bus::ir_nec_rx::{In, IrNecRx, NecTimings},
 };
 
 fn main() -> Result<(), RHDLError> {
+    // Emit the FSM diagram first — required by CLAUDE.md §12 rule 14.
+    write_fsm_diagram::<IrNecRx<14>>("ir_nec_rx_fsm.md")?;
+
     // Compact test timings — small enough that a frame fits in a few hundred
     // FPGA cycles, with the standard NEC ratios preserved.
     let timings = NecTimings::<14> {

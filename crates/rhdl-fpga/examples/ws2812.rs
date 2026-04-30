@@ -1,10 +1,13 @@
 use rhdl::prelude::*;
 use rhdl_fpga::{
-    core::ws2812::{In, Ws2812Driver},
-    doc::write_svg_as_markdown,
+    doc::{write_fsm_diagram, write_svg_as_markdown},
+    serial_bus::ws2812::{In, Ws2812Driver},
 };
 
 fn main() -> Result<(), RHDLError> {
+    // Emit the FSM diagram first — required by CLAUDE.md §12 rule 14.
+    write_fsm_diagram::<Ws2812Driver<8>>("ws2812_fsm.md")?;
+
     let mut stream_in: Vec<In> = vec![In {
         pixel: bits(0xA5_5A_3C),
         send: true,
