@@ -1,12 +1,12 @@
 use rhdl::prelude::*;
 use rhdl_fpga::{
-    doc::{write_fsm_diagram_as_markdown, write_svg_as_markdown},
-    serial_bus::hd44780::{FSM_TRANSITIONS, Hd44780, In},
+    doc::{write_fsm_diagram, write_svg_as_markdown},
+    serial_bus::hd44780::{Hd44780, In},
 };
 
 fn main() -> Result<(), RHDLError> {
     // Emit the FSM diagram first — required by CLAUDE.md §12 rule 14.
-    write_fsm_diagram_as_markdown::<Hd44780<10>>(FSM_TRANSITIONS, "hd44780_fsm.md")?;
+    write_fsm_diagram::<Hd44780<10>>("hd44780_fsm.md")?;
 
     // Compact timings for the trace: 4 cycles per strobe-half, 20 cycles busy.
     let uut = Hd44780::<10>::new(bits(4), bits(20));

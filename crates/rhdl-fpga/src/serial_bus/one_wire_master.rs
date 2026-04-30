@@ -99,68 +99,6 @@ use rhdl::prelude::*;
 
 use crate::core::{constant::Constant, dff};
 
-/// Author-curated transition graph for the 1-Wire slot-walking FSM.
-///
-/// Required by CLAUDE.md §12 rule 14.  Indices match `OneWireState`
-/// declaration order (Idle=0, ResetLow=1, ResetSample=2,
-/// WriteBitLow=3, WriteBitWait=4, ReadBitLow=5, ReadBitSample=6,
-/// Stop=7).
-pub const FSM_TRANSITIONS: &[Transition] = &[
-    // Idle dispatches to the first state of each operation.
-    Transition {
-        source_index: 0,
-        target_index: 1,
-    }, // Idle → ResetLow (Reset op)
-    Transition {
-        source_index: 0,
-        target_index: 3,
-    }, // Idle → WriteBitLow (Write op)
-    Transition {
-        source_index: 0,
-        target_index: 5,
-    }, // Idle → ReadBitLow (Read op)
-    // Reset path.
-    Transition {
-        source_index: 1,
-        target_index: 2,
-    }, // ResetLow → ResetSample
-    Transition {
-        source_index: 2,
-        target_index: 7,
-    }, // ResetSample → Stop
-    // Write-bit path.
-    Transition {
-        source_index: 3,
-        target_index: 4,
-    }, // WriteBitLow → WriteBitWait
-    Transition {
-        source_index: 4,
-        target_index: 3,
-    }, // WriteBitWait → WriteBitLow (next bit)
-    Transition {
-        source_index: 4,
-        target_index: 7,
-    }, // WriteBitWait → Stop (last bit)
-    // Read-bit path.
-    Transition {
-        source_index: 5,
-        target_index: 6,
-    }, // ReadBitLow → ReadBitSample
-    Transition {
-        source_index: 6,
-        target_index: 5,
-    }, // ReadBitSample → ReadBitLow (next bit)
-    Transition {
-        source_index: 6,
-        target_index: 7,
-    }, // ReadBitSample → Stop (last bit)
-    // Stop returns to Idle.
-    Transition {
-        source_index: 7,
-        target_index: 0,
-    }, // Stop → Idle
-];
-
 /// Operation to perform.
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
 pub enum OneWireOp {
@@ -245,7 +183,7 @@ where
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
 #[rhdl(dq_no_prefix)]
-#[fsm(state_field = "state", state_enum = OneWireState)]
+#[fsm(state_field = "state", state_enum = OneWireState, allow_implicit)]
 /// 1-Wire master (single-byte / single-reset v1).
 pub struct OneWireMaster<const T_W: usize>
 where

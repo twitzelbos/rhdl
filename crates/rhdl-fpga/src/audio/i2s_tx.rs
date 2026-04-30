@@ -70,18 +70,6 @@ use rhdl::prelude::*;
 
 use crate::core::dff;
 
-/// Author-curated transition graph for the bit-clock tick FSM.
-pub const FSM_TRANSITIONS: &[Transition] = &[
-    Transition {
-        source_index: 0,
-        target_index: 1,
-    },
-    Transition {
-        source_index: 1,
-        target_index: 0,
-    },
-];
-
 /// Bit-clock half-cell state.
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default, Fsm)]
 pub enum BclkPhase {
@@ -96,7 +84,7 @@ pub enum BclkPhase {
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
 #[rhdl(dq_no_prefix)]
-#[fsm(state_field = "phase", state_enum = BclkPhase)]
+#[fsm(state_field = "phase", state_enum = BclkPhase, allow_implicit)]
 /// I²S transmitter (master mode, left-justified, 16-bit stereo).
 pub struct I2sTx {
     phase: dff::DFF<BclkPhase>,

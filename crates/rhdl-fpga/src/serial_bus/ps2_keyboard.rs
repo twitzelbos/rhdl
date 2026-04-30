@@ -76,22 +76,6 @@ use rhdl::prelude::*;
 
 use crate::core::dff;
 
-/// Author-curated transition graph for the PS/2 receiver FSM.
-pub const FSM_TRANSITIONS: &[Transition] = &[
-    Transition {
-        source_index: 0,
-        target_index: 1,
-    },
-    Transition {
-        source_index: 1,
-        target_index: 1,
-    },
-    Transition {
-        source_index: 1,
-        target_index: 0,
-    },
-];
-
 /// Receive-side state machine.
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default, Fsm)]
 pub enum Ps2State {
@@ -106,7 +90,7 @@ pub enum Ps2State {
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
 #[rhdl(dq_no_prefix)]
-#[fsm(state_field = "state", state_enum = Ps2State)]
+#[fsm(state_field = "state", state_enum = Ps2State, allow_implicit)]
 /// PS/2 keyboard receiver.
 pub struct Ps2Keyboard {
     state: dff::DFF<Ps2State>,

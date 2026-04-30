@@ -57,62 +57,6 @@ use rhdl::prelude::*;
 
 use crate::core::{constant::Constant, dff};
 
-/// Author-curated transition graph for the DHT22 read FSM.
-///
-/// Required by CLAUDE.md §12 rule 14.  Indices match `Dht22State`
-/// declaration order (Idle=0, StartLow=1, StartReleaseHigh=2,
-/// StartReleaseLow=3, AckLow=4, AckHigh=5, BitLow=6, BitHigh=7).
-pub const FSM_TRANSITIONS: &[Transition] = &[
-    Transition {
-        source_index: 0,
-        target_index: 1,
-    }, // Idle → StartLow (on `start`)
-    Transition {
-        source_index: 1,
-        target_index: 2,
-    }, // StartLow → StartReleaseHigh
-    Transition {
-        source_index: 2,
-        target_index: 3,
-    }, // StartReleaseHigh → StartReleaseLow
-    Transition {
-        source_index: 3,
-        target_index: 4,
-    }, // StartReleaseLow → AckLow (sensor pulls low)
-    Transition {
-        source_index: 4,
-        target_index: 5,
-    }, // AckLow → AckHigh
-    Transition {
-        source_index: 5,
-        target_index: 6,
-    }, // AckHigh → BitLow (first data bit)
-    Transition {
-        source_index: 6,
-        target_index: 7,
-    }, // BitLow → BitHigh
-    Transition {
-        source_index: 7,
-        target_index: 6,
-    }, // BitHigh → BitLow (next bit)
-    Transition {
-        source_index: 7,
-        target_index: 0,
-    }, // BitHigh → Idle (40th bit done)
-    Transition {
-        source_index: 3,
-        target_index: 0,
-    }, // StartReleaseLow → Idle (timeout)
-    Transition {
-        source_index: 4,
-        target_index: 0,
-    }, // AckLow → Idle (timeout)
-    Transition {
-        source_index: 5,
-        target_index: 0,
-    }, // AckHigh → Idle (timeout)
-];
-
 /// State of the DHT22 reader.
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default, Fsm)]
 pub enum Dht22State {
@@ -144,7 +88,7 @@ pub enum Dht22State {
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
 #[rhdl(dq_no_prefix)]
-#[fsm(state_field = "state", state_enum = Dht22State)]
+#[fsm(state_field = "state", state_enum = Dht22State, allow_implicit)]
 /// DHT22 reader core.
 pub struct Dht22Reader<const CW: usize>
 where

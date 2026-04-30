@@ -1,11 +1,11 @@
 use rhdl::prelude::*;
 use rhdl_fpga::{
-    doc::{write_fsm_diagram_as_markdown, write_svg_as_markdown},
-    serial_bus::nand_flash_async::{FSM_TRANSITIONS, In, NandFlashAsync, NandOp, NandTimings},
+    doc::{write_fsm_diagram, write_svg_as_markdown},
+    serial_bus::nand_flash_async::{In, NandFlashAsync, NandOp, NandTimings},
 };
 
 fn main() -> Result<(), RHDLError> {
-    write_fsm_diagram_as_markdown::<NandFlashAsync<8>>(FSM_TRANSITIONS, "nand_flash_async_fsm.md")?;
+    write_fsm_diagram::<NandFlashAsync<8>>("nand_flash_async_fsm.md")?;
 
     let timings = NandTimings::<8> {
         t_setup: bits(2),

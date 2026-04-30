@@ -78,63 +78,6 @@ use rhdl::prelude::*;
 
 use crate::core::{constant::Constant, dff};
 
-/// Author-curated transition graph for the HDQ FSM.
-///
-/// Required by CLAUDE.md §12 rule 14.  Indices match `TiHdqState`
-/// declaration order (Idle=0, BreakLow=1, BreakRecover=2,
-/// WriteBitLow=3, WriteBitWait=4, ReadBitLow=5, ReadBitSample=6,
-/// Stop=7).
-pub const FSM_TRANSITIONS: &[Transition] = &[
-    Transition {
-        source_index: 0,
-        target_index: 1,
-    },
-    Transition {
-        source_index: 0,
-        target_index: 3,
-    },
-    Transition {
-        source_index: 0,
-        target_index: 5,
-    },
-    Transition {
-        source_index: 1,
-        target_index: 2,
-    },
-    Transition {
-        source_index: 2,
-        target_index: 7,
-    },
-    Transition {
-        source_index: 3,
-        target_index: 4,
-    },
-    Transition {
-        source_index: 4,
-        target_index: 3,
-    },
-    Transition {
-        source_index: 4,
-        target_index: 7,
-    },
-    Transition {
-        source_index: 5,
-        target_index: 6,
-    },
-    Transition {
-        source_index: 6,
-        target_index: 5,
-    },
-    Transition {
-        source_index: 6,
-        target_index: 7,
-    },
-    Transition {
-        source_index: 7,
-        target_index: 0,
-    },
-];
-
 /// Operation to perform.
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
 pub enum TiHdqOp {
@@ -193,7 +136,7 @@ where
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
 #[rhdl(dq_no_prefix)]
-#[fsm(state_field = "state", state_enum = TiHdqState)]
+#[fsm(state_field = "state", state_enum = TiHdqState, allow_implicit)]
 /// TI HDQ single-wire master.
 pub struct TiHdqMaster<const T_W: usize>
 where

@@ -1,11 +1,11 @@
 use rhdl::prelude::*;
 use rhdl_fpga::{
-    audio::i2s_tx::{FSM_TRANSITIONS, I2sTx, In},
-    doc::{write_fsm_diagram_as_markdown, write_svg_as_markdown},
+    audio::i2s_tx::{I2sTx, In},
+    doc::{write_fsm_diagram, write_svg_as_markdown},
 };
 
 fn main() -> Result<(), RHDLError> {
-    write_fsm_diagram_as_markdown::<I2sTx>(FSM_TRANSITIONS, "i2s_tx_fsm.md")?;
+    write_fsm_diagram::<I2sTx>("i2s_tx_fsm.md")?;
 
     let uut = I2sTx::default();
     let mut stream_in: Vec<In> = vec![In {

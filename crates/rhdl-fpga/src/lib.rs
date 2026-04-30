@@ -16,3 +16,6 @@ pub mod stream;
 /// Tristate IO support
 pub mod tristate;
 pub mod video;
+
+#[cfg(test)]
+mod fsm_corpus_regression;

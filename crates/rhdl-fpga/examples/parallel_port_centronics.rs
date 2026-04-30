@@ -1,14 +1,13 @@
 use rhdl::prelude::*;
 use rhdl_fpga::{
-    doc::{write_fsm_diagram_as_markdown, write_svg_as_markdown},
+    doc::{write_fsm_diagram, write_svg_as_markdown},
     serial_bus::parallel_port_centronics::{
-        CentronicsTimings, FSM_TRANSITIONS, In, ParallelPortCentronics,
+        CentronicsTimings, In, ParallelPortCentronics,
     },
 };
 
 fn main() -> Result<(), RHDLError> {
-    write_fsm_diagram_as_markdown::<ParallelPortCentronics<8>>(
-        FSM_TRANSITIONS,
+    write_fsm_diagram::<ParallelPortCentronics<8>>(
         "parallel_port_centronics_fsm.md",
     )?;
 

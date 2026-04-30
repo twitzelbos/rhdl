@@ -73,26 +73,6 @@ use rhdl::prelude::*;
 
 use crate::core::dff;
 
-/// Author-curated transition graph for the MFM encoder FSM.
-pub const FSM_TRANSITIONS: &[Transition] = &[
-    Transition {
-        source_index: 0,
-        target_index: 1,
-    },
-    Transition {
-        source_index: 1,
-        target_index: 2,
-    },
-    Transition {
-        source_index: 2,
-        target_index: 1,
-    },
-    Transition {
-        source_index: 2,
-        target_index: 0,
-    },
-];
-
 /// Internal state machine.
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default, Fsm)]
 pub enum MfmState {
@@ -109,7 +89,7 @@ pub enum MfmState {
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
 #[rhdl(dq_no_prefix)]
-#[fsm(state_field = "state", state_enum = MfmState)]
+#[fsm(state_field = "state", state_enum = MfmState, allow_implicit)]
 /// MFM encoder.
 pub struct MfmEncoder {
     state: dff::DFF<MfmState>,

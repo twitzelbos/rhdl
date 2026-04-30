@@ -1,11 +1,11 @@
 use rhdl::prelude::*;
 use rhdl_fpga::{
-    core::rle_decoder::{FSM_TRANSITIONS, In, RleDecoder},
-    doc::{write_fsm_diagram_as_markdown, write_svg_as_markdown},
+    core::rle_decoder::{In, RleDecoder},
+    doc::{write_fsm_diagram, write_svg_as_markdown},
 };
 
 fn main() -> Result<(), RHDLError> {
-    write_fsm_diagram_as_markdown::<RleDecoder>(FSM_TRANSITIONS, "rle_decoder_fsm.md")?;
+    write_fsm_diagram::<RleDecoder>("rle_decoder_fsm.md")?;
 
     let uut = RleDecoder::default();
     let mut stream_in: Vec<In> = Vec::new();

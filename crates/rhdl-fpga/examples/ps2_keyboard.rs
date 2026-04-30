@@ -1,11 +1,11 @@
 use rhdl::prelude::*;
 use rhdl_fpga::{
-    doc::{write_fsm_diagram_as_markdown, write_svg_as_markdown},
-    serial_bus::ps2_keyboard::{FSM_TRANSITIONS, In, Ps2Keyboard},
+    doc::{write_fsm_diagram, write_svg_as_markdown},
+    serial_bus::ps2_keyboard::{In, Ps2Keyboard},
 };
 
 fn main() -> Result<(), RHDLError> {
-    write_fsm_diagram_as_markdown::<Ps2Keyboard>(FSM_TRANSITIONS, "ps2_keyboard_fsm.md")?;
+    write_fsm_diagram::<Ps2Keyboard>("ps2_keyboard_fsm.md")?;
 
     let uut = Ps2Keyboard::default();
     // Send the scan code 0x1C ('A' on Set 2).

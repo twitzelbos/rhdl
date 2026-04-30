@@ -1,11 +1,11 @@
 use rhdl::prelude::*;
 use rhdl_fpga::{
-    doc::{write_fsm_diagram_as_markdown, write_svg_as_markdown},
-    serial_bus::mipi_dbi_type_b::{DbiBTimings, FSM_TRANSITIONS, In, MipiDbiTypeB},
+    doc::{write_fsm_diagram, write_svg_as_markdown},
+    serial_bus::mipi_dbi_type_b::{DbiBTimings, In, MipiDbiTypeB},
 };
 
 fn main() -> Result<(), RHDLError> {
-    write_fsm_diagram_as_markdown::<MipiDbiTypeB<8>>(FSM_TRANSITIONS, "mipi_dbi_type_b_fsm.md")?;
+    write_fsm_diagram::<MipiDbiTypeB<8>>("mipi_dbi_type_b_fsm.md")?;
 
     let timings = DbiBTimings::<8> {
         t_setup: bits(2),

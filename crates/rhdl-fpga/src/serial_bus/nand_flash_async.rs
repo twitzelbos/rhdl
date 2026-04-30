@@ -82,38 +82,6 @@ use rhdl::prelude::*;
 
 use crate::core::{constant::Constant, dff};
 
-/// Author-curated transition graph for the NAND-cycle FSM.
-pub const FSM_TRANSITIONS: &[Transition] = &[
-    Transition {
-        source_index: 0,
-        target_index: 1,
-    }, // Idle → SetupWrite
-    Transition {
-        source_index: 0,
-        target_index: 3,
-    }, // Idle → ReadLow
-    Transition {
-        source_index: 1,
-        target_index: 2,
-    }, // SetupWrite → WeLow
-    Transition {
-        source_index: 2,
-        target_index: 5,
-    }, // WeLow → Stop
-    Transition {
-        source_index: 3,
-        target_index: 4,
-    }, // ReadLow → ReadSample
-    Transition {
-        source_index: 4,
-        target_index: 5,
-    }, // ReadSample → Stop
-    Transition {
-        source_index: 5,
-        target_index: 0,
-    }, // Stop → Idle
-];
-
 /// Operation to perform on a single NAND cycle.
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
 pub enum NandOp {
@@ -167,7 +135,7 @@ where
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
 #[rhdl(dq_no_prefix)]
-#[fsm(state_field = "state", state_enum = NandState)]
+#[fsm(state_field = "state", state_enum = NandState, allow_implicit)]
 /// NAND flash controller (ONFI 1.x async, primitive-cycle).
 pub struct NandFlashAsync<const T_W: usize>
 where

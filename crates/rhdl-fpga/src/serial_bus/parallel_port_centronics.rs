@@ -58,26 +58,6 @@ use rhdl::prelude::*;
 
 use crate::core::{constant::Constant, dff};
 
-/// Author-curated transition graph for the Centronics handshake FSM.
-pub const FSM_TRANSITIONS: &[Transition] = &[
-    Transition {
-        source_index: 0,
-        target_index: 1,
-    },
-    Transition {
-        source_index: 1,
-        target_index: 2,
-    },
-    Transition {
-        source_index: 2,
-        target_index: 3,
-    },
-    Transition {
-        source_index: 3,
-        target_index: 0,
-    },
-];
-
 /// Internal state machine.
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default, Fsm)]
 pub enum CentronicsState {
@@ -111,7 +91,7 @@ where
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
 #[rhdl(dq_no_prefix)]
-#[fsm(state_field = "state", state_enum = CentronicsState)]
+#[fsm(state_field = "state", state_enum = CentronicsState, allow_implicit)]
 /// Centronics / IEEE 1284 parallel-port transmitter.
 pub struct ParallelPortCentronics<const T_W: usize>
 where

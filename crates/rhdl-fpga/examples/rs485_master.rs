@@ -1,12 +1,11 @@
 use rhdl::prelude::*;
 use rhdl_fpga::{
-    doc::{write_fsm_diagram_as_markdown, write_svg_as_markdown},
-    serial_bus::rs485_master::{FSM_TRANSITIONS, In, Rs485Master},
+    doc::{write_fsm_diagram, write_svg_as_markdown},
+    serial_bus::rs485_master::{In, Rs485Master},
 };
 
 fn main() -> Result<(), RHDLError> {
-    write_fsm_diagram_as_markdown::<Rs485Master<6, 4, 8>>(
-        FSM_TRANSITIONS,
+    write_fsm_diagram::<Rs485Master<6, 4, 8>>(
         "rs485_master_fsm.md",
     )?;
 

@@ -1,11 +1,11 @@
 use rhdl::prelude::*;
 use rhdl_fpga::{
-    doc::{write_fsm_diagram_as_markdown, write_svg_as_markdown},
-    serial_bus::smpte_ltc_encoder::{FSM_TRANSITIONS, In, SmpteLtcEncoder},
+    doc::{write_fsm_diagram, write_svg_as_markdown},
+    serial_bus::smpte_ltc_encoder::{In, SmpteLtcEncoder},
 };
 
 fn main() -> Result<(), RHDLError> {
-    write_fsm_diagram_as_markdown::<SmpteLtcEncoder>(FSM_TRANSITIONS, "smpte_ltc_encoder_fsm.md")?;
+    write_fsm_diagram::<SmpteLtcEncoder>("smpte_ltc_encoder_fsm.md")?;
 
     let uut = SmpteLtcEncoder::default();
     let pattern = [true, false, true, false, true, true, false, false];

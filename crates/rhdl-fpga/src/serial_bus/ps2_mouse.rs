@@ -67,26 +67,6 @@ use crate::core::dff;
 #[allow(unused_imports)]
 use ps2_keyboard_kernel as _;
 
-/// Author-curated transition graph for the mouse packet FSM.
-pub const FSM_TRANSITIONS: &[Transition] = &[
-    Transition {
-        source_index: 0,
-        target_index: 1,
-    },
-    Transition {
-        source_index: 0,
-        target_index: 0,
-    }, // sync-bit fail keeps us in Byte0
-    Transition {
-        source_index: 1,
-        target_index: 2,
-    },
-    Transition {
-        source_index: 2,
-        target_index: 0,
-    },
-];
-
 /// Packet-assembler state.
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default, Fsm)]
 pub enum MouseByte {
@@ -104,7 +84,7 @@ pub enum MouseByte {
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
 #[rhdl(dq_no_prefix)]
-#[fsm(state_field = "state", state_enum = MouseByte)]
+#[fsm(state_field = "state", state_enum = MouseByte, allow_implicit)]
 /// PS/2 mouse receiver (3-byte standard packet).
 pub struct Ps2Mouse {
     kbd: Ps2Keyboard,

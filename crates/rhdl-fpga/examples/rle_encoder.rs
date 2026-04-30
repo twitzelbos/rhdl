@@ -1,11 +1,11 @@
 use rhdl::prelude::*;
 use rhdl_fpga::{
-    core::rle_encoder::{FSM_TRANSITIONS, In, RleEncoder},
-    doc::{write_fsm_diagram_as_markdown, write_svg_as_markdown},
+    core::rle_encoder::{In, RleEncoder},
+    doc::{write_fsm_diagram, write_svg_as_markdown},
 };
 
 fn main() -> Result<(), RHDLError> {
-    write_fsm_diagram_as_markdown::<RleEncoder>(FSM_TRANSITIONS, "rle_encoder_fsm.md")?;
+    write_fsm_diagram::<RleEncoder>("rle_encoder_fsm.md")?;
 
     let uut = RleEncoder::default();
     // Stream: a literal, a 3-byte run, another literal — the canonical demo.

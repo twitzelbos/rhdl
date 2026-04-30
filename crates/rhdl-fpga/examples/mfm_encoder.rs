@@ -1,11 +1,11 @@
 use rhdl::prelude::*;
 use rhdl_fpga::{
-    doc::{write_fsm_diagram_as_markdown, write_svg_as_markdown},
-    serial_bus::mfm_encoder::{FSM_TRANSITIONS, In, MfmEncoder},
+    doc::{write_fsm_diagram, write_svg_as_markdown},
+    serial_bus::mfm_encoder::{In, MfmEncoder},
 };
 
 fn main() -> Result<(), RHDLError> {
-    write_fsm_diagram_as_markdown::<MfmEncoder>(FSM_TRANSITIONS, "mfm_encoder_fsm.md")?;
+    write_fsm_diagram::<MfmEncoder>("mfm_encoder_fsm.md")?;
 
     let uut = MfmEncoder::default();
     let mut stream_in: Vec<In> = vec![In {

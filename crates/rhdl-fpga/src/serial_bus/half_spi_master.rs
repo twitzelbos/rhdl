@@ -93,42 +93,6 @@ use rhdl::prelude::*;
 
 use crate::core::dff;
 
-/// Author-curated transition graph for the half-duplex SPI master.
-///
-/// Required by CLAUDE.md §12 rule 14.  Indices match
-/// `HalfSpiState` declaration order (Idle=0, Write=1, Turnaround=2,
-/// Read=3).
-pub const FSM_TRANSITIONS: &[Transition] = &[
-    Transition {
-        source_index: 0,
-        target_index: 1,
-    }, // Idle → Write (on `start`)
-    Transition {
-        source_index: 1,
-        target_index: 1,
-    }, // Write self-loop (per bit)
-    Transition {
-        source_index: 1,
-        target_index: 2,
-    }, // Write → Turnaround (after write_bits)
-    Transition {
-        source_index: 2,
-        target_index: 2,
-    }, // Turnaround self-loop
-    Transition {
-        source_index: 2,
-        target_index: 3,
-    }, // Turnaround → Read (after turnaround)
-    Transition {
-        source_index: 3,
-        target_index: 3,
-    }, // Read self-loop (per bit)
-    Transition {
-        source_index: 3,
-        target_index: 0,
-    }, // Read → Idle (transaction done)
-];
-
 /// State of the half-duplex SPI master.
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default, Fsm)]
 pub enum HalfSpiState {
@@ -145,7 +109,7 @@ pub enum HalfSpiState {
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
 #[rhdl(dq_no_prefix)]
-#[fsm(state_field = "state", state_enum = HalfSpiState)]
+#[fsm(state_field = "state", state_enum = HalfSpiState, allow_implicit)]
 /// Half-duplex / 3-wire SPI master core.
 pub struct HalfSpiMaster<const W: usize, const CW: usize>
 where

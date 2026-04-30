@@ -56,14 +56,6 @@ use rhdl::prelude::*;
 use super::uart::Uart;
 use crate::core::{constant::Constant, dff};
 
-/// Author-curated transition graph for the RS-485 turnaround FSM.
-pub const FSM_TRANSITIONS: &[Transition] = &[
-    Transition { source_index: 0, target_index: 1 }, // Idle → Driving (TX byte queued)
-    Transition { source_index: 1, target_index: 1 }, // Driving self-loop (more bytes)
-    Transition { source_index: 1, target_index: 2 }, // Driving → HoldOff (TX FIFO drained)
-    Transition { source_index: 2, target_index: 0 }, // HoldOff → Idle (t_de_holdoff elapsed)
-];
-
 /// Turnaround state of the RS-485 transceiver enable line.
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default, Fsm)]
 pub enum Rs485State {
@@ -82,7 +74,7 @@ pub enum Rs485State {
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
 #[rhdl(dq_no_prefix)]
-#[fsm(state_field = "state", state_enum = Rs485State)]
+#[fsm(state_field = "state", state_enum = Rs485State, allow_implicit)]
 /// RS-485 master with DE/RE turnaround.
 pub struct Rs485Master<const DIV_W: usize, const FIFO_W: usize, const HW: usize>
 where

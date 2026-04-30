@@ -1,12 +1,11 @@
 use rhdl::prelude::*;
 use rhdl_fpga::{
-    doc::{write_fsm_diagram_as_markdown, write_svg_as_markdown},
-    serial_bus::ieee1284_negotiator::{FSM_TRANSITIONS, Ieee1284Negotiator, In, NegTimings},
+    doc::{write_fsm_diagram, write_svg_as_markdown},
+    serial_bus::ieee1284_negotiator::{Ieee1284Negotiator, In, NegTimings},
 };
 
 fn main() -> Result<(), RHDLError> {
-    write_fsm_diagram_as_markdown::<Ieee1284Negotiator<8>>(
-        FSM_TRANSITIONS,
+    write_fsm_diagram::<Ieee1284Negotiator<8>>(
         "ieee1284_negotiator_fsm.md",
     )?;
 

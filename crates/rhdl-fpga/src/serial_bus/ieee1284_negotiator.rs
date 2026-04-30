@@ -102,30 +102,6 @@ use rhdl::prelude::*;
 
 use crate::core::{constant::Constant, dff};
 
-/// Author-curated transition graph for the negotiation FSM.
-pub const FSM_TRANSITIONS: &[Transition] = &[
-    Transition { source_index: 0, target_index: 1 },   // Idle → Setup
-    Transition { source_index: 1, target_index: 2 },   // Setup → WaitDeviceReady
-    Transition { source_index: 2, target_index: 3 },   // WaitDeviceReady → StrobeData
-    Transition { source_index: 2, target_index: 11 },  // WaitDeviceReady → NotCompliant (timeout)
-    Transition { source_index: 3, target_index: 4 },   // StrobeData → WaitDeviceAck
-    Transition { source_index: 4, target_index: 5 },   // WaitDeviceAck → CheckMode
-    Transition { source_index: 4, target_index: 11 },  // WaitDeviceAck → NotCompliant (timeout)
-    Transition { source_index: 5, target_index: 6 },   // CheckMode → CaptureEli (extended link ID)
-    Transition { source_index: 5, target_index: 7 },   // CheckMode → HostAck (mode supported)
-    Transition { source_index: 5, target_index: 12 },  // CheckMode → ModeRejected (Select=0)
-    Transition { source_index: 6, target_index: 7 },   // CaptureEli → HostAck
-    Transition { source_index: 7, target_index: 8 },   // HostAck → Done
-    Transition { source_index: 8, target_index: 9 },   // Done → TerminateReq (on terminate input)
-    Transition { source_index: 8, target_index: 0 },   // Done → Idle (alternative path on terminate)
-    Transition { source_index: 9, target_index: 10 },  // TerminateReq → TerminateWait
-    Transition { source_index: 10, target_index: 0 },  // TerminateWait → Idle (success)
-    Transition { source_index: 10, target_index: 13 }, // TerminateWait → Timeout (term hang)
-    Transition { source_index: 11, target_index: 9 },  // NotCompliant → TerminateReq
-    Transition { source_index: 12, target_index: 9 },  // ModeRejected → TerminateReq
-    Transition { source_index: 13, target_index: 0 },  // Timeout → Idle
-];
-
 /// Full negotiation + termination FSM state.
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default, Fsm)]
 pub enum NegState {
@@ -188,7 +164,7 @@ where
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
 #[rhdl(dq_no_prefix)]
-#[fsm(state_field = "state", state_enum = NegState)]
+#[fsm(state_field = "state", state_enum = NegState, allow_implicit)]
 /// IEEE 1284 mode-select negotiator with full corner-case coverage.
 pub struct Ieee1284Negotiator<const T_W: usize>
 where

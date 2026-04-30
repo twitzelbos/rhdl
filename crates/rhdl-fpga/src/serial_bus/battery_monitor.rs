@@ -61,38 +61,6 @@ use crate::core::{constant::Constant, dff};
 #[allow(unused_imports)]
 use ti_hdq_kernel as _;
 
-/// Author-curated transition graph for the polling FSM.
-pub const FSM_TRANSITIONS: &[Transition] = &[
-    Transition {
-        source_index: 0,
-        target_index: 1,
-    },
-    Transition {
-        source_index: 1,
-        target_index: 2,
-    },
-    Transition {
-        source_index: 2,
-        target_index: 3,
-    },
-    Transition {
-        source_index: 3,
-        target_index: 4,
-    },
-    Transition {
-        source_index: 4,
-        target_index: 5,
-    },
-    Transition {
-        source_index: 5,
-        target_index: 6,
-    },
-    Transition {
-        source_index: 6,
-        target_index: 0,
-    },
-];
-
 /// Polling FSM states.
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default, Fsm)]
 pub enum PollState {
@@ -122,7 +90,7 @@ pub enum PollState {
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
 #[rhdl(dq_no_prefix)]
-#[fsm(state_field = "state", state_enum = PollState)]
+#[fsm(state_field = "state", state_enum = PollState, allow_implicit)]
 /// Battery-management single-register poller.
 pub struct BatteryMonitor<const T_W: usize, const I_W: usize>
 where

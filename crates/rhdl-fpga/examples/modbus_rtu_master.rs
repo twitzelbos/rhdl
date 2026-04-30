@@ -1,11 +1,11 @@
 use rhdl::prelude::*;
 use rhdl_fpga::{
-    doc::{write_fsm_diagram_as_markdown, write_svg_as_markdown},
-    serial_bus::modbus_rtu_master::{FSM_TRANSITIONS, In, ModbusRtuMaster},
+    doc::{write_fsm_diagram, write_svg_as_markdown},
+    serial_bus::modbus_rtu_master::{In, ModbusRtuMaster},
 };
 
 fn main() -> Result<(), RHDLError> {
-    write_fsm_diagram_as_markdown::<ModbusRtuMaster>(FSM_TRANSITIONS, "modbus_rtu_master_fsm.md")?;
+    write_fsm_diagram::<ModbusRtuMaster>("modbus_rtu_master_fsm.md")?;
 
     let uut = ModbusRtuMaster::default();
     // Canonical Modbus spec example: read 5 holding registers from slave 1

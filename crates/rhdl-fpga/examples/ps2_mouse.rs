@@ -1,7 +1,7 @@
 use rhdl::prelude::*;
 use rhdl_fpga::{
-    doc::{write_fsm_diagram_as_markdown, write_svg_as_markdown},
-    serial_bus::ps2_mouse::{FSM_TRANSITIONS, In, Ps2Mouse},
+    doc::{write_fsm_diagram, write_svg_as_markdown},
+    serial_bus::ps2_mouse::{In, Ps2Mouse},
 };
 
 fn drive_byte(data: u8, out: &mut Vec<In>) {
@@ -25,7 +25,7 @@ fn drive_byte(data: u8, out: &mut Vec<In>) {
 }
 
 fn main() -> Result<(), RHDLError> {
-    write_fsm_diagram_as_markdown::<Ps2Mouse>(FSM_TRANSITIONS, "ps2_mouse_fsm.md")?;
+    write_fsm_diagram::<Ps2Mouse>("ps2_mouse_fsm.md")?;
 
     let uut = Ps2Mouse::default();
     let mut stream_in: Vec<In> = vec![In { clk_in: true, data_in: true }; 2];

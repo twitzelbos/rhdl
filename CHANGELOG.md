@@ -31,6 +31,39 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-04-29 — FSM corpus cleanup: drop manual FSM_TRANSITIONS, add allow_implicit, snapshot the principled extractor's output
+
+**Paths:** `crates/rhdl-fpga/src/{audio,core,serial_bus}/*.rs` (27 widgets — manual FSM_TRANSITIONS consts dropped, `#[fsm(allow_implicit)]` added), `crates/rhdl-fpga/examples/*.rs` (27 examples — switched to `write_fsm_diagram::<W>(...)`), `crates/rhdl-fpga/src/fsm_corpus_regression.rs` (new — 27 snapshot tests), `crates/rhdl-fpga/src/lib.rs` (registers the new test mod).
+
+**Why this, why now:** Downstream of PR #10 (the principle-first FSM extractor + `allow_implicit` opt-in).  The principled extractor on main now correctly handles every kernel pattern in the corpus, so the author-curated `pub const FSM_TRANSITIONS` consts are no longer the source of truth — the extractor is.  This PR drops the consts, switches every example to the auto-derive helper, and adds the snapshot regression suite that pins the extractor's output for every corpus widget.
+
+**What guarantee is preserved:** `fsm-architecture.md` §5.4 #1 (corpus equivalence) — for every FSM-tagged widget in the corpus, the extractor produces output without `Unanalyzable` diagnostics and the derived graph is pinned by an `expect_test` snapshot the reviewer verified against the kernel.  All 27 widgets pass.
+
+**Design decisions:**
+
+- **Every corpus widget gets `#[fsm(allow_implicit)]`.**  All 27 widgets use the canonical RHDL kernel pattern (kernel-top default `d.<state_field> = q.<state_field>` + selective override in arms that transition).  Without the opt-in, the principled extractor would produce empty graphs for states with only implicit holds, and the analysis layer would fire `DeadlockCandidate` for what are actually intentional stay-in-place states.  The opt-in declares author intent explicitly per the PR-#10 contract.
+- **Snapshot regression replaces equality with manual lists.**  The hand-curated `FSM_TRANSITIONS` consts that shipped before this PR were author-best-effort — they often missed implicit-hold self-loops (the canonical RHDL idiom *defines* a self-loop whenever an arm omits the override) and sometimes contained spurious edges from author oversight (e.g., `ws2812` listed a `Sending → Latching` edge that didn't exist in the kernel).  Treating them as the regression oracle would force the extractor to either match author errors or under-approximate.  The snapshot suite uses the extractor's output as the source of truth; the algorithm's correctness is pinned by the Tier-1 unit tests in `crates/rhdl-core/src/fsm/extraction.rs`; corpus snapshots catch regressions across the whole widget surface.
+- **Examples switch to `write_fsm_diagram::<W>(...)`.**  No more `write_fsm_diagram_as_markdown::<W>(FSM_TRANSITIONS, "name_fsm.md")` boilerplate.  The diagram emission helper auto-derives the transition graph from the kernel's RHIF.  Obsolete helpers were already deleted from `doc.rs` in PR #10.
+
+**Surprises and gotchas:**
+
+- **Manual list bugs surfaced widget by widget.**  When the principled extractor's output didn't match a manual list, the resolution per `fsm-architecture.md` §5.4 was to read the kernel and decide which was correct.  Notable cases: `ws2812` had a spurious Sending→Latching edge; `modbus_rtu_master` and several others were missing implicit-hold self-loops.  In every case the kernel was correct and the manual list had bugs.  The snapshots are blessed against the (correct) extractor output; the manual lists are gone.
+- **Cross-DFF over-approximation visible in `can_master`.**  The widget has two state DFFs (`state: CanState`, `field: CanField`); the FSM-tagged one is `field`.  `can_master`'s outer `if q.state == CanState::Idle && i.start { d.field = Sof }` makes every `CanField` state appear to have an edge back to `Sof` per the principled definition, even though by construction `q.state == Idle` only co-occurs with `q.field == Sof`.  Documented as the over-approximation budget in `fsm-architecture.md` §5.4 #5; the snapshot accepts this as the extractor's authoritative output.
+
+**Validation:**
+
+- `cargo test --package rhdl-fpga --lib fsm_corpus_regression` — 27 snapshot tests pass.
+- All 27 widgets produce zero `Unanalyzable` diagnostics under the principled extractor.
+- Workspace lib-test sweep: no widget HDL snapshot regressions (extractor changes are advisory; no IR or codegen changes).
+- Refresh via `UPDATE_EXPECT=1 cargo test --package rhdl-fpga --lib fsm_corpus_regression`.
+
+**Follow-ups:**
+
+- **Reset detection beyond the canonical pattern** (`fsm-architecture.md` §5.4.2).  The current detection is a structural pattern match; widgets with non-canonical reset shapes would silently drift.  Reserved as a Layer 2 advisory diagnostic for future work.
+- **Property-based testing across more widget shapes.**  PR #10 shipped property-based tests for two representative widgets; extending to the corpus would tighten empirical soundness validation.
+
+---
+
 ## 2026-04-29 — FSM extractor: principle-first redesign
 
 **Paths:** `crates/rhdl-core/src/fsm/extraction.rs` (rewritten), `crates/rhdl-core/src/fsm/mod.rs` (call-site signature update), `fsm-architecture.md` §5 (rewritten with formal definition + principled algorithm + known acceptance gap §5.4.1).

@@ -72,19 +72,6 @@ use rhdl::prelude::*;
 
 use crate::core::{constant::Constant, dff};
 
-/// Author-curated transition graph for the EPP cycle FSM.
-pub const FSM_TRANSITIONS: &[Transition] = &[
-    Transition { source_index: 0, target_index: 1 }, // Idle → AssertStrobe
-    Transition { source_index: 1, target_index: 2 }, // AssertStrobe → WaitForLow
-    Transition { source_index: 2, target_index: 3 }, // WaitForLow → ReleaseStrobe
-    Transition { source_index: 2, target_index: 6 }, // WaitForLow → TimeoutAbort
-    Transition { source_index: 3, target_index: 4 }, // ReleaseStrobe → WaitForHigh
-    Transition { source_index: 4, target_index: 5 }, // WaitForHigh → Stop
-    Transition { source_index: 4, target_index: 6 }, // WaitForHigh → TimeoutAbort
-    Transition { source_index: 5, target_index: 0 }, // Stop → Idle
-    Transition { source_index: 6, target_index: 0 }, // TimeoutAbort → Idle
-];
-
 /// Operation to perform on a single EPP cycle.
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
 pub enum EppOp {
@@ -138,7 +125,7 @@ where
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
 #[rhdl(dq_no_prefix)]
-#[fsm(state_field = "state", state_enum = EppState)]
+#[fsm(state_field = "state", state_enum = EppState, allow_implicit)]
 /// IEEE 1284 EPP master, fully featured.
 pub struct ParallelPortEpp<const T_W: usize>
 where

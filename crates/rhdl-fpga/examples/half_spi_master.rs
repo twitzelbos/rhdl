@@ -1,13 +1,12 @@
 use rhdl::prelude::*;
 use rhdl_fpga::{
-    doc::{write_fsm_diagram_as_markdown, write_svg_as_markdown},
-    serial_bus::half_spi_master::{HalfSpiMaster, In, FSM_TRANSITIONS},
+    doc::{write_fsm_diagram, write_svg_as_markdown},
+    serial_bus::half_spi_master::{HalfSpiMaster, In},
 };
 
 fn main() -> Result<(), RHDLError> {
     // Emit the FSM diagram first — required by CLAUDE.md §12 rule 14.
-    write_fsm_diagram_as_markdown::<HalfSpiMaster<8, 4>>(
-        FSM_TRANSITIONS,
+    write_fsm_diagram::<HalfSpiMaster<8, 4>>(
         "half_spi_master_fsm.md",
     )?;
 

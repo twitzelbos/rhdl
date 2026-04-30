@@ -1,15 +1,14 @@
 use rhdl::prelude::*;
 use rhdl_fpga::{
-    doc::{write_fsm_diagram_as_markdown, write_svg_as_markdown},
+    doc::{write_fsm_diagram, write_svg_as_markdown},
     serial_bus::{
-        battery_monitor::{BatteryMonitor, FSM_TRANSITIONS, In},
+        battery_monitor::{BatteryMonitor, In},
         ti_hdq::TiHdqTimings,
     },
 };
 
 fn main() -> Result<(), RHDLError> {
-    write_fsm_diagram_as_markdown::<BatteryMonitor<10, 8>>(
-        FSM_TRANSITIONS,
+    write_fsm_diagram::<BatteryMonitor<10, 8>>(
         "battery_monitor_fsm.md",
     )?;
 

@@ -54,29 +54,6 @@ use rhdl::prelude::*;
 
 use crate::core::{constant::Constant, dff};
 
-/// Author-curated transition graph for the DBI-B strobe FSM.
-///
-/// Required by CLAUDE.md §12 rule 14.  Indices match `DbiBState`
-/// declaration order (Idle=0, Setup=1, WrLow=2, WrHigh=3).
-pub const FSM_TRANSITIONS: &[Transition] = &[
-    Transition {
-        source_index: 0,
-        target_index: 1,
-    },
-    Transition {
-        source_index: 1,
-        target_index: 2,
-    },
-    Transition {
-        source_index: 2,
-        target_index: 3,
-    },
-    Transition {
-        source_index: 3,
-        target_index: 0,
-    },
-];
-
 /// Internal state machine.
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default, Fsm)]
 pub enum DbiBState {
@@ -110,7 +87,7 @@ where
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
 #[rhdl(dq_no_prefix)]
-#[fsm(state_field = "state", state_enum = DbiBState)]
+#[fsm(state_field = "state", state_enum = DbiBState, allow_implicit)]
 /// MIPI DBI Type B (8080) display driver.
 pub struct MipiDbiTypeB<const T_W: usize>
 where

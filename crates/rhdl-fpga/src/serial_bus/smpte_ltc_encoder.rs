@@ -63,22 +63,6 @@ use rhdl::prelude::*;
 
 use crate::core::dff;
 
-/// Author-curated transition graph for the LTC encoder FSM.
-pub const FSM_TRANSITIONS: &[Transition] = &[
-    Transition {
-        source_index: 0,
-        target_index: 1,
-    },
-    Transition {
-        source_index: 1,
-        target_index: 2,
-    },
-    Transition {
-        source_index: 2,
-        target_index: 0,
-    },
-];
-
 /// Internal state machine — half-cell granularity.
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default, Fsm)]
 pub enum LtcState {
@@ -96,7 +80,7 @@ pub enum LtcState {
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
 #[rhdl(dq_no_prefix)]
-#[fsm(state_field = "state", state_enum = LtcState)]
+#[fsm(state_field = "state", state_enum = LtcState, allow_implicit)]
 /// SMPTE LTC bit-level biphase mark encoder.
 pub struct SmpteLtcEncoder {
     state: dff::DFF<LtcState>,

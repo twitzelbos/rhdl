@@ -73,22 +73,6 @@ use rhdl::prelude::*;
 
 use crate::core::dff;
 
-/// Author-curated transition graph for the Modbus RTU master FSM.
-pub const FSM_TRANSITIONS: &[Transition] = &[
-    Transition {
-        source_index: 0,
-        target_index: 1,
-    },
-    Transition {
-        source_index: 1,
-        target_index: 2,
-    },
-    Transition {
-        source_index: 2,
-        target_index: 0,
-    },
-];
-
 /// Internal state machine.
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default, Fsm)]
 pub enum ModbusState {
@@ -105,7 +89,7 @@ pub enum ModbusState {
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
 #[rhdl(dq_no_prefix)]
-#[fsm(state_field = "state", state_enum = ModbusState)]
+#[fsm(state_field = "state", state_enum = ModbusState, allow_implicit)]
 /// Modbus RTU master (FC 0x03 only, v1).
 pub struct ModbusRtuMaster {
     state: dff::DFF<ModbusState>,

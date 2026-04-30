@@ -51,15 +51,6 @@ use rhdl::prelude::*;
 
 use crate::core::dff;
 
-/// Author-curated transition graph for the RLE-decoder FSM.
-pub const FSM_TRANSITIONS: &[Transition] = &[
-    Transition { source_index: 0, target_index: 0 }, // Idle → Idle (single literal emit)
-    Transition { source_index: 0, target_index: 1 }, // Idle → ExpectData (count beat received)
-    Transition { source_index: 1, target_index: 2 }, // ExpectData → EmitRun
-    Transition { source_index: 2, target_index: 0 }, // EmitRun → Idle (run drained)
-    Transition { source_index: 2, target_index: 2 }, // EmitRun self-loop
-];
-
 /// Decoder FSM state.
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default, Fsm)]
 pub enum RleDecodeState {
@@ -77,7 +68,7 @@ pub enum RleDecodeState {
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
 #[rhdl(dq_no_prefix)]
-#[fsm(state_field = "state", state_enum = RleDecodeState)]
+#[fsm(state_field = "state", state_enum = RleDecodeState, allow_implicit)]
 /// Streaming RLE decoder.
 pub struct RleDecoder {
     state: dff::DFF<RleDecodeState>,

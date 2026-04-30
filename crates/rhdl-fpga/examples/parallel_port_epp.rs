@@ -1,13 +1,13 @@
 use rhdl::prelude::*;
 use rhdl_fpga::{
-    doc::{write_fsm_diagram_as_markdown, write_svg_as_markdown},
+    doc::{write_fsm_diagram, write_svg_as_markdown},
     serial_bus::parallel_port_epp::{
-        EppOp, EppTimings, FSM_TRANSITIONS, In, ParallelPortEpp,
+        EppOp, EppTimings, In, ParallelPortEpp,
     },
 };
 
 fn main() -> Result<(), RHDLError> {
-    write_fsm_diagram_as_markdown::<ParallelPortEpp<8>>(FSM_TRANSITIONS, "parallel_port_epp_fsm.md")?;
+    write_fsm_diagram::<ParallelPortEpp<8>>("parallel_port_epp_fsm.md")?;
 
     let uut = ParallelPortEpp::<8>::new(EppTimings { t_wait_max: bits(40) });
     let mut stream_in: Vec<In> = vec![In {

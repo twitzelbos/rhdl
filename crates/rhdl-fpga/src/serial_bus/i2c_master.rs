@@ -106,53 +106,9 @@ pub enum I2cState {
     Stop,
 }
 
-/// Author-curated transition graph for the I2C transaction FSM.
-///
-/// Required by CLAUDE.md §12 rule 14.  Indices match `I2cState`
-/// declaration order (Idle=0, Start=1, Addr=2, AckAddr=3, Data=4,
-/// AckData=5, Stop=6).
-pub const FSM_TRANSITIONS: &[Transition] = &[
-    Transition {
-        source_index: 0,
-        target_index: 1,
-    }, // Idle → Start (on `start` strobe)
-    Transition {
-        source_index: 1,
-        target_index: 2,
-    }, // Start → Addr
-    Transition {
-        source_index: 2,
-        target_index: 2,
-    }, // Addr self-loop (per bit)
-    Transition {
-        source_index: 2,
-        target_index: 3,
-    }, // Addr → AckAddr (after 8 bits)
-    Transition {
-        source_index: 3,
-        target_index: 4,
-    }, // AckAddr → Data
-    Transition {
-        source_index: 4,
-        target_index: 4,
-    }, // Data self-loop (per bit)
-    Transition {
-        source_index: 4,
-        target_index: 5,
-    }, // Data → AckData
-    Transition {
-        source_index: 5,
-        target_index: 6,
-    }, // AckData → Stop
-    Transition {
-        source_index: 6,
-        target_index: 0,
-    }, // Stop → Idle
-];
-
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
 #[rhdl(dq_no_prefix)]
-#[fsm(state_field = "state", state_enum = I2cState)]
+#[fsm(state_field = "state", state_enum = I2cState, allow_implicit)]
 /// I2C master (write-only, single-byte v1).
 pub struct I2cMaster<const DIV_W: usize>
 where

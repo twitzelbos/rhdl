@@ -92,20 +92,6 @@ use rle_decoder_kernel as _;
 #[allow(unused_imports)]
 use rle_encoder_kernel as _;
 
-/// Author-curated transition graph for the bidirectional ECP FSM.
-pub const FSM_TRANSITIONS: &[Transition] = &[
-    // Forward path.
-    Transition { source_index: 0, target_index: 1 }, // Idle → FwdDrive
-    Transition { source_index: 1, target_index: 2 }, // FwdDrive → FwdWaitAck
-    Transition { source_index: 2, target_index: 3 }, // FwdWaitAck → FwdRelease
-    Transition { source_index: 3, target_index: 0 }, // FwdRelease → Idle
-    // Reverse path.
-    Transition { source_index: 0, target_index: 4 }, // Idle → RevWaitClk
-    Transition { source_index: 4, target_index: 5 }, // RevWaitClk → RevSample
-    Transition { source_index: 5, target_index: 6 }, // RevSample → RevAckHigh (deassert clk)
-    Transition { source_index: 6, target_index: 0 }, // RevAckHigh → Idle
-];
-
 /// ECP bidirectional FSM state.
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default, Fsm)]
 pub enum EcpState {
@@ -134,7 +120,7 @@ pub enum EcpState {
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
 #[rhdl(dq_no_prefix)]
-#[fsm(state_field = "state", state_enum = EcpState)]
+#[fsm(state_field = "state", state_enum = EcpState, allow_implicit)]
 /// IEEE 1284 ECP master, fully bidirectional with RLE in both directions.
 pub struct ParallelPortEcp {
     /// RLE encoder owns the forward-path compression.

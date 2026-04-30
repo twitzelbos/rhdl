@@ -1,11 +1,11 @@
 use rhdl::prelude::*;
 use rhdl_fpga::{
-    doc::{write_fsm_diagram_as_markdown, write_svg_as_markdown},
-    serial_bus::ti_hdq::{FSM_TRANSITIONS, In, TiHdqMaster, TiHdqOp, TiHdqTimings},
+    doc::{write_fsm_diagram, write_svg_as_markdown},
+    serial_bus::ti_hdq::{In, TiHdqMaster, TiHdqOp, TiHdqTimings},
 };
 
 fn main() -> Result<(), RHDLError> {
-    write_fsm_diagram_as_markdown::<TiHdqMaster<10>>(FSM_TRANSITIONS, "ti_hdq_fsm.md")?;
+    write_fsm_diagram::<TiHdqMaster<10>>("ti_hdq_fsm.md")?;
 
     let timings = TiHdqTimings::<10> {
         t_break: bits(48),

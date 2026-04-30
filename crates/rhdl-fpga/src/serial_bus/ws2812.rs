@@ -77,33 +77,6 @@ use rhdl::prelude::*;
 
 use crate::core::{constant::Constant, dff};
 
-/// Author-curated transition graph for the WS2812 driver FSM.
-///
-/// Required by CLAUDE.md §12 rule 14.  Indices match `WsState`
-/// declaration order (Idle=0, Sending=1, Latching=2).
-pub const FSM_TRANSITIONS: &[Transition] = &[
-    Transition {
-        source_index: 0,
-        target_index: 1,
-    }, // Idle → Sending (on `send`)
-    Transition {
-        source_index: 1,
-        target_index: 1,
-    }, // Sending self-loop (per cycle / per bit)
-    Transition {
-        source_index: 1,
-        target_index: 2,
-    }, // Sending → Latching (after 24 bits)
-    Transition {
-        source_index: 2,
-        target_index: 2,
-    }, // Latching self-loop (per latch cycle)
-    Transition {
-        source_index: 2,
-        target_index: 0,
-    }, // Latching → Idle (latch period elapsed)
-];
-
 /// Driver state.
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default, Fsm)]
 pub enum WsState {
@@ -121,7 +94,7 @@ pub enum WsState {
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
 #[rhdl(dq_no_prefix)]
-#[fsm(state_field = "state", state_enum = WsState)]
+#[fsm(state_field = "state", state_enum = WsState, allow_implicit)]
 /// WS2812 single-pixel driver.
 pub struct Ws2812Driver<const CW: usize>
 where

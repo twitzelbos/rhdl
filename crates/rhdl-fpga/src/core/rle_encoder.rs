@@ -79,26 +79,6 @@ use rhdl::prelude::*;
 
 use crate::core::dff;
 
-/// Author-curated transition graph for the RLE-encoder FSM.
-pub const FSM_TRANSITIONS: &[Transition] = &[
-    Transition {
-        source_index: 0,
-        target_index: 1,
-    }, // Idle → EmitCount (run ≥ 2 needs a count beat)
-    Transition {
-        source_index: 0,
-        target_index: 2,
-    }, // Idle → EmitData (single-byte literal)
-    Transition {
-        source_index: 1,
-        target_index: 2,
-    }, // EmitCount → EmitData
-    Transition {
-        source_index: 2,
-        target_index: 0,
-    }, // EmitData → Idle
-];
-
 /// Output sequencing state.
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default, Fsm)]
 pub enum RleOut {
@@ -116,7 +96,7 @@ pub enum RleOut {
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
 #[rhdl(dq_no_prefix)]
-#[fsm(state_field = "state", state_enum = RleOut)]
+#[fsm(state_field = "state", state_enum = RleOut, allow_implicit)]
 /// Streaming RLE encoder.
 pub struct RleEncoder {
     state: dff::DFF<RleOut>,

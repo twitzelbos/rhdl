@@ -107,54 +107,6 @@ pub enum NecState {
     FinalBurst,
 }
 
-/// Author-curated transition graph for the NEC receive FSM.
-///
-/// Required by CLAUDE.md §12 rule 14.  Indices match `NecState`
-/// declaration order (Idle=0, LeadingBurst=1, LeadingSpace=2,
-/// DataBurst=3, DataSpace=4, FinalBurst=5).
-pub const FSM_TRANSITIONS: &[Transition] = &[
-    Transition {
-        source_index: 0,
-        target_index: 1,
-    }, // Idle → LeadingBurst (falling edge)
-    Transition {
-        source_index: 1,
-        target_index: 0,
-    }, // LeadingBurst → Idle (too short / timeout)
-    Transition {
-        source_index: 1,
-        target_index: 2,
-    }, // LeadingBurst → LeadingSpace
-    Transition {
-        source_index: 2,
-        target_index: 0,
-    }, // LeadingSpace → Idle (timeout / repeat)
-    Transition {
-        source_index: 2,
-        target_index: 3,
-    }, // LeadingSpace → DataBurst (data frame)
-    Transition {
-        source_index: 3,
-        target_index: 4,
-    }, // DataBurst → DataSpace
-    Transition {
-        source_index: 4,
-        target_index: 0,
-    }, // DataSpace → Idle (timeout)
-    Transition {
-        source_index: 4,
-        target_index: 3,
-    }, // DataSpace → DataBurst (next bit)
-    Transition {
-        source_index: 4,
-        target_index: 5,
-    }, // DataSpace → FinalBurst (last bit)
-    Transition {
-        source_index: 5,
-        target_index: 0,
-    }, // FinalBurst → Idle (frame done)
-];
-
 /// Bus-timing parameters, all in *FPGA cycles*.
 ///
 /// At a 100 MHz clock with standard NEC timings, typical values
@@ -196,7 +148,7 @@ where
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
 #[rhdl(dq_no_prefix)]
-#[fsm(state_field = "state", state_enum = NecState)]
+#[fsm(state_field = "state", state_enum = NecState, allow_implicit)]
 /// NEC IR remote receiver (v1).
 pub struct IrNecRx<const T_W: usize>
 where

@@ -61,55 +61,6 @@ use rhdl::prelude::*;
 use super::uart_tx::UartTx;
 use crate::core::{constant::Constant, dff};
 
-/// Author-curated transition graph for the LIN-master frame FSM.
-///
-/// Required by CLAUDE.md §12 rule 14.  Indices match `LinState`
-/// declaration order (Idle=0, Break=1, SendSync=2, WaitSync=3,
-/// SendPid=4, WaitPid=5, SendData=6, WaitData=7,
-/// SendChecksum=8, WaitChecksum=9).
-pub const FSM_TRANSITIONS: &[Transition] = &[
-    Transition {
-        source_index: 0,
-        target_index: 1,
-    }, // Idle → Break (on `start`)
-    Transition {
-        source_index: 1,
-        target_index: 2,
-    }, // Break → SendSync
-    Transition {
-        source_index: 2,
-        target_index: 3,
-    }, // SendSync → WaitSync
-    Transition {
-        source_index: 3,
-        target_index: 4,
-    }, // WaitSync → SendPid
-    Transition {
-        source_index: 4,
-        target_index: 5,
-    }, // SendPid → WaitPid
-    Transition {
-        source_index: 5,
-        target_index: 6,
-    }, // WaitPid → SendData
-    Transition {
-        source_index: 6,
-        target_index: 7,
-    }, // SendData → WaitData
-    Transition {
-        source_index: 7,
-        target_index: 8,
-    }, // WaitData → SendChecksum
-    Transition {
-        source_index: 8,
-        target_index: 9,
-    }, // SendChecksum → WaitChecksum
-    Transition {
-        source_index: 9,
-        target_index: 0,
-    }, // WaitChecksum → Idle (frame done)
-];
-
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default, Fsm)]
 #[doc(hidden)]
 pub enum LinState {
@@ -142,7 +93,7 @@ pub enum LinState {
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
 #[rhdl(dq_no_prefix)]
-#[fsm(state_field = "state", state_enum = LinState)]
+#[fsm(state_field = "state", state_enum = LinState, allow_implicit)]
 /// LIN master core (single-byte v1).
 pub struct LinMaster<const DIV_W: usize, const CW: usize>
 where

@@ -67,20 +67,6 @@ use rhdl::prelude::*;
 
 use crate::core::{constant::Constant, dff};
 
-/// Author-curated transition graph for the HD44780 byte-write FSM.
-///
-/// Required by CLAUDE.md §12 rule 14.  Indices match `Hd44780State`
-/// declaration order (Idle=0, HighSetup=1, HighStrobe=2,
-/// LowSetup=3, LowStrobe=4, BusyWait=5).
-pub const FSM_TRANSITIONS: &[Transition] = &[
-    Transition { source_index: 0, target_index: 1 }, // Idle → HighSetup (on `send`)
-    Transition { source_index: 1, target_index: 2 }, // HighSetup → HighStrobe (E rising)
-    Transition { source_index: 2, target_index: 3 }, // HighStrobe → LowSetup (E falling)
-    Transition { source_index: 3, target_index: 4 }, // LowSetup → LowStrobe
-    Transition { source_index: 4, target_index: 5 }, // LowStrobe → BusyWait
-    Transition { source_index: 5, target_index: 0 }, // BusyWait → Idle (tBUSY elapsed)
-];
-
 /// FSM walking through the per-byte 4-bit-mode write protocol.
 ///
 /// The HD44780 latches data on the falling edge of `E`; the host
@@ -112,7 +98,7 @@ pub enum Hd44780State {
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
 #[rhdl(dq_no_prefix)]
-#[fsm(state_field = "state", state_enum = Hd44780State)]
+#[fsm(state_field = "state", state_enum = Hd44780State, allow_implicit)]
 /// HD44780 4-bit-mode write-only driver (v1).
 pub struct Hd44780<const T_W: usize>
 where
