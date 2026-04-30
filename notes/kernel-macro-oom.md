@@ -1,5 +1,24 @@
 # `#[kernel]` macro OOM — MIDI parser case (2026-04-29)
 
+> **Status: SUPERSEDED 2026-04-29.**  See
+> [`notes/kernel-macro-oom-resolved.md`](kernel-macro-oom-resolved.md)
+> for the actual root cause and the shipped fix.  The diagnosis
+> below was wrong: the OOM has nothing to do with `#[kernel]`,
+> wide enums *as struct fields*, construction-site count, or
+> field-by-field mutation.  The trigger is purely
+> `#[derive(Digital)]` on a wide enum, which used to invoke
+> `const_max!` with N arguments — and `const_max!` had a
+> duplicate-recursive-call bug that produced 2^(N-1) leaf
+> occurrences.  Fixing `const_max!` to recurse linearly (via a
+> `const fn` helper) resolves the OOM completely.  The MIDI
+> mitigation (`Bits<5>` codes) worked because it sidestepped
+> the wide enum, not because the kernel pattern was the cause.
+>
+> The remainder of this note is preserved for the historical
+> reproducer it documents.  Take its analysis with a grain of
+> salt.
+
+
 ## Symptom
 
 Running `cargo build --package rhdl-fpga` with the original MIDI
