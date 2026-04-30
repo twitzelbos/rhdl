@@ -1,0 +1,264 @@
+// Pre-refactor MIDI parser kernel that triggers SIGKILL (OOM)
+// during `cargo build --package rhdl-fpga`.  Saved here as a
+// `.rs.txt` so it isn't compiled as part of the workspace.
+//
+// To reproduce: copy this file's contents (without these comment
+// lines) into `crates/rhdl-fpga/src/serial_bus/midi_parser.rs`
+// (overwriting the shipped version) and run
+// `cargo build --package rhdl-fpga`.  Watch memory grow past
+// available RAM; rustc gets killed with signal 9.
+//
+// See `notes/kernel-macro-oom.md` for the analysis and the
+// shipped mitigation.
+
+//! MIDI 1.0 message parser (OOM regression case).
+use rhdl::prelude::*;
+
+use crate::core::dff;
+
+#[derive(PartialEq, Debug, Digital, Clone, Copy, Default, Fsm)]
+pub enum MidiParseState {
+    #[default]
+    #[fsm_state(label = "idle")]
+    Idle,
+    #[fsm_state(label = "wait data 1 of 1")]
+    WaitData1Of1,
+    #[fsm_state(label = "wait data 1 of 2")]
+    WaitData1Of2,
+    #[fsm_state(label = "wait data 2 of 2")]
+    WaitData2Of2,
+    #[fsm_state(label = "in sysex")]
+    InSysEx,
+    #[fsm_state(label = "wait MTC QF byte")]
+    WaitMtcQf,
+    #[fsm_state(label = "wait SPP lsb")]
+    WaitSppLsb,
+    #[fsm_state(label = "wait SPP msb")]
+    WaitSppMsb,
+    #[fsm_state(label = "wait song sel")]
+    WaitSongSel,
+}
+
+#[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
+#[rhdl(dq_no_prefix)]
+#[fsm(state_field = "state", state_enum = MidiParseState, allow_implicit)]
+pub struct MidiParser {
+    state: dff::DFF<MidiParseState>,
+    last_status: dff::DFF<Bits<8>>,
+    data1: dff::DFF<Bits<8>>,
+    out_message: dff::DFF<MidiMessage>,
+    out_valid: dff::DFF<bool>,
+}
+
+#[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
+pub struct MidiMessage {
+    pub kind: MidiKind,                  // ← 22-variant enum field
+    pub channel: Bits<4>,
+    pub data1: Bits<8>,
+    pub data2: Bits<8>,
+}
+
+/// Discriminator for [MidiMessage].
+#[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
+pub enum MidiKind {
+    #[default] None,
+    NoteOff, NoteOn, PolyAftertouch, ControlChange,
+    ProgramChange, ChannelAftertouch, PitchBend,
+    MtcQuarterFrame, SongPosition, SongSelect, TuneRequest,
+    SysExStart, SysExByte, SysExEnd,
+    TimingClock, Start, Continue, Stop, ActiveSensing, SystemReset,
+}
+
+#[derive(PartialEq, Debug, Digital, Clone, Copy)]
+pub struct In {
+    pub byte_in: Option<Bits<8>>,
+}
+
+#[derive(PartialEq, Debug, Digital, Clone, Copy)]
+pub struct Out {
+    pub message_out: Option<MidiMessage>,
+    pub in_sysex: bool,
+}
+
+impl SynchronousIO for MidiParser {
+    type I = In;
+    type O = Out;
+    type Kernel = midi_parser;
+}
+
+#[kernel]
+pub fn midi_parser(cr: ClockReset, i: In, q: Q) -> (Out, D) {
+    let mut d = D::dont_care();
+    d.state = q.state;
+    d.last_status = q.last_status;
+    d.data1 = q.data1;
+    d.out_message = q.out_message;
+    d.out_valid = false;
+
+    if let Some(byte) = i.byte_in {
+        let is_status = (byte & bits::<8>(0x80)) != bits::<8>(0);
+
+        if byte >= bits::<8>(0xF8) {
+            let mut msg = MidiMessage::default();
+            msg.channel = bits::<4>(0);
+            msg.data1 = bits::<8>(0);
+            msg.data2 = bits::<8>(0);
+            // ← 22-variant enum assigned in 6 branches here.
+            if byte == bits::<8>(0xF8) { msg.kind = MidiKind::TimingClock; }
+            else if byte == bits::<8>(0xFA) { msg.kind = MidiKind::Start; }
+            else if byte == bits::<8>(0xFB) { msg.kind = MidiKind::Continue; }
+            else if byte == bits::<8>(0xFC) { msg.kind = MidiKind::Stop; }
+            else if byte == bits::<8>(0xFE) { msg.kind = MidiKind::ActiveSensing; }
+            else if byte == bits::<8>(0xFF) { msg.kind = MidiKind::SystemReset; }
+            else { msg.kind = MidiKind::None; }
+            d.out_message = msg;
+            d.out_valid = true;
+        } else if is_status {
+            if byte < bits::<8>(0xF0) {
+                d.last_status = byte;
+                let high_nibble = (byte >> 4) & bits::<8>(0xF);
+                if high_nibble == bits::<8>(0xC) || high_nibble == bits::<8>(0xD) {
+                    d.state = MidiParseState::WaitData1Of1;
+                } else {
+                    d.state = MidiParseState::WaitData1Of2;
+                }
+            } else {
+                d.last_status = bits::<8>(0);
+                if byte == bits::<8>(0xF0) {
+                    let mut msg = MidiMessage::default();
+                    msg.kind = MidiKind::SysExStart;
+                    d.out_message = msg;
+                    d.out_valid = true;
+                    d.state = MidiParseState::InSysEx;
+                } else if byte == bits::<8>(0xF1) {
+                    d.state = MidiParseState::WaitMtcQf;
+                } else if byte == bits::<8>(0xF2) {
+                    d.state = MidiParseState::WaitSppLsb;
+                } else if byte == bits::<8>(0xF3) {
+                    d.state = MidiParseState::WaitSongSel;
+                } else if byte == bits::<8>(0xF6) {
+                    let mut msg = MidiMessage::default();
+                    msg.kind = MidiKind::TuneRequest;
+                    d.out_message = msg;
+                    d.out_valid = true;
+                    d.state = MidiParseState::Idle;
+                } else if byte == bits::<8>(0xF7) {
+                    let mut msg = MidiMessage::default();
+                    msg.kind = MidiKind::SysExEnd;
+                    d.out_message = msg;
+                    d.out_valid = true;
+                    d.state = MidiParseState::Idle;
+                } else {
+                    d.state = MidiParseState::Idle;
+                }
+            }
+        } else {
+            match q.state {
+                MidiParseState::Idle => {
+                    let ls = q.last_status;
+                    if ls != bits::<8>(0) {
+                        let high_nibble = (ls >> 4) & bits::<8>(0xF);
+                        if high_nibble == bits::<8>(0xC) || high_nibble == bits::<8>(0xD) {
+                            let mut msg = MidiMessage::default();
+                            if high_nibble == bits::<8>(0xC) { msg.kind = MidiKind::ProgramChange; }
+                            else { msg.kind = MidiKind::ChannelAftertouch; }
+                            msg.channel = (ls & bits::<8>(0xF)).resize::<4>();
+                            msg.data1 = byte;
+                            msg.data2 = bits::<8>(0);
+                            d.out_message = msg;
+                            d.out_valid = true;
+                            d.state = MidiParseState::Idle;
+                        } else {
+                            d.data1 = byte;
+                            d.state = MidiParseState::WaitData2Of2;
+                        }
+                    }
+                }
+                MidiParseState::WaitData1Of1 => {
+                    let ls = q.last_status;
+                    let high_nibble = (ls >> 4) & bits::<8>(0xF);
+                    let mut msg = MidiMessage::default();
+                    if high_nibble == bits::<8>(0xC) { msg.kind = MidiKind::ProgramChange; }
+                    else { msg.kind = MidiKind::ChannelAftertouch; }
+                    msg.channel = (ls & bits::<8>(0xF)).resize::<4>();
+                    msg.data1 = byte;
+                    msg.data2 = bits::<8>(0);
+                    d.out_message = msg;
+                    d.out_valid = true;
+                    d.state = MidiParseState::Idle;
+                }
+                MidiParseState::WaitData1Of2 => {
+                    d.data1 = byte;
+                    d.state = MidiParseState::WaitData2Of2;
+                }
+                MidiParseState::WaitData2Of2 => {
+                    let ls = q.last_status;
+                    let high_nibble = (ls >> 4) & bits::<8>(0xF);
+                    let mut msg = MidiMessage::default();
+                    // ← 5-arm if-chain on 22-variant enum (×3+ such places).
+                    if high_nibble == bits::<8>(0x8) { msg.kind = MidiKind::NoteOff; }
+                    else if high_nibble == bits::<8>(0x9) { msg.kind = MidiKind::NoteOn; }
+                    else if high_nibble == bits::<8>(0xA) { msg.kind = MidiKind::PolyAftertouch; }
+                    else if high_nibble == bits::<8>(0xB) { msg.kind = MidiKind::ControlChange; }
+                    else if high_nibble == bits::<8>(0xE) { msg.kind = MidiKind::PitchBend; }
+                    else { msg.kind = MidiKind::None; }
+                    msg.channel = (ls & bits::<8>(0xF)).resize::<4>();
+                    msg.data1 = q.data1;
+                    msg.data2 = byte;
+                    d.out_message = msg;
+                    d.out_valid = true;
+                    d.state = MidiParseState::Idle;
+                }
+                MidiParseState::InSysEx => {
+                    let mut msg = MidiMessage::default();
+                    msg.kind = MidiKind::SysExByte;
+                    msg.data1 = byte;
+                    d.out_message = msg;
+                    d.out_valid = true;
+                }
+                MidiParseState::WaitMtcQf => {
+                    let mut msg = MidiMessage::default();
+                    msg.kind = MidiKind::MtcQuarterFrame;
+                    msg.data1 = byte;
+                    d.out_message = msg;
+                    d.out_valid = true;
+                    d.state = MidiParseState::Idle;
+                }
+                MidiParseState::WaitSppLsb => {
+                    d.data1 = byte;
+                    d.state = MidiParseState::WaitSppMsb;
+                }
+                MidiParseState::WaitSppMsb => {
+                    let mut msg = MidiMessage::default();
+                    msg.kind = MidiKind::SongPosition;
+                    msg.data1 = q.data1;
+                    msg.data2 = byte;
+                    d.out_message = msg;
+                    d.out_valid = true;
+                    d.state = MidiParseState::Idle;
+                }
+                MidiParseState::WaitSongSel => {
+                    let mut msg = MidiMessage::default();
+                    msg.kind = MidiKind::SongSelect;
+                    msg.data1 = byte;
+                    d.out_message = msg;
+                    d.out_valid = true;
+                    d.state = MidiParseState::Idle;
+                }
+            }
+        }
+    }
+
+    if cr.reset.any() {
+        d.state = MidiParseState::Idle;
+        d.last_status = bits::<8>(0);
+        d.data1 = bits::<8>(0);
+        d.out_message = MidiMessage::default();
+        d.out_valid = false;
+    }
+
+    let mut o = Out::dont_care();
+    o.message_out = if q.out_valid { Some(q.out_message) } else { None };
+    o.in_sysex = q.state == MidiParseState::InSysEx;
+    (o, d)
+}
