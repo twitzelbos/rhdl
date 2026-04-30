@@ -141,16 +141,32 @@ pub fn move_nbits_to_msb<T: Copy>(a: &[T], n: usize) -> Vec<T> {
     [right, left].concat()
 }
 
+/// Pairwise max of two `usize` values, evaluable in `const`
+/// context.  The companion to [`const_max!`] — used internally
+/// to keep the macro expansion linear in argument count.
+pub const fn const_max_pair(a: usize, b: usize) -> usize {
+    if a > b { a } else { b }
+}
+
 #[macro_export]
 /// Macro to compute the maximum of a list of constant expressions at compile time.
+///
+/// Implementation note: the macro must NOT recurse with the
+/// recursive call appearing more than once on the right-hand
+/// side, or expansion is exponential in argument count.  An
+/// earlier version expanded as `if $x > const_max!(rest) { $x }
+/// else { const_max!(rest) }` — duplicating the recursive call
+/// — which produced 2^(N-1) leaf occurrences for N arguments.
+/// On a 22-variant `#[derive(Digital)]` enum this generated
+/// over 3 million `0_usize` tokens for the `BITS` constant and
+/// crashed rustc with SIGKILL after ~7 GB of RSS.  The current
+/// expansion uses a const-fn helper so each level adds one
+/// `const_max_pair` call — total tokens linear in argument
+/// count.
 macro_rules! const_max {
     ($x: expr) => ($x);
     ($x: expr, $($z: expr), +) => (
-        if $x > const_max!($($z), +) {
-            $x
-        } else {
-            const_max!($($z), +)
-        }
+        $crate::bitx::dyn_bit_manip::const_max_pair($x, $crate::const_max!($($z), +))
     );
 }
 
@@ -169,6 +185,25 @@ mod tests {
     fn test_const_max_macro() {
         assert_eq!(const_max!(1, 2, 3, 4, 5), 5);
         assert_eq!(const_max!(1, 2, 3, 4, 5, 6, 7, 8, 9, 10), 10);
+    }
+
+    /// Regression test for the OOM documented in
+    /// `notes/kernel-macro-oom-resolved.md`.  This call passes
+    /// 32 arguments to `const_max!`.  Under the prior
+    /// duplicate-recursive-call form of the macro, the
+    /// expansion would have produced 2^31 ≈ 2.1 billion leaf
+    /// occurrences and crashed rustc.  Under the linear form,
+    /// it expands to 31 nested `const_max_pair` calls and
+    /// compiles in microseconds.  If this test ever stops
+    /// compiling cleanly, the macro has regressed back to
+    /// quadratic-or-worse expansion.
+    #[test]
+    fn test_const_max_does_not_explode_at_32_args() {
+        let r = const_max!(
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+            25, 26, 27, 28, 29, 30, 31, 32
+        );
+        assert_eq!(r, 32);
     }
 
     #[test]
