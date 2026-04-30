@@ -36,6 +36,7 @@ pub mod one_wire_master;
 pub mod parallel_port_centronics;
 pub mod parallel_port_ecp;
 pub mod parallel_port_epp;
+pub mod ps2_device_tx;
 pub mod ps2_host_tx;
 pub mod ps2_keyboard;
 pub mod ps2_keyboard_decoder;
