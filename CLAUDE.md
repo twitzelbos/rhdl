@@ -110,6 +110,9 @@ Categories that already exist: `core`, `cdc`, `fifo`, `gray`, `lid`, `pipe`, `re
 - **`kernel-language-extensions.md`** — design for expanding the subset of Rust accepted inside `#[kernel]`. If a widget kernel would read more naturally with `let-else`, or-patterns, range patterns, `?` on `Option`, or new `Bits<N>` methods (`count_ones`, `leading_zeros`, `reverse_bits`, saturating arithmetic), record the dependency in the widget's CHANGELOG entry.
 - **`vendor-primitive-architecture.md`** — design for the `Target` trait system that lets a single widget emit vendor-specific primitives (Xilinx DSP slices, Lattice EBR, etc.) on targets that have them and fall back to portable Verilog elsewhere. **Decision recorded:** widgets that benefit from vendor primitives are written *once*, target-agnostic, and use the `primitive!` macro (or compiler-recognized arithmetic patterns) to request the primitive. The widget's API does not carry a target generic. Targets are supplied at the codegen step via `Descriptor::hdl_for(&target)`. Default-impl trait fallback guarantees every widget compiles on every target. See the doc for the phased rollout plan and the validation matrix.
 - **`fsm-architecture.md`** — design for first-class FSM support: `#[derive(Fsm)]` ergonomic macro, static reachability and dead-state analysis, auto-generated state diagrams in rustdoc, `#[fsm_invariant]` / `#[fsm_liveness]` / `#[fsm_cover]` properties with SymbiYosys-driven formal proof, and an aspirational built-in BMC. Five layers, phased independently. **Decision recorded:** the FSM surface is *metadata*, not new syntax — `#[derive(Fsm)]` plus two attribute hints, no DSL keywords, no changes to the kernel body. The state enum is the source of truth; all metadata flows from the `Digital`-derived enum. Static analysis is advisory by default. Formal verification ships via SymbiYosys (Layer 4) before any in-house BMC (Layer 5). Widget kernels that are FSM-shaped (UART, SPI, I²C, CAN, MIDI, e-paper sequencer, battery-management, every protocol PHY) should opt in to `#[derive(Fsm)]` once Phase 1 ships.
+- **`stream-bus-architecture.md`** — design for the canonical typed inter-kernel streaming bus: **`RCStream<T, F, D>`** (RHDL-Carloni-Stream), an `Option<Item<T, F>>`-encoded data signal paired with a `bool` ready signal in clock domain `D`. The "RC" prefix names the two design properties the bus inherits: RHDL's type system and Carloni's latency-insensitive-design theorem. Replaces AXI4-Stream's untyped TDATA + magic TKEEP/TSTRB/TLAST/TID/TDEST/TUSER fields with a typed payload, a typed framing parameter, and a phantom-typed clock domain. **Decision recorded:** the bus is latency-insensitive by construction — Carloni relay stations from `lid::carloni` are the canonical pipeline-insertion primitive (`RCStreamRelay`), which makes auto-pipelining sound at every inter-kernel boundary by the Carloni LID theorem. AXI4-Stream interop is via dedicated translation widgets (`AxiStreamToRCStream` / `RCStreamToAxiStream`) at the FPGA boundary, not pervasively. Existing `stream::*` widgets migrate to `RCStream` without behavior change. Four phases: type + migration + AXI4-Stream interop; `RCStreamRelay` + auto-pipelining interlock; `CreditRCStream` for long-path use cases; auto-pipelining cut-point recognition.
+- **`rule-architecture.md`** — design for **rhdl-rule**, Bluespec-style guarded atomic rules as a first-class extension. Users declare rules as `#[rule]`-attributed methods on a `#[derive(RuleKernel)]` struct; the macro layer extracts each rule's read-set / write-set / guard, builds an inter-rule conflict matrix, synthesizes a priority-arbitrated scheduler, and emits a regular RHDL `Synchronous` widget + `#[kernel]` function. **Decision recorded:** rules are *sugar*, not a runtime — every `RuleKernel` lowers to a regular `Synchronous` widget at compile time; there is no rule-runtime, no rule-interpreter, no scheduler at silicon time. Atomicity is guaranteed by the lowering. Single clock domain per rule kernel; cross-domain communication uses existing `cdc::*` widgets. Composes with `fsm-architecture.md` (rule scheduler synthesizes the FSM transition function; FSM derive provides reachability + verification surface), with `stream-bus-architecture.md` (rules naturally produce/consume `RCStream` items), and with `kernel-language-extensions.md` (rule bodies use the kernel-accepted Rust subset). New sibling crate `rhdl-rule` + `rhdl-rule-core` joins the workspace per the proc-macro split convention. Three phases: basic rules + priority scheduler + three pilot widget rewrites; annotations (`urgent_before`, `conflict_free`, `mutually_exclusive`) + diagnostics polish; maximal-parallel-firing optimization.
+- **`rhif-formalization-plan.md`** — plan for formalizing RHIF semantics in five increasing levels of rigor. Level 1 (prose specification — `doc/rhif-spec/` directory with per-opcode pages, type rules, dynamic semantics, and pass invariants) and Level 2 (property-based VM testing) are committed engineering work. Levels 3 (PLT Redex / K Framework operational semantics), 4 (Coq mechanization with soundness theorems), and 5 (verified extraction in the CompCert pattern) are research targets sketched in the plan but not committed. **Decision recorded:** the prose spec is *normative* — where the spec and the implementation disagree, the implementation is buggy. Spec is required reading for compiler-level work; per §11.1, every compiler-level PR's Justification section must name which spec property the change preserves. Spec drift is enforced via CI: every PR that modifies `rhdl-core::rhif::spec.rs` must update the corresponding spec page. The plan is foundational — it does not add a new compiler feature; it specifies the contract under which existing and future features operate.
 
 If your widget would benefit from work in any of these tracks but the relevant feature has not landed, build the portable version *now* (per the contract in the TL;DR) and note the future-improvement opportunity in the CHANGELOG entry. Do not block on parallel-track work that hasn't shipped.
 
@@ -255,6 +258,64 @@ Key invariants:
 - **`dont_care()`** as the constructor for any aggregate the kernel will populate by field assignment. Then assign every field explicitly. Partial reads are a compile error in RHDL — partial writes are not, but assume they are.
 - **Reset comes last.** Compute the non-reset value of every output and `D` field, then unconditionally overwrite with reset values inside the `if cr.reset.any()` block. This makes the reset semantics readable and prevents reset/non-reset races in the lowered Verilog.
 - **Kernel function name.** Lowercase snake_case, often the widget name. The `type Kernel = name<Ts>` line in `SynchronousIO` references it as a type — this works because `#[kernel]` lowers a `fn` into a zero-sized type implementing `DigitalFn`.
+
+---
+
+### 3.1 — Variant: single-FSM-DFF + bundled-state-DFF (protocol PHYs)
+
+The pattern above is right when the widget *composes* a handful of independent sub-circuits — a FIFO with memory + counters; a pipeline of stages; a mux of branches. Each sub-circuit's I/O is genuinely independent, the framework's per-field `Q`/`D` wiring is exactly the model you want, and field counts stay naturally low (well under 12).
+
+It is **wrong** when the widget is *one state machine with a lot of internal registers* — protocol PHYs in particular (CAN RX/TX, SCSI, Modbus, MIDI parser, PS/2 encoders, anything UART-ish that decodes a real protocol). Naively giving every internal register its own `dff::DFF` field collides with the 12-element ceiling on the auto-generated `Q`/`D` tuples (Rust's standard tuple impls — `PartialEq`, `Clone`, `Debug` — stop at 12 elements). Compile errors look like `(.., 17 inferred slots, ..) doesn't impl PartialEq`.
+
+The right shape for a protocol PHY is **two `DFF`s plus any external sub-circuits**:
+
+```rust
+#[derive(Clone, Copy, PartialEq, Debug, Digital, Default)]
+struct MyExtras<const W: usize>
+where rhdl::bits::W<W>: BitWidth,
+{
+    counter:   Bits<8>,
+    shifter:   Bits<32>,
+    crc:       Bits<16>,
+    flag_a:    bool,
+    flag_b:    bool,
+    // ...however many internal registers you need; no field-count limit
+}
+
+#[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
+#[rhdl(dq_no_prefix)]
+#[fsm(state_field = "state", state_enum = MyFsmEnum, allow_implicit)]
+pub struct MyProtocolPhy<const W: usize>
+where rhdl::bits::W<W>: BitWidth,
+{
+    state:  dff::DFF<MyFsmEnum>,        // ← FSM-tagged enum, MUST stay in its own DFF
+    extras: dff::DFF<MyExtras<W>>,      // ← all other internal registers, bundled
+    // + any genuine sub-circuits (`tx: Ps2DeviceTx<W>`, `bit_period: Constant<...>`, …)
+}
+```
+
+Inside the kernel, copy the extras struct, mutate fields on the copy, write the whole struct back:
+
+```rust
+let mut next = q.extras;
+match q.state {
+    MyFsmEnum::Foo => {
+        next.counter = q.extras.counter + 1;
+        next.crc     = crc16_step(q.extras.crc, byte);
+        d.state      = MyFsmEnum::Bar;
+    }
+    // ...
+}
+d.extras = next;
+```
+
+**Why this works.** Each top-level field becomes one entry in the `Q`/`D` tuples — but the *contents* of an extras struct are a `Digital`-derived struct with arbitrary field count. `Digital` structs lower to RHIF/RTL/NTL fine; the 12-element limit is purely on raw-tuple trait impls and never touches the inside of a `Digital` struct.
+
+**Why the FSM enum stays in its own DFF.** The `FsmWidget` derive's RHIF-walking extractor finds transitions by matching `Index(q, [.<state_field>])` patterns. If the FSM enum is bundled inside `extras`, the access pattern becomes `Index(Index(q, [.extras]), [.field])`, which the current extractor does not handle. Keeping the enum in its own DFF preserves the simple access pattern and keeps the FSM tooling working.
+
+**When NOT to use this pattern.** When the "many fields" really *are* independent sub-circuits with non-trivial internal logic of their own. Don't bundle a FIFO's memory + read-counter + write-counter into one extras struct — those are real sub-widgets with their own kernels. The protocol-PHY pattern is for the case where you'd otherwise be writing 17 sibling `dff::DFF`s that are obviously one FSM's internal state.
+
+**Reference:** the analysis behind this pattern is in `notes/synchronous-tuple-ceiling-can-rx.md` (corrected version — the original recommended a macro change, which turned out to be the wrong layer to fix).
 
 ---
 

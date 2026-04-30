@@ -1,0 +1,391 @@
+# RCStream Bus Architecture for RHDL — Design Plan
+
+A proposal for a typed, latency-insensitive streaming bus to be the canonical inter-kernel data-flow interface in RHDL: **`RCStream<T, F, D>`** (RHDL-Carloni-Stream) — a stream of `T`-typed items, optionally carrying framing markers of type `F`, in clock domain `D`. The "RC" prefix is load-bearing: it names the two design properties the bus inherits — RHDL's type system and Carloni's latency-insensitive-design theorem — and it disambiguates the type from `futures::Stream` and AXI4-Stream when both might appear in the same code review. The bus is correct-by-construction under arbitrary pipeline insertion (Carloni relay stations are its native pipeline-stage primitive), drops or replaces every awkwardness of AXI4-Stream, and falls out naturally from RHDL's existing type system.
+
+This is the fifth compiler-and-language design plan, alongside `auto-pipelining-plan.md`, `kernel-language-extensions.md`, `vendor-primitive-architecture.md`, and `fsm-architecture.md`. Like those, it is independently shippable in phases. It also has the strongest interlocks with the others: it is the *substrate* the auto-pipeliner operates on, the natural carrier for FSM outputs, and the receiver of vendor-specific primitives' streamed results.
+
+The plan rests on three observations. First, half of the existing `rhdl-fpga::stream::*` widgets and the `axi4lite::channel::{sender, receiver}` primitives are already implementing this pattern under different names — what's missing is the unifying type and the design story. Second, the `lid::carloni` relay station already provides the LID-correct pipeline-insertion primitive that makes the auto-pipeliner's job trivial at inter-kernel boundaries. Third, AXI4-Stream is the de-facto industry interconnect we have to interoperate with, but its wire-level untyped TDATA + magic TKEEP/TSTRB/TUSER fields cause a measurable fraction of FPGA design bugs that RHDL's type system would catch by construction.
+
+---
+
+## 1 — Motivation
+
+Every non-trivial RHDL design sends data between kernels. Today that data flow is expressed in three different idioms:
+
+- The `stream::*` widgets, which use a `StreamIO<T>` type that pairs a `DataValid<T>` with a `Ready` in the opposite direction. This is the de-facto kernel-to-kernel interconnect for designs that compose stream operators (map, filter, zip, ...).
+- The `axi4lite::channel::{sender, receiver}` widgets, which formalize the same Ready/Valid handshake as a generic-over-`T` channel. Used inside the AXI4-Lite endpoint and switch.
+- Hand-rolled per-widget I/O, where individual widgets define `In<T>` and `Out<T>` structs with their own conventions (e.g., FIFO's `data: Option<T>` plus separate `next` and `full` signals).
+
+These three idioms are the *same* concept under three different names. They are also the same concept as **AXI4-Stream**, the AMBA-family streaming protocol that is the lingua franca for inter-IP data flow in the FPGA industry. AXI4-Stream is AXI's Ready/Valid handshake plus a small bag of marker fields (TLAST, TKEEP, TSTRB, TID, TDEST, TUSER) layered on top.
+
+The cost of having three names for the same thing is real. Widget authors choose ad hoc which idiom to use; cross-widget composition requires translation widgets; and the framework loses the ability to reason structurally about inter-kernel data flow. The cost of *not* having a typed bus that interoperates with AXI4-Stream is also real: every commercial IP block exposes AXI4-Stream, and an RHDL design that wants to use commercial IP needs translation widgets at every boundary.
+
+A single, named, typed, LID-correct bus type — `RCStream<T, F, D>` — solves both problems. It is the canonical RHDL inter-kernel interconnect *and* the substrate from which AXI4-Stream interop wrappers are derived as a special case. It makes the auto-pipeliner's job at inter-kernel boundaries trivial because the LID semantics give register insertion as a free operation. And it lets the type system carry information that AXI4-Stream punts to out-of-band convention — payload schema, framing semantics, clock domain, byte-keep granularity, channel multiplexing.
+
+---
+
+## 2 — What's wrong with AXI4-Stream
+
+A specific, concrete enumeration of AXI4-Stream pain points, drawn from the AMBA AXI4-Stream Protocol Specification (ARM IHI 0051A) and from years of community experience with the protocol. Each point is a place where a typed RHDL bus would do strictly better.
+
+**1. Untyped at the wire level.** TDATA is `[N-1:0]`. The bus carries zero structural information; both ends must agree on the layout out-of-band. Schema mismatches surface as silently corrupt data with no compiler-detectable error. This is the single largest source of AXI4-Stream bugs in practice.
+
+**2. TKEEP and TSTRB are byte-granular and almost-redundant.** TKEEP marks "this byte is part of the packet" (vs. trailing pad bytes); TSTRB marks "this byte is data" (vs. position bytes). Together they form a four-state encoding (data / position / null / reserved) that almost no one uses fully — most designs use TKEEP only and ignore TSTRB. Both signals assume byte-aligned data, which is awkward for non-byte-multiple element types.
+
+**3. TLAST is the only first-class framing primitive.** Anything more structured (start-of-frame, sub-frame markers, frame-type tags) has to be encoded into TUSER, which is wholly user-defined.
+
+**4. TUSER is a free-for-all.** Width and semantics are implementation-defined. Cross-IP interop is brittle; this is the second-largest source of "the simulation worked but the silicon doesn't" bugs in AXI4-Stream designs.
+
+**5. TID and TDEST are flat integer namespaces.** No type structure. Multiplexing a stream of `Result<Header, ParseError>` over the same physical channel requires manual encoding into TID with no compiler-enforced invariant that the layouts agree at both ends.
+
+**6. TVALID/TREADY combinational paths are the most common AXI4-Stream timing-closure problem.** The AMBA spec says TREADY *may* depend combinationally on TVALID but TVALID *must not* depend on TREADY. Most third-party IP gets this wrong at least once. The fix is always a Carloni-style relay station, which AXI4-Stream does not provide as a first-class primitive — every IP vendor reinvents it.
+
+**7. No clock-domain typing.** AXI4-Stream signals are just wires. CDC is "use a CDC FIFO" by convention; nothing prevents a designer from cabling a stream from one domain into a sink in another.
+
+**8. Width parameterization is per-stream, not per-element.** A stream of `(b8, b8, b16)` triples must pick TDATA width once and pack manually. Width converters between two semantically-identical streams are a mandatory piece of plumbing.
+
+**9. The data-width-converter problem.** When two stream segments have different TDATA widths, an explicit "data width converter" widget is required, even though the *logical* data type is identical. Converters are the most common pieces of AXI4-Stream IP and the second most common source of bugs (after TUSER mismatches).
+
+**10. Lowest-common-denominator interop.** The structural advantage of AXI4-Stream is that everyone's IP speaks it. We give that up if we don't provide a translation widget.
+
+Where AXI4-Stream is genuinely better: third-party IP interop, Vivado / Quartus IP Integrator routing, existing engineer familiarity. The design plan must address (1) and (2) explicitly via translation widgets and explicit migration documentation.
+
+---
+
+## 3 — What RHDL already has
+
+The substrate is more complete than first appears. Three components that already exist:
+
+- **`axi4lite::channel::{sender, receiver}`.** A generic Ready/Valid channel over `T: Digital`. The wire-level pair is `DataValid<T> { data: T, valid: bool }` source→sink and `Ready { ready: bool }` sink→source. This is the typed Ready/Valid that AXI4-Stream wishes it were.
+- **`stream::*`.** A widget library — `map`, `filter`, `filter_map`, `flatten`, `zip`, `tee`, `chunked`, `stream_buffer`, `fifo_to_stream`, `stream_to_fifo`, `pipe_wrapper`, `xfer` — that compose like Rust iterators. The handshake is implicit in the `StreamIO<T>` type.
+- **`lid::carloni`.** Carloni's relay station from the 2015 *Proceedings of the IEEE* paper. The 3-signal interface (data / void / stop) is the LID-paper-faithful version of Ready/Valid. The relay-station FSM (Run / Stall states, main + auxiliary registers) is the canonical pipeline-insertion primitive that adds latency without changing throughput or functional behavior.
+
+What's missing is the *unifying type*. The three components above use three different signal-naming conventions for the same protocol. A user assembling a non-trivial design walks through a translation matrix in their head every time they cross a category boundary.
+
+What's also missing is the *story*. The connection between Carloni's LID theorem, the existing stream cores, the AXI4-Lite handshakes, and the auto-pipelining track is implicit. Making it explicit unlocks formal-equivalence reasoning at inter-kernel boundaries, which is exactly what auto-pipelining needs.
+
+---
+
+## 4 — Design principles
+
+Five principles, each non-negotiable.
+
+**Typed payload, typed framing, typed domain.** The bus type is `RCStream<T: Digital, F: Digital, D: Domain>`. Payload schema is the type `T`. Framing semantics are the type `F`. Clock domain is the phantom-typed parameter `D`. Mismatches at any of the three are compile errors.
+
+**Latency-insensitive by construction.** The protocol has the Carloni LID property: a relay station can be inserted on any `RCStream` connection without changing functional behavior. This is what makes the auto-pipeliner sound at inter-kernel boundaries.
+
+**No magic fields.** Every wire signal has a typed meaning derived from `T`, `F`, or `D`. There is no equivalent of TKEEP / TSTRB / TUSER — semantic information that AXI4-Stream punts to convention is a typed field in `T` or `F`.
+
+**Compose, don't translate.** Every existing `stream::*` widget should adopt the `RCStream<T, F, D>` type with no semantic change. AXI4-Stream interop happens in dedicated translation widgets at the FPGA boundary, not pervasively throughout the design.
+
+**Idiomatic at the kernel level.** Kernels operate on `Option<Item<T, F>>`-typed signals. The protocol becomes invisible inside `#[kernel]` bodies — the kernel sees a typed payload and decides whether to consume it.
+
+---
+
+## 5 — The proposed type
+
+```rust
+/// A typed, latency-insensitive stream of T-typed items, optionally carrying
+/// framing markers of type F, in clock domain D.
+///
+/// At the wire level: `Option<Item<T, F>>` source -> sink, paired with a
+/// `bool` ready signal sink -> source. `None` on the data line means idle
+/// (TVALID = 0); `Some(item)` means data this cycle (TVALID = 1). The Carloni
+/// relay station is the canonical pipeline-insertion primitive: a relay
+/// inserted on any `RCStream` connection adds one cycle of latency without
+/// changing functional behavior or throughput.
+///
+/// `T` is the payload type. `F` is the framing-marker type — `()` for streams
+/// without per-item framing, `bool` for TLAST-equivalent end-of-frame markers,
+/// or any `Digital` enum/struct for richer framing semantics.
+pub struct RCStream<T: Digital, F: Digital, D: Domain> {
+    /// Source -> sink. `None` = idle, `Some(item)` = data this cycle.
+    pub data: Signal<Option<Item<T, F>>, D>,
+    /// Sink -> source. `true` = ready to accept the next item.
+    pub ready: Signal<bool, D>,
+}
+
+#[derive(Digital, Copy, Clone, PartialEq, Debug)]
+pub struct Item<T: Digital, F: Digital> {
+    /// Payload data.
+    pub data: T,
+    /// Framing marker. `()` for streams without per-item framing.
+    pub frame: F,
+}
+```
+
+Three deliberate properties:
+
+1. **The validity bit is `Option<Item<T, F>>::is_some()`.** No separate TVALID. The type carries it. The protocol is, literally, an `Option`-encoded signal in one direction and a `bool` in the other.
+2. **The framing parameter `F` is generic.** It replaces TLAST, TUSER, TID, TDEST, TKEEP, and TSTRB combined.
+3. **The clock domain `D` is part of the type.** Crossing domains without explicit retiming is a compile error, exactly like every other signal in RHDL.
+
+Default for `F` is `()` (no framing). Common idioms:
+
+```rust
+RCStream<b32, (),       Red>  // pure data stream, no framing
+RCStream<b32, bool,     Red>  // TLAST-equivalent end-of-frame marker
+RCStream<b32, Channel,  Red>  // multi-channel multiplex (Channel: Digital enum)
+RCStream<b32, Marker,   Red>  // rich framing (Marker: struct with last/seq/error)
+RCStream<Packet, (),    Red>  // sum-typed payload (Packet: enum with variants)
+```
+
+The last form is the one AXI4-Stream cannot natively represent: a stream of `enum Packet { Header { ... }, Payload { ... }, Footer { ... } }` becomes a typed bus where the variant tag is part of the payload's type.
+
+---
+
+## 6 — Framing patterns in detail
+
+The framing parameter `F` is the part of the design that most decisively beats AXI4-Stream. Catalogued patterns:
+
+**No framing — `F = ()`.** Streams that don't have per-item structure. A pixel pipeline, a continuous audio sample stream, a register-file-style observation tap. AXI4-Stream equivalent: TLAST always 0, TKEEP always all-ones, TUSER unused.
+
+**End-of-frame — `F = bool`.** A boolean per item indicating "this is the last item of the current frame." AXI4-Stream equivalent: TLAST.
+
+**Channel multiplex — `F = Channel`** for a `Digital` enum `Channel`. Multiple logical streams sharing one physical bus. AXI4-Stream equivalent: TDEST (but typed instead of an integer namespace).
+
+**Sequence numbering — `F = b8`** or wider. Each item carries an explicit position. Useful for protocols where the receiver needs to detect drops or reorderings.
+
+**Sideband flags — `F = Marker`** for a `Digital` struct with last/error/seq/etc. fields. AXI4-Stream equivalent: TUSER, but typed.
+
+**Variant-shaped streams — `F = ()` with `T = Packet`** (an enum-with-payload). The payload itself is sum-typed; framing is implicit in which variant is being transmitted. Useful for protocols like Ethernet where the stream carries a sequence of variant-typed records (Header → multiple Payload → Footer). AXI4-Stream cannot represent this without TID + TUSER hacks.
+
+**Combined — `F = Marker` and `T = Packet`.** Both payload and framing are ADTs. The fully expressive form.
+
+The widget author picks the framing form that fits the protocol; the type system enforces the contract. There is no equivalent of "TUSER mismatch between two IP blocks" because mismatched `F` is a compile error.
+
+---
+
+## 7 — Byte-keep semantics, handled by the type
+
+Since `T` can be any `Digital` type, byte-keep semantics are just typed payloads:
+
+```rust
+RCStream<[Option<b8>; 4], bool, Red>  // 4-lane byte stream, per-lane validity, end-of-frame marker
+RCStream<[b8; 4],         bool, Red>  // 4-lane byte stream, all lanes always valid, end-of-frame
+RCStream<[Lane; 8],       (),   Red>  // 8-lane stream of arbitrary `Lane`-typed items
+```
+
+No TKEEP / TSTRB on the wire. The type carries the validity. If you want all-or-nothing per cycle, use `[T; N]`; if you want per-lane validity, use `[Option<T>; N]`; if your validity has more structure (e.g., "this lane is data, this lane is sideband, this lane is empty"), use a custom enum.
+
+This is strictly more expressive than AXI4-Stream because the type system can carry validity information that AXI4-Stream's two-bit-per-byte encoding cannot.
+
+---
+
+## 8 — Composition with LID and the Carloni relay
+
+The killer property: **a `RCStream<T, F, D>` connection can have a Carloni relay inserted anywhere in the data path without changing functional behavior**.
+
+Concretely, the relay station's input is a `RCStream<T, F, D>`, its output is a `RCStream<T, F, D>` (same `T`, same `F`, same `D`), and the only effect is to add one cycle of latency. This is Carloni's theorem from the 1999 DAC paper, operationalized.
+
+```rust
+pub struct RCStreamRelay<T: Digital, F: Digital, D: Domain> { /* ... */ }
+
+impl<T: Digital, F: Digital, D: Domain> SynchronousIO for RCStreamRelay<T, F, D> {
+    type I = RCStream<T, F, D>;
+    type O = RCStream<T, F, D>;
+    type Kernel = stream_relay_kernel<T, F, D>;
+}
+```
+
+The relay is a thin wrapper around the existing `lid::carloni::Carloni` widget, parameterized to operate on `RCStream<T, F, D>` rather than the LID-paper-faithful `data/void/stop` 3-signal triple.
+
+For the auto-pipeliner (per `auto-pipelining-plan.md`):
+
+- Every `RCStream` boundary in the NTL graph is a *zero-cost cut point*. The auto-pipeliner can insert a `RCStreamRelay` there with no hazard analysis, no functional verification, no semantic reasoning. The LID theorem guarantees correctness.
+- Phase 2 of auto-pipelining (stateful kernels with hazard analysis) becomes dramatically easier: the hazard analysis only has to consider intra-kernel feedback paths because inter-kernel paths are LID-correct by construction.
+- The auto-pipeliner can preferentially place relays at `RCStream` boundaries (cheap, sound) before considering arbitrary NTL cuts (expensive, requires hazard analysis).
+
+This is the single biggest architectural payoff of formalizing the bus.
+
+---
+
+## 9 — Composition with the existing stream library
+
+The migration plan for `rhdl-fpga::stream::*`:
+
+**Phase 1.1.** Define `RCStream<T, F, D>` in a new module — `stream::bus` — alongside the existing `stream::*` widgets. The new type lives next to the old `StreamIO<T>` without breaking any existing code.
+
+**Phase 1.2.** Migrate widgets one by one. Each existing widget gets a generic-over-`F` upgrade: `stream::map` becomes `Map<T, S, F, D, K>` where `F` flows through unchanged. Existing call sites that don't care about framing instantiate with `F = ()`.
+
+```rust
+// Old:
+pub struct Map<T: Digital, S: Digital> { /* ... */ }
+// New:
+pub struct Map<T: Digital, S: Digital, F: Digital, D: Domain, K: ...> { /* ... */ }
+
+// Old call site:
+let m: Map<b8, b16> = Map::try_new::<my_kernel>()?;
+// New call site (no behavior change):
+let m: Map<b8, b16, (), Red, my_kernel> = Map::try_new()?;
+```
+
+**Phase 1.3.** Re-export `lid::carloni::Carloni` as `stream::relay::RCStreamRelay` with the new typed signature. The underlying widget is unchanged; only the type signature is upgraded.
+
+**Phase 1.4.** Consolidate `axi4lite::channel::{sender, receiver}` to use `RCStream<T, (), D>` internally. The AXI4-Lite endpoints continue to work without API changes; they're just expressed in terms of the canonical bus.
+
+This is migration without breakage. Every existing widget continues to work; the new type is additive.
+
+---
+
+## 10 — AXI4-Stream interop
+
+Mandatory, not optional. Any RHDL design that uses commercial IP needs translation widgets at the FPGA boundary.
+
+```rust
+/// Wraps an AXI4-Stream master input as an RHDL `RCStream` source.
+pub struct AxiStreamToRCStream<T: Digital, F: Digital, D: Domain> {
+    /* internal: bit-pack T into TDATA, F into TUSER+TLAST */
+}
+
+/// Wraps an RHDL `RCStream` source as an AXI4-Stream master output.
+pub struct RCStreamToAxiStream<T: Digital, F: Digital, D: Domain> {
+    /* internal: unpack TDATA into T, TUSER+TLAST into F */
+}
+```
+
+Each translation widget is ~80 LOC. They handle TKEEP packing for byte-aligned T, encode F into TUSER+TLAST per a documented schema, and produce/consume the AXI4-Stream signal set. The schema is itself documented as part of the widget rustdoc.
+
+The round-trip property is the validation criterion: `axi → RCStream<T, F, D> → axi` must produce a byte-identical waveform on the AXI side. If the translation loses information, that is a bug in the schema or the widget.
+
+For the typed-stream-of-`enum`-Packet case where AXI4-Stream cannot natively represent the variant tag, the translation widget bit-packs the variant discriminant into TUSER and the payload into TDATA per a documented schema. The schema is exported as a `Digital`-derived type so external IP can consume it via the same encoding.
+
+---
+
+## 11 — Credit-based variant (Phase 3)
+
+For very long inter-block paths or multi-source aggregation where TVALID/TREADY combinational behavior is a timing concern, a credit-based variant decouples the source's send decision from the sink's instantaneous ready signal.
+
+```rust
+/// A typed, latency-insensitive stream with credit-based flow control.
+/// The sink publishes credit grants; the source decrements local credit per
+/// item sent. No reverse signal in the data-cycle critical path.
+pub struct CreditRCStream<T: Digital, F: Digital, D: Domain, const CREDIT_W: usize> {
+    pub data: Signal<Option<Item<T, F>>, D>,
+    pub credit_grant: Signal<Bits<CREDIT_W>, D>, // sink -> source: tokens granted this cycle
+}
+```
+
+Use cases: (a) inter-block paths where the sink-to-source ready signal cannot meet timing as a combinational input to the source's TVALID generator; (b) one sink receiving from multiple sources where reverse-direction arbitration would be expensive; (c) virtual channels (one physical SerDes link carrying multiple logical streams).
+
+`CreditRCStream` and `RCStream` translate to each other via small wrapper widgets (~50 LOC each direction). The conversion is lossless for all framing forms.
+
+This variant is Phase 3 because most kernel-to-kernel connections within a single design are short enough that simple Ready/Valid is fine. Phase 3 lands when an actual design hits the long-path / multi-source case.
+
+---
+
+## 12 — Phasing
+
+| Phase | Deliverable | Effort | Dependencies |
+|---|---|---|---|
+| 1 | `RCStream<T, F, D>` type + migration of existing `stream::*` widgets + AXI4-Stream interop | ~3 weeks | none |
+| 2 | `RCStreamRelay` re-export of `lid::carloni::Carloni` with typed signature; auto-pipelining-plan.md updated to recognize Stream boundaries as preferred cut points | ~2 weeks | Phase 1 |
+| 3 | `CreditRCStream<T, F, D, CREDIT_W>` and translation widgets for long-path use cases | ~3 weeks | Phase 1 |
+| 4 | Auto-pipelining integration: NTL-pass recognition of Stream boundaries, preferential cut placement, hazard-free pipeline insertion | ~4 weeks | Phase 2, `auto-pipelining-plan.md` Phase 1 |
+
+Phase 1+2 ship together as the "canonical streaming bus" track. Phase 3 ships when a design actually hits the long-path use case. Phase 4 ships in coordination with the auto-pipelining track.
+
+---
+
+## 13 — Validation
+
+Per `CLAUDE.md` §11.1, every phase is a compiler-or-library change with the full PR contract: tests at every applicable level, Justification section, documentation in code + book + this design plan, CHANGELOG entry naming the guarantee preserved.
+
+Specific test requirements:
+
+- **Phase 1.** Each existing `stream::*` widget gets re-tested with the new `RCStream<T, F, D>` signature; emitted Verilog must be byte-identical to the pre-migration form when `F = ()`. Round-trip test for AXI4-Stream interop (`axi → Stream → axi` is byte-identical on the AXI side). New chapter `doc/book/src/stream/bus.md`.
+- **Phase 2.** Insertion of a `RCStreamRelay` on any `RCStream` connection produces functionally-equivalent output (offset by one cycle of latency, throughput unchanged). Property-based test: pick 100 random `RCStream<T, F, D>`-using widgets and verify that inserting 0–10 relays on each connection preserves all observable outputs.
+- **Phase 3.** Round-trip test for `Stream <-> CreditRCStream` translation. Long-path timing test demonstrates that `CreditRCStream` removes the TVALID/TREADY combinational dependency.
+- **Phase 4.** Auto-pipelining meta-test: random `RCStream`-using designs are pipelined to a target frequency and the output is verified functionally equivalent to the un-pipelined version (offset by the inserted latency).
+
+The validation matrix is the same shape as `auto-pipelining-plan.md` §8 and `fsm-architecture.md` §9.
+
+---
+
+## 14 — Risks and open questions
+
+**Naming conflict with `futures::Stream`.** Rust's async ecosystem uses `RCStream` for asynchronous iterator-like types. The two contexts don't overlap (async Rust isn't valid inside `#[kernel]`), but the name clash is real. Alternatives considered: `Bus`, `Channel`, `Conduit`, `Flow`. Recommendation: keep `RCStream` because (a) the existing `rhdl-fpga::stream::*` module already uses it; (b) the type lives in a clearly hardware-flavored namespace (`rhdl-fpga::stream::bus::Stream`); (c) any other name is a worse fit semantically. The name conflict is a documentation problem, not a technical one.
+
+**Default for `F`.** Most streams don't need framing, and writing `RCStream<T, ()>` everywhere is ergonomic friction. Rust supports type-parameter defaults: `pub struct RCStream<T, F = (), D = SystemClock>`. Recommendation: ship with `F = ()` and `D = SystemClock` defaults so the common case is `RCStream<T>`.
+
+**Backwards compatibility with the existing `StreamIO<T>`.** The migration plan in §9 keeps both types alive during Phase 1.2. Once all `stream::*` widgets are migrated, `StreamIO<T>` becomes a deprecated type alias to `RCStream<T, (), Red>` (or whatever the default domain is) for one release cycle, then removed.
+
+**Variable-rate streams.** AXI4-Stream uses TKEEP for variable items per cycle. `RCStream<[Option<T>; N], F, D>` handles this with the type system, but kernels then have to handle the array. Worth thinking about whether to provide a dedicated `MultiRCStream<T, F, D, N>` that exposes per-lane `RCStream`-like semantics.
+
+**Stream of streams.** `RCStream<RCStream<...>>` doesn't compose naively because the inner stream has its own clock-domain and ready-signal contract. The right encoding is `RCStream<Frame, Marker>` where `Frame` is a payload type marking "start of inner stream / inner data / end of inner stream." Worth documenting as an explicit pattern.
+
+**Multi-sink fan-out.** A `RCStream` is point-to-point. Fan-out (one source, multiple sinks) requires a `Tee` widget that broadcasts. The existing `stream::tee` is the natural starting point; it should be migrated to use `RCStream<T, F, D>` and become the canonical fan-out primitive. Multi-sink is then explicit at the topology level.
+
+**Multi-source aggregation.** Conversely, fan-in (multiple sources, one sink) requires a `MergeStream` widget that arbitrates. This naturally composes with the (12) round-robin arbiter and (13) strict-priority arbiter from `widget-roadmap.md`. The fan-in case is also where `CreditRCStream` shines — credit-based avoids the reverse-direction arbitration mess.
+
+**AXI4-Stream schema documentation.** The translation widget's bit-packing schema for TUSER must be documented precisely enough that external IP can consume it. The schema lives next to the widget as a `Digital`-derived struct, with a documented C/C++ header that matches the encoding.
+
+**Migration path when FSM widgets get formalized.** Per `fsm-architecture.md`, FSM-shaped widgets get `#[derive(Fsm)]` metadata. Many of those widgets emit `RCStream`-typed outputs (UART, SPI, CAN, MIDI, SDI, etc.). The FSM track and this track compose naturally — an `Fsm` widget with `type O = RCStream<...>` is exactly the canonical protocol-PHY shape.
+
+**Composition with vendor primitives.** Per `vendor-primitive-architecture.md`, some widgets compose vendor SERDES. The PHY layer below the SERDES is vendor-primitive territory; the protocol layer above the SERDES is `RCStream<T, F, D>` territory. The two design plans interlock at the SERDES boundary — vendor primitives produce/consume `RCStream`-typed signals.
+
+---
+
+## 15 — Comparison summary (the load-bearing table)
+
+| Property | AXI4-Stream | `RCStream<T, F, D>` |
+|---|---|---|
+| Wire-level typing | none | Rust type system |
+| Framing semantics | TLAST + TUSER (untyped) | typed `F` parameter |
+| Multi-channel multiplex | TID/TDEST (flat int) | sum-typed `T` or `F` |
+| Byte-keep | TKEEP/TSTRB (byte-granular) | typed payload |
+| Clock domain | none | phantom-typed `D` |
+| Sideband signaling | TUSER (free-for-all) | typed field of `T` or `F` |
+| LID composability | implicit, ad hoc | explicit, by construction |
+| Auto-pipelining soundness | manual hazard analysis | automatic via Carloni relay |
+| Width parameterization | per-stream | per-element via `T` |
+| Width converter required | yes | no |
+| Cross-IP TUSER mismatch | common bug | compile error |
+| Schema mismatch | silent data corruption | compile error |
+| Third-party IP interop | universal | translation widget required |
+| IP-Integrator auto-routing | yes | not applicable |
+
+The plan accepts the last two as the price of the first twelve.
+
+---
+
+## 16 — References
+
+[1] Carloni, L.P., McMillan, K.L., and Sangiovanni-Vincentelli, A.L. *A Methodology for Correct-by-Construction Latency-Insensitive Design.* DAC 1999. — The foundational paper. The LID transformation, the relay-station construct, and the marker-propagation proof technique originate here.
+
+[2] Carloni, L.P. *The Theory of Latency-Insensitive Design.* IEEE Transactions on Computer-Aided Design, 2001. — The follow-up paper formalizing the theorem statements and proofs.
+
+[3] Carloni, L.P. *From Latency-Insensitive Design to Communication-Based System-Level Design.* Proceedings of the IEEE, 2015. — The retrospective. Figure 4 of this paper is what `lid::carloni.rs` implements directly. The canonical RHDL reference for the relay station.
+
+[4] ARM. *AMBA AXI4-Stream Protocol Specification* (ARM IHI 0051A). — The protocol this document defines an alternative to. Cited for the wire-level signal definitions and the documented "TVALID must not depend combinationally on TREADY" rule.
+
+[5] Bluespec, Inc. *Bluespec System Verilog Reference Guide.* — The atomic-action / scheduler model that takes a different but related approach to LID. Worth comparing for the design rationale of why we don't go full Bluespec.
+
+[6] Singh, M., and Theobald, M. *Generalized Latency-Insensitive Systems for Single-Clock and Multi-Clock Architectures.* DATE 2004. — An extension of LID to multi-clock systems. Relevant for the `D` parameter and cross-domain `RCStream` handling.
+
+[7] Vijayaraghavan, M., and Arvind. *Bounded Dataflow Networks and Latency-Insensitive Circuits.* MEMOCODE 2009. — The dataflow-network framing of LID. Useful for thinking about Stream-of-Stream composition (§14).
+
+[8] Lavagno, L., and Sentovich, E. *ECL: A Specification Environment for System-Level Design.* DAC 1999 (companion paper to [1]). — Historical context for the LID transformation in the broader system-level-design movement.
+
+[9] OpenCores. *Wishbone B4 Specification.* — Alternative open bus, useful as a comparison point for Ready/Valid-style handshakes.
+
+[10] Skarman, F., and Gustafsson, O. *Spade: An Expression-Based HDL With Pipelines.* OSDA 2023. — Spade's `pipeline` keyword approach to similar problems; cited for the design-rationale comparison.
+
+[11] Basu, Samit. *RHDL: Rust as a Hardware Description Language.* LATTE '25, March 2025. (`doc/latte25/latte.tex`.) — The RHDL paper. The kernel-as-pure-fn invariant that this design plan exploits is established here.
+
+[12] Pellauer, M., et al. *A-Ports: An Efficient Abstraction for Cycle-Accurate Performance Models on FPGAs.* FPGA 2008. — A performance-modeling abstraction adjacent to LID; useful as a comparison point.
+
+---
+
+## 17 — Decisions captured
+
+For the record (also reflected in `architecture.md` and `CLAUDE.md` once shipped):
+
+- **The bus type is `RCStream<T, F, D>`.** Three type parameters: payload, framing marker, clock domain. Default `F = ()`, default `D = SystemClock`.
+- **The wire encoding is `Option<Item<T, F>>` source→sink, `bool` ready sink→source.** Validity is encoded in the `Option`, not as a separate signal.
+- **Carloni relay stations are the canonical pipeline-insertion primitive.** A `RCStreamRelay` on any `RCStream` connection adds one cycle of latency without changing functional behavior. This is what makes auto-pipelining sound at inter-kernel boundaries.
+- **No magic fields.** TKEEP/TSTRB/TLAST/TUSER/TID/TDEST are replaced by typed fields of `T` and `F`. There is no equivalent of TUSER at the bus level.
+- **AXI4-Stream interop is via dedicated translation widgets, not pervasively.** `AxiStreamToRCStream<T, F, D>` and `RCStreamToAxiStream<T, F, D>` live at the FPGA boundary. The byte-pack schema is documented and exported as a `Digital`-derived type for external IP consumption.
+- **The existing `stream::*` widgets migrate to the new type without behavior change.** `F = ()` for streams that don't need framing; the migration is additive for one release cycle, with the old `StreamIO<T>` becoming a deprecated alias before removal.
+- **The credit-based variant `CreditRCStream<T, F, D, CREDIT_W>` is a Phase 3 follow-on**, not part of the canonical bus. Used only when long-path or multi-source aggregation makes Ready/Valid timing-impractical.
+- **The bus type integrates with `lid::carloni`, the existing `stream::*` library, the auto-pipelining track, the FSM-derive track, and the vendor-primitive track** by design. Each interlock is documented in its respective design plan.

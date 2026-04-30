@@ -146,6 +146,36 @@ where
     pub t_data_space_max: Bits<T_W>,
 }
 
+/// Bundled internal state for the NEC IR receiver (CLAUDE.md §3.1).
+#[derive(PartialEq, Debug, Digital, Clone, Copy)]
+pub struct IrNecRxExtras<const T_W: usize>
+where
+    rhdl::bits::W<T_W>: BitWidth,
+{
+    pub tick: Bits<T_W>,
+    pub prev_ir: bool,
+    pub code_reg: Bits<32>,
+    pub bit_idx: Bits<6>,
+    pub valid_pulse: bool,
+    pub repeat_pulse: bool,
+}
+
+impl<const T_W: usize> Default for IrNecRxExtras<T_W>
+where
+    rhdl::bits::W<T_W>: BitWidth,
+{
+    fn default() -> Self {
+        Self {
+            tick: bits::<T_W>(0),
+            prev_ir: true, // line idles high
+            code_reg: bits::<32>(0),
+            bit_idx: bits::<6>(0),
+            valid_pulse: false,
+            repeat_pulse: false,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
 #[rhdl(dq_no_prefix)]
 #[fsm(state_field = "state", state_enum = NecState, allow_implicit)]
@@ -155,19 +185,7 @@ where
     rhdl::bits::W<T_W>: BitWidth,
 {
     state: dff::DFF<NecState>,
-    /// Tick counter inside the current state.
-    tick: dff::DFF<Bits<T_W>>,
-    /// Previous-cycle value of `ir_in` (for edge detection).
-    /// Resets to `true` (line idles high).
-    prev_ir: dff::DFF<bool>,
-    /// Captured 32-bit code (MSB-first).
-    code_reg: dff::DFF<Bits<32>>,
-    /// Index of the bit being received (0..32).
-    bit_idx: dff::DFF<Bits<6>>,
-    /// One-cycle valid pulse.
-    valid_pulse: dff::DFF<bool>,
-    /// One-cycle repeat pulse.
-    repeat_pulse: dff::DFF<bool>,
+    extras: dff::DFF<IrNecRxExtras<T_W>>,
     timings: Constant<NecTimings<T_W>>,
 }
 
@@ -179,12 +197,7 @@ where
     pub fn new(timings: NecTimings<T_W>) -> Self {
         Self {
             state: dff::DFF::default(),
-            tick: dff::DFF::default(),
-            prev_ir: dff::DFF::new(true),
-            code_reg: dff::DFF::default(),
-            bit_idx: dff::DFF::default(),
-            valid_pulse: dff::DFF::default(),
-            repeat_pulse: dff::DFF::default(),
+            extras: dff::DFF::new(IrNecRxExtras::default()),
             timings: Constant::new(timings),
         }
     }
@@ -234,123 +247,107 @@ where
 
     let mut d = D::<T_W>::dont_care();
     d.state = q.state;
-    d.tick = q.tick + one_t;
-    d.prev_ir = i.ir_in;
-    d.code_reg = q.code_reg;
-    d.bit_idx = q.bit_idx;
-    d.valid_pulse = false;
-    d.repeat_pulse = false;
+    let mut next = q.extras;
+    next.tick = q.extras.tick + one_t;
+    next.prev_ir = i.ir_in;
+    next.valid_pulse = false;
+    next.repeat_pulse = false;
 
-    let falling_edge = q.prev_ir && !i.ir_in;
-    let rising_edge = !q.prev_ir && i.ir_in;
+    let falling_edge = q.extras.prev_ir && !i.ir_in;
+    let rising_edge = !q.extras.prev_ir && i.ir_in;
 
     match q.state {
         NecState::Idle => {
-            // Hold tick at zero in idle so the LeadingBurst measurement
-            // starts cleanly when we transition.
-            d.tick = zero_t;
+            next.tick = zero_t;
             if falling_edge {
                 d.state = NecState::LeadingBurst;
-                d.tick = zero_t;
+                next.tick = zero_t;
             }
         }
         NecState::LeadingBurst => {
             if rising_edge {
-                // Validate burst length.
-                if q.tick >= t.t_lead_burst_min {
+                if q.extras.tick >= t.t_lead_burst_min {
                     d.state = NecState::LeadingSpace;
-                    d.tick = zero_t;
-                    d.bit_idx = zero_b6;
-                    d.code_reg = bits::<32>(0);
+                    next.tick = zero_t;
+                    next.bit_idx = zero_b6;
+                    next.code_reg = bits::<32>(0);
                 } else {
-                    // Too short — abandon.
                     d.state = NecState::Idle;
-                    d.tick = zero_t;
+                    next.tick = zero_t;
                 }
-            } else if q.tick >= t.t_lead_burst_max {
-                // Stuck low too long — abandon.
+            } else if q.extras.tick >= t.t_lead_burst_max {
                 d.state = NecState::Idle;
-                d.tick = zero_t;
+                next.tick = zero_t;
             }
         }
         NecState::LeadingSpace => {
             if falling_edge {
-                if q.tick >= t.t_lead_data_threshold {
-                    // Long space → data frame.
+                if q.extras.tick >= t.t_lead_data_threshold {
                     d.state = NecState::DataBurst;
-                    d.tick = zero_t;
+                    next.tick = zero_t;
                 } else {
-                    // Short space → repeat code.
-                    d.repeat_pulse = true;
+                    next.repeat_pulse = true;
                     d.state = NecState::Idle;
-                    d.tick = zero_t;
+                    next.tick = zero_t;
                 }
-            } else if q.tick >= t.t_lead_space_max {
+            } else if q.extras.tick >= t.t_lead_space_max {
                 d.state = NecState::Idle;
-                d.tick = zero_t;
+                next.tick = zero_t;
             }
         }
         NecState::DataBurst => {
             if rising_edge {
                 d.state = NecState::DataSpace;
-                d.tick = zero_t;
+                next.tick = zero_t;
             }
         }
         NecState::DataSpace => {
             if falling_edge {
-                // Decode bit value from high duration.
-                let bit_val = q.tick >= t.t_data_zero_one_threshold;
+                let bit_val = q.extras.tick >= t.t_data_zero_one_threshold;
                 let bit_bits = if bit_val {
                     bits::<32>(1)
                 } else {
                     bits::<32>(0)
                 };
-                // Shift bit into LSB (so after 32 shifts the first received bit is
-                // at MSB — matching the on-the-wire MSB-first NEC convention).
-                d.code_reg = (q.code_reg << 1) | bit_bits;
-                let next_idx = q.bit_idx + one_b6;
+                next.code_reg = (q.extras.code_reg << 1) | bit_bits;
+                let next_idx = q.extras.bit_idx + one_b6;
                 if next_idx == bits::<6>(32) {
                     d.state = NecState::FinalBurst;
-                    d.tick = zero_t;
+                    next.tick = zero_t;
                 } else {
-                    d.bit_idx = next_idx;
+                    next.bit_idx = next_idx;
                     d.state = NecState::DataBurst;
-                    d.tick = zero_t;
+                    next.tick = zero_t;
                 }
-            } else if q.tick >= t.t_data_space_max {
+            } else if q.extras.tick >= t.t_data_space_max {
                 d.state = NecState::Idle;
-                d.tick = zero_t;
+                next.tick = zero_t;
             }
         }
         NecState::FinalBurst => {
-            // Either a rising edge or hitting `t_data_space_max` ends the frame
-            // and emits valid.
             if rising_edge {
-                d.valid_pulse = true;
+                next.valid_pulse = true;
                 d.state = NecState::Idle;
-                d.tick = zero_t;
-            } else if q.tick >= t.t_data_space_max {
-                d.valid_pulse = true;
+                next.tick = zero_t;
+            } else if q.extras.tick >= t.t_data_space_max {
+                next.valid_pulse = true;
                 d.state = NecState::Idle;
-                d.tick = zero_t;
+                next.tick = zero_t;
             }
         }
     }
 
     if cr.reset.any() {
         d.state = NecState::Idle;
-        d.tick = zero_t;
-        d.prev_ir = true;
-        d.code_reg = bits::<32>(0);
-        d.bit_idx = zero_b6;
-        d.valid_pulse = false;
-        d.repeat_pulse = false;
+        next = IrNecRxExtras::<T_W>::default();
     }
 
+    d.extras = next;
+
     let mut o = Out::dont_care();
-    o.code = q.code_reg;
-    o.valid = q.valid_pulse;
-    o.repeat = q.repeat_pulse;
+    o.code = q.extras.code_reg;
+    o.valid = q.extras.valid_pulse;
+    o.repeat = q.extras.repeat_pulse;
     o.busy = q.state != NecState::Idle;
     (o, d)
 }
@@ -538,7 +535,7 @@ mod tests {
         let uut = IrNecRx::<14>::new(test_timings());
         let desc = uut.descriptor("top".into())?;
         let hdl = desc.hdl()?.modules.pretty();
-        let expect = expect!["14371"];
+        let expect = expect!["13689"];
         expect.assert_eq(&hdl.len().to_string());
         Ok(())
     }
@@ -574,7 +571,7 @@ mod tests {
             .join("vcd")
             .join("ir_nec_rx");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["f207e00a69dfef9377b50c2696a2c9748d678641ccea2522af306a7df70f8dc3"];
+        let expect = expect!["5beb044e36d7d576742efd7b39b67f64514a6a466d375268bee6ecc4ee9b1568"];
         let digest = vcd.dump_to_file(root.join("ir_nec_rx.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

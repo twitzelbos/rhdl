@@ -314,7 +314,7 @@ mod tests {
         let uut = Rs485Master::<6, 4, 8>::new(bits(8), bits(20));
         let desc = uut.descriptor("top".into())?;
         let hdl = desc.hdl()?.modules.pretty();
-        let expect = expect!["61440"];
+        let expect = expect!["58180"];
         expect.assert_eq(&hdl.len().to_string());
         Ok(())
     }
@@ -344,7 +344,7 @@ mod tests {
             .join("vcd")
             .join("rs485_master");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["56ac1140c83dfc85aad53bc0b3f992d44d91c81c7861ed18944b020525f02e2e"];
+        let expect = expect!["ea6afdd18178c30d74d7e631b979a3932d03b9727adad11ae63932a639b15d51"];
         let digest = vcd.dump_to_file(root.join("rs485_master.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

@@ -91,6 +91,20 @@ pub enum LinState {
     WaitChecksum,
 }
 
+/// Bundled internal state for the LIN master (CLAUDE.md §3.1).
+#[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
+pub struct LinMasterExtras<const CW: usize>
+where
+    rhdl::bits::W<CW>: BitWidth,
+{
+    pub break_counter: Bits<CW>,
+    pub id_reg: Bits<6>,
+    pub data_reg: Bits<8>,
+    pub pid_reg: Bits<8>,
+    pub checksum_reg: Bits<8>,
+    pub done_pulse: bool,
+}
+
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
 #[rhdl(dq_no_prefix)]
 #[fsm(state_field = "state", state_enum = LinState, allow_implicit)]
@@ -101,12 +115,7 @@ where
     rhdl::bits::W<CW>: BitWidth,
 {
     state: dff::DFF<LinState>,
-    break_counter: dff::DFF<Bits<CW>>,
-    id_reg: dff::DFF<Bits<6>>,
-    data_reg: dff::DFF<Bits<8>>,
-    pid_reg: dff::DFF<Bits<8>>,
-    checksum_reg: dff::DFF<Bits<8>>,
-    done_pulse: dff::DFF<bool>,
+    extras: dff::DFF<LinMasterExtras<CW>>,
     tx_uart: UartTx<DIV_W>,
     break_cycles: Constant<Bits<CW>>,
 }
@@ -122,12 +131,7 @@ where
     pub fn new(divisor: Bits<DIV_W>, break_cycles: Bits<CW>) -> Self {
         Self {
             state: dff::DFF::default(),
-            break_counter: dff::DFF::default(),
-            id_reg: dff::DFF::default(),
-            data_reg: dff::DFF::default(),
-            pid_reg: dff::DFF::default(),
-            checksum_reg: dff::DFF::default(),
-            done_pulse: dff::DFF::default(),
+            extras: dff::DFF::default(),
             tx_uart: UartTx::new(divisor),
             break_cycles: Constant::new(break_cycles),
         }
@@ -184,31 +188,22 @@ where
 
     let mut d = D::<DIV_W, CW>::dont_care();
     d.state = q.state;
-    d.break_counter = q.break_counter;
-    d.id_reg = q.id_reg;
-    d.data_reg = q.data_reg;
-    d.pid_reg = q.pid_reg;
-    d.checksum_reg = q.checksum_reg;
-    d.done_pulse = false;
-    // Default UART input: idle.
+    let mut next = q.extras;
+    next.done_pulse = false;
     d.tx_uart = super::uart_tx::In {
         data: zero_b8,
         send: false,
     };
 
-    // PID parity computation, all in Bits<8>.  Build the PID byte
-    // bit-by-bit via a loop over the 6 ID bits (avoids the kernel's
-    // ban on `as_bits::<N>()` turbofish).
     let mut pid: Bits<8> = bits::<8>(0);
     let mut id_acc_8: Bits<8> = bits::<8>(0);
     for k in 0..6 {
-        let bit_k = (q.id_reg >> (k as u128)) & bits::<6>(1);
+        let bit_k = (q.extras.id_reg >> (k as u128)) & bits::<6>(1);
         if bit_k != bits::<6>(0) {
             pid |= bits::<8>(1) << (k as u128);
             id_acc_8 |= bits::<8>(1) << (k as u128);
         }
     }
-    // PID parity: extract 6 bits of id_acc_8 and XOR.
     let id_b0 = id_acc_8 & bits::<8>(1);
     let id_b1 = (id_acc_8 >> bits::<8>(1)) & bits::<8>(1);
     let id_b2 = (id_acc_8 >> bits::<8>(2)) & bits::<8>(1);
@@ -224,11 +219,9 @@ where
         pid |= bits::<8>(0x80);
     }
 
-    // Classic checksum: ~(PID + data) mod 256.
-    let sum = pid + q.data_reg;
+    let sum = pid + q.extras.data_reg;
     let checksum = !sum;
 
-    // tx output: low while in Break, otherwise the UART's tx output.
     let tx = match q.state {
         LinState::Idle => true,
         LinState::Break => false,
@@ -244,23 +237,22 @@ where
         LinState::Idle => {
             if i.start {
                 d.state = LinState::Break;
-                d.id_reg = i.id;
-                d.data_reg = i.data;
-                d.pid_reg = pid;
-                d.checksum_reg = checksum;
-                d.break_counter = zero_cw;
+                next.id_reg = i.id;
+                next.data_reg = i.data;
+                next.pid_reg = pid;
+                next.checksum_reg = checksum;
+                next.break_counter = zero_cw;
             }
         }
         LinState::Break => {
-            if q.break_counter == (q.break_cycles - one_cw) {
+            if q.extras.break_counter == (q.break_cycles - one_cw) {
                 d.state = LinState::SendSync;
-                d.break_counter = zero_cw;
+                next.break_counter = zero_cw;
             } else {
-                d.break_counter = q.break_counter + one_cw;
+                next.break_counter = q.extras.break_counter + one_cw;
             }
         }
         LinState::SendSync => {
-            // Issue send=true with sync byte (0x55).
             d.tx_uart = super::uart_tx::In {
                 data: bits::<8>(0x55),
                 send: true,
@@ -268,14 +260,13 @@ where
             d.state = LinState::WaitSync;
         }
         LinState::WaitSync => {
-            // Wait for UART to finish (ready returns true after stop bit completes).
             if q.tx_uart.ready {
                 d.state = LinState::SendPid;
             }
         }
         LinState::SendPid => {
             d.tx_uart = super::uart_tx::In {
-                data: q.pid_reg,
+                data: q.extras.pid_reg,
                 send: true,
             };
             d.state = LinState::WaitPid;
@@ -287,7 +278,7 @@ where
         }
         LinState::SendData => {
             d.tx_uart = super::uart_tx::In {
-                data: q.data_reg,
+                data: q.extras.data_reg,
                 send: true,
             };
             d.state = LinState::WaitData;
@@ -299,7 +290,7 @@ where
         }
         LinState::SendChecksum => {
             d.tx_uart = super::uart_tx::In {
-                data: q.checksum_reg,
+                data: q.extras.checksum_reg,
                 send: true,
             };
             d.state = LinState::WaitChecksum;
@@ -307,29 +298,27 @@ where
         LinState::WaitChecksum => {
             if q.tx_uart.ready {
                 d.state = LinState::Idle;
-                d.done_pulse = true;
+                next.done_pulse = true;
             }
         }
     }
 
     if cr.reset.any() {
         d.state = LinState::Idle;
-        d.break_counter = zero_cw;
-        d.id_reg = zero_b6;
-        d.data_reg = zero_b8;
-        d.pid_reg = zero_b8;
-        d.checksum_reg = zero_b8;
-        d.done_pulse = false;
+        next = LinMasterExtras::<CW>::default();
         d.tx_uart = super::uart_tx::In {
             data: zero_b8,
             send: false,
         };
     }
 
+    let _ = zero_b6;
+    d.extras = next;
+
     let mut o = Out::dont_care();
     o.tx = tx;
     o.busy = busy;
-    o.done = q.done_pulse;
+    o.done = q.extras.done_pulse;
     (o, d)
 }
 
@@ -405,7 +394,7 @@ mod tests {
         let uut = LinMaster::<6, 8>::new(bits(4), bits(52));
         let desc = uut.descriptor("top".into())?;
         let hdl = desc.hdl()?.modules.pretty();
-        let expect = expect!["26766"];
+        let expect = expect!["24818"];
         expect.assert_eq(&hdl.len().to_string());
         Ok(())
     }
@@ -447,7 +436,7 @@ mod tests {
             .join("vcd")
             .join("lin_master");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["798bd5dfe9b1b3ec8805e2d586faf1016f25e00940f83c32a41ce12f1b476057"];
+        let expect = expect!["b6a8ca112418ab701475b93e620ff55a0b477a52c6df519c9055bf71dc1fd4f2"];
         let digest = vcd.dump_to_file(root.join("lin_master.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

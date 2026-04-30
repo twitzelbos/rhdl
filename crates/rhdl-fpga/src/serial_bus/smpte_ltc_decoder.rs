@@ -100,6 +100,53 @@ pub enum LtcDecodeState {
     MidCell,
 }
 
+/// Bundled internal state for the SMPTE LTC decoder.
+///
+/// Per CLAUDE.md §3.1, the non-FSM internal registers live in
+/// a single `Digital`-derived struct behind one DFF.  Keeps the
+/// widget at three sibling sub-circuits (state + extras + the
+/// implicit framework wiring) rather than nine.
+#[derive(PartialEq, Debug, Digital, Clone, Copy)]
+pub struct LtcDecodeExtras<const IW: usize>
+where
+    rhdl::bits::W<IW>: BitWidth,
+{
+    /// Previous line value (for edge detection).
+    pub prev_line: bool,
+    /// Interval counter — cycles since last edge.
+    pub interval: Bits<IW>,
+    /// Running half-cell-time estimate.
+    pub half_t: Bits<IW>,
+    /// True once the bit-clock estimate is stable.
+    pub locked: bool,
+    /// 80-bit shift register holding the most recent bits.
+    pub shifter: Bits<80>,
+    /// True if the most recently observed sync word was forward.
+    pub forward: bool,
+    /// One-cycle pulse when a complete frame is parsed.
+    pub frame_pulse: bool,
+    /// Latched frame contents (held until the next frame_pulse).
+    pub last_frame: LtcFrame,
+}
+
+impl<const IW: usize> Default for LtcDecodeExtras<IW>
+where
+    rhdl::bits::W<IW>: BitWidth,
+{
+    fn default() -> Self {
+        Self {
+            prev_line: false,
+            interval: bits::<IW>(0),
+            half_t: bits::<IW>(0),
+            locked: false,
+            shifter: bits::<80>(0),
+            forward: false,
+            frame_pulse: false,
+            last_frame: LtcFrame::default(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
 #[rhdl(dq_no_prefix)]
 #[fsm(state_field = "state", state_enum = LtcDecodeState, allow_implicit)]
@@ -109,23 +156,7 @@ where
     rhdl::bits::W<IW>: BitWidth,
 {
     state: dff::DFF<LtcDecodeState>,
-    /// Previous line value (for edge detection).
-    prev_line: dff::DFF<bool>,
-    /// Interval counter — cycles since last edge.
-    interval: dff::DFF<Bits<IW>>,
-    /// Running half-cell-time estimate.
-    half_t: dff::DFF<Bits<IW>>,
-    /// True once the bit-clock estimate is stable.
-    locked: dff::DFF<bool>,
-    /// 80-bit shift register holding the most recent bits.
-    shifter: dff::DFF<Bits<80>>,
-    /// True if the most recently observed sync word was forward
-    /// (MSB-first `0x3FFD`); false if reverse (`0xBFFC`).
-    forward: dff::DFF<bool>,
-    /// One-cycle pulse when a complete frame is parsed.
-    frame_pulse: dff::DFF<bool>,
-    /// Latched frame contents (held until the next frame_pulse).
-    last_frame: dff::DFF<LtcFrame>,
+    extras: dff::DFF<LtcDecodeExtras<IW>>,
 }
 
 impl<const IW: usize> SmpteLtcDecoder<IW>
@@ -138,14 +169,7 @@ where
     pub fn new() -> Self {
         Self {
             state: dff::DFF::default(),
-            prev_line: dff::DFF::default(),
-            interval: dff::DFF::default(),
-            half_t: dff::DFF::default(),
-            locked: dff::DFF::default(),
-            shifter: dff::DFF::default(),
-            forward: dff::DFF::default(),
-            frame_pulse: dff::DFF::default(),
-            last_frame: dff::DFF::default(),
+            extras: dff::DFF::new(LtcDecodeExtras::default()),
         }
     }
 }
@@ -224,89 +248,68 @@ where
 {
     let mut d = D::<IW>::dont_care();
     d.state = q.state;
-    d.prev_line = i.line_in;
-    d.interval = q.interval + bits::<IW>(1);
-    d.half_t = q.half_t;
-    d.locked = q.locked;
-    d.shifter = q.shifter;
-    d.forward = q.forward;
-    d.frame_pulse = false;
-    d.last_frame = q.last_frame;
+    let mut next = q.extras;
+    next.prev_line = i.line_in;
+    next.interval = q.extras.interval + bits::<IW>(1);
+    next.frame_pulse = false;
 
-    // Edge detect (combinational over q.prev_line and i.line_in).
-    let edge = i.line_in != q.prev_line;
-    let interval_now = q.interval + bits::<IW>(1);
+    // Edge detect (combinational over q.extras.prev_line and i.line_in).
+    let edge = i.line_in != q.extras.prev_line;
+    let interval_now = q.extras.interval + bits::<IW>(1);
     // Threshold: 1.5 × half_t (= half_t + half_t/2).
-    let threshold = q.half_t + (q.half_t >> 1);
-    let is_long = interval_now >= threshold && q.locked;
+    let threshold = q.extras.half_t + (q.extras.half_t >> 1);
+    let is_long = interval_now >= threshold && q.extras.locked;
 
-    // Compute candidate next-shifter for both bit possibilities.
-    // `>> 1` already places 0 in bit 79; OR in bit 79 = 1 for the
-    // `one` variant.  No mask needed.
-    let next_shifter_zero = q.shifter >> 1;
-    let next_shifter_one = (q.shifter >> 1) | (bits::<80>(1) << 79);
+    let next_shifter_zero = q.extras.shifter >> 1;
+    let next_shifter_one = (q.extras.shifter >> 1) | (bits::<80>(1) << 79);
 
     if edge {
-        d.interval = bits::<IW>(0);
+        next.interval = bits::<IW>(0);
 
         match q.state {
             LtcDecodeState::WaitFirstEdge => {
-                // First edge after reset.  The interval counter was
-                // running since reset deassertion, so its value is
-                // contaminated by reset timing — DON'T update half_t
-                // from this interval.  Just advance state; the
-                // next edge gives us the first clean edge-to-edge
-                // measurement.
                 d.state = LtcDecodeState::AtCellBoundary;
             }
             LtcDecodeState::AtCellBoundary => {
-                // Update half-cell estimate.  Strategy: track the
-                // SHORTEST interval seen since reset.  The shortest
-                // interval in a biphase-mark waveform is T (the
-                // half-cell time, observed between the cell-start
-                // and cell-mid transitions of a `1` bit).
-                if !q.locked {
-                    d.half_t = interval_now;
-                    d.locked = true;
-                } else if interval_now < q.half_t {
-                    d.half_t = interval_now;
+                if !q.extras.locked {
+                    next.half_t = interval_now;
+                    next.locked = true;
+                } else if interval_now < q.extras.half_t {
+                    next.half_t = interval_now;
                 }
                 if is_long {
-                    // Bit `0` completed.
                     let new_shifter = next_shifter_zero;
-                    d.shifter = new_shifter;
-                    // Sync check (inline).
+                    next.shifter = new_shifter;
                     let sync_field: Bits<16> = (new_shifter >> 64).resize::<16>();
                     let forward_match = sync_field == bits::<16>(0xBFFC);
                     let reverse_match = sync_field == bits::<16>(0x3FFD);
                     if forward_match {
-                        d.forward = true;
-                        d.frame_pulse = true;
-                        d.last_frame = parse_payload(new_shifter);
+                        next.forward = true;
+                        next.frame_pulse = true;
+                        next.last_frame = parse_payload(new_shifter);
                     } else if reverse_match {
-                        d.forward = false;
-                        d.frame_pulse = true;
-                        d.last_frame = parse_payload(new_shifter);
+                        next.forward = false;
+                        next.frame_pulse = true;
+                        next.last_frame = parse_payload(new_shifter);
                     }
-                    // d.state stays AtCellBoundary (implicit hold).
                 } else {
                     d.state = LtcDecodeState::MidCell;
                 }
             }
             LtcDecodeState::MidCell => {
                 let new_shifter = next_shifter_one;
-                d.shifter = new_shifter;
+                next.shifter = new_shifter;
                 let sync_field: Bits<16> = (new_shifter >> 64).resize::<16>();
                 let forward_match = sync_field == bits::<16>(0xBFFC);
                 let reverse_match = sync_field == bits::<16>(0x3FFD);
                 if forward_match {
-                    d.forward = true;
-                    d.frame_pulse = true;
-                    d.last_frame = parse_payload(new_shifter);
+                    next.forward = true;
+                    next.frame_pulse = true;
+                    next.last_frame = parse_payload(new_shifter);
                 } else if reverse_match {
-                    d.forward = false;
-                    d.frame_pulse = true;
-                    d.last_frame = parse_payload(new_shifter);
+                    next.forward = false;
+                    next.frame_pulse = true;
+                    next.last_frame = parse_payload(new_shifter);
                 }
                 d.state = LtcDecodeState::AtCellBoundary;
             }
@@ -315,25 +318,20 @@ where
 
     if cr.reset.any() {
         d.state = LtcDecodeState::WaitFirstEdge;
-        d.prev_line = false;
-        d.interval = bits::<IW>(0);
-        d.half_t = bits::<IW>(0);
-        d.locked = false;
-        d.shifter = bits::<80>(0);
-        d.forward = false;
-        d.frame_pulse = false;
-        d.last_frame = LtcFrame::default();
+        next = LtcDecodeExtras::<IW>::default();
     }
 
+    d.extras = next;
+
     let mut o = Out::dont_care();
-    o.frame = if q.frame_pulse {
-        Some(q.last_frame)
+    o.frame = if q.extras.frame_pulse {
+        Some(q.extras.last_frame)
     } else {
         None
     };
-    o.forward = q.forward;
-    o.in_lock = q.locked;
-    o.last_frame = q.last_frame;
+    o.forward = q.extras.forward;
+    o.in_lock = q.extras.locked;
+    o.last_frame = q.extras.last_frame;
     (o, d)
 }
 

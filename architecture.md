@@ -31,6 +31,9 @@ rhdl/                                           # Cargo workspace root
 ├── kernel-language-extensions.md               # #[kernel] subset extensions plan
 ├── vendor-primitive-architecture.md            # target-provider trait design plan
 ├── fsm-architecture.md                         # FSM ergonomics + analysis + formal verification
+├── stream-bus-architecture.md                  # typed LID streaming bus (RCStream<T, F, D>)
+├── rule-architecture.md                        # Bluespec-style guarded atomic rules (rhdl-rule)
+├── rhif-formalization-plan.md                  # five levels of RHIF formal specification
 ├── rhdl-deep-dive.md                           # narrative architecture walkthrough
 ├── manifesto.md                                # essay on Rust HDL + LLM-assisted dev
 │
@@ -418,6 +421,9 @@ When new structural needs arise, follow these patterns rather than improvising.
 | `kernel-language-extensions.md` | Future kernel-language extensions | Updated as extensions ship |
 | `vendor-primitive-architecture.md` | Future target-provider system | Updated as primitives are added |
 | `fsm-architecture.md` | Future FSM ergonomics + analysis + formal verification | Updated as phases ship |
+| `stream-bus-architecture.md` | Future typed LID streaming bus + AXI Stream interop | Updated as phases ship |
+| `rule-architecture.md` | Future Bluespec-style guarded atomic rules (rhdl-rule) | Updated as phases ship |
+| `rhif-formalization-plan.md` | Foundational RHIF semantic specification (Level 1+2 committed; Level 3-5 research) | Updated as phases ship |
 | `rhdl-deep-dive.md` | Narrative architecture walkthrough (descriptive) | Updated when major architectural shifts happen |
 | `manifesto.md` | Why Rust HDL + LLM-assisted dev | Reference document; rarely changes |
 | `CHANGELOG.md` | Build narrative — every shipped change | Append-only |

@@ -238,7 +238,7 @@ mod tests {
         let uut = MidiInterface::<6, 4>::new(bits(6));
         let desc = uut.descriptor("top".into())?;
         let hdl = desc.hdl()?.modules.pretty();
-        let expect = expect!["59455"];
+        let expect = expect!["56195"];
         expect.assert_eq(&hdl.len().to_string());
         Ok(())
     }
@@ -286,7 +286,7 @@ mod tests {
             .join("vcd")
             .join("midi");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["d1ac4697b8305b85126c580830aa85ae2c9a76f1f30a381c584a8a4116a6e92a"];
+        let expect = expect!["b63aebda4903400afc8a54d5be798c46c225eb956b1e53786c1445a4081b7d85"];
         let digest = vcd.dump_to_file(root.join("midi.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

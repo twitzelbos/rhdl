@@ -326,7 +326,7 @@ mod tests {
         let uut = Ps2Mouse::default();
         let desc = uut.descriptor("top".into())?;
         let hdl = desc.hdl()?.modules.pretty();
-        let expect = expect!["22283"];
+        let expect = expect!["19947"];
         expect.assert_eq(&hdl.len().to_string());
         Ok(())
     }
@@ -352,7 +352,7 @@ mod tests {
             .join("vcd")
             .join("ps2_mouse");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["462672f46ac7e657e87d8c299111524b430e05450198baecfb3166849af13cb5"];
+        let expect = expect!["0e31a96b85fcaff7a1a4be06bbc3bcb0c7d7f959334d579be6bff714b153be34"];
         let digest = vcd.dump_to_file(root.join("ps2_mouse.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

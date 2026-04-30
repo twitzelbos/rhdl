@@ -129,6 +129,20 @@ pub enum Ps2TxState {
     AwaitAck,
 }
 
+/// Bundled internal state for the PS/2 host TX (CLAUDE.md §3.1).
+#[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
+pub struct Ps2HostTxExtras<const INH_W: usize>
+where
+    rhdl::bits::W<INH_W>: BitWidth,
+{
+    pub inhibit_ctr: Bits<INH_W>,
+    pub shifter: Bits<9>,
+    pub bit_idx: Bits<4>,
+    pub prev_clk: bool,
+    pub ack_seen_q: bool,
+    pub ack_error_q: bool,
+}
+
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
 #[rhdl(dq_no_prefix)]
 #[fsm(state_field = "state", state_enum = Ps2TxState, allow_implicit)]
@@ -138,19 +152,7 @@ where
     rhdl::bits::W<INH_W>: BitWidth,
 {
     state: dff::DFF<Ps2TxState>,
-    /// Inhibit interval countdown (cycles remaining at INH_W width).
-    inhibit_ctr: dff::DFF<Bits<INH_W>>,
-    /// 9-bit shifter (8 data + 1 parity) loaded on TX start.
-    shifter: dff::DFF<Bits<9>>,
-    /// Bit count: 0..=8 within the 9-bit body.
-    bit_idx: dff::DFF<Bits<4>>,
-    /// Previous CLK input (for falling-edge detect).
-    prev_clk: dff::DFF<bool>,
-    /// Captured ACK status: true if device pulled DATA low.
-    ack_seen_q: dff::DFF<bool>,
-    /// True if AwaitAck completed without seeing an ack.
-    ack_error_q: dff::DFF<bool>,
-    /// Configured inhibit duration in clock cycles.
+    extras: dff::DFF<Ps2HostTxExtras<INH_W>>,
     inhibit_cycles: Constant<Bits<INH_W>>,
 }
 
@@ -164,12 +166,7 @@ where
     pub fn new(inhibit_cycles: Bits<INH_W>) -> Self {
         Self {
             state: dff::DFF::default(),
-            inhibit_ctr: dff::DFF::default(),
-            shifter: dff::DFF::default(),
-            bit_idx: dff::DFF::default(),
-            prev_clk: dff::DFF::default(),
-            ack_seen_q: dff::DFF::default(),
-            ack_error_q: dff::DFF::default(),
+            extras: dff::DFF::default(),
             inhibit_cycles: Constant::new(inhibit_cycles),
         }
     }
@@ -224,24 +221,19 @@ where
 {
     let mut d = D::<INH_W>::dont_care();
     d.state = q.state;
-    d.inhibit_ctr = q.inhibit_ctr;
-    d.shifter = q.shifter;
-    d.bit_idx = q.bit_idx;
-    d.prev_clk = i.clk_in;
-    d.ack_seen_q = false;
-    d.ack_error_q = false;
+    let mut next = q.extras;
+    next.prev_clk = i.clk_in;
+    next.ack_seen_q = false;
+    next.ack_error_q = false;
 
-    // CLK falling edge detect.
-    let clk_falling = q.prev_clk && !i.clk_in;
+    let clk_falling = q.extras.prev_clk && !i.clk_in;
 
-    // Default outputs (released = high).
     let mut clk_oe = false;
     let mut data_oe = false;
 
     match q.state {
         Ps2TxState::Idle => {
             if i.tx_strobe {
-                // Compute odd parity of tx_byte.
                 let b = i.tx_byte;
                 let p0 = (b >> 0) & bits::<8>(1);
                 let p1 = (b >> 1) & bits::<8>(1);
@@ -251,75 +243,66 @@ where
                 let p5 = (b >> 5) & bits::<8>(1);
                 let p6 = (b >> 6) & bits::<8>(1);
                 let p7 = (b >> 7) & bits::<8>(1);
-                // Odd parity = !XOR (so total 1s in data || parity is odd).
                 let xor_all = p0 ^ p1 ^ p2 ^ p3 ^ p4 ^ p5 ^ p6 ^ p7;
                 let parity_bit: Bits<8> = xor_all ^ bits::<8>(1);
-                // Pack { parity (bit 8), data[7..0] (bits 7..0) }.
                 let packed: Bits<9> =
                     (b.resize::<9>()) | (parity_bit.resize::<9>() << 8);
-                d.shifter = packed;
-                d.bit_idx = bits::<4>(0);
-                d.inhibit_ctr = q.inhibit_cycles;
+                next.shifter = packed;
+                next.bit_idx = bits::<4>(0);
+                next.inhibit_ctr = q.inhibit_cycles;
                 d.state = Ps2TxState::Inhibit;
-                clk_oe = true; // Start pulling CLK low.
+                clk_oe = true;
             }
         }
         Ps2TxState::Inhibit => {
             clk_oe = true;
-            if q.inhibit_ctr == bits::<INH_W>(0) {
-                // Inhibit done: release CLK, pull DATA low (start bit).
+            if q.extras.inhibit_ctr == bits::<INH_W>(0) {
                 d.state = Ps2TxState::RequestStart;
                 clk_oe = false;
                 data_oe = true;
             } else {
-                d.inhibit_ctr = q.inhibit_ctr - bits::<INH_W>(1);
+                next.inhibit_ctr = q.extras.inhibit_ctr - bits::<INH_W>(1);
             }
         }
         Ps2TxState::RequestStart => {
-            // Hold DATA low (start bit), release CLK so device clocks.
             data_oe = true;
-            // Wait for first CLK falling edge.
             if clk_falling {
                 d.state = Ps2TxState::ClockBits;
-                d.bit_idx = bits::<4>(0);
+                next.bit_idx = bits::<4>(0);
             }
         }
         Ps2TxState::ClockBits => {
-            // Drive DATA based on shifter[0].  Shift on CLK falling edge.
-            let bit_to_send = (q.shifter & bits::<9>(1)) != bits::<9>(0);
-            data_oe = !bit_to_send; // open-drain: pull low for 0, release for 1
+            let bit_to_send = (q.extras.shifter & bits::<9>(1)) != bits::<9>(0);
+            data_oe = !bit_to_send;
             if clk_falling {
-                d.shifter = q.shifter >> 1;
-                d.bit_idx = q.bit_idx + bits::<4>(1);
-                if q.bit_idx == bits::<4>(7) {
-                    // Just clocked the 8th data bit; next clock is parity.
+                next.shifter = q.extras.shifter >> 1;
+                next.bit_idx = q.extras.bit_idx + bits::<4>(1);
+                if q.extras.bit_idx == bits::<4>(7) {
                     d.state = Ps2TxState::ClockParity;
                 }
             }
         }
         Ps2TxState::ClockParity => {
-            let bit_to_send = (q.shifter & bits::<9>(1)) != bits::<9>(0);
+            let bit_to_send = (q.extras.shifter & bits::<9>(1)) != bits::<9>(0);
             data_oe = !bit_to_send;
             if clk_falling {
-                d.shifter = q.shifter >> 1;
+                next.shifter = q.extras.shifter >> 1;
                 d.state = Ps2TxState::ClockStop;
             }
         }
         Ps2TxState::ClockStop => {
-            // Release DATA for the stop bit (line goes high via pull-up).
             data_oe = false;
             if clk_falling {
                 d.state = Ps2TxState::AwaitAck;
             }
         }
         Ps2TxState::AwaitAck => {
-            // Sample DATA on next CLK falling edge.  If low → ack.
             data_oe = false;
             if clk_falling {
                 if !i.data_in {
-                    d.ack_seen_q = true;
+                    next.ack_seen_q = true;
                 } else {
-                    d.ack_error_q = true;
+                    next.ack_error_q = true;
                 }
                 d.state = Ps2TxState::Idle;
             }
@@ -328,20 +311,17 @@ where
 
     if cr.reset.any() {
         d.state = Ps2TxState::Idle;
-        d.inhibit_ctr = bits::<INH_W>(0);
-        d.shifter = bits::<9>(0);
-        d.bit_idx = bits::<4>(0);
-        d.prev_clk = false;
-        d.ack_seen_q = false;
-        d.ack_error_q = false;
+        next = Ps2HostTxExtras::<INH_W>::default();
     }
+
+    d.extras = next;
 
     let mut o = Out::dont_care();
     o.clk_oe = clk_oe;
     o.data_oe = data_oe;
     o.tx_busy = q.state != Ps2TxState::Idle;
-    o.ack_seen = q.ack_seen_q;
-    o.ack_error = q.ack_error_q;
+    o.ack_seen = q.extras.ack_seen_q;
+    o.ack_error = q.extras.ack_error_q;
     (o, d)
 }
 

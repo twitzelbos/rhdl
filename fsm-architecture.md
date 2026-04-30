@@ -462,6 +462,148 @@ It's the canonical open-source formal-verification frontend for Verilog/SystemVe
 3. CI runs `sby` on the verified widgets if `iverilog` is available; otherwise skips with a documented reason.
 4. The Verilog-emission path supports SVA properties without breaking the existing `iverilog` round-trip — assertions are guarded behind a compilation flag so iverilog (which doesn't natively support all SVA) still simulates cleanly.
 
+### 7.5 Artifact organization and CI integration
+
+The SVA-bearing Verilog, SymbiYosys configs, proof-status records, and counterexample traces are first-class committed artifacts — not transient build outputs. They get the same review, snapshotting, and regression-detection treatment as the existing VCD digests and HDL emission snapshots.
+
+#### Two emission modes
+
+Verilog emission grows two distinct flavors:
+
+- **`descriptor.hdl_for_synth(&target)`** — plain Verilog, no SVA. Goes to the synthesis flow (Vivado, nextpnr, Yosys synthesis). This is what the existing `descriptor.hdl()` becomes by default.
+- **`descriptor.hdl_for_prove()`** — Verilog with embedded SVA. Goes to SymbiYosys. Never goes to synthesis.
+
+Vendor synthesizers have inconsistent SVA support; iverilog has very limited support. Mixing the two corrupts both flows. Two modes keep responsibility clean: synth tools see only synthesizable Verilog; sby sees Verilog + SVA together. The kernel source is the same; only the emission stage differs.
+
+#### Per-widget `prove/` directory
+
+Mirroring the existing `vcd/` convention, every FSM widget with formal-verification properties gets a sibling `prove/` directory:
+
+```
+crates/rhdl-fpga/
+├── src/<cat>/<widget>.rs              # source (with #[fsm_invariant] etc.)
+├── examples/<widget>.rs               # runnable example
+├── doc/<widget>.md                    # waveform markdown
+├── vcd/<widget>/<widget>.vcd          # committed reference VCD (digest-checked)
+└── prove/<widget>/
+    ├── <widget>.sv                    # SVA-bearing Verilog (golden, expect_test snapshot)
+    ├── <widget>.sby                   # SymbiYosys config
+    ├── proved.toml                    # property-by-property proof status (golden)
+    └── ce/                            # counterexamples committed only when caught
+        └── <bug-name>/
+            ├── trace.vcd              # the failing waveform
+            └── repro.sby              # the exact config that found it
+```
+
+This places proof artifacts next to widgets, just like waveforms. A reviewer reading the widget can see immediately what's been proved without running sby.
+
+#### `<widget>.sv` as an `expect_test` snapshot
+
+The SVA-bearing Verilog file gets the same treatment as the existing Tier-3 HDL snapshot tests: an `expect_test` golden that the compiler-pass tests assert against. Compiler changes that alter the emitted SVA require explicit re-blessing with `UPDATE_EXPECT=1`, exactly like the existing snapshot machinery.
+
+This catches a specific bug: a compiler optimization that's semantics-preserving in the synthesizable Verilog but accidentally weakens an assertion. The SVA snapshot is what catches it.
+
+#### `proved.toml` schema
+
+The property-by-property proof status, committed and reviewed as a golden file:
+
+```toml
+[meta]
+widget = "fifo::write_logic::FIFOWriteCore"
+generated = "2026-04-30T10:23:00Z"
+sby_version = "0.50"
+
+[invariant.write_address_in_range]
+status = "proved"
+engine = "smtbmc:z3"
+depth = 32
+note = "induction succeeded; address never overflows past read_address absent overflow latch"
+
+[invariant.full_implies_no_advance]
+status = "proved_to_depth"
+engine = "smtbmc:z3"
+depth = 64
+note = "BMC verified; full proof requires k-induction (deferred)"
+
+[liveness.eventually_drains]
+status = "proved"
+engine = "k-induction"
+bound = 1024
+note = "with fairness assumption on next signal"
+
+[cover.exercises_overflow]
+status = "reached"
+cycle = 156
+note = "overflow latch tested in cycle 156"
+
+[invariant.no_corruption_under_stall]
+status = "disabled"
+reason = "requires environment fairness model not yet implemented"
+```
+
+A regression — a property going from `proved` to `proved_to_depth` or to `unknown` — surfaces as a diff in the golden file caught by the same review process that catches Verilog snapshot diffs.
+
+The status enum has seven values:
+
+- **`proved`** — sby completed and proved the property unconditionally.
+- **`proved_to_depth`** — BMC up to depth N found no counterexample but didn't complete an inductive proof. Real bugs at depth > N would be missed.
+- **`reached`** — for `fsm_cover` properties, the cycle number at which the property was covered during proof exploration.
+- **`unknown`** — sby exhausted resources without conclusion. A real warning sign.
+- **`failed`** — counterexample found. The trace lives in `ce/<bug-name>/`. Build fails until the property is fixed or explicitly disabled.
+- **`disabled`** — explicitly skipped. Must include a `reason` field documenting why.
+- **`new`** — property added but not yet run; CI will run it on the next pass and update the status.
+
+The `note` field carries human-readable context that survives across re-runs.
+
+#### Source-mapping in emitted SVA
+
+Every SVA property in the emitted `<widget>.sv` carries a comment pointing back to the RHDL source:
+
+```systemverilog
+// RHDL: crates/rhdl-fpga/src/fifo/write_logic.rs:42 (fsm_invariant)
+//   "after_reset = state != State::Error"
+assert property (@(posedge clock) (state != 2'd3));
+```
+
+When sby's counterexample report references line N of the SystemVerilog, the user can grep for it in the source comments and find the original RHDL attribute. Without this, debugging is brutal.
+
+#### Counterexamples as regression artifacts
+
+When sby finds a counterexample, two things happen:
+
+1. The build fails with a `miette`-decorated error: which property, which RHDL source line, the cycle of the violation, the input sequence that caused it.
+2. The counterexample trace is automatically saved to `prove/<widget>/ce/<auto-name>/`. The user reviews it, gives it a meaningful name (e.g., `ce/full_after_reset_race/`), and commits it.
+
+Even after the bug is fixed, the counterexample stays committed. It becomes a permanent regression test — every future build of the widget proves that this specific failure mode is no longer reachable. This is the most valuable artifact in the whole flow because it's the bug-shaped answer to "what should we never let happen again."
+
+#### Tiered CI strategy
+
+Sby is heavyweight (z3/boolector dependencies, multi-second proofs even for small widgets, multi-minute proofs for non-trivial ones). The right CI integration is tiered:
+
+- **Per-PR**: run a fast subset on widgets touched by the PR. BMC at depth 32, single engine (smtbmc:z3 by default). Targets ~10 seconds per widget. Skipped cleanly if `sby` isn't installed (so contributors without the tool aren't blocked).
+- **Nightly**: run the full proof matrix on all widgets. K-induction where applicable, deeper BMC bounds, multiple engines for cross-checking. Targets ~10 minutes total for a few hundred widgets.
+- **Pre-release**: same as nightly plus exhaustive bounds (BMC depth 1024+, multiple solvers in parallel, fairness-assumption variants).
+
+The CI configuration lives in `crates/Justfile`, with the standard `just prove`, `just prove-fast`, `just prove-full` invocations.
+
+#### `cargo rhdl prove` UX
+
+Mirrors `cargo test`:
+
+```sh
+cargo rhdl prove                              # all widgets, all properties
+cargo rhdl prove --package rhdl-fpga          # one package
+cargo rhdl prove --widget FIFOWriteCore       # one widget
+cargo rhdl prove --property write_address_in_range  # one property
+cargo rhdl prove --bless                      # update proved.toml goldens
+cargo rhdl prove --engine smtbmc:boolector    # override engine
+cargo rhdl prove --depth 256                  # override BMC depth
+cargo rhdl prove --output trace.vcd           # save the witness/counterexample
+cargo rhdl prove --sby-bin /path/to/sby       # custom sby installation
+```
+
+This integrates with the test infrastructure so an agent can drive proofs the same way it drives tests.
+
 ---
 
 ## 8 — Layer 5: built-in bounded model checker

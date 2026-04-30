@@ -82,25 +82,24 @@ pub enum BclkPhase {
     BclkHigh,
 }
 
+/// Bundled internal state for the I²S transmitter (CLAUDE.md §3.1).
+#[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
+pub struct I2sTxExtras {
+    pub bit_idx: Bits<6>,
+    pub lrck_reg: bool,
+    pub shift: Bits<16>,
+    pub l_latched: Bits<16>,
+    pub r_latched: Bits<16>,
+    pub sample_taken_pulse: bool,
+}
+
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
 #[rhdl(dq_no_prefix)]
 #[fsm(state_field = "phase", state_enum = BclkPhase, allow_implicit)]
 /// I²S transmitter (master mode, left-justified, 16-bit stereo).
 pub struct I2sTx {
     phase: dff::DFF<BclkPhase>,
-    /// Bit position within the current stereo sample (0..32).
-    bit_idx: dff::DFF<Bits<6>>,
-    /// L/R select (false = left, true = right).
-    lrck_reg: dff::DFF<bool>,
-    /// Active shift register for the channel currently being transmitted.
-    /// Reloaded from `l_latched` / `r_latched` at each LRCK edge.
-    shift: dff::DFF<Bits<16>>,
-    /// Latched left sample (refreshed when host strobes `sample_load`).
-    l_latched: dff::DFF<Bits<16>>,
-    /// Latched right sample.
-    r_latched: dff::DFF<Bits<16>>,
-    /// One-cycle pulse: a fresh stereo sample was consumed on this LRCK edge.
-    sample_taken_pulse: dff::DFF<bool>,
+    extras: dff::DFF<I2sTxExtras>,
 }
 
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
@@ -142,50 +141,37 @@ impl SynchronousIO for I2sTx {
 pub fn i2s_tx(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let mut d = D::dont_care();
     d.phase = q.phase;
-    d.bit_idx = q.bit_idx;
-    d.lrck_reg = q.lrck_reg;
-    d.shift = q.shift;
-    d.l_latched = q.l_latched;
-    d.r_latched = q.r_latched;
-    d.sample_taken_pulse = false;
+    let mut next = q.extras;
+    next.sample_taken_pulse = false;
 
     if i.sample_load {
-        d.l_latched = i.left_sample.as_unsigned();
-        d.r_latched = i.right_sample.as_unsigned();
+        next.l_latched = i.left_sample.as_unsigned();
+        next.r_latched = i.right_sample.as_unsigned();
     }
 
     if i.bclk_tick {
         match q.phase {
             BclkPhase::BclkLow => {
-                // Rising edge — slave latches.  No internal change beyond
-                // moving to BclkHigh.
                 d.phase = BclkPhase::BclkHigh;
             }
             BclkPhase::BclkHigh => {
-                // Falling edge — shift one bit out, update bit_idx, possibly
-                // transition LRCK and reload the shift register.
-                d.shift = q.shift << bits::<16>(1);
-                if q.bit_idx == bits::<6>(31) {
-                    // End of stereo frame: roll bit_idx, toggle LRCK, reload.
-                    d.bit_idx = bits::<6>(0);
-                    let new_lrck = !q.lrck_reg;
-                    d.lrck_reg = new_lrck;
+                next.shift = q.extras.shift << bits::<16>(1);
+                if q.extras.bit_idx == bits::<6>(31) {
+                    next.bit_idx = bits::<6>(0);
+                    let new_lrck = !q.extras.lrck_reg;
+                    next.lrck_reg = new_lrck;
                     if new_lrck {
-                        // Switching to right channel.
-                        d.shift = q.r_latched;
+                        next.shift = q.extras.r_latched;
                     } else {
-                        // Switching to left channel — the host should reload
-                        // before this point; pulse sample_taken to nudge.
-                        d.shift = q.l_latched;
-                        d.sample_taken_pulse = true;
+                        next.shift = q.extras.l_latched;
+                        next.sample_taken_pulse = true;
                     }
-                } else if q.bit_idx == bits::<6>(15) {
-                    // Mid-frame: switch from left half to right half.
-                    d.bit_idx = q.bit_idx + bits::<6>(1);
-                    d.lrck_reg = true;
-                    d.shift = q.r_latched;
+                } else if q.extras.bit_idx == bits::<6>(15) {
+                    next.bit_idx = q.extras.bit_idx + bits::<6>(1);
+                    next.lrck_reg = true;
+                    next.shift = q.extras.r_latched;
                 } else {
-                    d.bit_idx = q.bit_idx + bits::<6>(1);
+                    next.bit_idx = q.extras.bit_idx + bits::<6>(1);
                 }
                 d.phase = BclkPhase::BclkLow;
             }
@@ -194,13 +180,10 @@ pub fn i2s_tx(cr: ClockReset, i: In, q: Q) -> (Out, D) {
 
     if cr.reset.any() {
         d.phase = BclkPhase::BclkLow;
-        d.bit_idx = bits::<6>(0);
-        d.lrck_reg = false;
-        d.shift = bits::<16>(0);
-        d.l_latched = bits::<16>(0);
-        d.r_latched = bits::<16>(0);
-        d.sample_taken_pulse = false;
+        next = I2sTxExtras::default();
     }
+
+    d.extras = next;
 
     let bclk = match q.phase {
         BclkPhase::BclkHigh => true,
@@ -209,9 +192,9 @@ pub fn i2s_tx(cr: ClockReset, i: In, q: Q) -> (Out, D) {
 
     let mut o = Out::dont_care();
     o.bclk = bclk;
-    o.lrck = q.lrck_reg;
-    o.sd = (q.shift & bits::<16>(0x8000)) != bits::<16>(0);
-    o.sample_taken = q.sample_taken_pulse;
+    o.lrck = q.extras.lrck_reg;
+    o.sd = (q.extras.shift & bits::<16>(0x8000)) != bits::<16>(0);
+    o.sample_taken = q.extras.sample_taken_pulse;
     (o, d)
 }
 
@@ -310,7 +293,7 @@ mod tests {
         let uut = I2sTx::default();
         let desc = uut.descriptor("top".into())?;
         let hdl = desc.hdl()?.modules.pretty();
-        let expect = expect!["10422"];
+        let expect = expect!["7898"];
         expect.assert_eq(&hdl.len().to_string());
         Ok(())
     }
@@ -336,7 +319,7 @@ mod tests {
             .join("vcd")
             .join("i2s_tx");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["2f70376655b67602e7bed82cc2dd3a93e85e5b8dab61fccd58419ade0c177e4e"];
+        let expect = expect!["a95fa957c54882b04cdd10579a5abc94be51d0c9a36fc1367ecd45a9e2b70add"];
         let digest = vcd.dump_to_file(root.join("i2s_tx.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

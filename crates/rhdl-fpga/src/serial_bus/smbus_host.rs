@@ -311,7 +311,7 @@ mod tests {
         let uut = SmbusHost::<4, 16>::new(bits(4), bits(10_000));
         let desc = uut.descriptor("top".into())?;
         let hdl = desc.hdl()?.modules.pretty();
-        let expect = expect!["28930"];
+        let expect = expect!["26592"];
         expect.assert_eq(&hdl.len().to_string());
         Ok(())
     }
@@ -346,7 +346,7 @@ mod tests {
             .join("vcd")
             .join("smbus_host");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["2870db59d6456e375be474ce242f2a16758c465f7134121446c9220463b47210"];
+        let expect = expect!["31613e63a38c34fa747c37f0ce96e3f7ba9b2f92162683cf68530aac37509866"];
         let digest = vcd.dump_to_file(root.join("smbus_host.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

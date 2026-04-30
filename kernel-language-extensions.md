@@ -313,6 +313,15 @@ These are not items deferred to a later phase; they are intentionally outside th
 
 **References (`&`, `&mut`).** The kernel's value-only model is what makes pipelining and retiming sound; introducing aliasing would entangle the IR with lifetime analysis and break the "kernel is a pure function" invariant. Auto-pipelining (per `auto-pipelining-plan.md`) depends on this.
 
+> **Considered and rejected: accepting `&T` / `&[T; N]` in helper-kernel parameters as a macro-layer desugaring.** The argument was: hardware has no references, so `&T` and `T` are operationally identical at the IR; the macro could strip the `&` before lowering and let users / LLMs write idiomatic Rust (`fn helper(buf: &[b8; 16])`). Rejected because the cost/benefit is negative:
+>
+> 1. **Zero new expressiveness.** All `Digital` types are `Copy`, all are bit-encoded and small (the largest realistic `Digital` struct is around 100 bytes). There is no copy-avoidance argument inside a kernel; references and values lower to identical IR.
+> 2. **The benefit is purely cosmetic** — supporting a stylistic preference imported from heap-allocating Rust where references matter for ownership. In the kernel subset, ownership is not a thing.
+> 3. **The cost is a sprawl of new diagnostics** for every adjacent thing that *can't* be allowed: `&mut T` (no, breaks purity), `&[T]` slices (no, runtime length), `&T` in `let` bindings (no, alias tracking), `&T` in return types (no, lifetime), `&T` on top-level kernels (no, framework contract), `&&T` / `&Box<T>` / `&Vec<T>` (rejected by other rules but with confusing messages once `&Bits<8>` works two lines up). Each is a hand-crafted `miette` diagnostic to write, test, and keep consistent.
+> 4. **Two ways to write the same thing** — review burden, style debates, no semantic difference. Strictly negative for code review and for LLM-assisted refactor (which this project values heavily).
+>
+> **Better fix.** Improve the *existing* rejection diagnostic so the user (or LLM) gets it right the first time. A clear span on the `&` plus the message "RHDL kernels pass `Digital` values by value — all `Digital` types are `Copy`. Replace `&T` with `T`" teaches the underlying rule (pass-by-value is the model) instead of papering over it. One-line span fix in the existing rejection path. See `widget-roadmap.md` task for the diagnostic improvement.
+
 **Heap allocation, `Vec`, `Box`, `String`.** No hardware story; would require dynamic resource allocation that doesn't exist on FPGAs. Fixed-size arrays cover the legitimate use cases.
 
 **`dyn Trait` / trait objects.** Dynamic dispatch needs runtime vtables. Static dispatch via monomorphization (which the Tier-2 custom traits would use) is fine.
