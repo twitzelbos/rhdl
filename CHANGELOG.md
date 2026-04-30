@@ -31,6 +31,47 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-04-30 — RHIF prose specification (Phase 1, Level 1)
+
+**Paths:** `doc/rhif-spec/` (new directory; 28 files, ~3100 lines): `README.md`, `overview.md`, `syntax.md`, `type-system.md`, `semantics.md`, `reset-clock.md`, `opcodes/*.md` (one page per `OpCode` variant — 19 files), `invariants/object.md`, `invariants/passes.md`, `invariants/lowering.md`. Plus `rhif-formalization-plan.md` updated to mark Phase 1 shipped.
+
+**Why this, why now:** Per `rhif-formalization-plan.md`, RHIF semantics live today only in the implementation: the `OpCode` enum in `crates/rhdl-core/src/rhif/spec.rs`, the executable VM in `vm.rs`, and the implicit invariants encoded in each pass. A compiler-level contributor — human or LLM agent — currently has to read ~5,000 lines of code and infer the contract from which passes preserve and require what. That is barely tractable for the original maintainer, expensive for a careful human contributor, and not tractable for an LLM agent (who can read but cannot reliably infer cross-pass invariants without a written contract). The plan calls for Phase 1 — a prose specification — as the minimum-viable contract. This PR ships Phase 1.
+
+**Design decisions:**
+
+- **Normative, not descriptive.** Where this spec disagrees with the implementation, the spec defines what the implementation should do. The implementation is buggy until reconciled. This is the "Level 1" framing of the formalization plan — the spec is authoritative.
+- **Companion to `spec.rs`, not replacement.** Both files exist; both are normative for their concern. `spec.rs` defines syntax; `doc/rhif-spec/` defines semantics + invariants. Cross-references go both ways.
+- **Per-opcode pages following a consistent shape.** Each opcode page has: syntax block, type rule (in inference-rule notation), dynamic semantics (small-step), pre-conditions, post-conditions, examples, and cross-references. This shape mirrors the per-opcode advice in the formalization plan §4.1, and it is what an LLM agent rendering "implement opcode X per the spec" actually reads.
+- **Inference-rule notation used sparingly.** The type and semantic rules are stated in concise inference-rule form for the headline cases, supplemented by prose for the per-variant flavours of `Binary` and `Unary`. Heavy formalism would be Level 3+ (PLT Redex / Coq); the right level for prose is "rigorous enough to be unambiguous, light enough that a non-formal-methods reader can follow."
+- **Three invariants documents.** `invariants/object.md` captures the global well-formedness conditions on an `Object` (single-assignment, def-before-use, symbol-table completeness, type-correctness, externals consistency, no nested `Signal`, path well-formedness, literal-read-only). `invariants/passes.md` documents what each pass requires and establishes — one entry per pass in `crates/rhdl-core/src/compiler/rhif_passes/`. `invariants/lowering.md` documents what RHIF → RTL → NTL → Verilog preserves (observation-equivalence on outputs).
+- **Reset / clock as a boundary doc.** `reset-clock.md` documents the exact contract between the kernel-level pure functions of RHIF and the surrounding sequential machinery (`Synchronous`, `Circuit`, `dff::DFF`, the iterator simulator). Compilers that touch RHIF should not need to think about clocks; widget authors that write kernels should not need to read RHIF.
+- **No formalisation beyond Level 1.** Phases 3–5 (PLT Redex, Coq, verified extraction) are research work and not committed engineering. They are sketched in `rhif-formalization-plan.md` for any researcher who wants to build on this Phase 1 deliverable.
+
+**Surprises and gotchas:**
+
+- **`Case` reads only the matching arm's value slot, but `Select` reads both.** This is an important asymmetry at the *opcode* level. At the *kernel-language* level both are "evaluate all branches" because the source-level computation of each arm runs as a sequence of opcodes preceding the `Case` / `Select`. The asymmetry is inside the dispatch step itself. Documented in `opcodes/case.md` and `opcodes/select.md`.
+- **`X`-on-cond produces fully-`X` result.** RHIF's `Select` semantics on `cond = X` is to produce a fully-`X` value of the result kind, not to nondeterministically choose one branch. This matches iverilog's 4-state behaviour and is what users observe; documented inline in `opcodes/select.md` and `semantics.md`.
+- **`AsBits` / `AsSigned` / `Resize` `len = None` is permitted in early IR.** The front-end may emit these casts with unresolved length; a pass (`lower_inferred_casts`) resolves them to `Some(_)` before the VM runs. Reaching the VM with `None` is an ICE. Documented in the cast pages and in `passes.md::lower_inferred_casts`.
+- **`Wrap` is its own opcode despite being expressible as `Enum`.** Documented in `opcodes/wrap.md` — kept distinct so downstream passes can pattern-match on `Some/None/Ok/Err` cheaply.
+- **RHIF kernels are pure; clocks live one level up.** Kernel signature `fn kernel(cr, i, q) → (o, d)` is the boundary; RHIF has no opcode that observes time. The full split is documented in `reset-clock.md`.
+
+**Validation:**
+
+- 28 files written; 19 opcode pages cover every variant of `OpCode`. Cross-checked against `crates/rhdl-core/src/rhif/spec.rs` line-by-line.
+- Type rules and semantic rules cross-checked against `crates/rhdl-core/src/rhif/vm.rs` and `crates/rhdl-core/src/rhif/runtime_ops.rs`.
+- Pass descriptions cross-checked against the file list in `crates/rhdl-core/src/compiler/rhif_passes/`.
+- Per-opcode rules verified against widget snapshots — the widget compiler's canonical lowerings of e.g. `Binary(Add)`, `Index(_, _, [Field(_)])`, `Splice(_, _, [DynamicIndex(_)], _)`, etc., line up with the rules as written.
+- This is a prose spec; the Phase 2 property-based test suite (when shipped) will programmatically verify that the spec and the VM agree.
+
+**Follow-ups:**
+
+- **Phase 2 — property-based VM testing.** Build random-RHIF generators and exhaustive checkers for each invariant in this spec. Target ~4 weeks per the plan §5.
+- **CI drift check.** Per the plan §11 risk mitigations, a CI check that the per-opcode page list matches the `OpCode` enum's variants exactly. Mechanical to wire up; not yet shipped.
+- **Update CLAUDE.md §11.1.** Per the plan §11, the compiler-level PR contract should now require a "what spec section does this PR preserve / introduce" entry in the Justification section. To be added in a follow-up CLAUDE.md edit.
+- **Phases 3–5.** Sketched in the plan, not committed engineering. Open invitation to academic collaborators.
+
+---
+
 ## 2026-04-29 — Modbus RTU slave + master extension — full FC 0x01–0x06, 0x0F, 0x10 coverage
 
 **Paths:** `crates/rhdl-fpga/src/serial_bus/modbus_rtu_slave.rs` (new — 6-state FSM, FC 0x01/0x02/0x03/0x04/0x05/0x06/0x0F/0x10 + exception responses, 16 tests including iverilog), `crates/rhdl-fpga/src/serial_bus/modbus_rtu_master.rs` (rewritten — was FC 0x03-only, now full 8-FC master with response decoding, 9-state FSM, 18 tests including iverilog and 4 closed-loop master↔slave round-trips), `crates/rhdl-fpga/examples/modbus_rtu_{master,slave}.rs` (regenerated traces / FSM diagrams), `crates/rhdl-fpga/doc/modbus_rtu_{master,slave}{,_fsm}.md` (regenerated), `crates/rhdl-fpga/src/serial_bus/mod.rs` (registration), `crates/rhdl-fpga/src/fsm_corpus_regression.rs` (master snapshot re-blessed for 9-state FSM, slave snapshot added).
