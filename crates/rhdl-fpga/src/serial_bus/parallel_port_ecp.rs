@@ -118,29 +118,28 @@ pub enum EcpState {
     RevAckHigh,
 }
 
+/// Bundled internal state for the ECP master (CLAUDE.md §3.1).
+#[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
+pub struct ParallelPortEcpExtras {
+    pub fwd_beat_data: Bits<8>,
+    pub fwd_beat_is_count: bool,
+    pub rev_sample: Bits<8>,
+    pub rev_is_count: bool,
+    pub rev_byte_valid_pulse: bool,
+    pub done_pulse: bool,
+}
+
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
 #[rhdl(dq_no_prefix)]
 #[fsm(state_field = "state", state_enum = EcpState, allow_implicit)]
 /// IEEE 1284 ECP master, fully bidirectional with RLE in both directions.
 pub struct ParallelPortEcp {
+    state: dff::DFF<EcpState>,
+    extras: dff::DFF<ParallelPortEcpExtras>,
     /// RLE encoder owns the forward-path compression.
     rle_enc: RleEncoder,
     /// RLE decoder owns the reverse-path decompression.
     rle_dec: RleDecoder,
-    /// Bidirectional FSM.
-    state: dff::DFF<EcpState>,
-    /// Latched forward-beat data (snapshotted at Idle → FwdDrive).
-    fwd_beat_data: dff::DFF<Bits<8>>,
-    /// Latched forward-beat is_count flag.
-    fwd_beat_is_count: dff::DFF<bool>,
-    /// Latched reverse byte sampled from D[7:0] during the reverse cycle.
-    rev_sample: dff::DFF<Bits<8>>,
-    /// Latched reverse is_count tag (true if HostClk-equivalent indicates count byte;
-    /// in v1 the host-side decoder always treats the device's `host_clk_in_rev` line).
-    rev_is_count: dff::DFF<bool>,
-    /// One-cycle pulse: a fresh reverse byte was captured (sent to RLE decoder).
-    rev_byte_valid_pulse: dff::DFF<bool>,
-    done_pulse: dff::DFF<bool>,
 }
 
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
@@ -203,19 +202,13 @@ impl SynchronousIO for ParallelPortEcp {
 pub fn parallel_port_ecp(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let mut d = D::dont_care();
     d.state = q.state;
-    d.fwd_beat_data = q.fwd_beat_data;
-    d.fwd_beat_is_count = q.fwd_beat_is_count;
-    d.rev_sample = q.rev_sample;
-    d.rev_is_count = q.rev_is_count;
-    d.rev_byte_valid_pulse = false;
-    d.done_pulse = false;
+    let mut next = q.extras;
+    next.rev_byte_valid_pulse = false;
+    next.done_pulse = false;
 
-    // RLE encoder out_ready pulses only at the Idle → FwdDrive edge.
     let mut rle_enc_out_ready = false;
-    // RLE decoder in_valid pulses when we've sampled a reverse byte.
     let mut rle_dec_in_valid = false;
 
-    // Read RLE encoder outputs (registered).
     let beat_data = q.rle_enc.out_data;
     let beat_is_count = q.rle_enc.out_is_count;
     let beat_valid = q.rle_enc.out_valid;
@@ -223,15 +216,13 @@ pub fn parallel_port_ecp(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     match q.state {
         EcpState::Idle => {
             if !i.dir_request {
-                // Forward direction.
                 if beat_valid {
-                    d.fwd_beat_data = beat_data;
-                    d.fwd_beat_is_count = beat_is_count;
+                    next.fwd_beat_data = beat_data;
+                    next.fwd_beat_is_count = beat_is_count;
                     d.state = EcpState::FwdDrive;
                     rle_enc_out_ready = true;
                 }
             } else {
-                // Reverse direction — wait for device PeriphClk low.
                 d.state = EcpState::RevWaitClk;
             }
         }
@@ -246,37 +237,31 @@ pub fn parallel_port_ecp(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         EcpState::FwdRelease => {
             if !i.periph_ack_in {
                 d.state = EcpState::Idle;
-                d.done_pulse = true;
+                next.done_pulse = true;
             }
         }
         EcpState::RevWaitClk => {
-            // Wait for device to assert PeriphClk low.
             if !i.periph_clk_in {
-                // Sample D + the is_count tag.
-                d.rev_sample = i.d_in_rev;
-                d.rev_is_count = i.rev_is_count_in;
+                next.rev_sample = i.d_in_rev;
+                next.rev_is_count = i.rev_is_count_in;
                 d.state = EcpState::RevSample;
             } else if !i.dir_request {
-                // Host changed mind — return to Idle (will switch to forward next cycle).
                 d.state = EcpState::Idle;
             }
         }
         EcpState::RevSample => {
-            // Push the byte into the RLE decoder; transition to ack-high wait.
             rle_dec_in_valid = true;
-            d.rev_byte_valid_pulse = true;
+            next.rev_byte_valid_pulse = true;
             d.state = EcpState::RevAckHigh;
         }
         EcpState::RevAckHigh => {
-            // Wait for device to release PeriphClk.
             if i.periph_clk_in {
                 d.state = EcpState::Idle;
-                d.done_pulse = true;
+                next.done_pulse = true;
             }
         }
     }
 
-    // Wire RLE encoder.
     d.rle_enc = super::super::core::rle_encoder::In {
         in_data: i.in_data,
         in_valid: i.in_valid,
@@ -284,52 +269,44 @@ pub fn parallel_port_ecp(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         out_ready: rle_enc_out_ready,
     };
 
-    // Wire RLE decoder.  in_data and in_is_count come from the latched
-    // reverse sample; in_valid pulses on RevSample state; out_ready is
-    // forwarded from the host.
     d.rle_dec = super::super::core::rle_decoder::In {
-        in_data: q.rev_sample,
-        in_is_count: q.rev_is_count,
+        in_data: q.extras.rev_sample,
+        in_is_count: q.extras.rev_is_count,
         in_valid: rle_dec_in_valid,
         out_ready: i.rev_out_ready,
     };
 
     if cr.reset.any() {
         d.state = EcpState::Idle;
-        d.fwd_beat_data = bits::<8>(0);
-        d.fwd_beat_is_count = false;
-        d.rev_sample = bits::<8>(0);
-        d.rev_is_count = false;
-        d.rev_byte_valid_pulse = false;
-        d.done_pulse = false;
+        next = ParallelPortEcpExtras::default();
     }
+
+    d.extras = next;
 
     let busy = q.state != EcpState::Idle;
 
-    // Forward-direction outputs.
     let fwd_drive_active = match q.state {
         EcpState::FwdDrive | EcpState::FwdWaitAck => true,
         _ => false,
     };
 
-    // Reverse-direction outputs.
     let rev_ack_active = match q.state {
         EcpState::RevSample | EcpState::RevAckHigh => true,
         _ => false,
     };
-    let n_reverse_req = !i.dir_request; // active-low: assert when reverse requested
+    let n_reverse_req = !i.dir_request;
 
     let mut o = Out::dont_care();
-    o.d_out = q.fwd_beat_data;
+    o.d_out = q.extras.fwd_beat_data;
     o.d_oe = fwd_drive_active;
-    o.host_clk = q.fwd_beat_is_count;
+    o.host_clk = q.extras.fwd_beat_is_count;
     o.n_strobe = !fwd_drive_active;
     o.n_reverse_req = n_reverse_req;
     o.n_ack_rev = !rev_ack_active;
     o.rev_out_data = q.rle_dec.out_data;
     o.rev_out_valid = q.rle_dec.out_valid;
     o.busy = busy;
-    o.done = q.done_pulse;
+    o.done = q.extras.done_pulse;
     (o, d)
 }
 
@@ -578,7 +555,7 @@ mod tests {
         let uut = ParallelPortEcp::default();
         let desc = uut.descriptor("top".into())?;
         let hdl = desc.hdl()?.modules.pretty();
-        let expect = expect!["34865"];
+        let expect = expect!["32453"];
         expect.assert_eq(&hdl.len().to_string());
         Ok(())
     }
@@ -645,7 +622,7 @@ mod tests {
             .join("vcd")
             .join("parallel_port_ecp");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["6367747c246a1fd7cb24261706dd82924ede7b1ef944c2b554c9b999f6c0cdd3"];
+        let expect = expect!["95884a1fe3e5460e0409ed83bee682479bf5593b0c983ee25bb9d16c767bd31f"];
         let digest = vcd
             .dump_to_file(root.join("parallel_port_ecp.vcd"))
             .unwrap();

@@ -123,6 +123,20 @@ where
     pub t_wait_max: Bits<T_W>,
 }
 
+/// Bundled internal state for the EPP master (CLAUDE.md §3.1).
+#[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
+pub struct ParallelPortEppExtras<const T_W: usize>
+where
+    rhdl::bits::W<T_W>: BitWidth,
+{
+    pub tick: Bits<T_W>,
+    pub op_reg: EppOp,
+    pub data_reg: Bits<8>,
+    pub data_out_reg: Bits<8>,
+    pub done_pulse: bool,
+    pub timeout_pulse: bool,
+}
+
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
 #[rhdl(dq_no_prefix)]
 #[fsm(state_field = "state", state_enum = EppState, allow_implicit)]
@@ -132,14 +146,7 @@ where
     rhdl::bits::W<T_W>: BitWidth,
 {
     state: dff::DFF<EppState>,
-    /// Per-state tick counter (drives the timeout check in WaitForLow / WaitForHigh).
-    tick: dff::DFF<Bits<T_W>>,
-    op_reg: dff::DFF<EppOp>,
-    data_reg: dff::DFF<Bits<8>>,
-    /// Latched read byte (refreshed at end of each successful read cycle).
-    data_out_reg: dff::DFF<Bits<8>>,
-    done_pulse: dff::DFF<bool>,
-    timeout_pulse: dff::DFF<bool>,
+    extras: dff::DFF<ParallelPortEppExtras<T_W>>,
     timings: Constant<EppTimings<T_W>>,
 }
 
@@ -152,12 +159,7 @@ where
     pub fn new(timings: EppTimings<T_W>) -> Self {
         Self {
             state: dff::DFF::default(),
-            tick: dff::DFF::default(),
-            op_reg: dff::DFF::default(),
-            data_reg: dff::DFF::default(),
-            data_out_reg: dff::DFF::default(),
-            done_pulse: dff::DFF::default(),
-            timeout_pulse: dff::DFF::default(),
+            extras: dff::DFF::default(),
             timings: Constant::new(timings),
         }
     }
@@ -226,92 +228,79 @@ where
 
     let mut d = D::<T_W>::dont_care();
     d.state = q.state;
-    d.tick = q.tick + one_t;
-    d.op_reg = q.op_reg;
-    d.data_reg = q.data_reg;
-    d.data_out_reg = q.data_out_reg;
-    d.done_pulse = false;
-    d.timeout_pulse = false;
+    let mut next = q.extras;
+    next.tick = q.extras.tick + one_t;
+    next.done_pulse = false;
+    next.timeout_pulse = false;
 
-    // Timeout check: triggers if t_wait_max != 0 AND tick has reached the limit.
     let timeout_enabled = t.t_wait_max != zero_t;
-    let timeout_hit = timeout_enabled && (q.tick >= t.t_wait_max);
+    let timeout_hit = timeout_enabled && (q.extras.tick >= t.t_wait_max);
 
     match q.state {
         EppState::Idle => {
-            d.tick = zero_t;
+            next.tick = zero_t;
             if i.start {
-                d.op_reg = i.op;
-                d.data_reg = i.data;
+                next.op_reg = i.op;
+                next.data_reg = i.data;
                 d.state = EppState::AssertStrobe;
-                d.tick = zero_t;
+                next.tick = zero_t;
             }
         }
         EppState::AssertStrobe => {
-            // Single-cycle setup state: data + nWRITE + strobe asserted via
-            // combinational outputs below.  Move on to wait for the device.
             d.state = EppState::WaitForLow;
-            d.tick = zero_t;
+            next.tick = zero_t;
         }
         EppState::WaitForLow => {
-            // Wait for nWAIT low (device acknowledges).
             if !i.wait_n_in {
                 d.state = EppState::ReleaseStrobe;
-                d.tick = zero_t;
+                next.tick = zero_t;
             } else if timeout_hit {
                 d.state = EppState::TimeoutAbort;
-                d.tick = zero_t;
+                next.tick = zero_t;
             }
         }
         EppState::ReleaseStrobe => {
-            // For read cycles, capture the byte the device drove on D.
-            let is_read = (q.op_reg == EppOp::AddrRead) || (q.op_reg == EppOp::DataRead);
+            let is_read = (q.extras.op_reg == EppOp::AddrRead) || (q.extras.op_reg == EppOp::DataRead);
             if is_read {
-                d.data_out_reg = i.d_in;
+                next.data_out_reg = i.d_in;
             }
             d.state = EppState::WaitForHigh;
-            d.tick = zero_t;
+            next.tick = zero_t;
         }
         EppState::WaitForHigh => {
-            // Wait for nWAIT high (device releases).
             if i.wait_n_in {
                 d.state = EppState::Stop;
-                d.tick = zero_t;
+                next.tick = zero_t;
             } else if timeout_hit {
                 d.state = EppState::TimeoutAbort;
-                d.tick = zero_t;
+                next.tick = zero_t;
             }
         }
         EppState::Stop => {
-            d.done_pulse = true;
+            next.done_pulse = true;
             d.state = EppState::Idle;
-            d.tick = zero_t;
+            next.tick = zero_t;
         }
         EppState::TimeoutAbort => {
-            d.timeout_pulse = true;
-            d.done_pulse = true; // host gets exactly one done per start, regardless
+            next.timeout_pulse = true;
+            next.done_pulse = true;
             d.state = EppState::Idle;
-            d.tick = zero_t;
+            next.tick = zero_t;
         }
     }
 
     if cr.reset.any() {
         d.state = EppState::Idle;
-        d.tick = zero_t;
-        d.op_reg = EppOp::AddrWrite;
-        d.data_reg = bits::<8>(0);
-        d.data_out_reg = bits::<8>(0);
-        d.done_pulse = false;
-        d.timeout_pulse = false;
+        next = ParallelPortEppExtras::<T_W>::default();
     }
+
+    d.extras = next;
 
     let busy = q.state != EppState::Idle;
 
-    // Determine cycle direction (high-level) from op_reg.
-    let is_write = (q.op_reg == EppOp::AddrWrite) || (q.op_reg == EppOp::DataWrite);
-    let is_addr = (q.op_reg == EppOp::AddrWrite) || (q.op_reg == EppOp::AddrRead);
+    let is_write = (q.extras.op_reg == EppOp::AddrWrite) || (q.extras.op_reg == EppOp::DataWrite);
+    let is_addr = (q.extras.op_reg == EppOp::AddrWrite) || (q.extras.op_reg == EppOp::AddrRead);
 
-    // Strobes are asserted (low) during the AssertStrobe and WaitForLow states.
     let strobe_active = match q.state {
         EppState::AssertStrobe | EppState::WaitForLow => true,
         _ => false,
@@ -319,7 +308,6 @@ where
     let data_stb = !(strobe_active && !is_addr);
     let addr_stb = !(strobe_active && is_addr);
     let wr_n = !is_write;
-    // d_oe asserted whenever we're driving the bus during a write cycle.
     let d_oe = is_write && busy;
 
     let mut o = Out::dont_care();
@@ -327,11 +315,11 @@ where
     o.addr_stb = addr_stb;
     o.wr_n = wr_n;
     o.d_oe = d_oe;
-    o.d_out = q.data_reg;
-    o.data_out = q.data_out_reg;
+    o.d_out = q.extras.data_reg;
+    o.data_out = q.extras.data_out_reg;
     o.busy = busy;
-    o.done = q.done_pulse;
-    o.timeout = q.timeout_pulse;
+    o.done = q.extras.done_pulse;
+    o.timeout = q.extras.timeout_pulse;
     (o, d)
 }
 
@@ -517,7 +505,7 @@ mod tests {
         let uut = ParallelPortEpp::<8>::new(test_timings());
         let desc = uut.descriptor("top".into())?;
         let hdl = desc.hdl()?.modules.pretty();
-        let expect = expect!["13455"];
+        let expect = expect!["11756"];
         expect.assert_eq(&hdl.len().to_string());
         Ok(())
     }
@@ -543,7 +531,7 @@ mod tests {
             .join("vcd")
             .join("parallel_port_epp");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["9c703d07f5a176a8de6f86269d5c62ffd75227a2d44f3ecd2ad1aab259e23ad0"];
+        let expect = expect!["d078375c78d2f05a49ba6d40ca86e4f85e67655dcbc7d476d1675f8c3e0ef822"];
         let digest = vcd
             .dump_to_file(root.join("parallel_port_epp.vcd"))
             .unwrap();

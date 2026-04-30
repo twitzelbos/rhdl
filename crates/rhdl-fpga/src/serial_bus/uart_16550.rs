@@ -850,7 +850,7 @@ mod tests {
         let uut = Uart16550::<6, 4>::new(bits(8));
         let desc = uut.descriptor("top".into())?;
         let hdl = desc.hdl()?.modules.pretty();
-        let expect = expect!["78819"];
+        let expect = expect!["75559"];
         expect.assert_eq(&hdl.len().to_string());
         Ok(())
     }
@@ -880,7 +880,7 @@ mod tests {
             .join("vcd")
             .join("uart_16550");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["3024820752cdedc2ca61d4316048ee1b92509fa8b11b487cc26711ff4fc25780"];
+        let expect = expect!["656cd823d8741a449bcfe3df4f38ce27b04b81d9ea1bbeb2311762190e119679"];
         let digest = vcd.dump_to_file(root.join("uart_16550.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

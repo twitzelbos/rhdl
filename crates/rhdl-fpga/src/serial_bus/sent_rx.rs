@@ -136,6 +136,38 @@ where
     pub t_sync_max: Bits<T_W>,
 }
 
+/// Bundled internal state for the SENT receiver (CLAUDE.md §3.1).
+#[derive(PartialEq, Debug, Digital, Clone, Copy)]
+pub struct SentRxExtras<const T_W: usize>
+where
+    rhdl::bits::W<T_W>: BitWidth,
+{
+    pub tick: Bits<T_W>,
+    pub prev_in: bool,
+    pub nibble_idx: Bits<4>,
+    pub last_period: Bits<T_W>,
+    pub frame_strobe: bool,
+    pub nibble_strobe: bool,
+    pub valid_pulse: bool,
+}
+
+impl<const T_W: usize> Default for SentRxExtras<T_W>
+where
+    rhdl::bits::W<T_W>: BitWidth,
+{
+    fn default() -> Self {
+        Self {
+            tick: bits::<T_W>(0),
+            prev_in: true, // line idles high
+            nibble_idx: bits::<4>(0),
+            last_period: bits::<T_W>(0),
+            frame_strobe: false,
+            nibble_strobe: false,
+            valid_pulse: false,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
 #[rhdl(dq_no_prefix)]
 #[fsm(state_field = "state", state_enum = SentState, allow_implicit)]
@@ -145,20 +177,7 @@ where
     rhdl::bits::W<T_W>: BitWidth,
 {
     state: dff::DFF<SentState>,
-    /// Tick counter — measures FPGA cycles since the last falling edge.
-    tick: dff::DFF<Bits<T_W>>,
-    /// Previous-cycle value of `sent_in` (for edge detection).
-    prev_in: dff::DFF<bool>,
-    /// 0..7 — index of the nibble within the current frame.
-    nibble_idx: dff::DFF<Bits<4>>,
-    /// Period (FPGA cycles) of the most-recently-completed inter-edge interval.
-    last_period: dff::DFF<Bits<T_W>>,
-    /// One-cycle frame_strobe pulse.
-    frame_strobe: dff::DFF<bool>,
-    /// One-cycle nibble_strobe pulse.
-    nibble_strobe: dff::DFF<bool>,
-    /// One-cycle valid pulse (after the 8th nibble of a frame).
-    valid_pulse: dff::DFF<bool>,
+    extras: dff::DFF<SentRxExtras<T_W>>,
     timings: Constant<SentTimings<T_W>>,
 }
 
@@ -170,13 +189,7 @@ where
     pub fn new(timings: SentTimings<T_W>) -> Self {
         Self {
             state: dff::DFF::default(),
-            tick: dff::DFF::default(),
-            prev_in: dff::DFF::new(true),
-            nibble_idx: dff::DFF::default(),
-            last_period: dff::DFF::default(),
-            frame_strobe: dff::DFF::default(),
-            nibble_strobe: dff::DFF::default(),
-            valid_pulse: dff::DFF::default(),
+            extras: dff::DFF::new(SentRxExtras::default()),
             timings: Constant::new(timings),
         }
     }
@@ -235,66 +248,56 @@ where
 
     let mut d = D::<T_W>::dont_care();
     d.state = q.state;
-    d.tick = q.tick + one_t;
-    d.prev_in = i.sent_in;
-    d.nibble_idx = q.nibble_idx;
-    d.last_period = q.last_period;
-    d.frame_strobe = false;
-    d.nibble_strobe = false;
-    d.valid_pulse = false;
+    let mut next = q.extras;
+    next.tick = q.extras.tick + one_t;
+    next.prev_in = i.sent_in;
+    next.frame_strobe = false;
+    next.nibble_strobe = false;
+    next.valid_pulse = false;
 
-    let falling = q.prev_in && !i.sent_in;
+    let falling = q.extras.prev_in && !i.sent_in;
 
     if falling {
-        // Period is the cycle count from the previous falling edge to this
-        // one.  `q.tick` was reset to 0 on the previous falling edge and
-        // increments each cycle, so it under-reads by 1; add it back here.
-        let period = q.tick + one_t;
-        d.last_period = period;
-        d.tick = zero_t;
+        let period = q.extras.tick + one_t;
+        next.last_period = period;
+        next.tick = zero_t;
 
         let is_sync = period >= t.t_sync_min && period <= t.t_sync_max;
         let is_nibble = period >= t.t_nibble_min && period <= t.t_nibble_max;
 
         if is_sync {
-            d.frame_strobe = true;
-            d.nibble_idx = zero_b4;
+            next.frame_strobe = true;
+            next.nibble_idx = zero_b4;
             d.state = SentState::Collecting;
         } else if is_nibble && q.state == SentState::Collecting {
-            d.nibble_strobe = true;
-            let next_idx = q.nibble_idx + one_b4;
+            next.nibble_strobe = true;
+            let next_idx = q.extras.nibble_idx + one_b4;
             if next_idx == bits::<4>(8) {
-                // 8th nibble of frame: emit valid and return to Idle.
-                d.valid_pulse = true;
-                d.nibble_idx = zero_b4;
+                next.valid_pulse = true;
+                next.nibble_idx = zero_b4;
                 d.state = SentState::Idle;
             } else {
-                d.nibble_idx = next_idx;
+                next.nibble_idx = next_idx;
             }
         } else {
-            // Out-of-range or unexpected period — abandon frame.
             d.state = SentState::Idle;
-            d.nibble_idx = zero_b4;
+            next.nibble_idx = zero_b4;
         }
     }
 
     if cr.reset.any() {
         d.state = SentState::Idle;
-        d.tick = zero_t;
-        d.prev_in = true;
-        d.nibble_idx = zero_b4;
-        d.last_period = zero_t;
-        d.frame_strobe = false;
-        d.nibble_strobe = false;
-        d.valid_pulse = false;
+        next = SentRxExtras::<T_W>::default();
     }
 
+    d.extras = next;
+
     let mut o = Out::<T_W>::dont_care();
-    o.last_period = q.last_period;
-    o.nibble_idx = q.nibble_idx;
-    o.frame_strobe = q.frame_strobe;
-    o.nibble_strobe = q.nibble_strobe;
-    o.valid = q.valid_pulse;
+    o.last_period = q.extras.last_period;
+    o.nibble_idx = q.extras.nibble_idx;
+    o.frame_strobe = q.extras.frame_strobe;
+    o.nibble_strobe = q.extras.nibble_strobe;
+    o.valid = q.extras.valid_pulse;
     o.busy = q.state != SentState::Idle;
     (o, d)
 }
@@ -425,7 +428,7 @@ mod tests {
         let uut = SentRx::<10>::new(test_timings());
         let desc = uut.descriptor("top".into())?;
         let hdl = desc.hdl()?.modules.pretty();
-        let expect = expect!["10563"];
+        let expect = expect!["7917"];
         expect.assert_eq(&hdl.len().to_string());
         Ok(())
     }
@@ -453,7 +456,7 @@ mod tests {
             .join("vcd")
             .join("sent_rx");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["fb8fce095832ec7c866b26f306e1ae1797ff1c34ec11cd5ed8ce5c6a483ae546"];
+        let expect = expect!["689f51054c2e4452582666d678b44925f1d8e110c72c0645926dfbd3409e508c"];
         let digest = vcd.dump_to_file(root.join("sent_rx.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

@@ -88,23 +88,47 @@ pub enum Ps2State {
     Shift,
 }
 
-#[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
+/// Bundled internal state for the PS/2 keyboard receiver
+/// (CLAUDE.md §3.1).
+#[derive(PartialEq, Debug, Digital, Clone, Copy)]
+pub struct Ps2KeyboardExtras {
+    pub shift: Bits<11>,
+    pub bit_idx: Bits<4>,
+    pub clk_prev: bool,
+    pub scan_code: Bits<8>,
+    pub valid_pulse: bool,
+    pub err_pulse: bool,
+}
+
+impl Default for Ps2KeyboardExtras {
+    fn default() -> Self {
+        Self {
+            shift: bits::<11>(0),
+            bit_idx: bits::<4>(0),
+            clk_prev: true, // CLK idles high
+            scan_code: bits::<8>(0),
+            valid_pulse: false,
+            err_pulse: false,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
 #[rhdl(dq_no_prefix)]
 #[fsm(state_field = "state", state_enum = Ps2State, allow_implicit)]
 /// PS/2 keyboard receiver.
 pub struct Ps2Keyboard {
     state: dff::DFF<Ps2State>,
-    /// 11-bit shift register (start + data + parity + stop accumulate here).
-    shift: dff::DFF<Bits<11>>,
-    /// Number of bits shifted in so far (0..11).
-    bit_idx: dff::DFF<Bits<4>>,
-    /// Last-cycle value of `clk_in` for falling-edge detection.
-    clk_prev: dff::DFF<bool>,
-    /// Latched scan code on success.
-    scan_code: dff::DFF<Bits<8>>,
-    /// One-cycle pulses.
-    valid_pulse: dff::DFF<bool>,
-    err_pulse: dff::DFF<bool>,
+    extras: dff::DFF<Ps2KeyboardExtras>,
+}
+
+impl Default for Ps2Keyboard {
+    fn default() -> Self {
+        Self {
+            state: dff::DFF::default(),
+            extras: dff::DFF::new(Ps2KeyboardExtras::default()),
+        }
+    }
 }
 
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
@@ -139,47 +163,36 @@ impl SynchronousIO for Ps2Keyboard {
 pub fn ps2_keyboard(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let mut d = D::dont_care();
     d.state = q.state;
-    d.shift = q.shift;
-    d.bit_idx = q.bit_idx;
-    d.clk_prev = i.clk_in;
-    d.scan_code = q.scan_code;
-    d.valid_pulse = false;
-    d.err_pulse = false;
+    let mut next = q.extras;
+    next.clk_prev = i.clk_in;
+    next.valid_pulse = false;
+    next.err_pulse = false;
 
-    // Falling edge on CLK = sample DATA.
-    let falling = q.clk_prev && !i.clk_in;
+    let falling = q.extras.clk_prev && !i.clk_in;
 
     match q.state {
         Ps2State::Idle => {
             if falling {
-                // First bit (start, expected 0).  Shift it into the LSB.
                 let new_bit: Bits<11> = if i.data_in { bits::<11>(1) } else { bits::<11>(0) };
-                d.shift = new_bit;
-                d.bit_idx = bits::<4>(1);
+                next.shift = new_bit;
+                next.bit_idx = bits::<4>(1);
                 d.state = Ps2State::Shift;
             }
         }
         Ps2State::Shift => {
             if falling {
-                // Shift the new bit into bit position bit_idx.  bit_idx is
-                // Bits<4>; `<<` on Bits accepts a Bits-typed shift amount.
                 let mask: Bits<11> = if i.data_in {
-                    bits::<11>(1) << q.bit_idx
+                    bits::<11>(1) << q.extras.bit_idx
                 } else {
                     bits::<11>(0)
                 };
-                let new_shift = q.shift | mask;
-                d.shift = new_shift;
-                if q.bit_idx == bits::<4>(10) {
-                    // 11 bits accumulated — validate frame.
+                let new_shift = q.extras.shift | mask;
+                next.shift = new_shift;
+                if q.extras.bit_idx == bits::<4>(10) {
                     let start_bit = (new_shift & bits::<11>(0x001)) != bits::<11>(0);
                     let parity_bit = (new_shift & bits::<11>(0x200)) != bits::<11>(0);
                     let stop_bit = (new_shift & bits::<11>(0x400)) != bits::<11>(0);
-                    // Data byte = bits 1..9, shifted down by 1.  Resize down
-                    // to Bits<8> (the upper three bits of new_shift>>1 are
-                    // parity + stop + 0; the resize discards them).
                     let data_byte: Bits<8> = (new_shift >> bits::<11>(1)).resize();
-                    // popcount of data byte (8 single-bit additions).
                     let mut ones: Bits<4> = bits::<4>(0);
                     for k in 0..8 {
                         let bit = (data_byte >> (k as u128)) & bits::<8>(1);
@@ -187,22 +200,21 @@ pub fn ps2_keyboard(cr: ClockReset, i: In, q: Q) -> (Out, D) {
                             ones += bits::<4>(1);
                         }
                     }
-                    // Odd parity: total of (data ones + parity_bit) must be odd.
                     let parity_one: Bits<4> = if parity_bit { bits::<4>(1) } else { bits::<4>(0) };
                     let total = ones + parity_one;
                     let total_is_odd = (total & bits::<4>(1)) != bits::<4>(0);
                     let frame_ok = !start_bit && stop_bit && total_is_odd;
                     if frame_ok {
-                        d.scan_code = data_byte;
-                        d.valid_pulse = true;
+                        next.scan_code = data_byte;
+                        next.valid_pulse = true;
                     } else {
-                        d.err_pulse = true;
+                        next.err_pulse = true;
                     }
                     d.state = Ps2State::Idle;
-                    d.bit_idx = bits::<4>(0);
-                    d.shift = bits::<11>(0);
+                    next.bit_idx = bits::<4>(0);
+                    next.shift = bits::<11>(0);
                 } else {
-                    d.bit_idx = q.bit_idx + bits::<4>(1);
+                    next.bit_idx = q.extras.bit_idx + bits::<4>(1);
                 }
             }
         }
@@ -210,18 +222,15 @@ pub fn ps2_keyboard(cr: ClockReset, i: In, q: Q) -> (Out, D) {
 
     if cr.reset.any() {
         d.state = Ps2State::Idle;
-        d.shift = bits::<11>(0);
-        d.bit_idx = bits::<4>(0);
-        d.clk_prev = true;
-        d.scan_code = bits::<8>(0);
-        d.valid_pulse = false;
-        d.err_pulse = false;
+        next = Ps2KeyboardExtras::default();
     }
 
+    d.extras = next;
+
     let mut o = Out::dont_care();
-    o.scan_code = q.scan_code;
-    o.valid = q.valid_pulse;
-    o.frame_err = q.err_pulse;
+    o.scan_code = q.extras.scan_code;
+    o.valid = q.extras.valid_pulse;
+    o.frame_err = q.extras.err_pulse;
     o.busy = q.state != Ps2State::Idle;
     (o, d)
 }
@@ -364,7 +373,7 @@ mod tests {
         let uut = Ps2Keyboard::default();
         let desc = uut.descriptor("top".into())?;
         let hdl = desc.hdl()?.modules.pretty();
-        let expect = expect!["13844"];
+        let expect = expect!["11548"];
         expect.assert_eq(&hdl.len().to_string());
         Ok(())
     }
@@ -390,7 +399,7 @@ mod tests {
             .join("vcd")
             .join("ps2_keyboard");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["07e288de98676b5a6a7f42042b0d8b6202eb56421a68573317dd7ee939d49142"];
+        let expect = expect!["fdf6b6291809dbdd208fd4f62e6c73cc2391eaea7d221cda0ea5bc3b75138646"];
         let digest = vcd
             .dump_to_file(root.join("ps2_keyboard.vcd"))
             .unwrap();

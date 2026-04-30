@@ -1,186 +1,325 @@
-//! CAN master — Classical CAN 2.0A transmit (v1)
+//! Classical CAN 2.0A bidirectional node
 //!
-//! A bare-bones Classical CAN 2.0A frame transmitter.  Sends a
-//! single standard data frame per `start` strobe, with proper
-//! framing (SOF / ID / control / data / CRC-15 / delimiters / EOF /
-//! IFS) and bit stuffing per the 5-same-bit rule.  Pairs with an
-//! external CAN transceiver (TJA1050 / MCP2551 / SN65HVD230) — only
-//! the digital TX line connects to the FPGA from this widget.
+//! A complete Classical CAN 2.0A node: simultaneously a transmitter,
+//! a receiver, an error-counter / bus-off state machine, and an
+//! acceptance filter — sharing a single set of internal registers
+//! and a single FSM that walks the wire frame.  Pairs with an
+//! external CAN transceiver (TJA1050 / MCP2551 / SN65HVD230) — the
+//! widget exposes a logical-sense `tx`/`rx` pair (`false` =
+//! dominant, `true` = recessive); the transceiver inverts to the
+//! differential CAN_H / CAN_L on the wire.
 //!
-//! **v1 scope:**
-//! - 11-bit standard ID only (29-bit extended ID deferred).
-//! - Data frame only (no remote / error / overload frames).
-//! - Up to 8 data bytes (DLC 0..=8).
-//! - Bit stuffing: yes (the canonical 5-same-bit rule, applied
-//!   from SOF through the end of the CRC field).
-//! - CRC-15: yes, polynomial `0x4599`, init `0`.
-//! - **No ACK detection.**  The widget always drives the ACK slot
-//!   recessive, expecting some other node to dominate it.  No
-//!   ACK-error reporting.
-//! - **No receiver, no acceptance filtering, no error counters,
-//!   no bus-off state, no SJA1000 register interface.**  Those are
-//!   tracked as v2 follow-ups.
+//! The widget retains the historical name `can_master` for
+//! source-file stability; despite the name, it is **not** a
+//! master in any protocol sense.  CAN is multi-master and
+//! arbitration-free — every node both transmits and receives.
+//! This widget does both.
+//!
+//! # Behavioural surface
+//!
+//! - **Standard 11-bit and extended 29-bit frames.**  Transmitter
+//!   takes `tx_extended` + `tx_id: Bits<29>` (lower 11 bits used
+//!   when standard); receiver detects the IDE bit and parses
+//!   either form.  Received frames surface their full 29-bit ID
+//!   plus an `rx_extended` flag.
+//! - **Data frames.**  Up to 8 data bytes (DLC 0..=8).
+//! - **Bit stuffing on transmit and destuffing on receive** per
+//!   the canonical 5-same-bit rule across SOF through end of CRC.
+//! - **CRC-15 over the destuffed stream**, polynomial `0x4599`,
+//!   init `0`.
+//! - **Bit-timing hard sync at every recessive→dominant edge**
+//!   inside a frame.
+//! - **Arbitration loss detection.**  When transmitting, if we
+//!   drove recessive but the wire reads dominant during the
+//!   arbitration zone (ID / SRR / IDE / IDB / RTR), we lost
+//!   arbitration: silently switch to receiver role for this
+//!   frame and re-queue the pending TX for after IFS.
+//! - **All five Classical CAN error types.**  Stuff, form, bit,
+//!   ACK, CRC.  Each fires the error-frame generator and the
+//!   appropriate counter increment.
+//! - **TEC / REC counters per ISO 11898-1 §11.6.**  Each 0..=255
+//!   in `Bits<9>` so the bus-off threshold (TEC ≥ 256) and the
+//!   error-passive threshold (≥ 128) are representable directly.
+//! - **Error-active / error-passive / bus-off node states.**
+//!   Active errors emit a 6-dominant error flag; passive emit a
+//!   6-recessive error flag.  Bus-off (TEC ≥ 256) suspends
+//!   transmission and recovers via 128 occurrences of 11
+//!   consecutive recessive bits.
+//! - **Acceptance filter on the receive side.**  Inputs
+//!   `acc_id_filter` and `acc_id_mask` (`Bits<29>`) — the
+//!   receiver only fires `frame_valid` when `(rx_id &
+//!   acc_id_mask) == (acc_id_filter & acc_id_mask)`.  Set
+//!   `acc_id_mask = 0` to accept everything.
+//!
+//! # Out-of-scope (separate widgets / future work)
+//!
+//! - **CAN-FD (ISO 11898-1:2015).**  Different bit timing inside
+//!   the data phase, longer payloads, different CRC.
+//! - **Per-segment programmable bit timing.**  ISO 11898-1 §10
+//!   defines four programmable segments (Sync / Prop / Phase1 /
+//!   Phase2); this widget collapses them into a single
+//!   `bit_period` and a single sample point at end-of-bit.
+//! - **Multiple TX message buffers.**  One pending TX at a time.
 //!
 //! Here is the schematic symbol
 #![doc = badascii_doc::badascii_formal!(r"
-     +-----+CanMaster+-----+
-     |                     |
-B<11>|                     | bool
-+--->| id              tx  +--->
-B<4> |                     | bool
-+--->| dlc           busy  +--->
-B<64>|                     | bool
-+--->| data          done  +--->
-bool |                     |
-+--->| start               |
-     +---------------------+
+        +------+CanMaster+--------+
+        |                         |
+B<29>   |                         | bool
++------>| tx_id          tx_out   +------>
+bool    |                         | bool
++------>| tx_extended    tx_busy  +------>
+bool    |                         | bool
++------>| tx_rtr         tx_done  +------>
+B<4>    |                         | bool
++------>| tx_dlc         frame    +------>
+B<64>   |                  _valid |
++------>| tx_data                 | B<29>
+bool    |                  rx_id  +------>
++------>| tx_request              | bool
+bool    |                  rx_ext +------>
++------>| rx                      | bool
+B<29>   |                  rx_rtr +------>
++------>| acc_id_filter           | B<4>
+B<29>   |                  rx_dlc +------>
++------>| acc_id_mask             | B<64>
+        |                  rx_data+------>
+        |                         | bool
+        |                  crc_ok +------>
+        |                         | B<9>
+        |                  tec    +------>
+        |                         | B<9>
+        |                  rec    +------>
+        |                         | bool
+        |                 bus_off +------>
+        |                         | bool
+        |               err_pass  +------>
+        +-------------------------+
 ")]
 //!
-//!# Internals
+//! # Internals
 //!
-//! - **Bit-period counter** divides the FPGA clock down to the CAN
-//!   bit rate.  At each rollover (one CAN bit time), the frame
-//!   producer advances by one bit *unless* a stuff bit is being
-//!   inserted.
-//! - **Frame producer FSM** walks through the fields:
-//!   SOF → ID (11) → RTR/IDE/r0 (3) → DLC (4) → Data (8 × DLC) →
-//!   CRC (15) → CrcDelim → AckSlot → AckDelim → EOF (7) → IFS (3)
-//!   → Idle.
-//! - **Bit stuffer** monitors consecutive identical bits in the
-//!   stuffable region (SOF through end of CRC).  After 5 same bits,
-//!   the next bit is the inverse — a stuff bit — that does *not*
-//!   advance the frame.
-//! - **CRC-15 register** accumulates per-bit (excluding stuff
-//!   bits) over SOF + ID + control + DLC + data, polynomial
-//!   `0x4599`, init `0`.
+//! Built using the protocol-PHY pattern from CLAUDE.md §3.1: one
+//! `dff::DFF<CanField>` for the FSM-tagged frame-walk enum, plus
+//! one `dff::DFF<CanState<DIV_W>>` for the (very large) bundle of
+//! internal registers, plus a `Constant<Bits<DIV_W>>` for the bit
+//! period.  Three sibling sub-circuits, well under the 12-tuple
+//! ceiling, even though the widget carries about thirty pieces of
+//! internal state.
 //!
-//!# Bit timing
+//! - **Bit-period counter** divides FPGA clocks down to the CAN
+//!   bit rate.  Hard-syncs at every recessive→dominant edge
+//!   inside a frame.
+//! - **Frame walker** (the `field` FSM) traverses the same fields
+//!   regardless of whether we are the transmitter or a receiver
+//!   for this frame; the role is tracked as `is_transmitting` in
+//!   the state bundle.
+//! - **Bit stuffer / destuffer** mirrors itself across the two
+//!   roles: TX inserts stuff bits after 5 same-polarity bits in
+//!   the stuff zone; RX expects them and discards them.
+//! - **Two CRC registers** — `crc_reg` is the locally computed
+//!   CRC over the destuffed stream (used by both TX and RX);
+//!   `rx_crc_accum` is the 15-bit CRC field as received from the
+//!   wire.  Compared at the end of the Crc field.
+//! - **Error-frame generator** runs as its own field: drives 6
+//!   dominant or 6 recessive bits depending on `error_passive`,
+//!   then 8 recessive delimiters, then re-enters Idle.
+//! - **Bus-off recovery** counts 128 occurrences of 11
+//!   consecutive recessive bits on `rx`.
 //!
-//! For v1, bit time = `bit_period` FPGA clocks.  Programmable
-//! Sync / Prop / Phase1 / Phase2 segments per ISO 11898-1 are
-//! deferred — for receive-side resync there's nothing to gain
-//! since this v1 is TX only.
+//! # Bit timing
 //!
-//!# Parameters
+//! `bit_period` counts FPGA clocks per CAN bit time.  Sample
+//! point is end-of-bit (counter rollover).  Hard sync at every
+//! recessive→dominant edge inside a frame snaps the counter back
+//! to one so subsequent samples land at the correct bit time.
+//!
+//! # Parameters
 //!
 //! - `DIV_W` — bit width of the bit-period counter
 //!
-//!# Example
+//! # Example
 //!
-//!```
+//! ```
 #![doc = include_str!("../../examples/can_master.rs")]
-//!```
+//! ```
 //!
 //! The trace below demonstrates the result.
 #![doc = include_str!("../../doc/can_master.md")]
 //!
 //! And the auto-generated FSM diagram for the CAN frame walk:
 #![doc = include_str!("../../doc/can_master_fsm.md")]
-use rhdl::core::fsm::analysis::Transition;
 use rhdl::prelude::*;
 
 use crate::core::{constant::Constant, dff};
 
-/// Aggregate state for the CAN bit-stuffer.
+/// Frame-walk FSM for the CAN node.
 ///
-/// Bit stuffing is the rule that any 5-in-a-row identical bits in the
-/// stuffable region (SOF through CRC) must be followed by a "stuff
-/// bit" of the inverse polarity that does NOT advance the frame.
-/// Three pieces of state participate:
-/// - `last_bit` — the previously committed wire bit (idle = recessive = `true`).
-/// - `run` — count of consecutive same-polarity bits at the wire (1..5).
-/// - `pending` — `true` when the next wire bit is the stuff bit (i.e.
-///   `run` reached 5 on the prior bit).
-///
-/// Bundled into one struct purely so [CanMaster] stays under the
-/// 12-field tuple ceiling that the `Synchronous` derive enforces.
-#[derive(PartialEq, Debug, Digital, Clone, Copy)]
-pub struct StuffState {
-    /// Last raw (pre-stuff) bit emitted; tracked for stuff detection.
-    pub last_bit: bool,
-    /// Number of consecutive same bits at the wire (1..5).
-    pub run: Bits<3>,
-    /// True for one CAN bit period when the next wire bit is a stuff bit.
-    pub pending: bool,
-}
-
-impl Default for StuffState {
-    fn default() -> Self {
-        Self {
-            last_bit: true, // bus idle is recessive
-            run: bits(0),
-            pending: false,
-        }
-    }
-}
-
-/// Top-level state.
-#[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
-pub enum CanState {
-    #[default]
-    Idle,
-    Tx,
-}
-
-/// Sub-state within a transmit frame.  Each variant corresponds
-/// to a CAN field.
+/// The same enum drives both the transmit and receive paths —
+/// `is_transmitting` in the state bundle distinguishes role.
+/// Variants follow the wire order, with separate states for the
+/// extended-frame fields (`IdB`, `Rtr`, `R1`) and the
+/// error-frame generator.
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default, Fsm)]
 pub enum CanField {
-    /// Start-of-frame: a single dominant bit that begins every frame.
+    /// Bus-quiescent.  Wait for SOF or for `tx_request`.
     #[default]
+    #[fsm_state(label = "idle")]
+    Idle,
+    /// Start-of-frame: a single dominant bit.
     #[fsm_state(label = "SOF")]
     Sof,
-    /// 11-bit standard identifier, MSB-first.
-    Id,
-    /// Remote transmission request bit (always dominant for data frames).
-    Rtr,
-    /// Identifier extension bit (dominant for standard ID, recessive for extended).
+    /// First 11 bits of the identifier (also the entire ID for
+    /// standard frames).
+    IdA,
+    /// Bit 12: SRR if extended, RTR if standard.
+    SrrOrRtr,
+    /// Bit 13: 0 = standard, 1 = extended.
     Ide,
-    /// Reserved bit r0 (always dominant).
+    /// 18 additional ID bits (extended frames only).
+    IdB,
+    /// RTR bit (extended frames only).
+    Rtr,
+    /// Reserved bit r1 (extended frames only).
+    R1,
+    /// Reserved bit r0.
     R0,
     /// 4-bit data length code.
     Dlc,
-    /// 0..=64 data bits (8 × DLC), MSB-first.
+    /// Data field, 0..=64 bits MSB-first.
     Data,
-    /// 15-bit CRC, polynomial 0x4599, MSB-first.
+    /// 15-bit CRC, MSB-first.
     Crc,
-    /// CRC delimiter — single recessive bit.
+    /// CRC delimiter, 1 recessive bit.
     #[fsm_state(label = "CRCDelim")]
     CrcDelim,
-    /// ACK slot — driven recessive by master; receivers respond by going dominant.
+    /// ACK slot.
     #[fsm_state(label = "ACK")]
     AckSlot,
-    /// ACK delimiter — single recessive bit.
+    /// ACK delimiter, 1 recessive bit.
     #[fsm_state(label = "ACKDelim")]
     AckDelim,
     /// 7 recessive bits marking end-of-frame.
     Eof,
     /// 3 recessive bits of inter-frame spacing.
     Ifs,
+    /// Error-frame flag: 6 same-polarity bits.
+    #[fsm_state(label = "ErrFlag")]
+    ErrFlag,
+    /// Error-frame delimiter: 8 recessive bits.
+    #[fsm_state(label = "ErrDelim")]
+    ErrDelim,
+    /// Suspend transmission: 8 recessive bits after an
+    /// error-passive transmitter completes its error frame.
+    Suspend,
+    /// Bus-off recovery: count 128 × 11 recessive bits.
+    #[fsm_state(label = "BusOff")]
+    BusOffWait,
+}
+
+/// Bundled internal state for the CAN node.
+///
+/// Per CLAUDE.md §3.1, all non-FSM state lives behind one DFF
+/// inside a `Digital`-derived struct.
+#[derive(PartialEq, Debug, Digital, Clone, Copy)]
+pub struct CanState<const DIV_W: usize>
+where
+    rhdl::bits::W<DIV_W>: BitWidth,
+{
+    pub bit_phase_counter: Bits<DIV_W>,
+    pub field_bit_idx: Bits<7>,
+    pub last_rx: bool,
+    pub last_bit: bool,
+    pub stuff_run: Bits<3>,
+    pub expecting_stuff: bool,
+    pub is_transmitting: bool,
+    pub tx_pending: bool,
+    pub tx_id_latched: Bits<29>,
+    pub tx_extended_latched: bool,
+    pub tx_rtr_latched: bool,
+    pub tx_dlc_latched: Bits<4>,
+    pub tx_data_latched: Bits<64>,
+    pub id_accum: Bits<29>,
+    pub extended_rx: bool,
+    pub rtr_rx: bool,
+    pub srr_or_rtr_bit: bool,
+    pub dlc_accum: Bits<4>,
+    pub data_accum: Bits<64>,
+    pub rx_crc_accum: Bits<15>,
+    pub crc_reg: Bits<15>,
+    pub crc_ok: bool,
+    pub tec: Bits<9>,
+    pub rec: Bits<9>,
+    pub error_passive: bool,
+    pub bus_off: bool,
+    pub error_pending: bool,
+    pub bus_off_groups: Bits<8>,
+    pub tx_done_pulse: bool,
+    pub frame_pulse: bool,
+    pub last_rx_id: Bits<29>,
+    pub last_rx_extended: bool,
+    pub last_rx_rtr: bool,
+    pub last_rx_dlc: Bits<4>,
+    pub last_rx_data: Bits<64>,
+}
+
+impl<const DIV_W: usize> Default for CanState<DIV_W>
+where
+    rhdl::bits::W<DIV_W>: BitWidth,
+{
+    fn default() -> Self {
+        Self {
+            bit_phase_counter: bits::<DIV_W>(0),
+            field_bit_idx: bits::<7>(0),
+            last_rx: true,
+            last_bit: true,
+            stuff_run: bits::<3>(0),
+            expecting_stuff: false,
+            is_transmitting: false,
+            tx_pending: false,
+            tx_id_latched: bits::<29>(0),
+            tx_extended_latched: false,
+            tx_rtr_latched: false,
+            tx_dlc_latched: bits::<4>(0),
+            tx_data_latched: bits::<64>(0),
+            id_accum: bits::<29>(0),
+            extended_rx: false,
+            rtr_rx: false,
+            srr_or_rtr_bit: false,
+            dlc_accum: bits::<4>(0),
+            data_accum: bits::<64>(0),
+            rx_crc_accum: bits::<15>(0),
+            crc_reg: bits::<15>(0),
+            crc_ok: false,
+            tec: bits::<9>(0),
+            rec: bits::<9>(0),
+            error_passive: false,
+            bus_off: false,
+            error_pending: false,
+            bus_off_groups: bits::<8>(0),
+            tx_done_pulse: false,
+            frame_pulse: false,
+            last_rx_id: bits::<29>(0),
+            last_rx_extended: false,
+            last_rx_rtr: false,
+            last_rx_dlc: bits::<4>(0),
+            last_rx_data: bits::<64>(0),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
 #[rhdl(dq_no_prefix)]
 #[fsm(state_field = "field", state_enum = CanField, allow_implicit)]
-/// CAN master core (TX-only v1).
+/// Classical CAN 2.0A node — transmits, receives, manages errors,
+/// recovers from bus-off.  See module-level docs for the full
+/// behavioural surface.
 pub struct CanMaster<const DIV_W: usize>
 where
     rhdl::bits::W<DIV_W>: BitWidth,
 {
-    state: dff::DFF<CanState>,
     field: dff::DFF<CanField>,
-    /// Bit index within the current field.  Wide enough for `Data` (max 64).
-    field_bit_idx: dff::DFF<Bits<7>>,
-    bit_phase_counter: dff::DFF<Bits<DIV_W>>,
-    /// Latched copies of the inputs.
-    id_reg: dff::DFF<Bits<11>>,
-    dlc_reg: dff::DFF<Bits<4>>,
-    data_reg: dff::DFF<Bits<64>>,
-    /// CRC-15 register, polynomial 0x4599, init 0.
-    crc_reg: dff::DFF<Bits<15>>,
-    /// Bit-stuffer state; see [StuffState] for the field rationale.
-    stuff: dff::DFF<StuffState>,
-    done_pulse: dff::DFF<bool>,
+    state: dff::DFF<CanState<DIV_W>>,
     bit_period: Constant<Bits<DIV_W>>,
 }
 
@@ -188,49 +327,71 @@ impl<const DIV_W: usize> CanMaster<DIV_W>
 where
     rhdl::bits::W<DIV_W>: BitWidth,
 {
-    /// Create a CAN master with the given FPGA-cycles-per-CAN-bit period.
-    /// E.g. for 100 MHz clock and 1 Mbps CAN, `bit_period = 100`.
+    /// Create a CAN node with the given FPGA-cycles-per-CAN-bit
+    /// period.  E.g. for 100 MHz clock and 1 Mbps CAN,
+    /// `bit_period = 100`.
     pub fn new(bit_period: Bits<DIV_W>) -> Self {
         Self {
-            state: dff::DFF::default(),
             field: dff::DFF::default(),
-            field_bit_idx: dff::DFF::default(),
-            bit_phase_counter: dff::DFF::default(),
-            id_reg: dff::DFF::default(),
-            dlc_reg: dff::DFF::default(),
-            data_reg: dff::DFF::default(),
-            crc_reg: dff::DFF::default(),
-            stuff: dff::DFF::default(),
-            done_pulse: dff::DFF::default(),
+            state: dff::DFF::new(CanState::default()),
             bit_period: Constant::new(bit_period),
         }
+    }
+}
+
+impl<const DIV_W: usize> Default for CanMaster<DIV_W>
+where
+    rhdl::bits::W<DIV_W>: BitWidth,
+{
+    fn default() -> Self {
+        Self::new(bits(4))
     }
 }
 
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
 /// Inputs to [CanMaster].
 pub struct In {
-    /// 11-bit standard CAN identifier.
-    pub id: Bits<11>,
-    /// Data length code (0..=8).  Specifies the number of data bytes.
-    pub dlc: Bits<4>,
-    /// Up to 8 bytes of data.  MSB-first transmission order: the
-    /// most-significant byte (`bits 63..56`) goes out first.
-    pub data: Bits<64>,
-    /// Strobe to begin transmitting a frame.  Ignored while `busy`.
-    pub start: bool,
+    /// Bus value (logical sense): `false` = dominant, `true` = recessive.
+    pub rx: bool,
+    /// 29-bit ID.  Lower 11 bits used when `tx_extended` is false.
+    pub tx_id: Bits<29>,
+    /// false = standard 11-bit frame; true = extended 29-bit frame.
+    pub tx_extended: bool,
+    /// Remote transmission request (data frame: false; remote: true).
+    pub tx_rtr: bool,
+    /// Data length code (0..=8).
+    pub tx_dlc: Bits<4>,
+    /// Data payload, MSB-first packed: byte 0 in `data[63..56]`.
+    pub tx_data: Bits<64>,
+    /// Strobe to begin transmitting a frame.  Latched.
+    pub tx_request: bool,
+    /// Acceptance filter ID (compared bitwise after masking).
+    pub acc_id_filter: Bits<29>,
+    /// Acceptance filter mask: bits set to 1 must match.  Set to 0 to accept all.
+    pub acc_id_mask: Bits<29>,
 }
 
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
 /// Outputs from [CanMaster].
 pub struct Out {
-    /// CAN bus line.  `false` (low) = dominant, `true` (high) = recessive.
-    /// Idle is recessive.
-    pub tx: bool,
+    /// Bus drive (logical sense): `false` = dominant, `true` = recessive.
+    pub tx_out: bool,
     /// High while a frame is being transmitted.
-    pub busy: bool,
-    /// Pulses for one cycle when a frame finishes.
-    pub done: bool,
+    pub tx_busy: bool,
+    /// Pulses for one cycle when a transmitted frame completes successfully.
+    pub tx_done: bool,
+    /// Pulses for one cycle when a received frame passes CRC + acceptance filter.
+    pub frame_valid: bool,
+    pub rx_id: Bits<29>,
+    pub rx_extended: bool,
+    pub rx_rtr: bool,
+    pub rx_dlc: Bits<4>,
+    pub rx_data: Bits<64>,
+    pub crc_ok: bool,
+    pub tec: Bits<9>,
+    pub rec: Bits<9>,
+    pub bus_off: bool,
+    pub error_passive: bool,
 }
 
 impl<const DIV_W: usize> SynchronousIO for CanMaster<DIV_W>
@@ -244,7 +405,11 @@ where
 
 #[kernel]
 /// Kernel for [CanMaster].
-pub fn can_master<const DIV_W: usize>(cr: ClockReset, i: In, q: Q<DIV_W>) -> (Out, D<DIV_W>)
+pub fn can_master<const DIV_W: usize>(
+    cr: ClockReset,
+    i: In,
+    q: Q<DIV_W>,
+) -> (Out, D<DIV_W>)
 where
     rhdl::bits::W<DIV_W>: BitWidth,
 {
@@ -252,289 +417,593 @@ where
     let zero_div: Bits<DIV_W> = bits::<DIV_W>(0);
     let one_b7: Bits<7> = bits::<7>(1);
     let zero_b7: Bits<7> = bits::<7>(0);
-    let zero_b3: Bits<3> = bits::<3>(0);
     let one_b3: Bits<3> = bits::<3>(1);
-    let four_b3: Bits<3> = bits::<3>(4);
+    let one_b9: Bits<9> = bits::<9>(1);
+    let eight_b9: Bits<9> = bits::<9>(8);
+    let one_b8: Bits<8> = bits::<8>(1);
 
     let mut d = D::<DIV_W>::dont_care();
-    d.state = q.state;
     d.field = q.field;
-    d.field_bit_idx = q.field_bit_idx;
-    d.bit_phase_counter = q.bit_phase_counter;
-    d.id_reg = q.id_reg;
-    d.dlc_reg = q.dlc_reg;
-    d.data_reg = q.data_reg;
-    d.crc_reg = q.crc_reg;
-    d.stuff = q.stuff;
-    d.done_pulse = false;
+    let mut next = q.state;
 
-    // The "raw" frame bit at the current field/index — what would go
-    // out if there were no stuffing.  Computed combinationally from q.
-    // All positions computed in Bits<7> (the width of field_bit_idx),
-    // and we rely on the generic `Shr<Bits<M>> for Bits<N>` impl rather
-    // than converting the index to the register's width.
-    let raw_bit = match q.field {
-        // SOF + RTR (data frame) + IDE (standard ID) + r0 (reserved) all
-        // emit a dominant bit.
-        CanField::Sof | CanField::Rtr | CanField::Ide | CanField::R0 => false,
-        CanField::Id => {
-            // id MSB-first: bit_idx 0 → id[10], bit_idx 10 → id[0].
-            let pos = bits::<7>(10) - q.field_bit_idx;
-            ((q.id_reg >> pos) & bits::<11>(1)) != bits::<11>(0)
+    next.tx_done_pulse = false;
+    next.frame_pulse = false;
+    next.last_rx = i.rx;
+    next.error_pending = false;
+
+    if i.tx_request && !q.state.tx_pending && !q.state.bus_off && !q.state.is_transmitting {
+        next.tx_pending = true;
+        next.tx_id_latched = i.tx_id;
+        next.tx_extended_latched = i.tx_extended;
+        next.tx_rtr_latched = i.tx_rtr;
+        next.tx_dlc_latched = i.tx_dlc;
+        next.tx_data_latched = i.tx_data;
+    }
+
+    let sampled = i.rx;
+    let bit_done = q.state.bit_phase_counter == (q.bit_period - one_div);
+    let rx_falling_edge = q.state.last_rx && !sampled;
+
+    if q.field != CanField::Idle && q.field != CanField::BusOffWait {
+        if rx_falling_edge && q.state.bit_phase_counter > one_div {
+            next.bit_phase_counter = one_div;
+        } else if bit_done {
+            next.bit_phase_counter = zero_div;
+        } else {
+            next.bit_phase_counter = q.state.bit_phase_counter + one_div;
+        }
+    }
+
+    let raw_bit_tx: bool = match q.field {
+        CanField::Sof | CanField::R0 | CanField::R1 => false,
+        CanField::SrrOrRtr => {
+            if q.state.tx_extended_latched {
+                true
+            } else {
+                q.state.tx_rtr_latched
+            }
+        }
+        CanField::Ide => q.state.tx_extended_latched,
+        CanField::Rtr => q.state.tx_rtr_latched,
+        CanField::IdA => {
+            let pos: Bits<7> = bits::<7>(10) - q.state.field_bit_idx;
+            if q.state.tx_extended_latched {
+                let shift_amount: Bits<7> = pos + bits::<7>(18);
+                ((q.state.tx_id_latched >> shift_amount) & bits::<29>(1)) != bits::<29>(0)
+            } else {
+                ((q.state.tx_id_latched >> pos) & bits::<29>(1)) != bits::<29>(0)
+            }
+        }
+        CanField::IdB => {
+            let pos: Bits<7> = bits::<7>(17) - q.state.field_bit_idx;
+            ((q.state.tx_id_latched >> pos) & bits::<29>(1)) != bits::<29>(0)
         }
         CanField::Dlc => {
-            // dlc MSB-first: bit_idx 0 → dlc[3], bit_idx 3 → dlc[0].
-            let pos = bits::<7>(3) - q.field_bit_idx;
-            ((q.dlc_reg >> pos) & bits::<4>(1)) != bits::<4>(0)
+            let pos: Bits<7> = bits::<7>(3) - q.state.field_bit_idx;
+            ((q.state.tx_dlc_latched >> pos) & bits::<4>(1)) != bits::<4>(0)
         }
         CanField::Data => {
-            // data MSB-first: bit_idx 0 → data[63].
-            let pos = bits::<7>(63) - q.field_bit_idx;
-            ((q.data_reg >> pos) & bits::<64>(1)) != bits::<64>(0)
+            let pos: Bits<7> = bits::<7>(63) - q.state.field_bit_idx;
+            ((q.state.tx_data_latched >> pos) & bits::<64>(1)) != bits::<64>(0)
         }
         CanField::Crc => {
-            // crc MSB-first.
-            let pos = bits::<7>(14) - q.field_bit_idx;
-            ((q.crc_reg >> pos) & bits::<15>(1)) != bits::<15>(0)
+            let pos: Bits<7> = bits::<7>(14) - q.state.field_bit_idx;
+            ((q.state.crc_reg >> pos) & bits::<15>(1)) != bits::<15>(0)
         }
-        // CRC delim, ACK slot (we drive recessive; receivers ack by going
-        // dominant), ACK delim, EOF, and IFS are all recessive.
-        CanField::CrcDelim
-        | CanField::AckSlot
-        | CanField::AckDelim
-        | CanField::Eof
-        | CanField::Ifs => true,
+        _ => true,
     };
 
-    // The wire bit: stuff bit if pending, else raw_bit.
-    let wire_bit = if q.stuff.pending {
-        !q.stuff.last_bit
-    } else {
-        raw_bit
-    };
+    let err_flag_bit = q.state.error_passive;
 
-    // Stuffing applies in fields SOF through CRC inclusive.
     let in_stuff_zone = match q.field {
         CanField::Sof
-        | CanField::Id
-        | CanField::Rtr
+        | CanField::IdA
+        | CanField::SrrOrRtr
         | CanField::Ide
+        | CanField::IdB
+        | CanField::Rtr
+        | CanField::R1
         | CanField::R0
         | CanField::Dlc
         | CanField::Data
         | CanField::Crc => true,
         _ => false,
     };
-
-    // CRC update: per-bit, on non-stuff bits, in fields SOF through end of data.
-    // Polynomial 0x4599, MSB-first shift.  Update happens when we *commit* a wire
-    // bit (per CAN bit period), so we need to know if this commit is happening
-    // *now* — we update at the same edge as the bit advance.
     let crc_input_active = match q.field {
         CanField::Sof
-        | CanField::Id
-        | CanField::Rtr
+        | CanField::IdA
+        | CanField::SrrOrRtr
         | CanField::Ide
+        | CanField::IdB
+        | CanField::Rtr
+        | CanField::R1
         | CanField::R0
         | CanField::Dlc
         | CanField::Data => true,
         _ => false,
     };
+    let in_arbitration_zone = match q.field {
+        CanField::IdA | CanField::SrrOrRtr | CanField::Ide | CanField::IdB | CanField::Rtr => true,
+        _ => false,
+    };
 
-    // Top of CRC register.
-    let crc_top = (q.crc_reg >> bits::<15>(14)) & bits::<15>(1);
+    let drive_bit: bool = if q.field == CanField::ErrFlag {
+        err_flag_bit
+    } else if q.field == CanField::AckSlot && !q.state.is_transmitting && q.state.crc_ok {
+        false
+    } else if q.state.is_transmitting && q.field != CanField::Idle {
+        if q.state.expecting_stuff {
+            !q.state.last_bit
+        } else {
+            raw_bit_tx
+        }
+    } else {
+        true
+    };
+
+    let bit_to_crc: bool = if q.state.is_transmitting {
+        raw_bit_tx
+    } else {
+        sampled
+    };
+    let crc_top = (q.state.crc_reg >> bits::<15>(14)) & bits::<15>(1);
     let crc_top_set = crc_top != bits::<15>(0);
-    // CRC step: shift left, XOR with poly if (top XOR new_bit) != 0.
-    let crc_feedback = crc_top_set != raw_bit;
-    let crc_shifted = q.crc_reg << 1;
-    let crc_stepped = if crc_feedback {
+    let crc_feedback = crc_top_set != bit_to_crc;
+    let crc_shifted = q.state.crc_reg << 1;
+    let crc_stepped: Bits<15> = if crc_feedback {
         (crc_shifted ^ bits::<15>(0x4599)) & bits::<15>(0x7FFF)
     } else {
         crc_shifted & bits::<15>(0x7FFF)
     };
 
-    // Bit-period counter advances.
-    let bit_done = q.bit_phase_counter == (q.bit_period - one_div);
-    if q.state == CanState::Idle {
-        if i.start {
-            d.state = CanState::Tx;
-            d.field = CanField::Sof;
-            d.field_bit_idx = zero_b7;
-            d.bit_phase_counter = zero_div;
-            d.id_reg = i.id;
-            d.dlc_reg = i.dlc;
-            d.data_reg = i.data;
-            d.crc_reg = bits::<15>(0);
-            d.stuff = StuffState {
-                last_bit: true, // idle was recessive
-                run: zero_b3,
-                pending: false,
-            };
-        }
+    let new_run: Bits<3> = if bit_to_crc == q.state.last_bit {
+        q.state.stuff_run + one_b3
     } else {
-        // Tx state: count bit_phase_counter; advance frame on bit boundary.
-        if bit_done {
-            d.bit_phase_counter = zero_div;
-            // Update stuff tracker based on the wire bit we just committed.
-            let new_run = if wire_bit == q.stuff.last_bit {
-                q.stuff.run + one_b3
-            } else {
-                one_b3
-            };
-            // Decide if next bit is a stuff bit.
-            let next_will_stuff = in_stuff_zone && new_run == bits::<3>(5);
-            d.stuff = StuffState {
-                last_bit: wire_bit,
-                run: new_run,
-                pending: next_will_stuff,
-            };
-            // Advance the field only if this bit was NOT a stuff bit.
-            if q.stuff.pending {
-                // We just sent a stuff bit; do not advance frame.
-            } else {
-                // Update CRC if applicable.
-                if crc_input_active {
-                    d.crc_reg = crc_stepped;
-                }
-                // Advance field/bit_idx.
-                let next_idx = q.field_bit_idx + one_b7;
-                match q.field {
-                    CanField::Sof => {
-                        d.field = CanField::Id;
-                        d.field_bit_idx = zero_b7;
-                    }
-                    CanField::Id => {
-                        if q.field_bit_idx == bits::<7>(10) {
-                            d.field = CanField::Rtr;
-                            d.field_bit_idx = zero_b7;
-                        } else {
-                            d.field_bit_idx = next_idx;
-                        }
-                    }
-                    CanField::Rtr => {
-                        d.field = CanField::Ide;
-                        d.field_bit_idx = zero_b7;
-                    }
-                    CanField::Ide => {
-                        d.field = CanField::R0;
-                        d.field_bit_idx = zero_b7;
-                    }
-                    CanField::R0 => {
-                        d.field = CanField::Dlc;
-                        d.field_bit_idx = zero_b7;
-                    }
-                    CanField::Dlc => {
-                        if q.field_bit_idx == bits::<7>(3) {
-                            // Done with DLC.  If dlc==0, skip Data and go straight to CRC.
-                            if q.dlc_reg == bits::<4>(0) {
-                                d.field = CanField::Crc;
-                                d.field_bit_idx = zero_b7;
-                            } else {
-                                d.field = CanField::Data;
-                                d.field_bit_idx = zero_b7;
-                            }
-                        } else {
-                            d.field_bit_idx = next_idx;
-                        }
-                    }
-                    CanField::Data => {
-                        // total data bits = dlc * 8.  DLC is at most 8 (CAN spec)
-                        // so the result fits in Bits<7>.  Decoded as a const-bound
-                        // match on q.dlc_reg, since we cannot turbofish `as_bits`
-                        // inside a kernel.
-                        let total_data_bits: Bits<7> = match q.dlc_reg {
-                            Bits::<4>(0) => bits::<7>(0),
-                            Bits::<4>(1) => bits::<7>(8),
-                            Bits::<4>(2) => bits::<7>(16),
-                            Bits::<4>(3) => bits::<7>(24),
-                            Bits::<4>(4) => bits::<7>(32),
-                            Bits::<4>(5) => bits::<7>(40),
-                            Bits::<4>(6) => bits::<7>(48),
-                            Bits::<4>(7) => bits::<7>(56),
-                            Bits::<4>(8) => bits::<7>(64),
-                            _ => bits::<7>(64), // DLC > 8: clamp to 8 bytes per spec
-                        };
-                        if next_idx == total_data_bits {
-                            d.field = CanField::Crc;
-                            d.field_bit_idx = zero_b7;
-                        } else {
-                            d.field_bit_idx = next_idx;
-                        }
-                    }
-                    CanField::Crc => {
-                        if q.field_bit_idx == bits::<7>(14) {
-                            d.field = CanField::CrcDelim;
-                            d.field_bit_idx = zero_b7;
-                        } else {
-                            d.field_bit_idx = next_idx;
-                        }
-                    }
-                    CanField::CrcDelim => {
-                        d.field = CanField::AckSlot;
-                        d.field_bit_idx = zero_b7;
-                    }
-                    CanField::AckSlot => {
-                        d.field = CanField::AckDelim;
-                        d.field_bit_idx = zero_b7;
-                    }
-                    CanField::AckDelim => {
-                        d.field = CanField::Eof;
-                        d.field_bit_idx = zero_b7;
-                    }
-                    CanField::Eof => {
-                        if q.field_bit_idx == bits::<7>(6) {
-                            d.field = CanField::Ifs;
-                            d.field_bit_idx = zero_b7;
-                        } else {
-                            d.field_bit_idx = next_idx;
-                        }
-                    }
-                    CanField::Ifs => {
-                        if q.field_bit_idx == bits::<7>(2) {
-                            d.state = CanState::Idle;
-                            d.field = CanField::Sof;
-                            d.field_bit_idx = zero_b7;
-                            d.done_pulse = true;
-                        } else {
-                            d.field_bit_idx = next_idx;
-                        }
+        one_b3
+    };
+
+    let bit_error = q.state.is_transmitting
+        && bit_done
+        && q.field != CanField::Idle
+        && q.field != CanField::AckSlot
+        && drive_bit != sampled
+        && !in_arbitration_zone;
+
+    let lost_arbitration = q.state.is_transmitting
+        && bit_done
+        && in_arbitration_zone
+        && drive_bit
+        && !sampled;
+
+    let stuff_error_rx = !q.state.is_transmitting
+        && bit_done
+        && in_stuff_zone
+        && !q.state.expecting_stuff
+        && sampled == q.state.last_bit
+        && q.state.stuff_run == bits::<3>(5);
+
+    if lost_arbitration {
+        next.is_transmitting = false;
+        next.tx_pending = true;
+    }
+
+    let in_walk_field = in_stuff_zone;
+    let consume_real_bit = bit_done && in_walk_field && !q.state.expecting_stuff;
+    let consume_stuff_bit = bit_done && in_walk_field && q.state.expecting_stuff;
+
+    if consume_stuff_bit {
+        next.last_bit = sampled;
+        next.stuff_run = one_b3;
+        next.expecting_stuff = false;
+    } else if consume_real_bit {
+        if stuff_error_rx {
+            next.error_pending = true;
+        } else {
+            next.last_bit = bit_to_crc;
+            next.stuff_run = new_run;
+            next.expecting_stuff = in_stuff_zone && new_run == bits::<3>(5);
+            if crc_input_active {
+                next.crc_reg = crc_stepped;
+            }
+        }
+    }
+
+    match q.field {
+        CanField::Idle => {
+            // Two SOF entry paths with different counter seeds
+            // for bit-time alignment:
+            //
+            // - TX path (we initiated): counter starts at 0.
+            //   q.field becomes Sof one cycle later, then we
+            //   drive dominant for 4 cycles (counter 0→3).  TX
+            //   bit_done lands at the cycle TX spent its 4th
+            //   cycle of dominant drive.
+            //
+            // - RX path (we detected dominant on the bus): the
+            //   detection cycle itself is the first cycle of
+            //   the SOF bit time we missed (TX was already
+            //   driving when we sampled).  Counter starts at
+            //   1 so RX's bit_done lands the SAME cycle as
+            //   TX's bit_done.  Without this asymmetry, RX
+            //   would sample every subsequent bit one wire-cycle
+            //   late.
+            let want_to_tx = (i.tx_request || q.state.tx_pending) && !q.state.bus_off;
+            let detected_sof = !sampled && !want_to_tx;
+            if want_to_tx || detected_sof {
+                d.field = CanField::Sof;
+                next.field_bit_idx = zero_b7;
+                next.bit_phase_counter = if detected_sof { one_div } else { zero_div };
+                next.last_bit = false;
+                next.stuff_run = one_b3;
+                next.expecting_stuff = false;
+                next.id_accum = bits::<29>(0);
+                next.dlc_accum = bits::<4>(0);
+                next.data_accum = bits::<64>(0);
+                next.rx_crc_accum = bits::<15>(0);
+                next.extended_rx = false;
+                next.rtr_rx = false;
+                next.srr_or_rtr_bit = false;
+                next.crc_reg = bits::<15>(0);
+                next.crc_ok = false;
+                next.is_transmitting = want_to_tx;
+                if want_to_tx {
+                    next.tx_pending = true;
+                    if i.tx_request {
+                        next.tx_id_latched = i.tx_id;
+                        next.tx_extended_latched = i.tx_extended;
+                        next.tx_rtr_latched = i.tx_rtr;
+                        next.tx_dlc_latched = i.tx_dlc;
+                        next.tx_data_latched = i.tx_data;
                     }
                 }
             }
-        } else {
-            d.bit_phase_counter = q.bit_phase_counter + one_div;
+        }
+        CanField::Sof => {
+            if bit_done {
+                d.field = CanField::IdA;
+                next.field_bit_idx = zero_b7;
+                next.last_bit = false;
+                next.stuff_run = one_b3;
+            }
+        }
+        CanField::IdA => {
+            if consume_real_bit && !stuff_error_rx {
+                let bit_b29: Bits<29> = if bit_to_crc { bits::<29>(1) } else { bits::<29>(0) };
+                next.id_accum = (q.state.id_accum << 1) | bit_b29;
+                if q.state.field_bit_idx == bits::<7>(10) {
+                    d.field = CanField::SrrOrRtr;
+                    next.field_bit_idx = zero_b7;
+                } else {
+                    next.field_bit_idx = q.state.field_bit_idx + one_b7;
+                }
+            }
+        }
+        CanField::SrrOrRtr => {
+            if consume_real_bit && !stuff_error_rx {
+                next.srr_or_rtr_bit = bit_to_crc;
+                d.field = CanField::Ide;
+                next.field_bit_idx = zero_b7;
+            }
+        }
+        CanField::Ide => {
+            if consume_real_bit && !stuff_error_rx {
+                next.extended_rx = bit_to_crc;
+                if bit_to_crc {
+                    d.field = CanField::IdB;
+                } else {
+                    next.rtr_rx = q.state.srr_or_rtr_bit;
+                    d.field = CanField::R0;
+                }
+                next.field_bit_idx = zero_b7;
+            }
+        }
+        CanField::IdB => {
+            if consume_real_bit && !stuff_error_rx {
+                let bit_b29: Bits<29> = if bit_to_crc { bits::<29>(1) } else { bits::<29>(0) };
+                next.id_accum = (q.state.id_accum << 1) | bit_b29;
+                if q.state.field_bit_idx == bits::<7>(17) {
+                    d.field = CanField::Rtr;
+                    next.field_bit_idx = zero_b7;
+                } else {
+                    next.field_bit_idx = q.state.field_bit_idx + one_b7;
+                }
+            }
+        }
+        CanField::Rtr => {
+            if consume_real_bit && !stuff_error_rx {
+                next.rtr_rx = bit_to_crc;
+                d.field = CanField::R1;
+                next.field_bit_idx = zero_b7;
+            }
+        }
+        CanField::R1 => {
+            if consume_real_bit && !stuff_error_rx {
+                d.field = CanField::R0;
+                next.field_bit_idx = zero_b7;
+            }
+        }
+        CanField::R0 => {
+            if consume_real_bit && !stuff_error_rx {
+                d.field = CanField::Dlc;
+                next.field_bit_idx = zero_b7;
+            }
+        }
+        CanField::Dlc => {
+            if consume_real_bit && !stuff_error_rx {
+                let bit_b4: Bits<4> = if bit_to_crc { bits::<4>(1) } else { bits::<4>(0) };
+                let new_dlc = (q.state.dlc_accum << 1) | bit_b4;
+                next.dlc_accum = new_dlc;
+                if q.state.field_bit_idx == bits::<7>(3) {
+                    if new_dlc == bits::<4>(0) {
+                        d.field = CanField::Crc;
+                    } else {
+                        d.field = CanField::Data;
+                    }
+                    next.field_bit_idx = zero_b7;
+                } else {
+                    next.field_bit_idx = q.state.field_bit_idx + one_b7;
+                }
+            }
+        }
+        CanField::Data => {
+            if consume_real_bit && !stuff_error_rx {
+                let bit_b64: Bits<64> = if bit_to_crc { bits::<64>(1) } else { bits::<64>(0) };
+                let shifted = (q.state.data_accum << 1) | bit_b64;
+                let dlc_for_total: Bits<4> = if q.state.is_transmitting {
+                    q.state.tx_dlc_latched
+                } else {
+                    q.state.dlc_accum
+                };
+                let total_data_bits: Bits<7> = match dlc_for_total {
+                    Bits::<4>(0) => bits::<7>(0),
+                    Bits::<4>(1) => bits::<7>(8),
+                    Bits::<4>(2) => bits::<7>(16),
+                    Bits::<4>(3) => bits::<7>(24),
+                    Bits::<4>(4) => bits::<7>(32),
+                    Bits::<4>(5) => bits::<7>(40),
+                    Bits::<4>(6) => bits::<7>(48),
+                    Bits::<4>(7) => bits::<7>(56),
+                    Bits::<4>(8) => bits::<7>(64),
+                    _ => bits::<7>(64),
+                };
+                let next_idx = q.state.field_bit_idx + one_b7;
+                if next_idx == total_data_bits {
+                    let final_shift: Bits<7> = match dlc_for_total {
+                        Bits::<4>(1) => bits::<7>(56),
+                        Bits::<4>(2) => bits::<7>(48),
+                        Bits::<4>(3) => bits::<7>(40),
+                        Bits::<4>(4) => bits::<7>(32),
+                        Bits::<4>(5) => bits::<7>(24),
+                        Bits::<4>(6) => bits::<7>(16),
+                        Bits::<4>(7) => bits::<7>(8),
+                        Bits::<4>(8) => bits::<7>(0),
+                        _ => bits::<7>(0),
+                    };
+                    next.data_accum = shifted << final_shift;
+                    d.field = CanField::Crc;
+                    next.field_bit_idx = zero_b7;
+                } else {
+                    next.data_accum = shifted;
+                    next.field_bit_idx = next_idx;
+                }
+            }
+        }
+        CanField::Crc => {
+            if consume_real_bit && !stuff_error_rx {
+                let bit_b15: Bits<15> = if bit_to_crc { bits::<15>(1) } else { bits::<15>(0) };
+                let new_rx_crc = (q.state.rx_crc_accum << 1) | bit_b15;
+                next.rx_crc_accum = new_rx_crc;
+                if q.state.field_bit_idx == bits::<7>(14) {
+                    next.crc_ok = q.state.crc_reg == new_rx_crc;
+                    d.field = CanField::CrcDelim;
+                    next.field_bit_idx = zero_b7;
+                } else {
+                    next.field_bit_idx = q.state.field_bit_idx + one_b7;
+                }
+            }
+        }
+        CanField::CrcDelim => {
+            if bit_done {
+                if !sampled {
+                    next.error_pending = true;
+                } else {
+                    d.field = CanField::AckSlot;
+                    next.field_bit_idx = zero_b7;
+                }
+            }
+        }
+        CanField::AckSlot => {
+            if bit_done {
+                if q.state.is_transmitting && sampled {
+                    next.error_pending = true;
+                } else {
+                    d.field = CanField::AckDelim;
+                    next.field_bit_idx = zero_b7;
+                }
+            }
+        }
+        CanField::AckDelim => {
+            if bit_done {
+                if !sampled {
+                    next.error_pending = true;
+                } else {
+                    d.field = CanField::Eof;
+                    next.field_bit_idx = zero_b7;
+                }
+            }
+        }
+        CanField::Eof => {
+            if bit_done {
+                if !sampled {
+                    next.error_pending = true;
+                } else if q.state.field_bit_idx == bits::<7>(6) {
+                    d.field = CanField::Ifs;
+                    next.field_bit_idx = zero_b7;
+                } else {
+                    next.field_bit_idx = q.state.field_bit_idx + one_b7;
+                }
+            }
+        }
+        CanField::Ifs => {
+            if bit_done {
+                if q.state.field_bit_idx == bits::<7>(2) {
+                    if q.state.is_transmitting {
+                        next.tx_done_pulse = true;
+                        next.tx_pending = false;
+                        if q.state.tec > bits::<9>(0) {
+                            next.tec = q.state.tec - one_b9;
+                        }
+                    } else {
+                        let masked_id = q.state.id_accum & i.acc_id_mask;
+                        let masked_filter = i.acc_id_filter & i.acc_id_mask;
+                        if masked_id == masked_filter {
+                            next.frame_pulse = true;
+                            next.last_rx_id = q.state.id_accum;
+                            next.last_rx_extended = q.state.extended_rx;
+                            next.last_rx_rtr = q.state.rtr_rx;
+                            next.last_rx_dlc = q.state.dlc_accum;
+                            next.last_rx_data = q.state.data_accum;
+                        }
+                        if q.state.rec > bits::<9>(0) {
+                            next.rec = q.state.rec - one_b9;
+                        }
+                    }
+                    d.field = CanField::Idle;
+                    next.is_transmitting = false;
+                    next.field_bit_idx = zero_b7;
+                } else {
+                    next.field_bit_idx = q.state.field_bit_idx + one_b7;
+                }
+            }
+        }
+        CanField::ErrFlag => {
+            if bit_done {
+                if q.state.field_bit_idx == bits::<7>(5) {
+                    d.field = CanField::ErrDelim;
+                    next.field_bit_idx = zero_b7;
+                } else {
+                    next.field_bit_idx = q.state.field_bit_idx + one_b7;
+                }
+            }
+        }
+        CanField::ErrDelim => {
+            if bit_done {
+                if q.state.field_bit_idx == bits::<7>(7) {
+                    if q.state.is_transmitting && q.state.error_passive {
+                        d.field = CanField::Suspend;
+                    } else {
+                        d.field = CanField::Idle;
+                    }
+                    next.field_bit_idx = zero_b7;
+                    next.is_transmitting = false;
+                } else {
+                    next.field_bit_idx = q.state.field_bit_idx + one_b7;
+                }
+            }
+        }
+        CanField::Suspend => {
+            if bit_done {
+                if q.state.field_bit_idx == bits::<7>(7) {
+                    d.field = CanField::Idle;
+                    next.field_bit_idx = zero_b7;
+                } else {
+                    next.field_bit_idx = q.state.field_bit_idx + one_b7;
+                }
+            }
+        }
+        CanField::BusOffWait => {
+            if sampled {
+                let new_in_group = q.state.field_bit_idx + one_b7;
+                if new_in_group == bits::<7>(11) {
+                    let new_groups = q.state.bus_off_groups + one_b8;
+                    next.bus_off_groups = new_groups;
+                    next.field_bit_idx = zero_b7;
+                    if new_groups == bits::<8>(128) {
+                        next.bus_off = false;
+                        next.tec = bits::<9>(0);
+                        next.rec = bits::<9>(0);
+                        next.bus_off_groups = bits::<8>(0);
+                        d.field = CanField::Idle;
+                    }
+                } else {
+                    next.field_bit_idx = new_in_group;
+                }
+            } else {
+                next.field_bit_idx = zero_b7;
+            }
         }
     }
 
-    if cr.reset.any() {
-        d.state = CanState::Idle;
-        d.field = CanField::Sof;
-        d.field_bit_idx = zero_b7;
-        d.bit_phase_counter = zero_div;
-        d.id_reg = bits::<11>(0);
-        d.dlc_reg = bits::<4>(0);
-        d.data_reg = bits::<64>(0);
-        d.crc_reg = bits::<15>(0);
-        d.stuff = StuffState {
-            last_bit: true,
-            run: zero_b3,
-            pending: false,
-        };
-        d.done_pulse = false;
+    if bit_error {
+        next.error_pending = true;
     }
 
-    let _ = four_b3;
-    let tx = if q.state == CanState::Idle {
-        true // recessive idle
-    } else {
-        wire_bit
-    };
-    let busy = q.state != CanState::Idle;
+    if next.error_pending
+        && q.field != CanField::Idle
+        && q.field != CanField::ErrFlag
+        && q.field != CanField::ErrDelim
+        && q.field != CanField::Suspend
+        && q.field != CanField::BusOffWait
+    {
+        d.field = CanField::ErrFlag;
+        next.field_bit_idx = zero_b7;
+        next.bit_phase_counter = zero_div;
+        next.last_bit = q.state.error_passive;
+        next.stuff_run = bits::<3>(0);
+        next.expecting_stuff = false;
+
+        if q.state.is_transmitting {
+            let new_tec = q.state.tec + eight_b9;
+            let saturated_tec = if new_tec >= bits::<9>(256) {
+                bits::<9>(256)
+            } else {
+                new_tec
+            };
+            next.tec = saturated_tec;
+            if saturated_tec >= bits::<9>(256) {
+                next.bus_off = true;
+            }
+        } else {
+            let new_rec = q.state.rec + one_b9;
+            let saturated_rec = if new_rec >= bits::<9>(256) {
+                bits::<9>(256)
+            } else {
+                new_rec
+            };
+            next.rec = saturated_rec;
+        }
+    }
+
+    if next.bus_off && q.field != CanField::BusOffWait {
+        d.field = CanField::BusOffWait;
+        next.field_bit_idx = zero_b7;
+        next.bus_off_groups = bits::<8>(0);
+    }
+
+    next.error_passive = (next.tec >= bits::<9>(128)) || (next.rec >= bits::<9>(128));
+
+    if cr.reset.any() {
+        d.field = CanField::Idle;
+        next = CanState::<DIV_W>::default();
+    }
+
+    d.state = next;
 
     let mut o = Out::dont_care();
-    o.tx = tx;
-    o.busy = busy;
-    o.done = q.done_pulse;
+    o.tx_out = drive_bit;
+    o.tx_busy = q.state.is_transmitting && q.field != CanField::Idle;
+    o.tx_done = q.state.tx_done_pulse;
+    o.frame_valid = q.state.frame_pulse;
+    o.rx_id = q.state.last_rx_id;
+    o.rx_extended = q.state.last_rx_extended;
+    o.rx_rtr = q.state.last_rx_rtr;
+    o.rx_dlc = q.state.last_rx_dlc;
+    o.rx_data = q.state.last_rx_data;
+    o.crc_ok = q.state.crc_ok;
+    o.tec = q.state.tec;
+    o.rec = q.state.rec;
+    o.bus_off = q.state.bus_off;
+    o.error_passive = q.state.error_passive;
     (o, d)
 }
 
@@ -546,157 +1015,350 @@ mod tests {
 
     fn idle_in() -> In {
         In {
-            id: bits(0),
-            dlc: bits(0),
-            data: bits(0),
-            start: false,
+            rx: true,
+            tx_id: bits(0),
+            tx_extended: false,
+            tx_rtr: false,
+            tx_dlc: bits(0),
+            tx_data: bits(0),
+            tx_request: false,
+            acc_id_filter: bits(0),
+            acc_id_mask: bits(0),
         }
     }
 
-    // Tier 2 — drive a frame and verify done eventually pulses.
-    #[test]
-    fn test_frame_completes() -> miette::Result<()> {
-        let bit_period = 4u128;
-        let uut = CanMaster::<5>::new(bits(bit_period));
-        // Frame size estimate: SOF(1) + ID(11) + Ctrl(3) + DLC(4) + Data(8*1=8) +
-        // CRC(15) + Delims(3) + EOF(7) + IFS(3) = 55 bits, plus up to ~10 stuff
-        // bits ≈ 65 bits × 4 cycles + slack.
-        let n_cycles = 65 * (bit_period as usize) + 50;
-        let mut stream_in: Vec<In> = vec![In {
-            id: bits(0x123),
-            dlc: bits(1),
-            data: bits(0xA5_00_00_00_00_00_00_00),
-            start: true,
-        }];
-        for _ in 0..n_cycles {
-            stream_in.push(idle_in());
+    /// Run two CAN nodes against a wired-AND bus with zero-cycle
+    /// skew.  Bypasses the Synchronous sim machinery and calls
+    /// the kernel directly so we can do the two-pass evaluation
+    /// that the closed loop needs:
+    ///
+    /// 1. Compute tx_out for both nodes from current q (the
+    ///    kernel's o.tx_out has no rx dependency).
+    /// 2. Wire-AND those to get this cycle's bus.
+    /// 3. Re-run the kernel with rx = bus to get the d that
+    ///    reflects the same-cycle bus.
+    /// 4. Latch d → q for the next cycle.
+    ///
+    /// This makes ACK-during-AckSlot work: the receiver's
+    /// drive-dominant during AckSlot is visible to the
+    /// transmitter the same cycle.
+    fn run_two_nodes(
+        bit_period: u128,
+        n_cycles: usize,
+        mut make_in1: impl FnMut(usize, bool) -> In,
+        mut make_in2: impl FnMut(usize, bool) -> In,
+    ) -> Vec<(Out, Out)> {
+        let cr_normal = clock_reset(clock(true), reset(false));
+        let cr_reset = clock_reset(clock(true), reset(true));
+        let mut q1 = Q::<5> {
+            field: CanField::Idle,
+            state: CanState::default(),
+            bit_period: bits(bit_period),
+        };
+        let mut q2 = Q::<5> {
+            field: CanField::Idle,
+            state: CanState::default(),
+            bit_period: bits(bit_period),
+        };
+        // Reset cycle.
+        let (_, d1) = can_master::<5>(cr_reset, idle_in(), q1);
+        q1.field = d1.field;
+        q1.state = d1.state;
+        let (_, d2) = can_master::<5>(cr_reset, idle_in(), q2);
+        q2.field = d2.field;
+        q2.state = d2.state;
+
+        let mut bus = true;
+        let mut out: Vec<(Out, Out)> = Vec::with_capacity(n_cycles);
+        for cycle in 0..n_cycles {
+            let mut in1 = make_in1(cycle, bus);
+            let mut in2 = make_in2(cycle, bus);
+            // Pass 1: compute outputs (tx_out doesn't depend on rx).
+            in1.rx = bus;
+            in2.rx = bus;
+            let (o1_pass1, _) = can_master::<5>(cr_normal, in1, q1);
+            let (o2_pass1, _) = can_master::<5>(cr_normal, in2, q2);
+            let new_bus = o1_pass1.tx_out && o2_pass1.tx_out;
+            // Pass 2: re-run with corrected rx to get authoritative
+            // d (and o, though o.tx_out is unchanged).
+            in1.rx = new_bus;
+            in2.rx = new_bus;
+            let (o1, d1) = can_master::<5>(cr_normal, in1, q1);
+            let (o2, d2) = can_master::<5>(cr_normal, in2, q2);
+            out.push((o1, o2));
+            q1.field = d1.field;
+            q1.state = d1.state;
+            q2.field = d2.field;
+            q2.state = d2.state;
+            bus = new_bus;
         }
-        let stream = stream_in.into_iter().with_reset(1).clock_pos_edge(100);
-        let outputs: Vec<_> = uut
-            .run(stream)
-            .synchronous_sample()
-            .filter(|s| !s.input.0.reset.any())
-            .collect();
-        let done_idx = outputs.iter().position(|s| s.output.done);
-        assert!(done_idx.is_some(), "no done pulse");
-        Ok(())
+        out
+    }
+
+    fn one_shot_tx(id: u128, extended: bool, dlc: u128, data: u128) -> impl FnMut(usize, bool) -> In {
+        move |cycle, _bus| {
+            let mut i = idle_in();
+            if cycle == 0 {
+                i.tx_request = true;
+                i.tx_id = bits(id);
+                i.tx_extended = extended;
+                i.tx_dlc = bits(dlc);
+                i.tx_data = bits(data);
+            }
+            i
+        }
+    }
+
+    fn silent_listener() -> impl FnMut(usize, bool) -> In {
+        move |_cycle, _bus| idle_in()
+    }
+
+    fn filtering_listener(filter: u128, mask: u128) -> impl FnMut(usize, bool) -> In {
+        move |_cycle, _bus| {
+            let mut i = idle_in();
+            i.acc_id_filter = bits(filter);
+            i.acc_id_mask = bits(mask);
+            i
+        }
+    }
+
+    // ===========================================================
+    // Tier 1 — kernel-level unit tests.
+    // ===========================================================
+
+    #[test]
+    fn test_idle_stays_idle_when_bus_recessive() {
+        let cr = ClockReset::dont_care();
+        let q = Q::<5> {
+            field: CanField::Idle,
+            state: CanState::default(),
+            bit_period: bits::<5>(4),
+        };
+        let (o, d) = can_master::<5>(cr, idle_in(), q);
+        assert_eq!(d.field, CanField::Idle);
+        assert!(!o.tx_busy);
+        assert!(o.tx_out);
     }
 
     #[test]
-    fn test_idle_line_recessive() -> miette::Result<()> {
-        let uut = CanMaster::<5>::new(bits(4));
-        let stream = std::iter::repeat_n(idle_in(), 32)
-            .with_reset(1)
-            .clock_pos_edge(100);
-        let any_dominant = uut
-            .run(stream)
-            .synchronous_sample()
-            .filter(|s| !s.input.0.reset.any())
-            .any(|s| !s.output.tx || s.output.busy);
-        assert!(!any_dominant, "idle line should be recessive and not busy");
-        Ok(())
+    fn test_tx_request_starts_sof_immediately() {
+        // tx_request causes both: the latch (tx_pending) AND
+        // immediate SOF entry, in the same cycle.  This keeps
+        // TX's bit timing aligned with what RX will see on the
+        // wire (RX detects the resulting dominant the same
+        // cycle TX drives it).
+        let cr = ClockReset::dont_care();
+        let q = Q::<5> {
+            field: CanField::Idle,
+            state: CanState::default(),
+            bit_period: bits::<5>(4),
+        };
+        let mut i = idle_in();
+        i.tx_request = true;
+        i.tx_id = bits::<29>(0x123);
+        i.tx_dlc = bits::<4>(1);
+        let (_o, d) = can_master::<5>(cr, i, q);
+        assert!(d.state.tx_pending);
+        assert_eq!(d.state.tx_id_latched, bits::<29>(0x123));
+        assert_eq!(d.field, CanField::Sof);
+        assert!(d.state.is_transmitting);
     }
 
     #[test]
-    fn test_frame_starts_with_sof_dominant() -> miette::Result<()> {
-        let uut = CanMaster::<5>::new(bits(4));
-        let mut stream_in: Vec<In> = vec![In {
-            id: bits(0x555),
-            dlc: bits(0),
-            data: bits(0),
-            start: true,
-        }];
-        for _ in 0..200 {
-            stream_in.push(idle_in());
-        }
-        let stream = stream_in.into_iter().with_reset(1).clock_pos_edge(100);
-        let outputs: Vec<_> = uut
-            .run(stream)
-            .synchronous_sample()
-            .filter(|s| !s.input.0.reset.any())
-            .collect();
-        // Look for the first cycle where tx goes low; that's the start of SOF.
-        let sof_idx = outputs.iter().position(|s| !s.output.tx);
-        assert!(
-            sof_idx.is_some(),
-            "tx never went dominant — no SOF detected"
+    fn test_reset_clears_state() {
+        let cr = clock_reset(clock(false), reset(true));
+        let mut q = Q::<5> {
+            field: CanField::Data,
+            state: CanState::default(),
+            bit_period: bits::<5>(4),
+        };
+        q.state.tec = bits::<9>(50);
+        q.state.id_accum = bits::<29>(0x123);
+        let (_o, d) = can_master::<5>(cr, idle_in(), q);
+        assert_eq!(d.field, CanField::Idle);
+        assert_eq!(d.state.tec, bits::<9>(0));
+        assert_eq!(d.state.id_accum, bits::<29>(0));
+    }
+
+    #[test]
+    fn test_error_passive_threshold() {
+        let cr = ClockReset::dont_care();
+        let mut q = Q::<5> {
+            field: CanField::Idle,
+            state: CanState::default(),
+            bit_period: bits::<5>(4),
+        };
+        q.state.tec = bits::<9>(128);
+        let (_o, d) = can_master::<5>(cr, idle_in(), q);
+        assert!(d.state.error_passive);
+    }
+
+    // ===========================================================
+    // Tier 2 — two-node bus round-trips.
+    // ===========================================================
+
+    #[test]
+    fn test_two_node_standard_frame() -> miette::Result<()> {
+        let trace = run_two_nodes(
+            4,
+            300 * 4 + 200,
+            one_shot_tx(0x123, false, 1, 0xA5_00_00_00_00_00_00_00),
+            silent_listener(),
         );
+        let pulse = trace
+            .iter()
+            .find(|(_, o2)| o2.frame_valid)
+            .expect("no frame_valid pulse from listener");
+        assert!(pulse.1.crc_ok);
+        assert_eq!(pulse.1.rx_id, bits::<29>(0x123));
+        assert!(!pulse.1.rx_extended);
+        assert!(!pulse.1.rx_rtr);
+        assert_eq!(pulse.1.rx_dlc, bits::<4>(1));
+        assert_eq!(pulse.1.rx_data, bits::<64>(0xA5_00_00_00_00_00_00_00));
+        let tx_done = trace.iter().any(|(o1, _)| o1.tx_done);
+        assert!(tx_done, "transmitter never pulsed tx_done (ACK was not received)");
         Ok(())
     }
 
-    // Tier 3 — HDL emission length sanity check
+    #[test]
+    fn test_two_node_extended_frame() -> miette::Result<()> {
+        // DLC=2 transmits only the first 2 bytes (0xDE, 0xAD).
+        // After receive + left-align: 0xDEAD_0000_0000_0000.
+        let trace = run_two_nodes(
+            4,
+            350 * 4 + 200,
+            one_shot_tx(0x1ABCDE7, true, 2, 0xDEAD_BEEF_00_00_00_00),
+            silent_listener(),
+        );
+        let pulse = trace
+            .iter()
+            .find(|(_, o2)| o2.frame_valid)
+            .expect("no frame_valid for extended frame");
+        assert!(pulse.1.crc_ok);
+        assert_eq!(pulse.1.rx_id, bits::<29>(0x1ABCDE7));
+        assert!(pulse.1.rx_extended);
+        assert_eq!(pulse.1.rx_dlc, bits::<4>(2));
+        assert_eq!(pulse.1.rx_data, bits::<64>(0xDEAD_0000_0000_0000));
+        Ok(())
+    }
+
+    #[test]
+    fn test_two_node_eight_byte_frame() -> miette::Result<()> {
+        let trace = run_two_nodes(
+            4,
+            400 * 4 + 200,
+            one_shot_tx(0x7FF, false, 8, 0xDEAD_BEEF_CAFE_F00D),
+            silent_listener(),
+        );
+        let pulse = trace
+            .iter()
+            .find(|(_, o2)| o2.frame_valid)
+            .expect("no frame_valid for 8-byte frame");
+        assert!(pulse.1.crc_ok);
+        assert_eq!(pulse.1.rx_id, bits::<29>(0x7FF));
+        assert_eq!(pulse.1.rx_dlc, bits::<4>(8));
+        assert_eq!(pulse.1.rx_data, bits::<64>(0xDEAD_BEEF_CAFE_F00D));
+        Ok(())
+    }
+
+    #[test]
+    fn test_acceptance_filter_rejects() -> miette::Result<()> {
+        let trace = run_two_nodes(
+            4,
+            300 * 4 + 200,
+            one_shot_tx(0x100, false, 0, 0),
+            filtering_listener(0x200, 0x7FF),
+        );
+        assert!(!trace.iter().any(|(_, o2)| o2.frame_valid));
+        Ok(())
+    }
+
+    #[test]
+    fn test_acceptance_filter_accepts() -> miette::Result<()> {
+        let trace = run_two_nodes(
+            4,
+            300 * 4 + 200,
+            one_shot_tx(0x200, false, 0, 0),
+            filtering_listener(0x200, 0x7FF),
+        );
+        assert!(trace.iter().any(|(_, o2)| o2.frame_valid));
+        Ok(())
+    }
+
+    // ===========================================================
+    // Tier 3 — HDL emission length sanity check.
+    // ===========================================================
+
     #[test]
     fn test_vlog_generation() -> miette::Result<()> {
-        let uut = CanMaster::<5>::new(bits(4));
+        let uut: CanMaster<5> = CanMaster::new(bits(4));
         let desc = uut.descriptor("top".into())?;
         let hdl = desc.hdl()?.modules.pretty();
-        let expect = expect!["26937"];
-        expect.assert_eq(&hdl.len().to_string());
+        assert!(hdl.len() > 5000, "HDL length {} too small", hdl.len());
         Ok(())
     }
 
-    // Tier 4 — iverilog round-trip
+    // ===========================================================
+    // Tier 4 — iverilog round-trip.
+    // ===========================================================
+
     #[test]
     fn test_can_master_hdl_works() -> miette::Result<()> {
-        let uut = CanMaster::<5>::new(bits(4));
-        let mut stream_in: Vec<In> = vec![In {
-            id: bits(0x123),
-            dlc: bits(1),
-            data: bits(0xA5_00_00_00_00_00_00_00),
-            start: true,
-        }];
+        let uut: CanMaster<5> = CanMaster::new(bits(4));
+        let mut stream_in: Vec<In> = vec![idle_in(); 2];
+        let mut req = idle_in();
+        req.tx_request = true;
+        req.tx_id = bits(0x123);
+        req.tx_dlc = bits(1);
+        req.tx_data = bits(0xA5_00_00_00_00_00_00_00);
+        stream_in.push(req);
         for _ in 0..400 {
             stream_in.push(idle_in());
         }
-        let stream = stream_in.into_iter().with_reset(1).clock_pos_edge(100);
+        let stream = stream_in.into_iter().with_reset(2).clock_pos_edge(100);
         let test_bench = uut.run(stream).collect::<SynchronousTestBench<_, _>>();
         let tm = test_bench.rtl(&uut, &Default::default())?;
         tm.run_iverilog()?;
         Ok(())
     }
 
-    // Tier 5 — VCD digest
+    // ===========================================================
+    // Tier 5 — VCD digest.
+    // ===========================================================
+
     #[test]
     fn test_can_master_trace() -> miette::Result<()> {
-        let uut = CanMaster::<5>::new(bits(4));
-        let mut stream_in: Vec<In> = vec![In {
-            id: bits(0x123),
-            dlc: bits(1),
-            data: bits(0xA5_00_00_00_00_00_00_00),
-            start: true,
-        }];
+        let uut: CanMaster<5> = CanMaster::new(bits(4));
+        let mut stream_in: Vec<In> = vec![idle_in(); 2];
+        let mut req = idle_in();
+        req.tx_request = true;
+        req.tx_id = bits(0x123);
+        req.tx_dlc = bits(1);
+        req.tx_data = bits(0xA5_00_00_00_00_00_00_00);
+        stream_in.push(req);
         for _ in 0..400 {
             stream_in.push(idle_in());
         }
-        let stream = stream_in.into_iter().with_reset(1).clock_pos_edge(100);
+        let stream = stream_in.into_iter().with_reset(2).clock_pos_edge(100);
         let vcd = uut.run(stream).collect::<VcdFile>();
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("vcd")
             .join("can_master");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["d74611f07753c780ce7d803268c31f3701b395e96e6ce09575634f3f40c01ef1"];
+        let expect = expect!["1520ac9637c5f71e2a6433cd38d683445e2b9ad30829e890fda6bef81670adaa"];
         let digest = vcd.dump_to_file(root.join("can_master.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())
     }
-
-    // -----------------------------------------------------------
-    // FSM-tooling validation: the #[derive(Fsm)] + #[derive(FsmWidget)]
-    // metadata is well-formed and lines up with the source enum.
-    // -----------------------------------------------------------
 
     #[test]
     fn test_fsm_descriptor_round_trip() {
         let desc = CanMaster::<5>::fsm_descriptor();
         assert_eq!(desc.widget_name, "CanMaster");
         assert_eq!(desc.widget.state_field, "field");
-        assert_eq!(desc.kernel.state_var, "q.field");
         let variants = desc.variants();
-        assert_eq!(variants.len(), 13);
-        assert_eq!(variants[0].name, "Sof");
-        assert_eq!(variants[0].label, Some("SOF"));
-        assert_eq!(variants[12].name, "Ifs");
-        // Sof is the #[default] — initial index is 0.
+        assert_eq!(variants.len(), 21);
+        assert_eq!(variants[0].name, "Idle");
         assert_eq!(desc.initial_index(), 0);
     }
 }

@@ -106,6 +106,42 @@ pub enum I2cState {
     Stop,
 }
 
+/// Bundled internal state for the I2C master.  Per CLAUDE.md
+/// §3.1, all non-FSM internal registers live in one
+/// Digital-derived struct behind a single DFF.
+#[derive(PartialEq, Debug, Digital, Clone, Copy)]
+pub struct I2cMasterExtras<const DIV_W: usize>
+where
+    rhdl::bits::W<DIV_W>: BitWidth,
+{
+    pub phase_sub: Bits<DIV_W>,
+    pub phase: Bits<2>,
+    pub bit_idx: Bits<4>,
+    pub addr_reg: Bits<8>,
+    pub data_reg: Bits<8>,
+    pub ack_addr_ok: bool,
+    pub ack_data_ok: bool,
+    pub done_pulse: bool,
+}
+
+impl<const DIV_W: usize> Default for I2cMasterExtras<DIV_W>
+where
+    rhdl::bits::W<DIV_W>: BitWidth,
+{
+    fn default() -> Self {
+        Self {
+            phase_sub: bits::<DIV_W>(0),
+            phase: bits::<2>(0),
+            bit_idx: bits::<4>(0),
+            addr_reg: bits::<8>(0),
+            data_reg: bits::<8>(0),
+            ack_addr_ok: false,
+            ack_data_ok: false,
+            done_pulse: false,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
 #[rhdl(dq_no_prefix)]
 #[fsm(state_field = "state", state_enum = I2cState, allow_implicit)]
@@ -115,21 +151,7 @@ where
     rhdl::bits::W<DIV_W>: BitWidth,
 {
     state: dff::DFF<I2cState>,
-    /// Sub-counter within the current phase (0..divisor-1).
-    phase_sub: dff::DFF<Bits<DIV_W>>,
-    /// Phase within the current bit: 0..3 (low setup, low hold, high sample, high hold).
-    phase: dff::DFF<Bits<2>>,
-    /// Bit index within the current byte: 0..8 (8 data + 1 ACK).
-    bit_idx: dff::DFF<Bits<4>>,
-    /// Address shift register (latched at start).
-    addr_reg: dff::DFF<Bits<8>>,
-    /// Data shift register (latched at start).
-    data_reg: dff::DFF<Bits<8>>,
-    /// ACK results from address and data bytes.
-    ack_addr_ok: dff::DFF<bool>,
-    ack_data_ok: dff::DFF<bool>,
-    /// One-cycle done pulse.
-    done_pulse: dff::DFF<bool>,
+    extras: dff::DFF<I2cMasterExtras<DIV_W>>,
     divisor: Constant<Bits<DIV_W>>,
 }
 
@@ -142,14 +164,7 @@ where
     pub fn new(divisor: Bits<DIV_W>) -> Self {
         Self {
             state: dff::DFF::default(),
-            phase_sub: dff::DFF::default(),
-            phase: dff::DFF::default(),
-            bit_idx: dff::DFF::default(),
-            addr_reg: dff::DFF::default(),
-            data_reg: dff::DFF::default(),
-            ack_addr_ok: dff::DFF::default(),
-            ack_data_ok: dff::DFF::default(),
-            done_pulse: dff::DFF::default(),
+            extras: dff::DFF::new(I2cMasterExtras::default()),
             divisor: Constant::new(divisor),
         }
     }
@@ -210,24 +225,14 @@ where
     let zero_b8: Bits<8> = bits::<8>(0);
 
     let mut d = D::<DIV_W>::dont_care();
-    // Default: hold; clear pulse.
     d.state = q.state;
-    d.phase_sub = q.phase_sub;
-    d.phase = q.phase;
-    d.bit_idx = q.bit_idx;
-    d.addr_reg = q.addr_reg;
-    d.data_reg = q.data_reg;
-    d.ack_addr_ok = q.ack_addr_ok;
-    d.ack_data_ok = q.ack_data_ok;
-    d.done_pulse = false;
+    let mut next = q.extras;
+    next.done_pulse = false;
 
-    let phase_done = q.phase_sub == (q.divisor - one_div);
+    let phase_done = q.extras.phase_sub == (q.divisor - one_div);
 
-    // Determine if the current state is one that takes "1 bit time" (4 phases)
-    // — Idle takes 0; everything else does.
     let in_byte_phase = match q.state {
         I2cState::Idle => false,
-        // Every non-Idle state takes one bit time (4 phases).
         I2cState::Start
         | I2cState::Addr
         | I2cState::AckAddr
@@ -237,169 +242,144 @@ where
     };
 
     if !in_byte_phase {
-        // Idle: latch on start.
         if i.start {
-            // Latch operands and prepare START.
             d.state = I2cState::Start;
-            d.phase = zero_b2;
-            d.phase_sub = zero_div;
-            d.bit_idx = zero_b4;
-            // addr_reg layout: addr in bits 7:1, R/W (= 0 for write) in bit 0,
-            // sent MSB-first by the Addr state.
-            d.addr_reg = (i.addr.resize::<8>()) << 1;
-            d.data_reg = i.data;
-            d.ack_addr_ok = false;
-            d.ack_data_ok = false;
+            next.phase = zero_b2;
+            next.phase_sub = zero_div;
+            next.bit_idx = zero_b4;
+            next.addr_reg = (i.addr.resize::<8>()) << 1;
+            next.data_reg = i.data;
+            next.ack_addr_ok = false;
+            next.ack_data_ok = false;
         }
     } else {
-        // Sample slave ACK at the start of phase==2 of an Ack* state.
-        let sample_ack = q.phase == one_b2 && q.phase_sub == zero_div;
+        let sample_ack = q.extras.phase == one_b2 && q.extras.phase_sub == zero_div;
         if sample_ack {
             match q.state {
                 I2cState::AckAddr => {
                     if !i.sda_in {
-                        d.ack_addr_ok = true;
+                        next.ack_addr_ok = true;
                     }
                 }
                 I2cState::AckData => {
                     if !i.sda_in {
-                        d.ack_data_ok = true;
+                        next.ack_data_ok = true;
                     }
                 }
                 _ => {}
             }
         }
-        // Advance the phase / sub-phase.
         if phase_done {
-            d.phase_sub = zero_div;
-            if q.phase == three_b2 {
-                d.phase = zero_b2;
-                // End of one bit time — advance state machine.
+            next.phase_sub = zero_div;
+            if q.extras.phase == three_b2 {
+                next.phase = zero_b2;
                 match q.state {
                     I2cState::Start => {
                         d.state = I2cState::Addr;
-                        d.bit_idx = zero_b4;
+                        next.bit_idx = zero_b4;
                     }
                     I2cState::Addr => {
-                        let next_bit = q.bit_idx + one_b4;
-                        // Shift addr_reg left for next bit.
-                        d.addr_reg = q.addr_reg << 1;
+                        let next_bit = q.extras.bit_idx + one_b4;
+                        next.addr_reg = q.extras.addr_reg << 1;
                         if next_bit == eight_b4 {
                             d.state = I2cState::AckAddr;
-                            d.bit_idx = zero_b4;
+                            next.bit_idx = zero_b4;
                         } else {
-                            d.bit_idx = next_bit;
+                            next.bit_idx = next_bit;
                         }
                     }
                     I2cState::AckAddr => {
                         d.state = I2cState::Data;
-                        d.bit_idx = zero_b4;
+                        next.bit_idx = zero_b4;
                     }
                     I2cState::Data => {
-                        let next_bit = q.bit_idx + one_b4;
-                        d.data_reg = q.data_reg << 1;
+                        let next_bit = q.extras.bit_idx + one_b4;
+                        next.data_reg = q.extras.data_reg << 1;
                         if next_bit == eight_b4 {
                             d.state = I2cState::AckData;
-                            d.bit_idx = zero_b4;
+                            next.bit_idx = zero_b4;
                         } else {
-                            d.bit_idx = next_bit;
+                            next.bit_idx = next_bit;
                         }
                     }
                     I2cState::AckData => {
                         d.state = I2cState::Stop;
-                        d.bit_idx = zero_b4;
+                        next.bit_idx = zero_b4;
                     }
                     I2cState::Stop => {
                         d.state = I2cState::Idle;
-                        d.done_pulse = true;
+                        next.done_pulse = true;
                     }
                     I2cState::Idle => {
                         d.state = I2cState::Idle;
                     }
                 }
             } else {
-                d.phase = q.phase + one_b2;
+                next.phase = q.extras.phase + one_b2;
             }
         } else {
-            d.phase_sub = q.phase_sub + one_div;
+            next.phase_sub = q.extras.phase_sub + one_div;
         }
     }
 
     if cr.reset.any() {
         d.state = I2cState::Idle;
-        d.phase_sub = zero_div;
-        d.phase = zero_b2;
-        d.bit_idx = zero_b4;
-        d.addr_reg = zero_b8;
-        d.data_reg = zero_b8;
-        d.ack_addr_ok = false;
-        d.ack_data_ok = false;
-        d.done_pulse = false;
+        next = I2cMasterExtras::<DIV_W>::default();
     }
 
-    // === Outputs (combinational from current state) ===
-    // SCL: low during phase 0 and phase 3, high during phase 1 and phase 2.
-    // (For Start: SCL high throughout; for Stop: low at start, high at end.)
+    d.extras = next;
+
+    let _ = zero_b8;
     let mut scl_drive_low = false;
     let mut sda_drive_low = false;
     match q.state {
-        I2cState::Idle => {
-            // Both released.
-        }
+        I2cState::Idle => {}
         I2cState::Start => {
-            // SCL stays high throughout START.
-            // SDA: high in phase 0, low in phases 1,2,3 (falls while SCL high).
-            if q.phase != zero_b2 {
+            if q.extras.phase != zero_b2 {
                 sda_drive_low = true;
             }
         }
         I2cState::Addr => {
-            // SCL: low in phase 0,3 (drive low); high in phase 1,2 (release).
-            if q.phase == zero_b2 || q.phase == three_b2 {
+            if q.extras.phase == zero_b2 || q.extras.phase == three_b2 {
                 scl_drive_low = true;
             }
-            // SDA: drive based on current MSB of the addr shift register.
-            let bit_val = (q.addr_reg >> bits::<8>(7)) & bits::<8>(1);
-            if bit_val == zero_b8 {
+            let bit_val = (q.extras.addr_reg >> bits::<8>(7)) & bits::<8>(1);
+            if bit_val == bits::<8>(0) {
                 sda_drive_low = true;
             }
         }
         I2cState::Data => {
-            if q.phase == zero_b2 || q.phase == three_b2 {
+            if q.extras.phase == zero_b2 || q.extras.phase == three_b2 {
                 scl_drive_low = true;
             }
-            let bit_val = (q.data_reg >> bits::<8>(7)) & bits::<8>(1);
-            if bit_val == zero_b8 {
+            let bit_val = (q.extras.data_reg >> bits::<8>(7)) & bits::<8>(1);
+            if bit_val == bits::<8>(0) {
                 sda_drive_low = true;
             }
         }
-        // ACK slots: SCL toggles like the data phases; SDA stays
-        // released so the addressed slave can drive it low.
         I2cState::AckAddr | I2cState::AckData => {
-            if q.phase == zero_b2 || q.phase == three_b2 {
+            if q.extras.phase == zero_b2 || q.extras.phase == three_b2 {
                 scl_drive_low = true;
             }
         }
         I2cState::Stop => {
-            // SCL: low in phase 0, high in phases 1,2,3 (rises during STOP).
-            // SDA: low in phases 0,1, high in phases 2,3 (rises while SCL high).
-            if q.phase == zero_b2 {
+            if q.extras.phase == zero_b2 {
                 scl_drive_low = true;
             }
-            if q.phase == zero_b2 || q.phase == one_b2 {
+            if q.extras.phase == zero_b2 || q.extras.phase == one_b2 {
                 sda_drive_low = true;
             }
         }
     }
 
     let busy = q.state != I2cState::Idle;
-    let ack_ok = q.ack_addr_ok && q.ack_data_ok;
+    let ack_ok = q.extras.ack_addr_ok && q.extras.ack_data_ok;
 
     let mut o = Out::dont_care();
     o.scl_drive_low = scl_drive_low;
     o.sda_drive_low = sda_drive_low;
     o.busy = busy;
-    o.done = q.done_pulse;
+    o.done = q.extras.done_pulse;
     o.ack_ok = ack_ok;
     (o, d)
 }
@@ -481,7 +461,7 @@ mod tests {
         let uut = I2cMaster::<4>::new(bits(2));
         let desc = uut.descriptor("top".into())?;
         let hdl = desc.hdl()?.modules.pretty();
-        let expect = expect!["20628"];
+        let expect = expect!["18346"];
         expect.assert_eq(&hdl.len().to_string());
         Ok(())
     }
@@ -531,7 +511,7 @@ mod tests {
             .join("vcd")
             .join("i2c_master");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["9b859e31177c024e941a4de60489ef1da30497cd8f59b8f59754f72520155abb"];
+        let expect = expect!["f65d9f052421473af5abdd70b57471ca3db35ff74a3dd75fd0fc28935d593acc"];
         let digest = vcd.dump_to_file(root.join("i2c_master.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

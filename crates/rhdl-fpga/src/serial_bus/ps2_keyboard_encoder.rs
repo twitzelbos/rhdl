@@ -95,6 +95,20 @@ pub enum KbdEncState {
     WaitTxDone,
 }
 
+/// Bundled internal state for the PS/2 keyboard encoder
+/// (CLAUDE.md §3.1).  The FSM-tagged enum stays in its own DFF;
+/// the wire-layer TX is a real composed sub-circuit and stays
+/// sibling-level.  Everything else lives here.
+#[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
+pub struct Ps2KeyboardEncoderExtras {
+    pub scancode_q: Bits<8>,
+    pub is_break: bool,
+    pub is_extended: bool,
+    pub sent_e0: bool,
+    pub sent_f0: bool,
+    pub pending_state: KbdEncState,
+}
+
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
 #[rhdl(dq_no_prefix)]
 #[fsm(state_field = "state", state_enum = KbdEncState, allow_implicit)]
@@ -104,20 +118,9 @@ where
     rhdl::bits::W<DIV_W>: BitWidth,
 {
     state: dff::DFF<KbdEncState>,
-    /// Latched event: the scancode being transmitted.
-    scancode_q: dff::DFF<Bits<8>>,
-    /// True if the latched event is a key release.
-    is_break: dff::DFF<bool>,
-    /// True if the latched event is an extended key.
-    is_extended: dff::DFF<bool>,
-    /// Where in the sequence we are: did we send E0?  Did we send F0?
-    sent_e0: dff::DFF<bool>,
-    sent_f0: dff::DFF<bool>,
+    extras: dff::DFF<Ps2KeyboardEncoderExtras>,
     /// Wire-layer TX (composed sub-circuit).
     tx: Ps2DeviceTx<DIV_W>,
-    /// Captured next-state so we know what to send AFTER the wire
-    /// layer reports `tx_done` (or after the strobe handler runs).
-    pending_state: dff::DFF<KbdEncState>,
 }
 
 impl<const DIV_W: usize> Ps2KeyboardEncoder<DIV_W>
@@ -128,13 +131,8 @@ where
     pub fn new(half_period: Bits<DIV_W>) -> Self {
         Self {
             state: dff::DFF::default(),
-            scancode_q: dff::DFF::default(),
-            is_break: dff::DFF::default(),
-            is_extended: dff::DFF::default(),
-            sent_e0: dff::DFF::default(),
-            sent_f0: dff::DFF::default(),
+            extras: dff::DFF::default(),
             tx: Ps2DeviceTx::new(half_period),
-            pending_state: dff::DFF::default(),
         }
     }
 }
@@ -188,14 +186,8 @@ where
 {
     let mut d = D::<DIV_W>::dont_care();
     d.state = q.state;
-    d.scancode_q = q.scancode_q;
-    d.is_break = q.is_break;
-    d.is_extended = q.is_extended;
-    d.sent_e0 = q.sent_e0;
-    d.sent_f0 = q.sent_f0;
-    d.pending_state = q.pending_state;
+    let mut next = q.extras;
 
-    // Default: feed the wire-layer with idle inputs.
     let mut tx_in = super::ps2_device_tx::In {
         tx_byte: bits::<8>(0),
         tx_strobe: false,
@@ -205,11 +197,11 @@ where
     match q.state {
         KbdEncState::Idle => {
             if i.send {
-                d.scancode_q = i.scancode;
-                d.is_break = !i.make;
-                d.is_extended = i.extended;
-                d.sent_e0 = false;
-                d.sent_f0 = false;
+                next.scancode_q = i.scancode;
+                next.is_break = !i.make;
+                next.is_extended = i.extended;
+                next.sent_e0 = false;
+                next.sent_f0 = false;
                 if i.extended {
                     d.state = KbdEncState::SendE0;
                 } else if !i.make {
@@ -220,11 +212,10 @@ where
             }
         }
         KbdEncState::SendE0 => {
-            // Push E0 to wire layer.
             tx_in.tx_byte = bits::<8>(0xE0);
             tx_in.tx_strobe = true;
-            d.sent_e0 = true;
-            d.pending_state = if q.is_break {
+            next.sent_e0 = true;
+            next.pending_state = if q.extras.is_break {
                 KbdEncState::SendF0
             } else {
                 KbdEncState::SendScancode
@@ -234,21 +225,19 @@ where
         KbdEncState::SendF0 => {
             tx_in.tx_byte = bits::<8>(0xF0);
             tx_in.tx_strobe = true;
-            d.sent_f0 = true;
-            d.pending_state = KbdEncState::SendScancode;
+            next.sent_f0 = true;
+            next.pending_state = KbdEncState::SendScancode;
             d.state = KbdEncState::WaitTxDone;
         }
         KbdEncState::SendScancode => {
-            tx_in.tx_byte = q.scancode_q;
+            tx_in.tx_byte = q.extras.scancode_q;
             tx_in.tx_strobe = true;
-            d.pending_state = KbdEncState::Idle;
+            next.pending_state = KbdEncState::Idle;
             d.state = KbdEncState::WaitTxDone;
         }
         KbdEncState::WaitTxDone => {
-            // Wait for wire-layer to report tx_done; then transition
-            // to pending_state.
             if q.tx.tx_done {
-                d.state = q.pending_state;
+                d.state = q.extras.pending_state;
             }
         }
     }
@@ -257,13 +246,10 @@ where
 
     if cr.reset.any() {
         d.state = KbdEncState::Idle;
-        d.scancode_q = bits::<8>(0);
-        d.is_break = false;
-        d.is_extended = false;
-        d.sent_e0 = false;
-        d.sent_f0 = false;
-        d.pending_state = KbdEncState::Idle;
+        next = Ps2KeyboardEncoderExtras::default();
     }
+
+    d.extras = next;
 
     let mut o = Out::dont_care();
     o.clk_oe = q.tx.clk_oe;

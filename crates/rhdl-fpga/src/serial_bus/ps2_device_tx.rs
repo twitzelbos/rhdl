@@ -106,6 +106,20 @@ pub enum Ps2DevTxState {
     Aborted,
 }
 
+/// Bundled internal state for the PS/2 device TX (CLAUDE.md §3.1).
+#[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
+pub struct Ps2DeviceTxExtras<const DIV_W: usize>
+where
+    rhdl::bits::W<DIV_W>: BitWidth,
+{
+    pub shifter: Bits<11>,
+    pub bit_idx: Bits<4>,
+    pub div_ctr: Bits<DIV_W>,
+    pub clk_out: bool,
+    pub done_pulse: bool,
+    pub aborted_q: bool,
+}
+
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
 #[rhdl(dq_no_prefix)]
 #[fsm(state_field = "state", state_enum = Ps2DevTxState, allow_implicit)]
@@ -115,19 +129,7 @@ where
     rhdl::bits::W<DIV_W>: BitWidth,
 {
     state: dff::DFF<Ps2DevTxState>,
-    /// 11-bit shifter (start | data[7..0] | parity | stop).
-    shifter: dff::DFF<Bits<11>>,
-    /// Bit count: 0..=10 within the 11-bit body.
-    bit_idx: dff::DFF<Bits<4>>,
-    /// CLK half-period counter.
-    div_ctr: dff::DFF<Bits<DIV_W>>,
-    /// Current CLK output (the device drives CLK).
-    clk_out: dff::DFF<bool>,
-    /// One-cycle pulse on TX done.
-    done_pulse: dff::DFF<bool>,
-    /// Sticky: TX was aborted by host inhibit.
-    aborted_q: dff::DFF<bool>,
-    /// Configured CLK half-period in clock cycles.
+    extras: dff::DFF<Ps2DeviceTxExtras<DIV_W>>,
     half_period: Constant<Bits<DIV_W>>,
 }
 
@@ -141,12 +143,7 @@ where
     pub fn new(half_period: Bits<DIV_W>) -> Self {
         Self {
             state: dff::DFF::default(),
-            shifter: dff::DFF::default(),
-            bit_idx: dff::DFF::default(),
-            div_ctr: dff::DFF::default(),
-            clk_out: dff::DFF::default(),
-            done_pulse: dff::DFF::default(),
-            aborted_q: dff::DFF::default(),
+            extras: dff::DFF::default(),
             half_period: Constant::new(half_period),
         }
     }
@@ -201,34 +198,26 @@ where
 {
     let mut d = D::<DIV_W>::dont_care();
     d.state = q.state;
-    d.shifter = q.shifter;
-    d.bit_idx = q.bit_idx;
-    d.div_ctr = q.div_ctr;
-    d.clk_out = q.clk_out;
-    d.done_pulse = false;
-    d.aborted_q = q.aborted_q;
+    let mut next = q.extras;
+    next.done_pulse = false;
 
-    // Default: device drives CLK based on q.clk_out (false = drive low).
-    let mut clk_oe = !q.clk_out;
+    let mut clk_oe = !q.extras.clk_out;
     let mut data_oe = false;
 
-    // Inhibit detection: when we're NOT driving CLK low (clk_out=high)
-    // but clk_in is low, the host is inhibiting us.
-    let host_inhibiting = q.clk_out && !i.clk_in && q.state != Ps2DevTxState::Idle;
+    let host_inhibiting = q.extras.clk_out && !i.clk_in && q.state != Ps2DevTxState::Idle;
 
     if host_inhibiting {
         d.state = Ps2DevTxState::Aborted;
-        d.aborted_q = true;
+        next.aborted_q = true;
         clk_oe = false;
         data_oe = false;
     } else {
         match q.state {
             Ps2DevTxState::Idle => {
-                clk_oe = false; // released
+                clk_oe = false;
                 data_oe = false;
-                d.aborted_q = false;
+                next.aborted_q = false;
                 if i.tx_strobe {
-                    // Compute odd parity of tx_byte.
                     let b = i.tx_byte;
                     let p0 = (b >> 0) & bits::<8>(1);
                     let p1 = (b >> 1) & bits::<8>(1);
@@ -240,60 +229,52 @@ where
                     let p7 = (b >> 7) & bits::<8>(1);
                     let xor_all = p0 ^ p1 ^ p2 ^ p3 ^ p4 ^ p5 ^ p6 ^ p7;
                     let parity_bit: Bits<8> = xor_all ^ bits::<8>(1);
-                    // Pack {stop=1 (bit 10), parity (bit 9), data[7..0] (bits 8..1), start=0 (bit 0)}.
                     let packed: Bits<11> = (b.resize::<11>() << 1)
                         | (parity_bit.resize::<11>() << 9)
                         | (bits::<11>(1) << 10);
-                    d.shifter = packed;
-                    d.bit_idx = bits::<4>(0);
-                    d.div_ctr = q.half_period;
-                    d.clk_out = true; // start with CLK released
+                    next.shifter = packed;
+                    next.bit_idx = bits::<4>(0);
+                    next.div_ctr = q.half_period;
+                    next.clk_out = true;
                     d.state = Ps2DevTxState::StartBit;
-                    data_oe = true; // pull DATA low (start bit, shifter[0] = 0 = drive low)
+                    data_oe = true;
                 }
             }
             Ps2DevTxState::StartBit => {
-                // Drive DATA based on shifter[0] (0 = data_oe high).
-                let bit = (q.shifter & bits::<11>(1)) != bits::<11>(0);
+                let bit = (q.extras.shifter & bits::<11>(1)) != bits::<11>(0);
                 data_oe = !bit;
-                if q.div_ctr == bits::<DIV_W>(0) {
-                    // CLK toggle.
-                    d.clk_out = !q.clk_out;
-                    d.div_ctr = q.half_period;
-                    if q.clk_out {
-                        // CLK was high, now falling — host samples here.
-                        // Start clocking the rest of the bits.
+                if q.extras.div_ctr == bits::<DIV_W>(0) {
+                    next.clk_out = !q.extras.clk_out;
+                    next.div_ctr = q.half_period;
+                    if q.extras.clk_out {
                         d.state = Ps2DevTxState::ClockBits;
                     }
                 } else {
-                    d.div_ctr = q.div_ctr - bits::<DIV_W>(1);
+                    next.div_ctr = q.extras.div_ctr - bits::<DIV_W>(1);
                 }
             }
             Ps2DevTxState::ClockBits => {
-                let bit = (q.shifter & bits::<11>(1)) != bits::<11>(0);
+                let bit = (q.extras.shifter & bits::<11>(1)) != bits::<11>(0);
                 data_oe = !bit;
-                if q.div_ctr == bits::<DIV_W>(0) {
-                    d.clk_out = !q.clk_out;
-                    d.div_ctr = q.half_period;
-                    if q.clk_out {
-                        // Falling edge — shift out next bit.
-                        d.shifter = q.shifter >> 1;
-                        d.bit_idx = q.bit_idx + bits::<4>(1);
-                        if q.bit_idx == bits::<4>(10) {
-                            // Stop bit clocked — done.
-                            d.done_pulse = true;
+                if q.extras.div_ctr == bits::<DIV_W>(0) {
+                    next.clk_out = !q.extras.clk_out;
+                    next.div_ctr = q.half_period;
+                    if q.extras.clk_out {
+                        next.shifter = q.extras.shifter >> 1;
+                        next.bit_idx = q.extras.bit_idx + bits::<4>(1);
+                        if q.extras.bit_idx == bits::<4>(10) {
+                            next.done_pulse = true;
                             d.state = Ps2DevTxState::Idle;
-                            d.clk_out = false; // released
+                            next.clk_out = false;
                         }
                     }
                 } else {
-                    d.div_ctr = q.div_ctr - bits::<DIV_W>(1);
+                    next.div_ctr = q.extras.div_ctr - bits::<DIV_W>(1);
                 }
             }
             Ps2DevTxState::Aborted => {
                 clk_oe = false;
                 data_oe = false;
-                // Stay aborted until host releases CLK; then return to Idle.
                 if i.clk_in {
                     d.state = Ps2DevTxState::Idle;
                 }
@@ -303,20 +284,17 @@ where
 
     if cr.reset.any() {
         d.state = Ps2DevTxState::Idle;
-        d.shifter = bits::<11>(0);
-        d.bit_idx = bits::<4>(0);
-        d.div_ctr = bits::<DIV_W>(0);
-        d.clk_out = false;
-        d.done_pulse = false;
-        d.aborted_q = false;
+        next = Ps2DeviceTxExtras::<DIV_W>::default();
     }
+
+    d.extras = next;
 
     let mut o = Out::dont_care();
     o.clk_oe = clk_oe;
     o.data_oe = data_oe;
     o.tx_busy = q.state != Ps2DevTxState::Idle && q.state != Ps2DevTxState::Aborted;
-    o.tx_done = q.done_pulse;
-    o.host_inhibit = q.aborted_q;
+    o.tx_done = q.extras.done_pulse;
+    o.host_inhibit = q.extras.aborted_q;
     (o, d)
 }
 

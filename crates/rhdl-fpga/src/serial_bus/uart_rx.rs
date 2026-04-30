@@ -75,6 +75,41 @@ use rhdl::prelude::*;
 
 use crate::core::{constant::Constant, dff};
 
+/// Bundled internal state for the UART receiver (CLAUDE.md §3.1).
+/// This widget has no explicit FSM enum — `receiving` plays that
+/// role implicitly — so all internal registers go in one struct
+/// behind a single DFF, with no separate state DFF.
+#[derive(PartialEq, Debug, Digital, Clone, Copy)]
+pub struct UartRxExtras<const DIV_W: usize>
+where
+    rhdl::bits::W<DIV_W>: BitWidth,
+{
+    pub prev_rx: bool,
+    pub receiving: bool,
+    pub bit_counter: Bits<4>,
+    pub baud_counter: Bits<DIV_W>,
+    pub shift_reg: Bits<8>,
+    pub received_byte: Bits<8>,
+    pub received_valid: bool,
+}
+
+impl<const DIV_W: usize> Default for UartRxExtras<DIV_W>
+where
+    rhdl::bits::W<DIV_W>: BitWidth,
+{
+    fn default() -> Self {
+        Self {
+            prev_rx: true, // line idles high
+            receiving: false,
+            bit_counter: bits::<4>(0),
+            baud_counter: bits::<DIV_W>(0),
+            shift_reg: bits::<8>(0),
+            received_byte: bits::<8>(0),
+            received_valid: false,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Synchronous, SynchronousDQ)]
 #[rhdl(dq_no_prefix)]
 /// UART receiver (8-N-1) core.
@@ -82,13 +117,7 @@ pub struct UartRx<const DIV_W: usize>
 where
     rhdl::bits::W<DIV_W>: BitWidth,
 {
-    prev_rx: dff::DFF<bool>,
-    receiving: dff::DFF<bool>,
-    bit_counter: dff::DFF<Bits<4>>,
-    baud_counter: dff::DFF<Bits<DIV_W>>,
-    shift_reg: dff::DFF<Bits<8>>,
-    received_byte: dff::DFF<Bits<8>>,
-    received_valid: dff::DFF<bool>,
+    extras: dff::DFF<UartRxExtras<DIV_W>>,
     divisor: Constant<Bits<DIV_W>>,
 }
 
@@ -99,13 +128,7 @@ where
     /// Create a UART receiver with the supplied clocks-per-baud divisor.
     pub fn new(divisor: Bits<DIV_W>) -> Self {
         Self {
-            prev_rx: dff::DFF::new(true), // line idle high
-            receiving: dff::DFF::default(),
-            bit_counter: dff::DFF::default(),
-            baud_counter: dff::DFF::default(),
-            shift_reg: dff::DFF::default(),
-            received_byte: dff::DFF::default(),
-            received_valid: dff::DFF::default(),
+            extras: dff::DFF::new(UartRxExtras::default()),
             divisor: Constant::new(divisor),
         }
     }
@@ -146,75 +169,59 @@ where
     let zero_b8: Bits<8> = bits::<8>(0);
 
     let half_div: Bits<DIV_W> = q.divisor >> 1;
-    let baud_tick = q.baud_counter == (q.divisor - one_div);
-    let sample_tick = q.baud_counter == half_div;
-    let falling_edge = q.prev_rx && !rx;
+    let baud_tick = q.extras.baud_counter == (q.divisor - one_div);
+    let sample_tick = q.extras.baud_counter == half_div;
+    let falling_edge = q.extras.prev_rx && !rx;
 
     let mut d = D::<DIV_W>::dont_care();
-    // Default: hold all state.
-    d.prev_rx = rx;
-    d.receiving = q.receiving;
-    d.bit_counter = q.bit_counter;
-    d.baud_counter = q.baud_counter;
-    d.shift_reg = q.shift_reg;
-    d.received_byte = q.received_byte;
-    // Valid is a one-cycle pulse: default low, set true only on success.
-    d.received_valid = false;
+    let mut next = q.extras;
+    next.prev_rx = rx;
+    next.received_valid = false;
 
-    if !q.receiving {
+    if !q.extras.receiving {
         if falling_edge {
-            d.receiving = true;
-            d.bit_counter = zero_b4;
-            d.baud_counter = zero_div;
-            d.shift_reg = zero_b8;
+            next.receiving = true;
+            next.bit_counter = zero_b4;
+            next.baud_counter = zero_div;
+            next.shift_reg = zero_b8;
         }
     } else {
-        // Mid-baud sample: shift in data bit, or check start/stop.
         if sample_tick {
-            if q.bit_counter == zero_b4 {
-                // Start bit re-check.  If line went high, abort (false start).
+            if q.extras.bit_counter == zero_b4 {
                 if rx {
-                    d.receiving = false;
-                    d.bit_counter = zero_b4;
+                    next.receiving = false;
+                    next.bit_counter = zero_b4;
                 }
-            } else if q.bit_counter <= eight_b4 {
-                // Data bit.  Shift right, new bit at MSB (LSB-first protocol
-                // means the first sampled bit ends up at LSB after 8 shifts).
+            } else if q.extras.bit_counter <= eight_b4 {
                 let bit_in: Bits<8> = if rx { bits::<8>(0x80) } else { zero_b8 };
-                d.shift_reg = (q.shift_reg >> 1) | bit_in;
+                next.shift_reg = (q.extras.shift_reg >> 1) | bit_in;
             }
-            // bit_counter == 9 → stop bit; value not checked.
         }
-        // End-of-baud: advance bit_counter.
         if baud_tick {
-            d.baud_counter = zero_div;
-            if q.bit_counter == nine_b4 {
-                d.receiving = false;
-                d.bit_counter = zero_b4;
-                d.received_byte = q.shift_reg;
-                d.received_valid = true;
+            next.baud_counter = zero_div;
+            if q.extras.bit_counter == nine_b4 {
+                next.receiving = false;
+                next.bit_counter = zero_b4;
+                next.received_byte = q.extras.shift_reg;
+                next.received_valid = true;
             } else {
-                d.bit_counter = q.bit_counter + one_b4;
+                next.bit_counter = q.extras.bit_counter + one_b4;
             }
         } else {
-            d.baud_counter = q.baud_counter + one_div;
+            next.baud_counter = q.extras.baud_counter + one_div;
         }
     }
 
     if cr.reset.any() {
-        d.prev_rx = true;
-        d.receiving = false;
-        d.bit_counter = zero_b4;
-        d.baud_counter = zero_div;
-        d.shift_reg = zero_b8;
-        d.received_byte = zero_b8;
-        d.received_valid = false;
+        next = UartRxExtras::<DIV_W>::default();
     }
 
+    d.extras = next;
+
     let mut o = Out::dont_care();
-    o.received = q.received_byte;
-    o.valid = q.received_valid;
-    o.busy = q.receiving;
+    o.received = q.extras.received_byte;
+    o.valid = q.extras.received_valid;
+    o.busy = q.extras.receiving;
     (o, d)
 }
 
@@ -329,7 +336,7 @@ mod tests {
         let uut = UartRx::<6>::new(bits(8));
         let desc = uut.descriptor("top".into())?;
         let hdl = desc.hdl()?.modules.pretty();
-        let expect = expect!["10169"];
+        let expect = expect!["7065"];
         expect.assert_eq(&hdl.len().to_string());
         Ok(())
     }
@@ -359,7 +366,7 @@ mod tests {
             .join("vcd")
             .join("uart_rx");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["b2d9315b951654737d2abbfc810711e6a3e0c7864d31cda91c765da276274286"];
+        let expect = expect!["2c186ee9365b4b4ec6107a5f7338029a2d429cc825174ecd16388619aed3382f"];
         let digest = vcd.dump_to_file(root.join("uart_rx.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

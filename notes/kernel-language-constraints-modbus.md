@@ -73,6 +73,15 @@ RHIF generation already handles aggregate slot reads.
 
 ## Constraint 2 — Arrays of size > 32 have no `Default` impl
 
+> **Updated 2026-04-29:** the original version of this section
+> framed this as a hard blocker.  It isn't.  See "Workaround
+> that actually works" below.  The remainder of this section is
+> preserved as the original analysis, but the punchline is
+> that the framework already supports big arrays via
+> `core::array::from_fn`, you just have to write the widget's
+> `Default` by hand instead of `#[derive(Default)]`-ing it.
+
+
 ```rust
 struct ModbusRtuSlave<...> {
     req_buf: dff::DFF<[Bits<8>; 64]>,
@@ -128,6 +137,59 @@ internally).  This is purely a library-side addition; no
 language change needed.  Worth a small PR against `rhdl-bits`
 or `rhdl-core`.
 
+### Workaround that actually works (no framework change needed)
+
+`dff::DFF::new(value)` does **not** require `T: Default` —
+only `dff::DFF::default()` does.  And `Digital::dont_care()`
+is implemented per-field by the derive macro (it does not
+require `Default` on the type).  So the following works
+today, with no language or library change, for arbitrarily
+large arrays:
+
+```rust
+// 1. Bundle big arrays inside a Digital-derived extras struct.
+//    DON'T #[derive(Default)] on it.
+#[derive(Digital, Clone, Copy, PartialEq, Debug)]
+struct ModbusExtras {
+    req_buf: [Bits<8>; 64],
+    resp_buf: [Bits<8>; 64],
+    counter: Bits<8>,
+    // ... etc ...
+}
+
+// 2. The widget uses the protocol-PHY pattern (CLAUDE.md §3.1).
+struct ModbusRtuSlave<...> {
+    state:  dff::DFF<ModbusFsmState>,
+    extras: dff::DFF<ModbusExtras>,
+}
+
+// 3. Hand-write Default for the widget using DFF::new(...).
+impl<...> Default for ModbusRtuSlave<...> {
+    fn default() -> Self {
+        Self {
+            state: dff::DFF::default(),
+            extras: dff::DFF::new(ModbusExtras {
+                req_buf: core::array::from_fn(|_| bits::<8>(0)),
+                resp_buf: core::array::from_fn(|_| bits::<8>(0)),
+                counter: bits::<8>(0),
+            }),
+        }
+    }
+}
+```
+
+This is the same pattern used today by `crates/rhdl-fpga/src/
+core/delay.rs:67`, `core/register_file.rs`, `pipe/chunked.rs`,
+`stream/flatten.rs` — `core::array::from_fn(|_|
+dff::DFF::new(T::default()))` to construct widget arrays of
+arbitrary length.  The "single DFF holding a big array"
+variant is the same trick at a different layer.
+
+So Constraint 2 is **not actually a blocker** for Modbus — it
+was a documentation gap that pushed the previous attempt
+toward `#[derive(Default)]`, which fails for `N > 32`.
+Hand-write the `Default` and you're unblocked.
+
 ## Constraint 3 — Indexed reads / writes on DFF arrays inside a kernel
 
 Even with Constraint 2 worked around, the kernel pattern:
@@ -153,42 +215,51 @@ is brittle.
 This needs a real test case in `crates/rhdl/tests/` to pin
 behaviour before building widgets that depend on it.
 
-## Constraint 4 — Kernel-macro IR-size explosion (already documented)
+## Constraint 4 — Kernel-macro IR-size explosion (RESOLVED)
 
-The 4-arm dispatch on FC, with each arm building a multi-byte
-response that includes a CRC-walk loop (per Constraint 1
-workaround #1), produces a kernel that probably trips the same
-IR-explosion that the MIDI parser hit (see
-`notes/kernel-macro-oom.md`).  I didn't get to a clean compile
-to confirm, but the structural pattern is the same: many
-construction paths × non-trivial per-path logic = exponential
-expansion.
+> **Resolved 2026-04-29:** the OOM had a single root cause —
+> an exponential `const_max!` macro recursion in the
+> `Digital`-derive for enums.  See
+> `notes/kernel-macro-oom-resolved.md` for the full
+> investigation.  Fix landed via PR #12; the full Classical
+> CAN 2.0A node (21-variant FSM, 30-field state struct) now
+> compiles cleanly.  Modbus's structural pattern (4-arm FC
+> dispatch + per-arm response building) is well within what
+> the macro now handles.  This constraint is no longer a
+> blocker.
 
-## Recommended path forward for Modbus
+The original concern — left here for reference — was that the
+4-arm dispatch on FC, with each arm building a multi-byte
+response, would trigger the same OOM as the MIDI parser.  That
+turned out to be a `const_max!` issue, not a kernel-size issue.
 
-The right shipping order is:
+## Recommended path forward for Modbus (revised 2026-04-29)
 
-1. **Land the language / library fixes for Constraints 1, 2, and 3
-   first.**  Each is a small, focused PR.  Together they convert
-   "can't do Modbus cleanly" into "Modbus is straightforward."
-2. **Then land Modbus slave**, taking advantage of the cleaner
-   primitives.  Estimated ~800 LOC for the slave with full FC 0x03 /
-   0x04 / 0x06 / 0x10 / 0x16 coverage; another ~700 LOC to extend
-   the existing master to all FCs.
-3. **Coil function codes (FC 0x01, 0x02, 0x05, 0x0F)** ship as a
-   separate widget that shares the wire-layer + framing + CRC code
-   with the register-access widget (factor a `modbus_rtu_framing`
-   core out of both).
+With the Constraint 2 workaround clarified above, Modbus is
+actually implementable today with two manageable items:
 
-If you instead want Modbus slave to ship *now* without the language
-fixes, the minimum viable version is FC 0x06 (Write Single Register)
-only — no looping, no array-CRC, no large buffers.  ~250 LOC.
-Useful for HOST-CONFIGURATION scenarios where the FPGA accepts
-parameter writes from a host but doesn't do bulk register reads.
-Documented as a sliver in the CHANGELOG, with the "fully fledged"
-follow-up explicitly tracked.  Recommend NOT going this route per
-the CLAUDE.md TL;DR rule (no v1 silently); land the language fixes
-first.
+1. **Constraint 1 (helper-kernel `&` args)** — workaround:
+   pass arrays by value.  Produces a per-call IR aggregate
+   copy, but for a 64-byte buffer at Modbus's millisecond
+   timescales, this is bounded and acceptable.  Or land the
+   small macro fix (3 lines + signature parsing) to allow
+   `&T` semantically as an identity in helper kernels.
+2. ~~**Constraint 4 (kernel-macro IR-size explosion)**~~
+   **RESOLVED.**  See `notes/kernel-macro-oom-resolved.md`.
+   No longer a concern.
+
+So the right shipping order is:
+
+1. **Implement Modbus slave + master extension as a single
+   coherent PR**, using the §3.1 pattern + hand-written
+   `Default` + array-by-value helper kernels.  Estimated
+   ~1500 LOC total (slave ~800, master extension ~700).
+2. If Constraint 4 trips during implementation, switch to
+   multi-cycle walker for response building (still no
+   infrastructure change needed).
+3. Optionally, land the Constraint 1 macro fix as a separate
+   small PR for cleaner IR — but this is no longer a
+   precondition for Modbus.
 
 ## Related — also blocks CAN RX and SCSI
 
@@ -207,15 +278,20 @@ The same constraints will hit:
 Landing the four library / language fixes unblocks all three
 widgets at once.
 
-## Action items
+## Action items (revised 2026-04-29)
 
-- [ ] Write the `Default` impl for `[T; N]` in `rhdl-bits` or
-  `rhdl-core` (Constraint 2).  Smallest and most impactful.
+- [x] ~~Write the `Default` impl for `[T; N]` in `rhdl-bits` or
+  `rhdl-core` (Constraint 2).~~  **Not needed** — workaround
+  documented above using `core::array::from_fn` in a
+  hand-written `Default`.
 - [ ] Allow immutable `&[T; N]` and `&T` in helper kernel
-  arguments (Constraint 1).  Macro-side change.
+  arguments (Constraint 1).  Macro-side change.  Optional;
+  pass-by-value is the documented workaround.
 - [ ] Pin runtime-array-indexing behaviour with focused tests
   (Constraint 3).  Tests-only PR.
-- [ ] Diagnose / mitigate kernel-macro IR explosion as in MIDI
-  parser (Constraint 4 + `notes/kernel-macro-oom.md`).
-- [ ] Then return to Modbus slave + master extension, CAN RX, and
-  SCSI.
+- [x] ~~Diagnose / mitigate kernel-macro IR explosion as in MIDI
+  parser (Constraint 4 + `notes/kernel-macro-oom.md`).~~
+  **Resolved** — see `notes/kernel-macro-oom-resolved.md`.
+- [ ] Implement Modbus slave + master extension using the
+  documented §3.1 pattern + hand-written `Default` + array-
+  by-value helpers.  No infrastructure prerequisite remains.

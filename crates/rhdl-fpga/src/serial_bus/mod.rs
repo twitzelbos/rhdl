@@ -17,6 +17,7 @@
 //! I/O pads.
 pub mod battery_monitor;
 pub mod can_master;
+pub mod can_receiver;
 pub mod dht22;
 pub mod epaper_ssd16xx;
 pub mod half_spi_master;
@@ -31,6 +32,7 @@ pub mod midi_parser;
 pub mod mipi_dbi_type_b;
 pub mod mipi_dbi_type_c;
 pub mod modbus_rtu_master;
+pub mod modbus_rtu_slave;
 pub mod nand_flash_async;
 pub mod one_wire_master;
 pub mod parallel_port_centronics;
