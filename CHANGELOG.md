@@ -31,6 +31,68 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-01 — Tier C: rhdl-rv32i pipelined CSR support — Phase 3 gap closed
+
+**Paths:**
+
+- `crates/rhdl-rv32i/src/pipeline.rs` — extends `IdEx` with `csr_op`, `csr_addr`, `system_op`; `ExMem` and `MemWb` with `csr_addr`, `csr_new_value`, `csr_writes`.  CSR-write info propagates Decode → Execute → Memory → Writeback through the pipeline registers.
+- `crates/rhdl-rv32i/src/pipelined.rs` — `PipelinedCpu` now contains a `CsrFile` sub-circuit; the kernel:
+  - Decode populates the new IdEx CSR fields from the decoder.
+  - Execute reads the CSR via `q.csrs.rdata` (driven this cycle from `d.csrs.raddr = q.id_ex.csr_addr`), computes the new CSR value (CSRRW/CSRRS/CSRRC + immediate variants, with rs1=x0 / uimm=0 → no-write), and **detects ECALL/EBREAK to trigger a trap**.
+  - Trap squashes IF/ID, ID/EX, and EX/MEM-next; redirects PC to `q.csrs.mtvec`; signals the CSR file's trap port to atomically commit `mepc` / `mcause` / `mtval`.
+  - Memory passes the CSR write info through to MEM/WB (and the existing `WritebackSrc::Csr` arm now correctly carries the pre-modify CSR value via the same `alu_result` channel as ordinary ALU ops).
+  - Writeback drives the regfile write port (existing) AND the CSR file write port (`d.csrs.waddr` / `wdata` / `wen` from MEM/WB).
+- `crates/rhdl-rv32i/tests/pipelined_csr.rs` (new, 9 tests) — pipelined CSR + trap parity tests:
+  - CSRRW round-trip; CSRRS bit-set; CSRRC bit-clear; CSRRWI immediate; mhartid read-only; misa constant
+  - **ECALL trap parity** (mepc / mcause / PC redirect agree with single-cycle)
+  - **EBREAK trap parity**
+  - Iverilog RTL round-trip on the full pipelined CPU with the CSR file
+
+**Why this, why now:** Phase 3 from PR #33 shipped CSR + trap on the single-cycle CPU only.  PR #33's pipelined `WritebackSrc::Csr` arm returned 0 (non-functional stub) so any CSR instruction on the pipelined core produced wrong results.  Closes that gap and brings the pipelined CPU to feature parity with the single-cycle for the entire shipped surface (ALU + branches + jumps + loads/stores + CSRs + ECALL/EBREAK).
+
+**Design decisions:**
+
+- **Carry CSR fields through every pipeline register.**  IdEx gets `csr_op` / `csr_addr` / `system_op` (consumed by Execute); ExMem gets `csr_addr` / `csr_new_value` / `csr_writes` (forwarded to Writeback); MemWb gets the same trio (driven onto the CSR file's write port).  Total addition: 6 new pipeline-register fields.
+
+- **CSR read in Execute, write in Writeback.**  `d.csrs.raddr = q.id_ex.csr_addr` (Execute reads), `d.csrs.waddr = q.mem_wb.csr_addr` (Writeback writes).  The CSR file's read and write ports are independent so this works directly — no special muxing.
+
+- **`alu_result` channel carries CSR pre-modify value for `Csr` writeback.**  When `id_ex.writeback_src == WritebackSrc::Csr`, Execute steers `csr_rdata` into the `next_ex_mem.alu_result` slot.  Then the Memory stage's existing `WritebackSrc::Csr` arm picks `q.ex_mem.alu_result` as the writeback value.  Reusing `alu_result` avoids adding a separate `csr_rdata` field to ExMem — saves a pipeline-register slot at the cost of slightly opaque steering code.  Cleaner than a separate field IMO; documented at the steering point.
+
+- **Trap detection in Execute, squash three stages.**  ECALL/EBREAK fire when `q.id_ex.system_op != None` AND `q.id_ex.valid`.  The trap squashes IF/ID, ID/EX, and EX/MEM-next (turning each into a bubble) and redirects PC to `q.csrs.mtvec`.  Three-stage squash because all three slots hold instructions that came AFTER the trapping instruction in program order — they shouldn't commit.
+
+- **Trap-port writes commit atomically with the squash.**  `take_trap → d.csrs.trap_en = true; d.csrs.trap_pc = q.id_ex.pc` saves the trapping instruction's PC to mepc, sets mcause, and the CSR file's trap port commits all three CSRs at the cycle edge.  Same convention as the single-cycle CPU.
+
+- **No CSR-to-CSR forwarding (yet).**  Back-to-back CSR ops on the same address would read stale data on the pipelined CPU because the CSR write commits at MEM/WB → next-cycle while the read happens in Execute.  In practice CSR ops are infrequent and rarely back-to-back on the same address; the test programs use NOP padding between sequential CSR ops to give the writes time to commit.  Documented in `pipelined_csr.rs`.
+
+**Surprises and gotchas:**
+
+- **`addi(0, 0, 0)` is the canonical NOP.**  The pipelined CSR tests need NOP padding between CSR-write and CSR-read (so the write commits before the read).  `addi x0, x0, 0` writes nothing (x0 is hardwired) and consumes one cycle — perfect NOP.  Used liberally in the test programs.
+
+- **All 9 new tests passed first run.**  No bugs uncovered in the pipelined CSR or trap implementation.  The single-cycle CPU's CSR semantics translated directly to the pipelined data flow with no surprises.  Suggests the design pattern (CSR-instruction-as-typed-pipeline-payload) is correct.
+
+**Validation:**
+
+- **78 tests pass** in `rhdl-rv32i` (69 from PR #34 + 9 new pipelined-CSR).
+- **All 9 new tests** pass on first run.
+- **Iverilog RTL round-trip** succeeds on the pipelined CPU with the CSR file.  The full pipelined RV32I core (including CSR file) lowers to Verilog cleanly.
+- All 92 rule-track tests still pass.
+
+**Phase 3 status: closed.**  Both single-cycle and pipelined cores now support all CSR instructions and ECALL/EBREAK trap vectoring with byte-identical agreement.
+
+**What's deferred (future):**
+
+- **MRET** (return-from-trap) — needed for trap handlers to return to user code; without it, any program that takes a trap can't continue.  ~50 lines.
+- **Misaligned-target trap** (RV32I requires this on branch / JAL / JALR; v0.6 still silently masks).
+- **Illegal-instruction trap** (decoder marks `illegal: true` but no trap fires).
+- **Same-cycle CSR-to-CSR forwarding** for back-to-back CSR ops on the same address.
+- **External interrupts** (mip / mie / mtimer / PLIC).
+- **More compliance tests** to scale out coverage of the rv32ui-p-* suite.
+- **Spike lockstep cosimulation** (cross-cutting Tier C v1 infrastructure per §7).
+
+**Next strategic move:** scale out compliance tests (mechanical) OR start Phase 4 documentation (book chapter at `doc/book/src/cores/rv32i.md` per §3.5 + paper draft).
+
+---
+
 ## 2026-05-01 — Tier C: rhdl-rv32i ISA-compliance harness + WB→Decode bypass
 
 **Paths:**

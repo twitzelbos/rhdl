@@ -21,7 +21,7 @@
 //! throughput, hazards are managed by stall/squash signals from
 //! the [`HazardUnit`]).
 
-use crate::isa::{AluSrc, BranchOp, MemOp, Opcode, WritebackSrc, AluOp};
+use crate::isa::{AluOp, AluSrc, BranchOp, CsrOp, MemOp, Opcode, SystemOp, WritebackSrc};
 use rhdl::prelude::*;
 
 /// IF/ID — the slot between Fetch and Decode.
@@ -81,6 +81,12 @@ pub struct IdEx {
     pub rs1_val: Bits<32>,
     /// rs2's value as read from the register file (pre-forwarding).
     pub rs2_val: Bits<32>,
+    /// CSR-access operation (Phase 3 pipelined CSR support).
+    pub csr_op: CsrOp,
+    /// CSR address (12-bit funct12 for CSR instructions).
+    pub csr_addr: Bits<12>,
+    /// SYSTEM-opcode subtype (ECALL / EBREAK).
+    pub system_op: SystemOp,
     /// True for a real instruction; false for a bubble.
     pub valid: bool,
 }
@@ -108,6 +114,16 @@ pub struct ExMem {
     pub mem_read: bool,
     /// PC + 4 for JAL/JALR writeback.
     pub pc_plus_4: Bits<32>,
+    /// CSR address (12-bit) — used by Writeback to drive the CSR
+    /// file's write port.
+    pub csr_addr: Bits<12>,
+    /// New value to write to the CSR (computed in Execute from
+    /// the CSR-op semantics).
+    pub csr_new_value: Bits<32>,
+    /// True iff this instruction needs to commit a CSR write at
+    /// the Writeback stage.  False for non-CSR instructions and
+    /// for CSRRS/CSRRC with rs1 = x0 (which are pure reads).
+    pub csr_writes: bool,
     /// True for a real instruction; false for a bubble.
     pub valid: bool,
 }
@@ -126,6 +142,13 @@ pub struct MemWb {
     pub writeback_value: Bits<32>,
     /// True iff a writeback should occur.
     pub writeback_en: bool,
+    /// CSR address (12-bit) — driven onto the CSR file's write
+    /// port by Writeback.
+    pub csr_addr: Bits<12>,
+    /// CSR new value carried forward from Execute.
+    pub csr_new_value: Bits<32>,
+    /// True iff this instruction commits a CSR write.
+    pub csr_writes: bool,
     /// True for a real instruction; false for a bubble.
     pub valid: bool,
 }
