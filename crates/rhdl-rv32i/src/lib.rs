@@ -49,5 +49,8 @@
 pub mod alu;
 pub mod cpu;
 pub mod decoder;
+pub mod hazard;
 pub mod isa;
+pub mod pipeline;
+pub mod pipelined;
 pub mod reg_file;
