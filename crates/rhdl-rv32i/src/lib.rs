@@ -56,3 +56,4 @@ pub mod isa;
 pub mod pipeline;
 pub mod pipelined;
 pub mod reg_file;
+pub mod sim;
