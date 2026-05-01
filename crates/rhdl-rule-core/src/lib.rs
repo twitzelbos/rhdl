@@ -43,8 +43,8 @@ use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
 use syn::visit_mut::{self, VisitMut};
 use syn::{
-    parse2, Block, Expr, ExprMacro, FnArg, Ident, ImplItem, ImplItemFn, Item, ItemImpl, ItemStruct,
-    Macro, Pat, Path, ReturnType, Type, TypeReference,
+    parse2, Block, Expr, ExprMacro, FnArg, Generics, Ident, ImplItem, ImplItemFn, Item, ItemImpl,
+    ItemStruct, Macro, Pat, Path, ReturnType, Type, TypeReference,
 };
 
 /// The macro's input: a struct followed by an impl block.
@@ -175,9 +175,24 @@ struct OutputMethod {
     return_type: Type,
     /// The body, with `*self_q.field` rewritten to `q.field`.
     body: Block,
+    /// Every register field referenced by the output body
+    /// (via `*self_q.field` or `self_q.field`).  Used to identify
+    /// register fields that participate in the kernel even though
+    /// no rule reads or writes them — the attribute form
+    /// (which can't see the struct) needs this to construct the
+    /// `D` value with all field positions populated.
+    field_reads: std::collections::BTreeSet<String>,
 }
 
-/// Public entry point used by the proc-macro shim.
+/// Public entry point — function-like form: `rule_kernel! { struct + impl }`.
+///
+/// Receives both items in a single token stream, validates that the
+/// impl's self-type names the struct, augments the struct with the
+/// standard derives (`Synchronous`, `SynchronousDQ`, `Default`),
+/// and emits the struct + the lowered kernel together.
+///
+/// The actual lowering work is shared with [`expand_rule_kernel_attr`]
+/// via [`lower_rule_kernel`].
 pub fn expand_rule_kernel(input: TokenStream) -> syn::Result<TokenStream> {
     let RuleKernelInput {
         item_struct,
@@ -185,13 +200,13 @@ pub fn expand_rule_kernel(input: TokenStream) -> syn::Result<TokenStream> {
     } = parse2(input)?;
 
     // Validate: the impl's self-type matches the struct's name.
-    let struct_name = &item_struct.ident;
+    let struct_name = item_struct.ident.clone();
     let impl_name = match &*item_impl.self_ty {
         Type::Path(p) => p.path.segments.last().map(|s| &s.ident),
         _ => None,
     };
     match impl_name {
-        Some(name) if name == struct_name => {}
+        Some(name) if *name == struct_name => {}
         _ => {
             return Err(syn::Error::new(
                 item_impl.self_ty.span(),
@@ -203,6 +218,76 @@ pub fn expand_rule_kernel(input: TokenStream) -> syn::Result<TokenStream> {
         }
     }
 
+    let struct_generics = item_struct.generics.clone();
+    let mut struct_emit = item_struct.clone();
+    inject_derives(&mut struct_emit);
+
+    let body = lower_rule_kernel(&struct_name, &struct_generics, item_impl)?;
+    Ok(quote! {
+        #struct_emit
+        #body
+    })
+}
+
+/// Public entry point — attribute-on-impl form: `#[rule_kernel] impl Foo { ... }`.
+///
+/// Receives only the impl block.  The struct must be defined elsewhere
+/// (typically immediately above the impl) with the standard derives
+/// the user wants — `#[rule_kernel]` does not inject any.  The struct's
+/// generics are inferred from the impl block's own generics
+/// (which by Rust convention will mirror the struct's).
+///
+/// This is the attribute-form companion to the function-like
+/// [`expand_rule_kernel`].  Both share [`lower_rule_kernel`] —
+/// behavioural parity is enforced by sharing the lowering code, not
+/// by reimplementation.
+///
+/// The user-facing tradeoff between the two forms is documented in
+/// `rule-architecture.md` §4.5.
+pub fn expand_rule_kernel_attr(item: TokenStream) -> syn::Result<TokenStream> {
+    let item_impl: ItemImpl = parse2(item)?;
+
+    let struct_ident = match &*item_impl.self_ty {
+        Type::Path(p) => p
+            .path
+            .segments
+            .last()
+            .map(|s| s.ident.clone())
+            .ok_or_else(|| {
+                syn::Error::new(
+                    item_impl.self_ty.span(),
+                    "#[rule_kernel] impl's self-type must name a struct",
+                )
+            })?,
+        _ => {
+            return Err(syn::Error::new(
+                item_impl.self_ty.span(),
+                "#[rule_kernel] impl's self-type must be a simple path (e.g. `impl MyWidget`)",
+            ));
+        }
+    };
+
+    let struct_generics = item_impl.generics.clone();
+    lower_rule_kernel(&struct_ident, &struct_generics, item_impl)
+}
+
+/// Shared lowering — the heart of the macro.  Both the function-like
+/// `rule_kernel!` and the `#[rule_kernel]` attribute call this.
+///
+/// Emits:
+/// - the `SynchronousIO` impl,
+/// - the `#[kernel]` function with the synthesized scheduler,
+/// - any non-rule, non-output `impl` items the user wrote
+///   (preserved verbatim under their own `impl` block).
+///
+/// Does NOT emit the struct itself — that is the caller's
+/// responsibility (the function-like form augments it with derives;
+/// the attribute form leaves it to the user).
+fn lower_rule_kernel(
+    struct_name: &Ident,
+    struct_generics: &Generics,
+    item_impl: ItemImpl,
+) -> syn::Result<TokenStream> {
     // Walk impl items, classify.
     let mut rules: Vec<Rule> = Vec::new();
     let mut output: Option<OutputMethod> = None;
@@ -363,24 +448,44 @@ pub fn expand_rule_kernel(input: TokenStream) -> syn::Result<TokenStream> {
     //   - impl_generics : `<T: Digital, const N: usize>` (with bounds)
     //   - ty_generics   : `<T, N>` (no bounds, for type position)
     //   - where_clause  : `where rhdl::bits::W<N>: BitWidth`
-    // For expression position (e.g. constructing the D struct
-    // value) we can rely on field-driven inference, so no turbofish
-    // is needed.
-    let (impl_generics, ty_generics, where_clause) = item_struct.generics.split_for_impl();
+    let (impl_generics, ty_generics, where_clause) = struct_generics.split_for_impl();
     // For expression position we use the turbofish form so const-generic
     // values flow into the D constructor without Rust having to infer
     // them from field types (inference can fail on const generics).
     let ty_generics_turbofish = ty_generics.as_turbofish();
 
-    // Augment the struct with the standard derives.
-    let mut struct_emit = item_struct.clone();
-    inject_derives(&mut struct_emit);
-
-    // Collect field names for default-hold and reset.
-    let field_names: Vec<&Ident> = item_struct
-        .fields
+    // Collect register-field names from the union of every rule's
+    // read-set, every rule's write-set, and the output method's
+    // field reads.  Order of iteration is stable (BTreeSet) so the
+    // emitted code is deterministic across compilations.
+    //
+    // Rationale: the function-like form historically derived this
+    // list from the struct definition.  The attribute form
+    // (`#[rule_kernel]` on an impl block) doesn't see the struct,
+    // so the only universally-available source is the impl itself.
+    // Both forms now share this code so the two emit byte-identical
+    // output for the same impl block.  The implication for the
+    // user: **every register field of the struct must be touched
+    // by at least one rule (read, written) or by the #[output]
+    // method**; otherwise the generated D constructor will be
+    // missing that field and the user will get a clear Rust error
+    // ("missing field `xyz` in initializer of D").
+    let mut field_name_set: std::collections::BTreeSet<String> =
+        std::collections::BTreeSet::new();
+    for rule in &rules {
+        for action in &rule.actions {
+            field_name_set.insert(action.field.to_string());
+        }
+        for r in &rule.read_set {
+            field_name_set.insert(r.clone());
+        }
+    }
+    for f in &output.field_reads {
+        field_name_set.insert(f.clone());
+    }
+    let field_names: Vec<Ident> = field_name_set
         .iter()
-        .filter_map(|f| f.ident.as_ref())
+        .map(|s| Ident::new(s, Span::call_site()))
         .collect();
 
     // ---------------------------------------------------------------
@@ -525,8 +630,6 @@ pub fn expand_rule_kernel(input: TokenStream) -> syn::Result<TokenStream> {
     };
 
     let expanded = quote! {
-        #struct_emit
-
         impl #impl_generics ::rhdl::core::circuit::synchronous::SynchronousIO
             for #struct_name #ty_generics
             #where_clause
@@ -885,7 +988,10 @@ fn parse_output(method: &ImplItemFn) -> syn::Result<OutputMethod> {
     };
 
     let mut body = method.block.clone();
-    let mut rewriter = OutputBodyWalker { receiver_name };
+    let mut rewriter = OutputBodyWalker {
+        receiver_name,
+        field_reads: std::collections::BTreeSet::new(),
+    };
     rewriter.visit_block_mut(&mut body);
 
     Ok(OutputMethod {
@@ -893,6 +999,7 @@ fn parse_output(method: &ImplItemFn) -> syn::Result<OutputMethod> {
         input_type,
         return_type,
         body,
+        field_reads: rewriter.field_reads,
     })
 }
 
@@ -1061,6 +1168,7 @@ fn rewrite_ctx_reads_in_expr(expr: &mut Expr) -> std::collections::BTreeSet<Stri
 
 struct OutputBodyWalker {
     receiver_name: Ident,
+    field_reads: std::collections::BTreeSet<String>,
 }
 
 impl VisitMut for OutputBodyWalker {
@@ -1080,6 +1188,7 @@ impl VisitMut for OutputBodyWalker {
                 if let Expr::Path(syn::ExprPath { path, .. }) = &**base {
                     if path.is_ident(&self.receiver_name) {
                         if let syn::Member::Named(field) = member {
+                            self.field_reads.insert(field.to_string());
                             *expr = syn::parse_quote! { q.#field };
                             return;
                         }
@@ -1095,6 +1204,7 @@ impl VisitMut for OutputBodyWalker {
             if let Expr::Path(syn::ExprPath { path, .. }) = &**base {
                 if path.is_ident(&self.receiver_name) {
                     if let syn::Member::Named(field) = member {
+                        self.field_reads.insert(field.to_string());
                         *expr = syn::parse_quote! { q.#field };
                         return;
                     }

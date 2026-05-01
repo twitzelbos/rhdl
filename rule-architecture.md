@@ -147,51 +147,98 @@ impl CounterAndFlag {
 
 The `#[output]` method runs at the end of every cycle, after all rules fire and the next-state has been computed. It's a pure function of the (post-firing) state and the (current cycle's) input.
 
-### 4.5 Why the function-like macro is canonical (and why `#[derive(RuleKernel)]` is deferred)
+### 4.5 Two surface forms: function-like `rule_kernel!` and `#[rule_kernel_attr]`
 
-The §4.1 sketch shows `#[derive(RuleKernel)]` on the struct. The shipped Phase-1/Phase-2 surface is the function-like form `rule_kernel! { struct + impl }` instead. This is intentional, and the rest of this section explains why.
+`rhdl-rule` ships **two equivalent spellings** for the same lowering. Both share the same internal `lower_rule_kernel` function in `rhdl-rule-core`; a token-level parity test (`attribute_form_parity.rs`) keeps them honest. Pick the spelling that reads more naturally for your widget.
 
-**The proc-macro constraint.** A Rust `#[derive(X)]` macro receives *only the annotated item* — typically a struct. It cannot:
-- See the `impl` block that holds the `#[rule]` and `#[output]` methods.
-- Add or rewrite items elsewhere in the module (it can only emit additional items at the same scope, and even then those items cannot reference identifiers that aren't already in scope at the derive site).
-- Inject attributes on other items (such as the `#[kernel]` attribute we need on the synthesized kernel function).
-
-A rule kernel needs to read the struct *and* the impl block together — the struct gives field types (the register set), the impl block gives rule bodies (the read/write sets and guards). The function-like form `rule_kernel! { ... }` receives both items in one token stream, lets the macro analyse them jointly, and emits the struct + the SynchronousIO impl + the kernel function + per-rule scheduler.
-
-**What a derive-form would actually require.** A working `#[derive(RuleKernel)]` would have to be split across at least two macros:
-1. `#[derive(RuleKernel)]` on the struct — emits a marker trait impl and stashes the field-set somewhere the second macro can find it.
-2. `#[rule_kernel_impl]` (an attribute macro) on the impl block — finds the marker (via the marker trait, via a hand-written cross-macro registry, or via stringly-typed name matching), then does the work.
-
-The cross-macro coordination is the awkward part. Rust's proc-macro framework offers no first-class way for one macro invocation to read state stashed by another in the same compilation; every workaround (lazy_static, file-system stash, name-based convention) has either a soundness or an ergonomic cost. The Bluespec-style derive form looks similar in *appearance* to the function-like form but pays this cost on every invocation.
-
-**The function-like form is no harder for users to write.** Compare:
+#### Function-like form
 
 ```rust
-// Function-like (canonical, shipped today)
+use rhdl::prelude::*;
+use rhdl_fpga::core::dff;
+use rhdl_rule::rule_kernel;
+
 rule_kernel! {
-    pub struct Foo { ... }
-    impl Foo {
-        #[rule] fn bump(...) { ... }
-        #[output] fn output(...) -> ... { ... }
+    pub struct Counter {
+        count: dff::DFF<Bits<8>>,
     }
-}
 
-// Derive form (sketch, not implemented)
-#[derive(RuleKernel)]
-pub struct Foo { ... }
+    impl Counter {
+        #[rule]
+        fn bump(ctx: &mut RuleCtx<Self>, enable: bool) {
+            guard!(enable);
+            set!(ctx.count, *ctx.count + bits::<8>(1));
+        }
 
-#[rule_kernel_impl]
-impl Foo {
-    #[rule] fn bump(...) { ... }
-    #[output] fn output(...) -> ... { ... }
+        #[output]
+        fn output(self_q: &Self, _enable: bool) -> Bits<8> {
+            *self_q.count
+        }
+    }
 }
 ```
 
-The function-like form uses one less attribute and one extra brace pair. The user-facing simplification of the derive form is essentially zero; the implementation cost is non-trivial.
+The macro receives the struct + impl in one invocation, auto-injects the standard derives (`Synchronous`, `SynchronousDQ`, `Default`), and emits the lowered kernel.
 
-**Decision recorded.** The function-like form is the canonical surface for the foreseeable future. The `#[derive(RuleKernel)]` syntax in §4.1 is preserved as the *aspirational sketch* — the shape we would ship if Rust grew first-class cross-macro coordination. The shipped form delivers the same hardware, the same scheduler semantics, and the same diagnostic surface. No widget loses any expressive power by using `rule_kernel!`.
+#### Attribute-on-impl form
 
-**Migration path if this changes.** If a future Rust version (or a stable proc-macro extension crate) gives us reliable cross-macro state, we can ship `#[derive(RuleKernel)]` as a thin wrapper that forwards to the function-like form's expansion. Existing user code remains valid; new code can choose either spelling. Until then: function-like is the supported form, and the `Phase 2` checklist treating "derive form" as a deliverable is closed by this design note.
+```rust
+use rhdl::prelude::*;
+use rhdl_fpga::core::dff;
+use rhdl_rule::rule_kernel_attr as rule_kernel;
+
+#[derive(Clone, Debug, Default, Synchronous, SynchronousDQ)]
+pub struct Counter {
+    count: dff::DFF<Bits<8>>,
+}
+
+#[rule_kernel]
+impl Counter {
+    #[rule]
+    fn bump(ctx: &mut RuleCtx<Self>, enable: bool) {
+        guard!(enable);
+        set!(ctx.count, *ctx.count + bits::<8>(1));
+    }
+
+    #[output]
+    fn output(self_q: &Self, _enable: bool) -> Bits<8> {
+        *self_q.count
+    }
+}
+```
+
+The attribute receives only the impl block. The user writes the standard RHDL derives on the struct themselves, exactly like every other RHDL widget. This shape mirrors the `#[derive(Synchronous, SynchronousDQ)] + #[kernel] fn` convention used by hand-written widgets — same coordination model: the macros emit independent code that the type system links together.
+
+#### How they coexist
+
+This works because rule kernels never needed cross-macro *state*; they needed cross-macro *layout convention*. The function-like form gets that convention by seeing both items in one token stream. The attribute form gets it the same way `#[derive(Synchronous)] + #[kernel]` already do today: each macro emits standalone code; `SynchronousIO`'s `type Kernel = ...` line is the linkage; trait resolution is the rendezvous.
+
+Concretely:
+- The function-like form's macro analyses the struct + impl together and emits both.
+- The attribute form's macro analyses the impl alone, derives field names from the union of every rule's read/write set + the output method's field reads, and emits the `SynchronousIO` impl + the `#[kernel]` function. The struct (with its derives) is the user's responsibility.
+- `lower_rule_kernel` in `rhdl-rule-core` is the single source of truth for both. Pre-PR refactor: the function-like form was the only entry point; the attribute form is a ~20-line wrapper that calls the same inner function.
+
+#### When each form reads better
+
+| Situation | Recommended form |
+|---|---|
+| Toy / single-widget tests | function-like (one invocation, fewer lines) |
+| Widget alongside hand-written widgets in the same crate | attribute (matches the surrounding `#[derive(Synchronous, SynchronousDQ)] + #[kernel] fn` shape) |
+| User wants explicit control over which derives are applied | attribute (no auto-injection) |
+| User wants minimum boilerplate | function-like |
+| Rule kernel needs custom derives or attributes on the struct | attribute (the function-like form auto-injects, which can clash) |
+
+#### What's left to ship
+
+A pure `#[derive(RuleKernel)]` (no attribute on the impl) would also be implementable — the derive would emit standard `Synchronous`/`SynchronousDQ`-equivalent impls and a marker trait, and would coordinate with a separate `#[rule_kernel_attr]` on the impl via the same trait-resolution model. We don't ship that today because:
+1. It requires re-implementing what `#[derive(Synchronous, SynchronousDQ)]` already do, which means depending on `rhdl-core`'s codegen internals — a structural change `rhdl-rule-core` is not currently allowed by `architecture.md`.
+2. The attribute form is one extra `#[derive(...)]` line away from the §4.1 sketch — modest ergonomic delta.
+
+If we later decide it's worth it, the path is: extract the `Synchronous`/`SynchronousDQ` codegen into a published library crate that both `rhdl-macro-core` and `rhdl-rule-core` can depend on, then make `#[derive(RuleKernel)]` re-emit those impls.
+
+#### Note on the §4.1 sketch
+
+The `#[derive(RuleKernel)]` shape in §4.1 remains the **aspirational surface** the design plan was originally drafted around. The attribute form shipped here is the *practical equivalent* — it requires one extra `#[derive(...)]` line on the struct (which the user would have written anyway for any other RHDL widget) and gets all the same hardware behavior. Treat §4.1 as showing the spirit of the API; treat the function-like and attribute forms shown above as the two literal spellings the compiler accepts today.
 
 ---
 

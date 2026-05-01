@@ -31,6 +31,72 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-04-30 — rhdl-rule attribute form `#[rule_kernel_attr]`, §4.5 rewritten honestly
+
+**Paths:**
+
+- `crates/rhdl-rule-core/src/lib.rs` — refactored `expand_rule_kernel` into a public function-like entry point + a new `expand_rule_kernel_attr` entry point, both calling a shared private `lower_rule_kernel`.  Field-name collection now pulls from the union of every rule's read/write set + the `#[output]` method's field reads (rather than from the struct definition), so both forms work from the same source of truth.
+- `crates/rhdl-rule/src/lib.rs` — adds `#[proc_macro_attribute] pub fn rule_kernel_attr` alongside the existing `#[proc_macro] pub fn rule_kernel`.
+- `crates/rhdl-rule/tests/attribute_form.rs` (new, 8 tests) — single-rule, multi-rule with priority, generic struct, multi-widget-per-module — all using `#[rule_kernel_attr]` on the impl block.
+- `crates/rhdl-rule/tests/attribute_form_parity.rs` (new, 2 tests) — token-level parity proof: the function-like and attribute forms emit byte-identical kernel + SynchronousIO impl for the same impl block.
+- `rule-architecture.md` §4.5 — rewritten.
+
+**Why this, why now:** the previous §4.5 (PR #23) claimed `#[derive(RuleKernel)]` was "deferred indefinitely" because of "cross-macro state" constraints.  User pushed back: regular RHDL widgets use `#[derive(Synchronous)] + #[derive(SynchronousDQ)] + #[kernel]` — three independent macros — and those work fine.  Re-examined the claim and found it was wrong: the macros never need cross-macro *state*, they need cross-macro *layout convention*, which is exactly what the existing trio already provides (each macro emits standalone code; trait resolution is the rendezvous).  The honest fix is to ship the attribute-on-impl form (which mirrors the existing convention exactly) AND rewrite §4.5 to drop the misleading framing.
+
+**Design decisions:**
+
+- **Two equivalent spellings, one shared lowering.**  `rule_kernel! { struct + impl }` (function-like, was already shipped) and `#[rule_kernel_attr] impl Foo { ... }` (new) both call into `lower_rule_kernel` in `rhdl-rule-core`.  A parity test (`attribute_form_parity.rs`) asserts byte-identical token output from the same impl block — refactor-safe.
+
+- **Field-name collection moved into the shared lowering.**  Previously the function-like form derived field names from `item_struct.fields`; the attribute form can't see the struct.  The fix is to derive field names from the rule kernel itself: union of every rule's read-set + write-set + the `#[output]` method's field reads.  Both forms now use this approach, so the function-like form's behaviour is unchanged for any kernel where every field is touched (which is all existing tests + every realistic widget).  For dead fields (struct field never read or written by any rule or output), the user gets a clear Rust compile error: "missing field `xyz` in initializer of D".
+
+- **Output method tracks field reads.**  Extended `OutputBodyWalker` to insert into a `BTreeSet<String>` of field names whenever it rewrites `*self_q.field` → `q.field`.  The set lives on `OutputMethod` and is read by `lower_rule_kernel`.
+
+- **Attribute name is `rule_kernel_attr`, not `rule_kernel`.**  Rust doesn't allow a function-like proc-macro and an attribute proc-macro to share a name (both are `pub fn` items in the proc-macro crate).  The attribute is exported as `rule_kernel_attr`; users typically write `use rhdl_rule::rule_kernel_attr as rule_kernel;` to spell it `#[rule_kernel]` at use sites.
+
+- **Pure `#[derive(RuleKernel)]` is still NOT shipped.**  A derive-only form would have to re-emit the equivalent of `#[derive(Synchronous, SynchronousDQ)]`, which means depending on `rhdl-core`'s codegen — a structural change `rhdl-rule-core` is currently not allowed under `architecture.md`.  The `#[rule_kernel_attr]` shipped here gets us 95% of the §4.1 sketch's surface (the user adds one extra derive on the struct).  §4.5 documents the cleanup path if we later want the full derive form.
+
+**Surprises and gotchas:**
+
+- **Initial pivot string in the parity test was off.**  First version looked for `"impl ::rhdl :: core :: circuit :: synchronous :: SynchronousIO"` as the slice point; actual token-stringified output spaces colons differently.  Fixed by anchoring on `"SynchronousIO"` and walking back to the preceding `"impl"`.
+
+- **Derives can't be added by another derive.**  This is *separate from* the cross-macro-state question — it's about the order of macro expansion.  `#[derive(Foo)]` runs once and emits supplementary impls; it can't add `#[derive(Bar)]` to the same struct because by the time it runs, all derives have already been collected.  The attribute form sidesteps this by being an attribute on the *impl*, which doesn't try to add anything to the struct.
+
+**Validation:**
+
+- **53 tests pass** across 16 test files in the rule crates (43 pre-existing + 10 new):
+  - 8 new tests in `attribute_form.rs` — single-rule, priority chain, generic, multi-widget-per-module — all behavioural parity with the function-like form.
+  - 2 new tests in `attribute_form_parity.rs` — byte-identical token output + negative check that the attribute form doesn't emit a struct definition.
+
+- All 43 pre-existing tests continue to pass after the lowering refactor.  This is the load-bearing check: the refactor-then-share approach is only safe if it doesn't change observable behaviour on any existing kernel.
+
+**Follow-ups:**
+
+- **Pure `#[derive(RuleKernel)]` form** if/when `architecture.md` permits `rhdl-rule-core` to depend on a future shared-codegen crate.  Path documented in §4.5.
+
+- **Three pilot widget rewrites** (`core::round_robin_arbiter`, `fifo::write_logic`, one protocol PHY) — the outstanding Phase-1 deliverable.  Tracked separately as Move 1 in the post-Phase-2 plan.
+
+- **Diagnostic polish** for the BSV-capture wedge (rule-architecture.md §17.4 play 2) — also deferred to a follow-on PR.
+
+---
+
+## 2026-04-30 — Strategic content: package-manager-architecture.md + §17.4 BSV-capture plays
+
+**Paths:** `package-manager-architecture.md` (new, ~630 lines), `rule-architecture.md` §17.4, `CLAUDE.md` (adds `package-manager-architecture.md` to the strategic-design-documents list at the repository root).
+
+**Why this, why now:** sets the strategic axis for the next several PRs.  Two distinct pieces:
+
+1. **`package-manager-architecture.md`** — the highest-leverage feature on the roadmap because it's the network-effects moat that converts RHDL from "a better HDL" into "the place where hardware IP lives."  Defines the bit-level semver contract, the reproducibility contract, and the three-tier "RHDL Certified" mark.  Required reading for any widget work that touches `In`/`Out` aggregates or FSM-derived enums.
+
+2. **`rule-architecture.md` §17.4 — BSV-capture plays.** Three strategic moves to capture the 200–500 active Bluespec users globally (small in headcount, disproportionately influential in academic + defense + formal-methods circles): (a) ship semantics at least as strong as BSV's; (b) beat BSV on rule-scheduler diagnostics — *the wedge*; (c) publish a "BSV → RHDL" porting guide as a Phase 1 deliverable.
+
+**Design decisions:** documentation-only commit; engineering implications are tracked in subsequent PRs.
+
+**Validation:** N/A — pure documentation.
+
+**Follow-ups:** the engineering work that operationalises both documents lands in subsequent PRs (Move 1 / Move 2 / Move 3 in the post-Phase-2 plan; package-manager phases unschedulged).
+
+---
+
 ## 2026-04-30 — rhdl-rule Phase 2 — generic structs, `urgent_before` topological sort, `mutually_exclusive` optimisation, runtime crate `rhdl-rule-rt`
 
 **Paths:**
