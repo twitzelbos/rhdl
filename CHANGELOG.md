@@ -31,6 +31,59 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-04-30 — rhdl-rule Move 1 — pilot widget rewrites + composition demo
+
+**Paths:**
+
+- `crates/rhdl-rule/tests/pilot_round_robin_arbiter.rs` (new, 4 tests) — `RuleRoundRobinArbiter` as a single-rule rewrite of `core::round_robin_arbiter::RoundRobinArbiter`.  Parity-tested against the original for 12-cycle representative input mix.  RTL+NTL iverilog round-trip.
+- `crates/rhdl-rule/tests/pilot_fifo_write_logic.rs` (new, 2 tests) — `RuleFIFOWriteCore` as a single-rule rewrite of `fifo::write_logic::FIFOWriteCore`.  Parity-tested cycle-by-cycle against the original for 15-cycle write/read pattern.  RTL+NTL iverilog round-trip.
+- `crates/rhdl-rule/tests/pilot_simple_uart_tx.rs` (new, 4 tests) — `RuleSimpleUartTx` as a 3-rule state-transition PHY (load / advance / finish), all writing the same `bit_counter` field with `mutually_exclusive` annotations.  Built from scratch (not a rewrite — see entry below for why).  Frame-shape validation + back-to-back-byte test + RTL+NTL iverilog round-trip.
+- `crates/rhdl-rule/tests/pilot_composition.rs` (new, 4 tests) — `MonitoredArbiter`: a hand-written `Synchronous` widget that composes a rule-kernel sub-circuit (`PriorityArbiter`) with a traditional sub-circuit (`dff::DFF<Bits<32>>` grant counter).  RTL+NTL iverilog round-trip on the wrapper-with-rule-kernel-inside.  Validates `rule-architecture.md` §9.1 composition claim end-to-end.
+
+**Why this, why now:** the design plan's Phase-1 contract (`rule-architecture.md` §15 / §16 / §21) committed to "rewrite three real RHDL widgets as rule kernels" as the validation that the rule-kernel surface holds up against real designs.  PRs #20–#24 shipped the macro infrastructure but left the widget rewrites outstanding.  This PR closes that contract and adds a fourth pilot specifically requested during planning: a composition demo proving that rule kernels and traditional widgets compose without modification (`§9.1` claim).
+
+**Design decisions:**
+
+- **Pilot 1 (round_robin_arbiter) is a single-rule rewrite, not multi-rule.**  The rotation-priority scan is one logical operation per cycle; trying to split it into N per-requester rules would either need dynamic priority (which `#[rule(priority = N)]` can't express — priority is static) or N copies of the rotation calculation in N rule guards.  The honest rewrite is one rule whose body is the original kernel's scan loop.  Pilot 1's value is proving the byte-identical-behaviour claim end-to-end + that single-rule rule kernels lower to byte-identical Verilog as the hand-written equivalent.
+
+- **Pilot 2 (fifo::write_logic) is also single-rule, after a failed three-rule attempt.**  First attempt: split into `do_write` / `mark_overflow` / `tick_delayed`.  Result: the conflict matrix (correctly per §6.1) flagged write-read overlap between `do_write` (writes `write_address`) and `tick_delayed` (reads `write_address`), so the priority chain suppressed `tick_delayed` whenever `do_write` fired — breaking byte-identical behaviour.  This is the right call for the macro: it doesn't know whether `tick_delayed`'s read should see pre- or post-firing state of `write_address`, and the conservative answer is "they conflict".  The honest rewrite is single-rule.  **Lesson recorded in the test file:** widgets whose every-cycle behaviour is "everything happens together" are naturally one rule — the multi-rule decomposition shines when at most one of several sub-actions fires per cycle.
+
+- **Pilot 3 (simple UART TX) is a fresh widget, NOT a rewrite of `serial_bus::uart_tx`.**  The shipped `uart_tx` uses a `Constant<T>` sub-circuit for the baud divisor.  Rule kernels (today) only handle DFF-shaped sub-circuits because the macro generates `D::<…> { field: …}` constructors and doesn't know about per-sub-circuit input shapes for non-DFF sub-circuits.  Using a const-generic divisor sidesteps the issue.  The shipped UART TX would lower cleanly through this same rule pattern once `Constant<T>` is supported (follow-up).  Pilot 3 demonstrates the genuine multi-rule pattern: 3 rules (`load` / `advance` / `finish`) all write the same `bit_counter` field, are pairwise mutually exclusive (each guard is a distinct `bit_counter` predicate), and are declared `mutually_exclusive` so the priority chain elides redundant suppressors.
+
+- **Pilot 4 (composition demo) wraps a rule-kernel sub-circuit in a hand-written `Synchronous` widget.**  Demonstrates that the rule kernel widget appears no different from a traditional sub-widget at the wrapper level: same `q.field`/`d.field` access pattern, same `SynchronousIO` impl, same kernel-emission convention.  The wrapper's `#[kernel]` function reads the rule kernel's output (`q.arbiter` — its declared `SynchronousIO::O`), drives its input (`d.arbiter`), and updates a traditional grant-count DFF based on the result.  The wrapper is hand-written; the sub-circuit is a rule kernel; both compose without any special handling.
+
+**Surprises and gotchas:**
+
+- **`set!` doesn't preserve let-bindings between calls.**  First Pilot-1 attempt used `let mut found = ...; let mut winner_idx = ...;` then two `set!` calls referring to those.  Fails: the macro extracts each `set!` argument independently and drops everything else from the rule body.  Fix: inline the computation as a block expression *inside* each `set!` value.  The downstream NTL passes CSE the duplicated work.  Worth documenting in the macro as a known limitation; alternatively, a future macro change could preserve and emit shared rule-body let-bindings as kernel-level lets.
+
+- **Const-generic inference fails on user-defined `Out<N>` constructors too.**  Same root cause as the `D { ... }` issue fixed in PR #23 (Phase 2): const-generic types in expression position need turbofish.  Pilot 2 hit this on `RuleFIFOWriteOut { ... }` — fixed with `RuleFIFOWriteOut::<N> { ... }`.  Worth surfacing in the rule_kernel docs.
+
+- **The `tick_delayed` write-read conflict was the load-bearing lesson.**  Spent some real time trying to split `fifo::write_logic` into 3 rules, hit the conflict-suppression issue, had to honestly conclude that 3-rule decomposition would change observable behaviour.  This is exactly the kind of finding the design plan's pilot-rewrite deliverable was meant to surface — without the pilot, this constraint would have been a footgun shipped to users.
+
+- **Every-rule-must-touch-every-field invariant** (added in PR #24's lowering refactor) bit Pilot 4: the `output` method needs to reference all fields of the struct or the D constructor will be missing them.  Fixed by inserting `let _ = *self_q.last_idx;` to mark the field as touched.  Worth a clearer diagnostic in the macro.
+
+**Validation:**
+
+- **67 tests pass** across the rule crates (53 from PR #24 + 14 new):
+  - 4 in `pilot_round_robin_arbiter.rs` (single + rotation + parity + iverilog)
+  - 2 in `pilot_fifo_write_logic.rs` (parity + iverilog)
+  - 4 in `pilot_simple_uart_tx.rs` (idle + frame-shape + back-to-back + iverilog)
+  - 4 in `pilot_composition.rs` (compiles + counter advances + counter holds + iverilog)
+- All 53 pre-existing tests continue to pass; the pilot work added no regressions.
+- Iverilog RTL+NTL round-trip succeeds on every pilot, including the wrapper-with-rule-kernel-inside (Pilot 4).
+
+**Follow-ups:**
+
+- **`Constant<T>` and other non-DFF sub-circuits in rule kernels.**  The macro currently assumes every struct field is DFF-shaped; the FIFO read core, the existing UART TX, and most stream widgets use `Constant<T>` for static parameters.  Either teach the macro about the `SynchronousDQ` trait's per-sub-circuit `Q`/`D` shapes (right answer, more work), or document the constraint and provide a pattern for promoting Constants to const generics (workaround).
+
+- **Diagnose-and-suggest for the write-read-conflict footgun.**  When a user splits a widget into N rules and the conflict matrix suppresses one transition, the diagnostic today is silent — the kernel just produces wrong output.  A diagnostic that flags "this rule has been fully suppressed by higher-priority rules in every state where its guard is true" would catch this at compile time.  Tracks well with the BSV-capture diagnostic-polish work (`rule-architecture.md` §17.4 play 2).
+
+- **`every-field-must-be-touched` diagnostic.**  Today the failure mode is a Rust compile error from missing fields in the D constructor.  A miette-style "rule kernel has field `xyz` declared in the struct but never read or written by any rule or output method" diagnostic would be friendlier.  Cheap to add.
+
+- **Document the "single-rule is fine" pattern in the book.**  Not every widget benefits from multi-rule decomposition.  A book chapter that says so explicitly — with the round-robin arbiter and FIFO write logic as worked examples of "this is one rule, and here's why" — would prevent users from over-decomposing.
+
+---
+
 ## 2026-04-30 — rhdl-rule attribute form `#[rule_kernel_attr]`, §4.5 rewritten honestly
 
 **Paths:**
