@@ -31,6 +31,39 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-04-30 — kernel-language-extensions.md §5.5: type-system library prerequisites + refinement-types research target
+
+**Paths:** `kernel-language-extensions.md` (new §5.5, ~330 lines).
+
+**Why this, why now:** The Phase-2 random-program-generator work (PRs #15–#17) surfaced three concrete consequences worth recording in the design plan: (a) `Kind::option_of(T)` and `Kind::result_of(T, E)` should be public canonical constructors, (b) `TypedBits::enum_variant(kind, name, payload)` should be a safe constructor, and (c) refinement / bounded-integer types are the long-term solution to the kernel-domain gap — the gap between "any `Bits<8>` is valid by the type system" and "the kernel rejects 75 % of values when used as an index into `[T; 64]`".  All three were discovered while building synthetic random programs for the property test suite; without the design entry, the next person to hit them would re-derive the same conclusions.
+
+**Design decisions:**
+
+- **Bundle the three items into one §5.5 section** rather than scattering them through the existing tier structure.  They form a coherent arc: items 1 and 2 are immediate library improvements; item 3 is the long-term language extension that items 1 and 2 set up.  Putting them together makes the dependency relationship explicit.
+- **Frame items 1 and 2 as "library improvements," not language extensions.**  They edit `crates/rhdl-core/src/types/`; they do not change the proc-macro, the IR, or any pass.  Pure-additive constructor helpers.  CLAUDE.md §11.1's compiler-PR discipline applies in spirit but not by-the-letter.
+- **Frame item 3 as "research-grade, sketched but not committed."**  Estimate 3–4 months of focused work; defer to after Phase 4 of the existing phasing (which establishes the const-generic-arithmetic infrastructure that bounded-integer types depend on).
+- **Document the canonical-form trap explicitly.**  Both items 1 and 2 are at risk of producing non-canonical kinds / values that pass the `is_*` predicates but fail `==` against the proc-macro derive's output.  The mitigation in both cases is an *equivalence-with-derive test* that pins the helper's output bit-for-bit against `<T as Digital>::static_kind()` / `Digital::bin()`.  Without this discipline, the helpers would silently introduce parallel "Option<T>" types in the wild.
+- **Refinement-types framing emphasizes hardware specifically.**  Hardware doesn't have exceptions; out-of-range dynamic indices in synthesised RTL are *implementation-defined* per synthesis tool.  The simulator's panic catches it at development time, but the synthesised hardware just produces wrong data.  The refinement-types extension would either (a) reject at compile time or (b) emit explicit hardware that handles the out-of-range case — either way, removing the silent-implementation-defined behaviour.
+
+**Surprises and gotchas:**
+
+- **Two Option<T> kinds in the wild would silently break passes.**  `Kind::Enum` uses `internment::Intern<Enum>` for structural identity.  Two `Kind::Enum` values are `==` only if their interned pointers match.  A one-character difference between the proc-macro derive's `"Option::<{T:?}>"` name and a hand-rolled helper's name produces non-equal kinds that `is_option` accepts but downstream `==` checks distinguish.  The equivalence-with-derive test discipline is load-bearing, not just nice-to-have.
+- **Enum bit layout is implicit knowledge.**  The Phase-2 enum random-program generator constructs the template via `bits.last_mut() = One` because MSB-aligned discriminants live at the *highest* bit position per `Kind::pad`.  Anyone unfamiliar with this would write `bits[0] = One` (LSB-style) and produce a value with discriminant 0 instead of 1.  No diagnostic; just dispatched-to-wrong-arm.
+
+**Validation:**
+
+- The §5.5 content is internally cross-referenced (item 3 explicitly depends on items 1 and 2).
+- Each item has: what (concrete API or feature), why (the underlying concern with concrete examples), why it's harder than it looks, downstream benefits (numbered list), implementation sketch, test discipline, cost estimate, position in the plan.
+- The test discipline for items 1 and 2 specifies the equivalence-with-derive assertion concretely.
+
+**Follow-ups:**
+
+- **Implement §5.5.1 + §5.5.2 as a single small PR** (~150 LOC of API + ~150 LOC of equivalence tests).
+- **Implement §5.5.3 as research-grade work** — substantial; not blocking on anything but Phase 4 of the existing phasing.
+- **Surface `compile_with_checkpoints` as a debug CLI** — separate follow-up flagged in earlier discussion; not in this entry.
+
+---
+
 ## 2026-04-30 — RHIF random-program generators for the remaining 9 opcodes — Phase 2 closes
 
 **Paths:** `crates/rhdl-core/src/rhif/property_tests.rs` (extended +400 LOC: nine new shape generators, two new tests covering them).
