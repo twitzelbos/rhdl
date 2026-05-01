@@ -205,6 +205,62 @@ struct OutputMethod {
     field_reads: std::collections::BTreeSet<String>,
 }
 
+/// Per-field classification used by [`lower_rule_kernel`] to decide
+/// the right auto-hold lowering for fields no rule writes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FieldKind {
+    /// `dff::DFF<T>` — auto-hold via `let _next_<field> = q.<field>;`.
+    /// q and d both contain `T`, so the assignment type-checks.
+    Dff,
+    /// A composed sub-widget field (e.g. `MyWidget`) — auto-hold via
+    /// `let _next_<field> = Default::default();`.  q contains the
+    /// sub-widget's `Out` struct; d expects the sub-widget's `In`
+    /// struct.  The two types differ, so we can't use `q.field` as
+    /// the auto-hold default — we drive `In::default()` instead.
+    SubWidget,
+}
+
+/// Field name + classification.  Threaded through `lower_rule_kernel`
+/// so the auto-hold path emits the right default per field kind.
+#[derive(Debug, Clone)]
+pub struct FieldInfo {
+    pub name: Ident,
+    pub kind: FieldKind,
+}
+
+/// Classify a struct field by inspecting its type token-syntactically.
+/// Returns `FieldKind::Dff` if the type's last segment matches a
+/// known DFF wrapper:
+///
+/// - `DFF` — the canonical name (`rhdl_fpga::core::dff::DFF<T>`).
+/// - `Reg` — the user-facing alias (`rhdl_rule_rt::Reg<T>` →
+///   `dff::DFF<T>`).
+///
+/// Anything else is `FieldKind::SubWidget`.
+///
+/// Used by the function-like form which sees the struct definition.
+/// The attribute form uses an explicit `subwidgets = "..."` list
+/// instead.
+///
+/// **Limitation**: this is a syntactic check, not a type check.
+/// Custom DFF wrappers (anything not literally named `DFF` or `Reg`)
+/// will be misclassified as sub-widgets.  If a user introduces such
+/// a wrapper, they can use the function-like form (which sees their
+/// struct) and add their wrapper's last-segment name here, OR they
+/// can switch to the attribute form and not list it under
+/// `subwidgets = "..."` to keep the DFF default.
+fn classify_field(ty: &Type) -> FieldKind {
+    if let Type::Path(p) = ty {
+        if let Some(seg) = p.path.segments.last() {
+            let name = seg.ident.to_string();
+            if name == "DFF" || name == "Reg" {
+                return FieldKind::Dff;
+            }
+        }
+    }
+    FieldKind::SubWidget
+}
+
 /// Public entry point — function-like form: `rule_kernel! { struct + impl }`.
 ///
 /// Receives both items in a single token stream, validates that the
@@ -241,13 +297,20 @@ pub fn expand_rule_kernel(input: TokenStream) -> syn::Result<TokenStream> {
 
     let struct_generics = item_struct.generics.clone();
 
-    // Extract the struct's field names so the lowering can auto-hold
-    // any field that no rule touches.  Only the function-like form
-    // can do this — the attribute form doesn't see the struct.
-    let expected_field_names: Vec<Ident> = item_struct
+    // Extract the struct's field names + types so the lowering can
+    // (a) auto-hold any field that no rule touches, and (b) classify
+    // each field as DFF or sub-widget so the auto-hold default is
+    // type-correct.  Only the function-like form can do (b) — the
+    // attribute form doesn't see the struct.
+    let expected_fields: Vec<FieldInfo> = item_struct
         .fields
         .iter()
-        .filter_map(|f| f.ident.clone())
+        .filter_map(|f| {
+            f.ident.as_ref().map(|name| FieldInfo {
+                name: name.clone(),
+                kind: classify_field(&f.ty),
+            })
+        })
         .collect();
 
     let mut struct_emit = item_struct.clone();
@@ -257,7 +320,7 @@ pub fn expand_rule_kernel(input: TokenStream) -> syn::Result<TokenStream> {
         &struct_name,
         &struct_generics,
         item_impl,
-        Some(expected_field_names),
+        Some(expected_fields),
     )?;
     Ok(quote! {
         #struct_emit
@@ -281,6 +344,22 @@ pub fn expand_rule_kernel(input: TokenStream) -> syn::Result<TokenStream> {
 /// The user-facing tradeoff between the two forms is documented in
 /// `rule-architecture.md` §4.5.
 pub fn expand_rule_kernel_attr(item: TokenStream) -> syn::Result<TokenStream> {
+    expand_rule_kernel_attr_with_args(TokenStream::new(), item)
+}
+
+/// Like [`expand_rule_kernel_attr`] but also takes the attribute's
+/// argument list, parsed for `subwidgets = "field1, field2"` to
+/// classify those fields as sub-widgets in the auto-hold lowering.
+///
+/// Without an explicit list, the attribute form treats every field
+/// as DFF (which matches the attribute form's prior behaviour
+/// before sub-widget composition was supported).
+///
+/// Syntax: `#[rule_kernel_attr(subwidgets = "regs, sub")]`
+pub fn expand_rule_kernel_attr_with_args(
+    attr: TokenStream,
+    item: TokenStream,
+) -> syn::Result<TokenStream> {
     let item_impl: ItemImpl = parse2(item)?;
 
     let struct_ident = match &*item_impl.self_ty {
@@ -304,13 +383,82 @@ pub fn expand_rule_kernel_attr(item: TokenStream) -> syn::Result<TokenStream> {
     };
 
     let struct_generics = item_impl.generics.clone();
-    // Attribute form can't see the struct, so it can't supply the
-    // expected-field list.  Unused fields will surface as Rust
-    // compile errors ("missing field `xyz` in initializer of D").
-    // The user can either touch the field in some rule, remove it
-    // from the struct, or use the function-like form which auto-
-    // holds.  Documented in `rule-architecture.md` §4.5.
-    lower_rule_kernel(&struct_ident, &struct_generics, item_impl, None)
+
+    // Parse the attribute's `subwidgets = "..."` arg, if any.
+    let subwidget_names: std::collections::BTreeSet<String> = if attr.is_empty() {
+        std::collections::BTreeSet::new()
+    } else {
+        parse_subwidgets_arg(attr)?
+    };
+
+    // Attribute form can't see the struct, so it can't enumerate
+    // every field — but the explicit `subwidgets` list lets the
+    // user mark which composed fields need the sub-widget auto-hold.
+    // The fields the macro discovers (via rule reads/writes/output)
+    // are classified using this list: in `subwidgets` → SubWidget;
+    // not in `subwidgets` → Dff.
+    let attr_field_classifier = if subwidget_names.is_empty() {
+        None
+    } else {
+        Some(subwidget_names)
+    };
+
+    lower_rule_kernel_with_subwidget_marker(
+        &struct_ident,
+        &struct_generics,
+        item_impl,
+        None,
+        attr_field_classifier,
+    )
+}
+
+/// Parse `subwidgets = "field1, field2, ..."` from an attribute's
+/// argument list.  Returns the set of field names.
+///
+/// Accepts either `subwidgets = "f1, f2"` (string-literal form,
+/// most flexible) or `subwidgets(f1, f2)` (parenthesised form,
+/// slightly nicer to read).  The string-literal form is the
+/// canonical one.
+fn parse_subwidgets_arg(
+    attr: TokenStream,
+) -> syn::Result<std::collections::BTreeSet<String>> {
+    use syn::parse::{Parse, ParseStream};
+    use syn::punctuated::Punctuated;
+
+    struct AttrArgs {
+        subwidgets: std::collections::BTreeSet<String>,
+    }
+
+    impl Parse for AttrArgs {
+        fn parse(input: ParseStream) -> syn::Result<Self> {
+            let mut subwidgets = std::collections::BTreeSet::new();
+            // `subwidgets = "f1, f2"` form.
+            let key: Ident = input.parse()?;
+            if key != "subwidgets" {
+                return Err(syn::Error::new(
+                    key.span(),
+                    "expected `subwidgets = \"...\"` argument",
+                ));
+            }
+            let _eq: syn::Token![=] = input.parse()?;
+            let lit: syn::LitStr = input.parse()?;
+            for name in lit.value().split(',') {
+                let n = name.trim();
+                if !n.is_empty() {
+                    subwidgets.insert(n.to_string());
+                }
+            }
+            // Allow trailing comma; ignore subsequent args for now.
+            if input.peek(syn::Token![,]) {
+                let _: syn::Token![,] = input.parse()?;
+            }
+            Ok(Self { subwidgets })
+        }
+    }
+    let _ = Punctuated::<Ident, syn::Token![,]>::new(); // silence unused import
+
+    let parsed: AttrArgs = parse2(attr)?;
+    Ok(parsed.subwidgets)
 }
 
 /// Shared lowering — the heart of the macro.  Both the function-like
@@ -329,7 +477,27 @@ fn lower_rule_kernel(
     struct_name: &Ident,
     struct_generics: &Generics,
     item_impl: ItemImpl,
-    expected_field_names: Option<Vec<Ident>>,
+    expected_fields: Option<Vec<FieldInfo>>,
+) -> syn::Result<TokenStream> {
+    lower_rule_kernel_with_subwidget_marker(
+        struct_name,
+        struct_generics,
+        item_impl,
+        expected_fields,
+        None,
+    )
+}
+
+/// Version of [`lower_rule_kernel`] that also accepts an explicit
+/// sub-widget name set (used by the attribute form, where the
+/// struct isn't visible and per-field type classification has to
+/// be supplied as an explicit list via the attribute argument).
+fn lower_rule_kernel_with_subwidget_marker(
+    struct_name: &Ident,
+    struct_generics: &Generics,
+    item_impl: ItemImpl,
+    expected_fields: Option<Vec<FieldInfo>>,
+    attr_subwidget_marker: Option<std::collections::BTreeSet<String>>,
 ) -> syn::Result<TokenStream> {
     // Walk impl items, classify.
     let mut rules: Vec<Rule> = Vec::new();
@@ -527,15 +695,37 @@ fn lower_rule_kernel(
     for f in &output.field_reads {
         field_name_set.insert(f.clone());
     }
-    if let Some(expected) = expected_field_names.as_ref() {
+    if let Some(expected) = expected_fields.as_ref() {
         for f in expected {
-            field_name_set.insert(f.to_string());
+            field_name_set.insert(f.name.to_string());
         }
     }
     let field_names: Vec<Ident> = field_name_set
         .iter()
         .map(|s| Ident::new(s, Span::call_site()))
         .collect();
+
+    // Per-field kind map.  Function-like form supplies it via
+    // expected_fields (each field already classified).  Attribute
+    // form falls back to the explicit `subwidgets="..."` marker
+    // (everything in the marker → SubWidget; everything else → Dff).
+    // If neither is available, default everything to Dff (the
+    // pre-sub-widget-composition behaviour).
+    let field_kind_for = |name: &str| -> FieldKind {
+        if let Some(expected) = expected_fields.as_ref() {
+            for f in expected {
+                if f.name == name {
+                    return f.kind;
+                }
+            }
+        }
+        if let Some(marker) = attr_subwidget_marker.as_ref() {
+            if marker.contains(name) {
+                return FieldKind::SubWidget;
+            }
+        }
+        FieldKind::Dff
+    };
 
     // ---------------------------------------------------------------
     // Phase 1 scheduler synthesis.
@@ -637,7 +827,32 @@ fn lower_rule_kernel(
     let mut next_decls: Vec<TokenStream> = Vec::new();
     for field in &field_names {
         let next_ident = format_ident!("_next_{field}");
-        next_decls.push(quote! { let #next_ident = q.#field; });
+        let initial = match field_kind_for(&field.to_string()) {
+            FieldKind::Dff => {
+                // DFF auto-hold: q.<field> is the current value;
+                // also assignable to d.<field> (same type).
+                quote! { q.#field }
+            }
+            FieldKind::SubWidget => {
+                // Sub-widget auto-hold: q.<field> is the sub-widget's
+                // Out struct; d.<field> expects the sub-widget's In.
+                // We can't use `q.<field>` (different type from
+                // d.<field>); we use `D::dont_care().<field>` instead,
+                // which projects the In type from D and gives a
+                // stable zero-valued initial input.
+                //
+                // (Sub-widget input semantics: when no rule drives
+                // the sub-widget, the parent harness's "any" value
+                // is the contract.  RHDL's `dont_care` compiles to
+                // a stable zero, so the sub-widget receives a
+                // quiescent input each cycle — equivalent to
+                // `Default::default()` for typical In structs.)
+                quote! {
+                    <#d_ident #ty_generics as ::rhdl::prelude::Digital>::dont_care().#field
+                }
+            }
+        };
+        next_decls.push(quote! { let #next_ident = #initial; });
     }
     let _ = &q_ident;
     let _ = &d_ident;

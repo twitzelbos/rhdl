@@ -31,6 +31,56 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-01 — `rhdl-rule`: full sub-widget composition (auto-hold fix)
+
+**Paths:**
+
+- `crates/rhdl-rule-core/src/lib.rs` — new `FieldKind { Dff, SubWidget }` and `FieldInfo { name, kind }` types; `classify_field()` inspects field type tokens (matches `DFF` and `Reg` as DFF, everything else as sub-widget); `lower_rule_kernel`'s signature changed from `Option<Vec<Ident>>` to `Option<Vec<FieldInfo>>`; new `lower_rule_kernel_with_subwidget_marker()` lets the attribute form pass an explicit sub-widget list; auto-hold path branches on `FieldKind`: DFF fields use `q.<field>` (existing), sub-widget fields use `<D as Digital>::dont_care().<field>` (new) which type-pins the value via field projection from the D struct so no inference workaround is needed.
+- `crates/rhdl-rule-core/src/lib.rs` — new `expand_rule_kernel_attr_with_args()` parses the attribute's argument list for `subwidgets = "field1, field2"`.  Fields named in the list are classified as sub-widgets in the auto-hold path; everything else defaults to DFF.
+- `crates/rhdl-rule/src/lib.rs` — `rule_kernel_attr` now passes the attribute args through to the core; module docs updated to spell out the new capability + the remaining TODO (driving sub-widget inputs from a rule body).
+- `crates/rhdl-rule/tests/subwidget_composition.rs` (new, 5 tests) — function-like form auto-classifies sub-widget fields; attribute form takes explicit `subwidgets = "..."` list; rule reads sub-widget output fields (including bool fields); iverilog round-trip on both forms.
+
+**Why this, why now:** PR #45 documented "full sub-widget composition" as the bigger remaining piece of the Alto Phase 2 follow-up.  The walker rewrite for sub-widget *reads* worked there (`ctx.subwidget.field` → `q.subwidget.field`), but the auto-hold path for unwritten fields emitted `let _next_<field> = q.<field>;` which type-errored when `q.<field>` (the sub-widget's `Out` struct) and `d.<field>` (its `In` struct) had different types.
+
+This PR fixes that: per-field kind classification + a different auto-hold lowering for sub-widget fields.
+
+**Design decisions:**
+
+- **Two-form classification**: function-like form auto-classifies via type-token pattern matching; attribute form takes explicit list via `subwidgets = "..."` argument.  The function-like path is zero-config and matches the canonical `dff::DFF<T>` / `Reg<T>` types.  The attribute form needs the explicit list because the macro doesn't see the struct definition.
+
+- **Type-pin via D field projection**: the auto-hold for sub-widget fields uses `<D as ::rhdl::prelude::Digital>::dont_care().<field>` instead of `Default::default()`.  This pins the value's type via field-projection on the D struct (whose field types are concrete), avoiding the type-inference failure that bare `Default::default()` would hit at let-binding position.  D doesn't implement `Default` automatically (the `SynchronousDQ` derive only emits `Digital, Clone, Copy, PartialEq`), so `dont_care()` is the right vehicle — it returns a stable zero-valued initial input for typical In structs, equivalent to `Default::default()` in semantic effect.
+
+- **Read-only for now**: rules can read sub-widget outputs via `ctx.<sub>.<field>` (the walker rewrite from PR #45 plus this PR's auto-hold fix).  Driving sub-widget inputs from a rule body (`ctx.<sub> = SubIn { ... }`) is the next follow-up — it needs a different action lowering (sub-widget actions don't accumulate via the `_next_<field>` shadowing chain the way DFF actions do).  Useful patterns are still unblocked: observe a free-running sub-widget; combine multiple sub-widget outputs in one rule.
+
+- **DFF wrapper recognition**: the type-token classifier matches paths ending in `DFF` (canonical `dff::DFF<T>`) AND `Reg` (the `rhdl-rule-rt::Reg<T>` user-facing alias).  Custom DFF wrappers would need to be added here; documented in the function's rustdoc.
+
+- **Backward-compatible attribute form**: `#[rule_kernel_attr]` (no args) keeps its prior behaviour — every field is treated as DFF.  Sub-widget composition requires opt-in via `subwidgets = "..."`.  No existing rule kernels needed to change.
+
+**Surprises and gotchas:**
+
+- **Type inference at let-binding position is one-way for `Default::default()`**.  My first cut emitted `let _next_<field> = ::core::default::Default::default();` for sub-widget auto-hold; Rust couldn't pick a concrete type at the let-binding because nothing pinned it.  Even a later use (`d = D { field: _next_field, ... }`) doesn't propagate type info back to the let-binding's RHS.  Switching to `<D as Digital>::dont_care().<field>` fixed it because the field projection has a concrete type at the let-binding.
+- **Inner `fn` definitions inside kernel bodies don't compile** — my second-cut tried using a generic helper fn to type-pin Default::default(), and got "Unsupported statement type" from the kernel macro.  The kernel-macro lowering doesn't accept nested item definitions; expressions only.  Switched to the field-projection trick which is just an expression.
+- **D implements `Digital`, not `Default`.**  Worth knowing for any future macro work — the `SynchronousDQ` derive emits `Digital, Clone, Copy, PartialEq` and nothing else.
+
+**Validation:**
+
+- **5 new sub-widget composition tests pass** (function-like form, attribute form, bool sub-widget output, two iverilog round-trips).
+- All 79 pre-existing `rhdl-rule` tests still pass — no regressions.
+- All 40 `rhdl-alto` tests still pass — no regression to the existing `AltoTaskSystem`.
+- `cargo check -p rhdl-rule -p rhdl-alto` clean.
+
+**What this PR closes / leaves open:**
+
+- ✅ Closed: read-only sub-widget composition in rule kernels.  PR #45's "full sub-widget composition" follow-up is half-done; the read side is now fully functional.
+- ⏳ Open: driving sub-widget inputs from a rule body (the symmetric write side).  Needs a new action lowering that doesn't go through the DFF-shaped `_next_<field>` shadowing chain.
+
+**Follow-ups:**
+
+- **Sub-widget input drive** — let rules write `ctx.<sub> = SubIn { ... }` to drive a sub-widget per-cycle.  Would unlock the Alto regfile case (drive raddr, read rdata in the same rule).
+- **AltoTaskSystem refactor** — now that sub-widget composition works, the task system could compose `RegFile` directly and read it via `ctx.regs.rdata`.  Same hardware, cleaner code.
+
+---
+
 ## 2026-05-01 — `rhdl-rule`: DFF sub-field / method access in rule bodies (`ctx.<field>.<inner>`)
 
 **Paths:**
