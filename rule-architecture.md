@@ -157,6 +157,7 @@ Rule-level attributes carried in `#[rule(...)]`:
 - `urgent_before("rule_name")` — explicit ordering against another named rule (Bluespec compatibility).
 - `conflict_free("rule_name")` — assertion that two rules never conflict. Compiler verifies; if false, a compile error.
 - `mutually_exclusive` — applied to a group of rules to assert that at most one of them is ever ready in a cycle (their guards are pairwise unsatisfiable simultaneously). Compiler can use this to optimize the scheduler.
+- `trace` (or `trace = true` / `trace = false`) — opt-in per-rule trace exposure. When set, the macro emits additional `let fire_<rule>` and `let can_fire_<rule>` bindings (visible names — no underscore prefix) so the rule's firing decisions show up in VCDs. Off by default: typical kernels don't pay the kernel-emission and VCD-clutter cost for debug-only signals. Enable selectively on the rules you need to observe; it composes freely with the other annotations.
 
 Phase 2 ships annotations beyond `priority`. Phase 1 ships only `priority` plus implicit source-order priority.
 
