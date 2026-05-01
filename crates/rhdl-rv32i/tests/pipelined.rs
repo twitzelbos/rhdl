@@ -212,6 +212,7 @@ impl ProgramIo for SInIn {
         Self {
             instr: bits::<32>(instr as u128),
             mem_rdata: bits::<32>(mem_rdata as u128),
+            int_pending: bits::<32>(0),
         }
     }
 }
@@ -221,6 +222,7 @@ impl ProgramIo for PIn {
         Self {
             instr: bits::<32>(instr as u128),
             mem_rdata: bits::<32>(mem_rdata as u128),
+            int_pending: bits::<32>(0),
         }
     }
 }
@@ -365,6 +367,7 @@ fn pipelined_iverilog_round_trip() -> Result<(), RHDLError> {
                 0
             }),
             mem_rdata: bits::<32>(0),
+            int_pending: bits::<32>(0),
         })
         .collect();
     let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);

@@ -54,6 +54,7 @@ fn run_single_writes(program: Vec<u32>, max_cycles: usize) -> Vec<(u32, u32)> {
             Some(ResetOrData::Data(SInIn {
                 instr: bits::<32>(instr as u128),
                 mem_rdata: bits::<32>(mem_rdata as u128),
+                int_pending: bits::<32>(0),
             }))
         },
         100,
@@ -86,6 +87,7 @@ fn run_pipelined_writes(program: Vec<u32>, max_cycles: usize) -> Vec<(u32, u32)>
             Some(ResetOrData::Data(PIn {
                 instr: bits::<32>(instr as u128),
                 mem_rdata: bits::<32>(mem_rdata as u128),
+                int_pending: bits::<32>(0),
             }))
         },
         100,

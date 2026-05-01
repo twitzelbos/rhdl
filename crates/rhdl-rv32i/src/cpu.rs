@@ -71,6 +71,11 @@ pub struct In {
     /// address driven by the previous cycle's load (or this
     /// cycle's address if the parent's memory is combinational).
     pub mem_rdata: Bits<32>,
+    /// External-interrupt-pending vector.  Mirrors directly into
+    /// the CSR file's `mip` (so the platform owns the level).
+    /// Only bits 3 (M-software), 7 (M-timer), and 11 (M-external)
+    /// are meaningful; everything else is ignored.
+    pub int_pending: Bits<32>,
 }
 
 /// Outputs from the single-cycle core.
@@ -196,10 +201,11 @@ pub fn cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let alu_result: Bits<32> = alu(dec.alu_op, alu_a, alu_b);
 
     // Memory address is the ALU result for loads/stores.
+    // Mem-write/read are gated by `!take_trap` below so an
+    // interrupt or sync exception suppresses any store/load that
+    // the in-flight instruction would have done.
     o.mem_addr = alu_result;
     o.mem_wdata = rs2_val; // store data comes from rs2
-    o.mem_write = dec.mem_write;
-    o.mem_read = dec.mem_read;
     o.mem_op = dec.mem_op;
 
     // Branch decision and next PC computation.
@@ -274,19 +280,50 @@ pub fn cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let target_misaligned: bool = (prospective_target & bits::<32>(0x3)) != bits::<32>(0);
     let take_misaligned: bool = attempts_redirect && target_misaligned;
 
-    // Trap handling.  ECALL/EBREAK/illegal-instruction/misaligned
-    // all vector to mtvec; mcause distinguishes:
+    // External-interrupt detection.  An interrupt fires whenever
+    // mstatus.MIE is set AND any pending+enabled M-mode interrupt
+    // bit is asserted.  Interrupts take priority over synchronous
+    // exceptions on the same cycle (per the privileged-ISA spec:
+    // interrupts taken between instructions, before the instruction
+    // commits) — so the in-flight instruction is squashed and
+    // mepc = current PC (will re-execute after MRET).
+    //
+    // Priority among pending+enabled interrupts (per spec):
+    //   M-external (bit 11) > M-software (bit 3) > M-timer (bit 7)
+    let int_pe: Bits<32> = q.csrs.int_pending_enabled;
+    let int_meip: bool = (int_pe & bits::<32>(0x800)) != bits::<32>(0);  // bit 11
+    let int_msip: bool = (int_pe & bits::<32>(0x008)) != bits::<32>(0);  // bit 3
+    let int_mtip: bool = (int_pe & bits::<32>(0x080)) != bits::<32>(0);  // bit 7
+    let take_interrupt: bool = q.csrs.mstatus_mie && (int_meip || int_msip || int_mtip);
+    let interrupt_cause: Bits<32> = if int_meip {
+        bits::<32>(0x8000_000B)  // M-external
+    } else if int_msip {
+        bits::<32>(0x8000_0003)  // M-software
+    } else {
+        bits::<32>(0x8000_0007)  // M-timer
+    };
+
+    // Synchronous-exception detection.  ECALL/EBREAK/illegal/
+    // misaligned all vector to mtvec; mcause distinguishes:
     //   0 — Instruction address misaligned
     //   2 — Illegal instruction
     //   3 — Breakpoint (EBREAK)
     //  11 — Environment call from M-mode (ECALL)
     // MRET is the inverse: PC ← mepc.  WFI is a NOP.
-    let take_ecall:      bool = dec.system_op == SystemOp::Ecall;
-    let take_ebreak:     bool = dec.system_op == SystemOp::Ebreak;
-    let take_illegal:    bool = dec.illegal;
-    let take_trap:       bool = take_ecall || take_ebreak || take_illegal || take_misaligned;
-    let take_mret:       bool = dec.system_op == SystemOp::Mret;
-    let trap_cause: Bits<32> = if take_misaligned {
+    //
+    // Interrupts take priority over synchronous exceptions and
+    // over MRET — so any in-flight instruction (including ECALL
+    // and MRET itself) is squashed when an interrupt fires.
+    let take_ecall:      bool = !take_interrupt && dec.system_op == SystemOp::Ecall;
+    let take_ebreak:     bool = !take_interrupt && dec.system_op == SystemOp::Ebreak;
+    let take_illegal:    bool = !take_interrupt && dec.illegal;
+    let take_sync_misaligned: bool = !take_interrupt && take_misaligned;
+    let take_sync_trap:  bool = take_ecall || take_ebreak || take_illegal || take_sync_misaligned;
+    let take_trap:       bool = take_interrupt || take_sync_trap;
+    let take_mret:       bool = !take_interrupt && dec.system_op == SystemOp::Mret;
+    let trap_cause: Bits<32> = if take_interrupt {
+        interrupt_cause
+    } else if take_sync_misaligned {
         bits::<32>(0)
     } else if take_illegal {
         bits::<32>(2)
@@ -295,7 +332,7 @@ pub fn cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     } else {
         bits::<32>(11)
     };
-    let trap_val: Bits<32> = if take_misaligned {
+    let trap_val: Bits<32> = if take_sync_misaligned {
         prospective_target
     } else {
         bits::<32>(0)
@@ -327,7 +364,12 @@ pub fn cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
 
     // Drive the CSR file.  CSR-instruction port is suppressed on
     // a trap (same as register writeback).  The trap port carries
-    // the saved PC and cause when a trap fires.
+    // the saved PC and cause when a trap fires.  The mret port
+    // restores mstatus.MIE; mutually exclusive with trap_en.
+    //
+    // For interrupts, mepc must be the address of the squashed
+    // instruction (the one we'd have run had the interrupt not
+    // fired).  Same value as q.pc — same as for sync exceptions.
     d.csrs = CsrIn {
         raddr: dec.csr_addr,
         waddr: dec.csr_addr,
@@ -337,6 +379,8 @@ pub fn cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         trap_pc: q.pc,
         trap_cause,
         trap_val,
+        mret_en: take_mret,
+        int_pending: i.int_pending,
     };
 
     // Commit next PC — trap entry overrides everything else;
@@ -351,6 +395,11 @@ pub fn cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         next_pc
     };
     d.pc = next_pc_with_trap;
+
+    // mem_write / mem_read are gated by !take_trap so an interrupt
+    // (or sync exception) suppresses any in-flight load/store.
+    o.mem_write = !take_trap && dec.mem_write;
+    o.mem_read  = !take_trap && dec.mem_read;
 
     o.pc = q.pc;
     o.illegal = dec.illegal;

@@ -31,6 +31,80 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-01 — Tier C: rhdl-rv32i external interrupts (mip / mie / mstatus.MIE / MPIE)
+
+**Paths:**
+
+- `crates/rhdl-rv32i/src/csr.rs` — added `mie` DFF; added 4 new `In` fields (`mret_en`, `int_pending`); added 2 new `Out` fields (`mstatus_mie`, `int_pending_enabled`); CSR file's trap port now atomically saves `mstatus.MIE` → `MPIE` and clears `MIE`; new `mret_en` port restores `mstatus.MIE` from `MPIE` and sets `MPIE = 1`; `mip` (CSR 0x344) is read-only and mirrors the input; constants for cause codes / mstatus bits / mie bits exposed.
+- `crates/rhdl-rv32i/src/cpu.rs` — added `In::int_pending`; new interrupt-detection path computes `take_interrupt = mstatus.MIE && (mip & mie & MIE_M_MASK) != 0`; interrupts take priority over sync exceptions and over MRET; mem_write/mem_read are now gated by `!take_trap` so an interrupt suppresses any in-flight load/store.
+- `crates/rhdl-rv32i/src/pipelined.rs` — same logic at the Execute stage, gated by `q.id_ex.valid` (no interrupt on a bubble); same priority/cause/mret_en wiring.
+- `crates/rhdl-rv32i/src/sim.rs` — added `Cpu::int_pending` field; `interrupt_pending` / `interrupt_cause` / `int_pending_enabled` helpers; `take_trap_with_val` now does the mstatus.MIE→MPIE save; new `execute_mret` does the symmetric MPIE→MIE restore plus `MPIE ← 1`; `step` checks for pending interrupts FIRST (between instructions per spec).
+- `crates/rhdl-rv32i/tests/interrupts.rs` (new, 11 tests) — covers each of the 3 interrupt sources firing, mstatus.MIE global gating, mie per-source gating, MRET restoring MIE+MPIE, pipelined parity, source priority (M-external > M-software > M-timer), `int_pending = 0` is a no-op, sim-only MRET sanity, and a sim↔hardware lockstep that produces the same final mcause.
+- `crates/rhdl-rv32i/src/compliance.rs` and all existing test files — `int_pending: bits::<32>(0)` added to every `In { ... }` struct literal (mechanically inserted by a one-shot Python script).
+
+**Why this, why now:** PR #38 closed the synchronous-exception classes (mcause = 0, 2, 3, 11). The asynchronous-exception classes (mcause bit 31 set: M-software cause 3, M-timer cause 7, M-external cause 11) were the explicitly-deferred follow-up — they need an interrupt input port and edge-vs-level decisions that misaligned-target + WFI didn't. Closing this completes the trap-cause surface required for any RV32I implementation that claims privileged-ISA compliance, and unblocks downstream work that needs interrupt-driven I/O (Alto's task arbiter; AXI4 DMA; UART RX-ready driving an ISR).
+
+**Design decisions:**
+
+- **`mip` is read-only and mirrors the CPU's `int_pending` input.** The platform owns the level — the hardware just observes it. This is the simplest model that's spec-compliant: per the privileged-ISA spec, MEIP is "set by an external interrupt source," MTIP "by the platform timer," and MSIP "by a CSR write or platform-defined mechanism." Software-writable MSIP is the only nuance our model loses; we'll add it in a follow-up if a test needs it.
+
+- **Level-triggered interrupts (no edge detection in the CPU).** If the platform asserts `int_pending[3] = 1` for many cycles, the interrupt fires once (when MIE is set), the handler runs, and on MRET the interrupt fires again UNLESS the handler clears the source (typically via `csrrw x0, x0, mie` to disable the bit, or via a platform-specific clear).
+  - Trade-off: simpler hardware, slightly heavier handler. The alternative (edge detection in the CPU) requires an extra DFF per source plus a "pending edge consumed" reset path. Push that complexity to the platform if needed.
+
+- **`mstatus.MPIE` save/restore done in the CSR file's trap/mret ports, not in the CPU kernel.** The atomic update has to happen in one cycle alongside `mepc`/`mcause`/`mtval`, and putting it in the CSR file keeps the atomicity local (the CPU just signals `trap_en` or `mret_en`; the CSR file does the bit-twiddling). Two new ports cleanly separated from the CSR-instruction write port (which is suppressed during a trap anyway).
+
+- **Interrupt > sync exception > MRET priority.** Per the privileged-ISA spec, interrupts are taken at instruction-boundary BEFORE the next instruction commits — so a pending+enabled interrupt squashes whatever is in Execute, including ECALL or MRET. Implemented by `!take_interrupt &&` gating on every other trap/MRET signal.
+  - Edge case: this means MRET can be squashed by an interrupt. The handler then re-runs with the OLD mepc/mstatus state — which is correct (the interrupt fires before the MRET commits, so MRET's effects haven't taken place yet).
+
+- **Source priority: M-external > M-software > M-timer.** Per the privileged-ISA spec table 3.7. Implemented as a 3-way mux on the cause code.
+
+- **`int_pending` flows combinationally into the CSR file.** `o.int_pending_enabled = i.int_pending & q.mie & MIE_M_MASK` reads the live input, not a stored value. This is what allows the harness to "pulse" an interrupt at a specific cycle and see the trap fire in the same cycle.
+  - This was a design check: the framework's `d.<child>.field` semantics treat `d.<child>` as the child's input THIS cycle (combinational into the child's kernel), with the child's DFFs committing at the cycle edge. Verified by tracing how existing CSR writes and reads compose.
+
+- **Pipelined gates `take_interrupt` on `q.id_ex.valid`.** A bubble in Execute has no associated PC, so taking an interrupt would write a meaningless `mepc`. Gating on validity defers the interrupt to the next valid Execute instruction. (For long stall sequences, this could delay interrupts significantly — but stalls are bounded by the longest load-use case = 1 cycle, so this is at most a 1-cycle delay vs. ideal.)
+
+- **Mechanical update of all existing tests' struct literals.** Adding a required field to `cpu::In` and `pipelined::In` broke every test file. Used a one-shot Python script to insert `int_pending: bits::<32>(0),` after every `mem_rdata: bits::<32>(...),` line — fast, mechanical, trustworthy.
+
+**Surprises and gotchas:**
+
+- **The kernel literal parser rejected `bits::<32>(!0x88u32 as u128)`.** First cut used the bitwise-NOT to express the mstatus mask. The kernel macro stringifies the expression and the literal parser barfs on `!0x88u32`. Fix: use the direct hex literal `0xFFFF_FF77` instead. Caught immediately by the iverilog round-trip test failing with `ParseIntError(InvalidDigit)`. Worth noting for any future kernel work — the kernel literal subset is "decimal / 0b / 0o / 0x integer literals" and not "any const expression."
+
+- **MRET tests are timing-sensitive on when the interrupt is asserted.** First version asserted int_pending starting at cycle 8, but mstatus.MIE commits at end of cycle 5. By cycle 8, PC had already advanced past the user code into the post-MRET landing zone. Fix: assert from cycle 6 (the first cycle where MIE is committed AND the user-code PC is still 0x18). The lesson is that "when does my pulse fire" depends on the CPU's commit timing of the enabling write, which isn't always obvious.
+
+- **Pipelined needs more cycles for the pulse to take effect.** The same program that interrupts at cycle 6 single-cycle needs cycle 16+ pipelined (because of the 4-cycle pipe latency from CSRRSI in Decode to Execute commit). Tests use different `int_at` thresholds for the two cores; this is fine because both produce the same final architectural state.
+
+- **Lockstep comparison switched from per-cycle write-sequence to final-state.** Hardware and simulator have different definitions of "when" an interrupt fires (cycle-count vs. retired-instruction-count), so per-cycle write sequences aren't directly comparable when interrupts are timing-injected. The lockstep test now asserts `final mcause` agreement instead — still catches "did the interrupt fire at all and produce the right cause" without forcing a fragile cycle-by-cycle match. The compliance lockstep tests from PR #37 still do per-cycle comparison; they don't inject interrupts.
+
+- **All 11 new tests passed first run except for the two timing issues above (one test fix each).** No actual hardware bugs uncovered. Both the trap path and the MRET path generalised cleanly from the existing trap-vectoring code.
+
+**Validation:**
+
+- **111 tests pass** in `rhdl-rv32i` (was 100; added 11): each interrupt source × single-cycle (3 tests), m_software pipelined parity, mstatus.MIE gating × 2, mie-bit gating, MRET-restores-MIE, source-priority, no-interrupt-when-zero, sim-only MRET, sim↔hardware lockstep.
+- All 100 existing tests still pass — no regressions.
+- The compliance + lockstep tests from PRs #34/#37 unchanged (drive `int_pending = 0` throughout, which is the documented "no interrupts" path).
+- `cargo check -p rhdl-rv32i` clean.
+
+**Trap-cause surface complete:**
+
+- `mcause = 0`         — Instruction address misaligned (PR #38)
+- `mcause = 2`         — Illegal instruction (PR #36)
+- `mcause = 3`         — Breakpoint / EBREAK (PR #31)
+- `mcause = 11`        — M-mode environment call / ECALL (PR #31)
+- `mcause = 0x80000003` — M-software interrupt (this PR)
+- `mcause = 0x80000007` — M-timer interrupt (this PR)
+- `mcause = 0x8000000B` — M-external interrupt (this PR)
+
+Plus MRET return-from-trap (PR #36 + this PR's mstatus.MIE/MPIE restore) and WFI (PR #38).
+
+**Follow-ups:**
+
+- **Software-writable MSIP** — currently `mip` is read-only. Per spec, MSIP can be written by software via the CSR (or by the platform). Add a writable shadow if a test needs it.
+- **Misaligned-load/store traps** (`mcause = 4` / `mcause = 6`) — implementation-defined; we currently handle naturally.
+- **WFI as actual halt-until-interrupt** — currently NOP per spec allowance. Could be promoted to a real "stall PC until int_pending_enabled != 0" once an interrupt source is wired into a benchmark that benefits.
+- **vectored mtvec** (mtvec[0] = 1) — currently we always vector to `mtvec & ~0x3` regardless of mode bits. Add when a test exercises vectored mode.
+
+---
+
 ## 2026-05-01 — Tier C: rhdl-rv32i misaligned-target trap (mcause = 0) + WFI
 
 **Paths:**
