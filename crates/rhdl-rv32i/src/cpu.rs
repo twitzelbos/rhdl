@@ -50,8 +50,9 @@
 //! examples.
 
 use crate::alu::alu;
+use crate::csr::{CsrFile, In as CsrIn};
 use crate::decoder::decode;
-use crate::isa::{AluSrc, BranchOp, MemOp, Opcode, WritebackSrc};
+use crate::isa::{AluSrc, BranchOp, CsrOp, MemOp, Opcode, SystemOp, WritebackSrc};
 use crate::reg_file::{In as RegIn, RegFile};
 use rhdl::prelude::*;
 use rhdl_fpga::core::dff;
@@ -101,10 +102,12 @@ pub struct Out {
 #[rhdl(dq_no_prefix)]
 pub struct Cpu {
     /// Program counter — bumped by 4 each cycle unless the
-    /// instruction is a taken branch / jump.
+    /// instruction is a taken branch / jump / trap.
     pc: dff::DFF<Bits<32>>,
     /// 32-entry register file (x0 hardwired to zero).
     rf: RegFile,
+    /// M-mode CSR file (Phase 3).
+    csrs: CsrFile,
 }
 
 impl Default for Cpu {
@@ -112,6 +115,7 @@ impl Default for Cpu {
         Self {
             pc: dff::DFF::new(bits::<32>(0)),
             rf: RegFile::default(),
+            csrs: CsrFile::default(),
         }
     }
 }
@@ -217,6 +221,52 @@ pub fn cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         pc_plus_4
     };
 
+    // CSR access — combinational read of the addressed CSR, plus
+    // computation of the new CSR value based on the CSR-op.  The
+    // CSR-instruction source is rs1 (for register variants) or
+    // the zero-extended rs1 field (for immediate variants).
+    let csr_rdata: Bits<32> = q.csrs.rdata;
+    let csr_uimm: Bits<32> = dec.rs1.resize();
+    let csr_src: Bits<32> = match dec.csr_op {
+        CsrOp::ReadWriteImm => csr_uimm,
+        CsrOp::ReadSetImm   => csr_uimm,
+        CsrOp::ReadClearImm => csr_uimm,
+        _                    => rs1_val,
+    };
+    let csr_new_value: Bits<32> = match dec.csr_op {
+        CsrOp::ReadWrite     => csr_src,
+        CsrOp::ReadWriteImm  => csr_src,
+        CsrOp::ReadSet       => csr_rdata | csr_src,
+        CsrOp::ReadSetImm    => csr_rdata | csr_src,
+        CsrOp::ReadClear     => csr_rdata & !csr_src,
+        CsrOp::ReadClearImm  => csr_rdata & !csr_src,
+        CsrOp::None          => csr_rdata,
+    };
+    // CSRRS / CSRRC with rs1 = x0 is a pure read (no write).
+    // CSRRSI / CSRRCI with uimm = 0 is also a pure read.
+    let csr_writes: bool = match dec.csr_op {
+        CsrOp::None         => false,
+        CsrOp::ReadWrite    => true,
+        CsrOp::ReadWriteImm => true,
+        CsrOp::ReadSet      => dec.rs1 != bits::<5>(0),
+        CsrOp::ReadSetImm   => dec.rs1 != bits::<5>(0),
+        CsrOp::ReadClear    => dec.rs1 != bits::<5>(0),
+        CsrOp::ReadClearImm => dec.rs1 != bits::<5>(0),
+    };
+
+    // Trap handling.  ECALL and EBREAK both vector to mtvec; the
+    // distinction is the cause code (11 for M-mode ECALL, 3 for
+    // breakpoint).  v0.3 doesn't implement misaligned-target,
+    // illegal-instruction, or external-interrupt traps.
+    let take_ecall: bool = dec.system_op == SystemOp::Ecall;
+    let take_ebreak: bool = dec.system_op == SystemOp::Ebreak;
+    let take_trap: bool = take_ecall || take_ebreak;
+    let trap_cause: Bits<32> = if take_ecall {
+        bits::<32>(11)  // Environment call from M-mode
+    } else {
+        bits::<32>(3)   // Breakpoint
+    };
+
     // Pick writeback value.
     let mem_value: Bits<32> = load_format(dec.mem_op, i.mem_rdata);
     let writeback_value: Bits<32> = match dec.writeback_src {
@@ -224,8 +274,13 @@ pub fn cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         WritebackSrc::Alu     => alu_result,
         WritebackSrc::Mem     => mem_value,
         WritebackSrc::PcPlus4 => pc_plus_4,
+        WritebackSrc::Csr     => csr_rdata,
     };
-    let writeback_en: bool = (dec.writeback_src != WritebackSrc::None) && (dec.rd != bits::<5>(0));
+    // Suppress writeback on a trap (the in-flight instruction is
+    // squashed in favour of the trap entry).
+    let writeback_en: bool = !take_trap
+        && (dec.writeback_src != WritebackSrc::None)
+        && (dec.rd != bits::<5>(0));
 
     // Drive the register file's input port.
     d.rf = RegIn {
@@ -236,8 +291,28 @@ pub fn cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         wen: writeback_en,
     };
 
-    // Commit next PC.
-    d.pc = next_pc;
+    // Drive the CSR file.  CSR-instruction port is suppressed on
+    // a trap (same as register writeback).  The trap port carries
+    // the saved PC and cause when a trap fires.
+    d.csrs = CsrIn {
+        raddr: dec.csr_addr,
+        waddr: dec.csr_addr,
+        wdata: csr_new_value,
+        wen: !take_trap && csr_writes,
+        trap_en: take_trap,
+        trap_pc: q.pc,
+        trap_cause,
+        trap_val: bits::<32>(0),  // v0.3 doesn't compute mtval
+    };
+
+    // Commit next PC — trap entry overrides everything else.
+    let trap_target: Bits<32> = q.csrs.mtvec;
+    let next_pc_with_trap: Bits<32> = if take_trap {
+        trap_target
+    } else {
+        next_pc
+    };
+    d.pc = next_pc_with_trap;
 
     o.pc = q.pc;
     o.illegal = dec.illegal;

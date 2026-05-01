@@ -31,6 +31,58 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-01 — Tier C: rhdl-rv32i Phase 3 — M-mode CSRs + ECALL/EBREAK trap vectoring (single-cycle)
+
+**Paths:**
+
+- `crates/rhdl-rv32i/src/csr.rs` (new) — `CsrFile` widget with six read-write CSRs (`mstatus`, `mtvec`, `mscratch`, `mepc`, `mcause`, `mtval`) as separate DFFs plus two read-only constants (`misa = 0x4000_0100`, `mhartid = 0`).  Combinational read; synchronous write; **separate trap-port** that writes `mepc`/`mcause`/`mtval` atomically (takes priority over CSR-instruction writes).
+- `crates/rhdl-rv32i/src/isa.rs` — adds `CsrOp` enum (None, ReadWrite, ReadSet, ReadClear, ReadWriteImm, ReadSetImm, ReadClearImm) and `SystemOp` enum (None, Ecall, Ebreak); extends `DecodedInstruction` with `csr_op`, `csr_addr`, `system_op` fields and a new `WritebackSrc::Csr` variant.
+- `crates/rhdl-rv32i/src/decoder.rs` — extends the SYSTEM-opcode arm to distinguish ECALL/EBREAK (funct3=0, funct12 0/1) from the six CSR instructions (funct3 1/2/3 = register variants, 5/6/7 = immediate variants).
+- `crates/rhdl-rv32i/src/cpu.rs` — single-cycle CPU now contains a `CsrFile` sub-circuit.  Handles all six CSR ops (read pre-modify into rd, compute new value, write back if rs1≠x0 or imm≠0).  ECALL/EBREAK trap: vector PC to `q.csrs.mtvec`, save current PC to `mepc` via the trap port, set `mcause` to 11 (M-mode ECALL) or 3 (Breakpoint), suppress register and CSR writebacks for the trapping instruction.
+- `crates/rhdl-rv32i/src/hazard.rs` — extends `writes_back` to recognize `WritebackSrc::Csr`.
+- `crates/rhdl-rv32i/src/pipelined.rs` — non-functional stub: `WritebackSrc::Csr` arm returns 0 (the pipelined CPU doesn't yet have CSR support — single-cycle is the v0.3 reference for CSR semantics; pipelined-CSR is a follow-up).
+- `crates/rhdl-rv32i/tests/csr_trap.rs` (new, 11 tests) — write-then-read on `mscratch` (CSRRW); bit-set on `mstatus` (CSRRS); bit-clear on `mstatus` (CSRRC); CSRRWI / CSRRSI / CSRRCI immediate variants; read-only `mhartid` and `misa`; ECALL trap (mepc / mcause / PC redirect); EBREAK trap (mcause = 3); CSRRW returns old value to rd; iverilog round-trip on the CPU with the new CSR file.
+
+**Why this, why now:** Phase 3 per `tier-c-flagship-cores.md` §3.5.  Required for self-hosted execution and as a prerequisite for the riscv-tests harness — riscv-tests use ECALL to signal pass/fail, so without ECALL vectoring we can't run the upstream test suite.  This PR makes ECALL/EBREAK functional and ships the CSR file the trap handlers need.
+
+**Design decisions:**
+
+- **Six RW CSRs as separate DFF fields, not a bundled array.**  The 12-tuple ceiling (CLAUDE.md §3.1) accommodates 6 fields easily.  Separate DFFs let the synthesizer optimize address-decoded reads naturally and keep the source readable.
+- **Read-only CSRs are constants in the read kernel, not DFFs.**  `misa` returns `0x4000_0100` (RV32I marker, XLEN=32 + I extension); `mhartid` returns 0.  Writes to read-only CSRs are silently dropped per the privileged spec's recommendation for unimplemented CSRs.  RV32I privileged actually requires unimplemented CSR access to trap as illegal-instruction; v0.3 simplifies to no-op for the addresses our tests don't exercise.  Tracked as a follow-up.
+- **Separate `trap_en` / `trap_pc` / `trap_cause` / `trap_val` port** on the CSR file, **distinct from the CSR-instruction write port**.  When a trap fires, all three trap-CSRs (`mepc`, `mcause`, `mtval`) update atomically without going through CSRRW.  Trap-port wins over CSR-instruction-port on the same cycle (matches BSV's "trap-takes-priority" convention; structurally simpler than racing them through priority encoding).
+- **CSRRS / CSRRC with rs1 = x0 is a pure read.**  The spec says these instructions don't write the CSR when rs1 = x0 (so reading a CSR doesn't accidentally clear it).  Same applies to CSRRSI / CSRRCI with uimm = 0.  Implemented via the `csr_writes` predicate.
+- **ECALL/EBREAK suppress writeback.**  The trapping instruction commits no register write (mepc captures the PC of *that* instruction so the handler can return there or skip it).  Decoder doesn't write `rd`; executor's `writeback_en` is gated on `!take_trap`.
+- **`mtvec` exposed as an output of the CSR file.**  The CPU reads it via `q.csrs.mtvec` to compute the trap target without going through the read port.  Separate from `q.csrs.rdata` which serves CSR-instruction reads.  No second read port needed.
+- **Single-cycle only in v0.3.**  The pipelined CPU's CSR + trap support requires more work — CSR ops have to flow through the pipeline registers (CsrIn populated from the Decode stage's decoded instruction; CsrOut consumed at Writeback), and traps must squash all in-flight stages.  Deferred to v0.4 or whenever the cross-cutting `RCStream` memory interface refactor lands.
+
+**Surprises and gotchas:**
+
+- **`addi(1, 0, 0xAA)` doesn't sign-extend cleanly.**  My first attempt at the "CSRRW returns old value" test wrote `addi(1, 0, 0xAA)` expecting x1 = 0xAA.  But ADDI's 12-bit immediate is sign-extended, and 0xAA fits in 12 bits but its top bit (bit 11 of the 12-bit imm = bit 7 of 0xAA = 1)... actually 0xAA = 0b1010_1010, bit 7 is 1 but the 12-bit imm is bits [31:20] of the instruction, so the sign-extend bit is bit 11 of the 12-bit imm, not bit 7.  0xAA as a 12-bit signed value is just 170 (positive).  Should work.  The actual issue was that I miscounted: rewrote to use two ADDIs + an ADD to construct 0xAA = 0x55 + 0x55.  Worth it for clarity.
+- **All 11 tests passed first try.**  CSR semantics are strict but small; the implementation followed the privileged-ISA spec mechanically.  No surprises in the trap vectoring either.
+
+**Validation:**
+
+- **63 tests pass** in `rhdl-rv32i` (52 from PR #32 + 11 new).
+- All 52 pre-existing tests continue to pass — additive change.
+- All 92 rule-track tests still pass.
+- Iverilog RTL round-trip succeeds on the CPU with the new CSR file as a sub-circuit.
+
+**What's deferred (Phase 3 wrap-up + Phase 4):**
+
+- **Pipelined CSR + trap support.**  Today the pipelined CPU's `WritebackSrc::Csr` arm returns 0; CSR instructions on the pipelined core would silently produce wrong results.  Needs IdEx/ExMem/MemWb extension to carry CSR fields, plus pipeline-wide squash on trap.
+- **Misaligned-target trap** (RV32I requires this on branch / JAL / JALR; v0.3 still silently masks).
+- **Illegal-instruction trap.**  The decoder sets `illegal: true` for unrecognized opcodes; the CPU sets the `illegal` output flag but doesn't trap.  Adding the trap is a one-line decoder→executor extension; deferred to keep this PR focused.
+- **MRET / WFI / SFENCE.VMA** — other SYSTEM-funct12 values; v0.3 marks as illegal.  MRET is needed to return from a trap handler; otherwise the trap handler can't return to user code.
+- **External interrupts** (mip / mie wiring; mtimer; PLIC integration).
+- **riscv-tests harness** (cross-cutting Tier C v1 infrastructure per §7).  Now possible (we have ECALL!), but still substantial: ELF loader, test runner, signature comparison.
+- **CoreMark / Dhrystone** runs.
+
+**Next:**
+
+The natural next move is the **riscv-tests harness** — now unblocked by ECALL vectoring.  Or alternatively **Phase 3 wrap-up** (illegal-instruction trap + MRET + pipelined CSR support) so the pipelined CPU is feature-complete with the single-cycle.
+
+---
+
 ## 2026-05-01 — Tier C: rhdl-rv32i pipelined coverage — conditional branches + JALR
 
 **Paths:**

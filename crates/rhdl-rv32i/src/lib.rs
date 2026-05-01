@@ -48,6 +48,7 @@
 
 pub mod alu;
 pub mod cpu;
+pub mod csr;
 pub mod decoder;
 pub mod hazard;
 pub mod isa;

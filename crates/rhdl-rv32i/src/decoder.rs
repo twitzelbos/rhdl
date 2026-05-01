@@ -118,6 +118,9 @@ pub fn decode(instr: Bits<32>) -> DecodedInstruction {
     let imm_u_v = imm_u(instr);
     let imm_j_v = imm_j(instr);
 
+    // CSR address = funct12 = instr[31:20] (the upper 12 bits).
+    let csr_addr: Bits<12> = ((instr >> 20) & bits::<32>(0xFFF)).resize();
+
     // Default-case decoded instruction (illegal).
     let mut d = DecodedInstruction {
         opcode: Opcode::Illegal,
@@ -135,6 +138,9 @@ pub fn decode(instr: Bits<32>) -> DecodedInstruction {
         jump: false,
         is_jalr: false,
         illegal: true,
+        csr_op: CsrOp::None,
+        csr_addr,
+        system_op: SystemOp::None,
     };
 
     // Opcode dispatch.  RV32I major opcodes are 7-bit values; we
@@ -307,10 +313,48 @@ pub fn decode(instr: Bits<32>) -> DecodedInstruction {
         d.writeback_src = WritebackSrc::Alu;
         d.illegal = false;
     } else if opcode_bits == op_system {
-        // ECALL / EBREAK.  Both leave d.illegal = false; trap
-        // handling is the executor's job (not implemented in v0.1).
+        // SYSTEM opcode encodes ECALL / EBREAK / CSR access.
+        // funct3 distinguishes:
+        //   0 → ECALL (funct12 = 0) / EBREAK (funct12 = 1)
+        //   1 → CSRRW    2 → CSRRS    3 → CSRRC
+        //   5 → CSRRWI   6 → CSRRSI   7 → CSRRCI
+        //   4 is reserved (illegal).
         d.opcode = Opcode::System;
         d.illegal = false;
+        if funct3 == f3_zero {
+            // ECALL or EBREAK.
+            // funct12 = instr[31:20] = 0 → ECALL, 1 → EBREAK.
+            let funct12: Bits<12> = ((instr >> 20) & bits::<32>(0xFFF)).resize();
+            if funct12 == bits::<12>(0) {
+                d.system_op = SystemOp::Ecall;
+            } else if funct12 == bits::<12>(1) {
+                d.system_op = SystemOp::Ebreak;
+            } else {
+                // Other system funct12 values (MRET, WFI, SFENCE.VMA, …)
+                // are not implemented in v0.3.
+                d.illegal = true;
+            }
+        } else {
+            // CSR instruction.  Always reads the CSR into rd
+            // (writeback_src = Csr, the executor selects the
+            // pre-modify CSR value as the writeback).
+            d.writeback_src = WritebackSrc::Csr;
+            if funct3 == f3_one {
+                d.csr_op = CsrOp::ReadWrite;
+            } else if funct3 == f3_two {
+                d.csr_op = CsrOp::ReadSet;
+            } else if funct3 == f3_three {
+                d.csr_op = CsrOp::ReadClear;
+            } else if funct3 == f3_five {
+                d.csr_op = CsrOp::ReadWriteImm;
+            } else if funct3 == f3_six {
+                d.csr_op = CsrOp::ReadSetImm;
+            } else if funct3 == f3_seven {
+                d.csr_op = CsrOp::ReadClearImm;
+            } else {
+                d.illegal = true;
+            }
+        }
     } else if opcode_bits == op_misc_mem {
         // FENCE — treated as NOP in this single-hart in-order core.
         d.opcode = Opcode::MiscMem;
