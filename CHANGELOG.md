@@ -31,6 +31,71 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-01 — Tier C: rhdl-rv32i v0.1 — single-cycle RV32I core foundations
+
+**Paths:**
+
+- `crates/rhdl-rv32i/` (new crate) — RISC-V RV32I base integer ISA implemented in RHDL.  Per `tier-c-flagship-cores.md` §3, this is the first of the three Tier C flagship demonstration cores.
+  - `src/lib.rs` — module root, deferred-work documentation.
+  - `src/isa.rs` — `Opcode`, `AluOp`, `BranchOp`, `MemOp`, `AluSrc`, `WritebackSrc` enums (all `Digital`); `DecodedInstruction` control-word struct.
+  - `src/decoder.rs` — pure combinational kernel `decode(Bits<32>) -> DecodedInstruction`.  Handles every RV32I encoding type (R/I/S/B/U/J).  Sign-extends I/S/B/J immediates correctly.  Recognizes all 47 base instructions plus `ECALL`, `EBREAK`, `FENCE`.
+  - `src/alu.rs` — pure combinational kernel `alu(AluOp, Bits<32>, Bits<32>) -> Bits<32>`.  Implements every RV32I ALU op including signed/unsigned compare and arithmetic right-shift.  Shift amount masked to low 5 bits per the spec.
+  - `src/reg_file.rs` — 32×32-bit register file widget.  x0 hardwired to zero (reads return 0, writes silently dropped).  Two read ports, one write port.  State bundled into a single `dff::DFF<[Bits<32>; 32]>` per the §3.1 bundled-state pattern.
+  - `src/cpu.rs` — single-cycle CPU widget.  Composes the decoder, ALU, register file, and PC into one widget.  Drives external program memory and data memory via combinational ports.  Implements the canonical fetch-decode-execute-memory-writeback flow in one cycle.
+- `Cargo.toml` (workspace) — adds `rhdl-rv32i` to members + default-members.
+
+**Tests** (38 passing, all in `crates/rhdl-rv32i/tests/`):
+- `decoder.rs` (19 tests) — one per instruction class plus full sweeps of R-type ALU ops, load ops, branch ops; sign-extension edge cases for I/S immediates; illegal-opcode detection.
+- `alu.rs` (9 tests) — every `AluOp` variant including SRA-preserves-sign, SLT vs SLTU signedness, shift-amount truncation.
+- `reg_file.rs` (5 tests) — x0 hardwired, write-then-read, write-to-x0 dropped, two-port reads, iverilog round-trip.
+- `cpu.rs` (5 tests) — reset PC, sequential execution, full 7-instruction arithmetic program (`5 + 7 + 100 + 1 = 113` observed via store-word), LUI, iverilog round-trip on the complete CPU.
+
+**Why this, why now:**  Tier C RV32I is the most strategically important non-rule-track work per `tier-c-flagship-cores.md` §1: \"RHDL is a credible target for the dominant open-ISA ecosystem; absence of this core signals 'not a serious HDL' to the academic and RISC-V-startup communities.\"  This v0.1 lays the foundations — instruction set types, decoder, ALU, register file, single-cycle CPU — so the follow-up work has a clean canvas.
+
+**Design decisions:**
+
+- **Separate crate `crates/rhdl-rv32i/`, not bundled into `rhdl-fpga`.**  `tier-c-flagship-cores.md` §3.7 specified the deliverables go in `crates/rhdl-fpga/src/rv32i/`, but the user pointed out a CPU core shouldn't ride on the widget library — users who want widgets shouldn't transitively pull in a CPU.  The split also lets RV32I evolve independently, version differently, and gate features without touching `rhdl-fpga`.  Documented in `lib.rs`.
+
+- **Single-cycle implementation first (Phase 1 per §3.5).**  Non-pipelined.  The classic 5-stage pipeline is Phase 2 work and explicitly deferred to a follow-on PR — this v0.1 is the executable specification against which the pipelined version will be byte-identically validated.
+
+- **Register file as `dff::DFF<[Bits<32>; 32]>`, not 32 separate DFFs.**  32 separate DFF fields would hit the auto-derived `Q`/`D` 12-element tuple ceiling (CLAUDE.md §3.1).  Packing into `Bits<1024>` exceeded the `BitWidth` trait's coverage (which currently tops out around 128 bits).  The bundled-array approach is the §3.1 bundled-state pattern applied to a register file.
+
+- **`DecodedInstruction` is the canonical control word.**  Per `tier-c-flagship-cores.md` §3.4: \"the decoder kernel pattern-matches on this table; the executor kernel dispatches on `semantic_class`.\"  This v0.1 ships the data type; the future pipeline stages can read/write `DecodedInstruction` cleanly via the typed pipeline registers (§3.4 anticipates `RCStream`-typed pipeline registers; v0.1 uses `Signal`-typed bundles).
+
+- **Memory interface is combinational ports, not `RCStream` (yet).**  Per `tier-c-flagship-cores.md` §3.4 the long-term direction is two `RCStream`-style ports.  v0.1 takes the simpler combinational-input path — the test harness drives `instr` based on the CPU's `pc` output, and `mem_rdata` based on the CPU's `mem_addr`.  Switching to `RCStream` is a Phase 2 / Phase 3 enhancement.
+
+- **No CSRs or trap handling in v0.1.**  `ECALL` / `EBREAK` are recognized by the decoder but the CPU sets a flag rather than vectoring.  CSR file and M-mode trap handling are Phase 3 per §3.5.
+
+**Surprises and gotchas:**
+
+- **`BitWidth` trait coverage is bounded.**  The spec calls for a packed 1024-bit register file, but `W<1024>` doesn't have a `BitWidth` impl (currently the trait covers up to ~128).  Solved by using `[Bits<32>; 32]` instead.  RHDL's array indexing with a runtime `Bits<5>` index lowers cleanly through the kernel-language subset.
+
+- **Sub-widget composition uses `q.field` for OUTPUT, `d.field` for INPUT.**  My first attempt at `cpu.rs` called `reg_file_kernel(...)` directly, which mismatched the framework's contract.  The right pattern: from a parent's perspective, the sub-widget's `Out` is `q.<field>` and its `In` is `d.<field>`.  Same as every other multi-sub-circuit widget in the tree.
+
+- **Decoder's `funct7` distinguisher.**  R-type ADD/SUB and SRL/SRA share the same `funct3`; the difference is `funct7 = 0` vs `funct7 = 0x20`.  Decoder handles both cases in the same arm by reading the `funct7` bit explicitly.
+
+- **JALR target masks bit 0 to zero per the spec.**  `jalr_target = (rs1 + imm) & 0xFFFFFFFE` per §2.5 of the unprivileged ISA.  Easy to forget; caught at design time.
+
+**Validation:**
+
+- **38 tests pass** across 4 test files in `crates/rhdl-rv32i/tests/`.  Highest-leverage: `cpu_addi_lands_in_register_file_observable_via_subsequent_arithmetic` runs a 7-instruction program (ADDI / ADD / SUB / ADDI / ADDI / ADD chain) and checks the final value via a store, verifying the entire fetch-decode-execute-writeback flow end-to-end.
+- All tests including iverilog RTL round-trip on both the register file and the complete CPU.
+- No regressions — the rule crates' 92 tests all still pass (RV32I is purely additive; no shared-code changes).
+
+**What's deferred (per `tier-c-flagship-cores.md` §3.5):**
+
+- **Phase 2 — 5-stage pipeline** (~6-8 weeks): Fetch / Decode / Execute / Memory / Writeback as separate widgets, full hazard detection, forwarding, stall on load-use.  Validates byte-identically against this v0.1 single-cycle reference.
+- **Phase 3 — M-mode privileged extensions and CSRs** (~2-3 weeks): `mstatus`, `mtvec`, `mepc`, `mcause`, `mtval`, `mscratch`, `misa`, `mhartid`; trap handling for `ecall` / illegal / misaligned / external interrupt.
+- **Phase 4 — Validation infrastructure**: riscv-tests harness; Spike lockstep cosimulation with zero discrepancy tolerance; CoreMark and Dhrystone runs; book chapter at `doc/book/src/cores/rv32i.md`; conference paper draft.
+
+**Next steps after this PR:**
+
+- **Pipeline rollout (Phase 2)**.  The single-cycle CPU's kernel is the executable spec; the pipelined version partitions the same data flow into 5 stages with hazard logic between them.  Plan to use `RCStream`-style pipeline registers per §3.4.
+- **CSRs and traps (Phase 3)** for self-hosted execution.
+- **riscv-tests harness** as cross-cutting infrastructure shared across all three Tier C cores per §7.
+
+---
+
 ## 2026-04-30 — rhdl-rule Move 3 — BSV → RHDL porting guide (book chapter)
 
 **Paths:**

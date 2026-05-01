@@ -1,0 +1,17 @@
+[package]
+name = "rhdl-rv32i"
+version = "0.0.1"
+edition = "2024"
+license = "MIT"
+description = "RISC-V RV32I base integer ISA implemented in RHDL — Tier C flagship core."
+homepage = "https://rhdl.org"
+repository = "https://github.com/samitbasu/rhdl"
+keywords = ["fpga", "hdl", "hardware", "risc-v", "rv32i"]
+
+[dependencies]
+rhdl = { path = "../rhdl" }
+rhdl-bits = { path = "../rhdl-bits" }
+rhdl-fpga = { path = "../rhdl-fpga" }
+
+[dev-dependencies]
+expect-test = "1.5.1"
