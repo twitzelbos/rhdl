@@ -95,9 +95,11 @@ The cleanup + the testing fit together in one PR because all three TODOs touch t
 
 **Validation:**
 
-- **145 tests pass** in `rhdl-rv32i` (was 111; +34: 17 cleanup + 5 fuzz sweeps × ~50 random programs each = 256 random programs total + 12 Spike lockstep).
+- **465 tests pass** in `rhdl-rv32i` (was 111; +354: 17 cleanup + 5 fuzz sweeps × 256 random programs + **332 Spike lockstep tests**, including 56 random straight-line programs swept against Spike).
 - All 111 pre-existing tests still pass — no regressions.
 - `cargo check -p rhdl-rv32i` clean.
+
+**OOM warning — run Spike tests with `--test-threads=1` or `=2`.**  Default `cargo test` parallelism (one thread per CPU = 8-12 on modern Macs) spawns 332 Spike subprocesses + 332 ELF builders + 332 hardware harnesses concurrently.  We hit a kernel watchdog timeout (system-wide hang requiring reboot) on a 16 GB M-series Mac during one test run.  The test file's CHANGELOG note and `SPIKE_SETUP.md` document this; consider running `cargo test -p rhdl-rv32i --test spike_lockstep -- --test-threads=2` if you have <32 GB of RAM.
 
 **External tool: Spike (`riscv-isa-sim`).**  To enable the Spike-lockstep tests:
 
