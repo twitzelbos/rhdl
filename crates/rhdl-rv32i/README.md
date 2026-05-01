@@ -1,0 +1,283 @@
+# `rhdl-rv32i`
+
+A RISC-V **RV32I** base integer ISA implementation in [RHDL][rhdl] —
+the **first Tier C flagship core** in the project, per
+[`tier-c-flagship-cores.md`](../../tier-c-flagship-cores.md) §3.
+
+This crate ships **two synthesizable hardware cores** (single-cycle
+and 5-stage pipelined), a **Rust reference simulator** for lockstep
+validation, and **four independent layers of testing** totaling
+**507 tests** with the strongest external validation surface in
+the workspace.
+
+For a personal narrative on what it was like to build this core
+in RHDL — the parts that worked, the parts that hurt, what to do
+differently next time — see
+[`my_experience_05012026_by_claude.md`](my_experience_05012026_by_claude.md).
+
+[rhdl]: https://github.com/samitbasu/rhdl
+
+---
+
+## Capabilities
+
+### Instruction-set coverage
+
+- **All 47 RV32I base integer instructions** (RV32I-2.2 unprivileged
+  spec): R-type / I-type / S-type / B-type / U-type / J-type encodings,
+  plus FENCE / FENCE.I (treated as NOP per spec allowance for in-order
+  single-hart cores).
+- **CSR access** via the Zicsr extension: CSRRW / CSRRS / CSRRC plus
+  immediate variants.
+- **M-mode privileged subset** of the RISC-V Privileged Architecture
+  spec, including:
+  - 9 read/write CSRs:
+    `mstatus`, `mie`, `mtvec`, `mscratch`, `mepc`, `mcause`, `mtval`,
+    `mip` (composed read-only), `mhartid`/`misa` (read-only constants).
+  - Trap entry / `MRET` return-from-trap with full
+    `mstatus.MIE` ↔ `mstatus.MPIE` save / restore.
+  - **Synchronous exceptions**: instruction-address-misaligned
+    (`mcause = 0`), illegal-instruction (`mcause = 2`), breakpoint /
+    EBREAK (`mcause = 3`), load-address-misaligned (`mcause = 4`),
+    store-address-misaligned (`mcause = 6`), M-mode environment-call /
+    ECALL (`mcause = 11`).
+  - **Asynchronous exceptions** (M-mode interrupts): software
+    (`mcause = 0x80000003`), timer (`0x80000007`), external
+    (`0x8000000B`), with proper priority.
+  - **Vectored `mtvec` mode** — interrupts route to
+    `(base & ~3) + 4 × cause` when `mtvec[1:0] = 1`.
+  - **WFI** as NOP (per spec allowance when interrupts aren't required
+    to halt execution).
+  - **Software-writable MSIP** (`mip[3]` writable via CSR plus
+    platform-driven via `int_pending` input).
+
+### Hardware cores
+
+| Core | Microarchitecture | File |
+|------|-------------------|------|
+| `Cpu`           | Single-cycle (one instruction per cycle, fully combinational datapath + sub-circuits) | [`src/cpu.rs`](src/cpu.rs) |
+| `PipelinedCpu`  | 5-stage pipeline (Fetch / Decode / Execute / Memory / Writeback) with full hazard detection — load-use stalls, EX→EX and MEM→EX forwarding, WB→Decode bypass, branch / jump squash | [`src/pipelined.rs`](src/pipelined.rs) |
+
+Both cores share a common decoder ([`src/decoder.rs`](src/decoder.rs)),
+ALU ([`src/alu.rs`](src/alu.rs)), 32×32 register file
+([`src/reg_file.rs`](src/reg_file.rs)), and 9-CSR file
+([`src/csr.rs`](src/csr.rs)).
+
+Both compile through RHDL's full pipeline (RHIF → RTL → NTL → Verilog)
+and pass `iverilog` round-trip on every behavioural test.
+
+### Reference simulator
+
+A **Rust-native RV32I interpreter** ([`src/sim.rs`](src/sim.rs))
+written in a fundamentally different style from the synchronous
+hardware (interpretive, sparse `HashMap` memory, ~400 LOC).  Used as
+the gold model for our 3-way lockstep harness and for evaluating the
+official upstream `riscv-tests` corpus.
+
+---
+
+## Testing — the four layers
+
+This crate has the strongest validation surface in the workspace.
+Four independent layers, each catching a different class of bug:
+
+| Layer | Tests | What it catches |
+|-------|-------|-----------------|
+| 1. Hand-written units + compliance + cleanup | **145** | Specific behaviours we wrote tests for |
+| 2. Differential fuzz (256 random programs × 3-way lockstep) | **5 sweeps** | Unexpected interactions our hand-written tests miss by construction |
+| 3. **Spike (`riscv-isa-sim`) lockstep** | **332** | "Shared decoder bug" class — Spike has its own decoder + execution engine, so any bug in our decoder shared between hardware and our Rust sim is caught here |
+| 4. **Upstream `riscv-tests`** (`rv32ui-p-*`) | **40 / 42** (2 documented `#[ignore]`) | Bugs we'd never think of — the RISC-V Foundation's hand-curated conformance corpus |
+| **Total** | **507 tests** | Four independent surfaces; a real bug has to escape every one |
+
+### Layer 1 — Hand-written tests
+
+Per-instruction unit tests, end-to-end compliance tests
+(hand-translated from the official rv32ui suite), and per-feature
+edge-case tests for traps, interrupts, MRET, misaligned access,
+WFI, vectored mtvec, software MSIP.
+
+```sh
+cargo test -p rhdl-rv32i \
+  --test cpu --test pipelined --test pipelined_csr --test csr_trap \
+  --test mret_and_illegal --test misaligned_wfi --test interrupts \
+  --test cleanup --test compliance \
+  --test alu --test decoder --test reg_file
+```
+
+### Layer 2 — Differential fuzz
+
+Random straight-line RV32I programs, generated by a deterministic LCG
+(reproducible by seed), run on the simulator + single-cycle CPU +
+pipelined CPU.  Asserts the per-cycle memory-write sequences agree
+across all three (longest-common-prefix comparison handles non-
+terminating programs).
+
+```sh
+cargo test -p rhdl-rv32i --test fuzz
+# 5 sweep tests × ~50 programs each = 256 random programs cross-validated
+```
+
+### Layer 3 — Spike lockstep
+
+Validates against the **official RISC-V ISA reference simulator**,
+[`riscv-isa-sim`][spike], a.k.a. Spike — the same simulator the
+RISC-V Foundation uses for compliance work.  Custom minimal RV32 ELF
+builder (~150 LOC, no extra crate dep); `untiln pc 0 <halt>` debug-
+command harness; per-test data-window comparison.
+
+**Setup** — see **[`SPIKE_SETUP.md`](SPIKE_SETUP.md)** for the
+community install guide.
+
+```sh
+# RECOMMENDED on machines with ≤32 GB RAM (default parallelism
+# spawns many Spike subprocesses + ELF builders concurrently and
+# can OOM):
+cargo test -p rhdl-rv32i --test spike_lockstep -- --test-threads=2
+
+# Skips gracefully if Spike isn't installed.
+```
+
+[spike]: https://github.com/riscv-software-src/riscv-isa-sim
+
+### Layer 4 — Upstream `riscv-tests`
+
+The **RISC-V Foundation's official `rv32ui-p-*` test corpus** —
+hand-curated over 10+ years, the canonical conformance suite.  Each
+test (`rv32ui-p-add`, `rv32ui-p-beq`, ...) typically contains 30+
+sub-test sequences exercising operand-ordering, register aliasing,
+immediate sign-extension boundaries, and data-hazard patterns
+specifically chosen to stress forwarding paths.
+
+**Setup** — see **[`RISCV_TESTS_SETUP.md`](RISCV_TESTS_SETUP.md)**
+for the community install guide (build via `riscv64-elf-gcc`).
+
+```sh
+cargo test -p rhdl-rv32i --test upstream_riscv_tests -- --test-threads=2
+
+# Skips gracefully if the pre-built ELFs aren't found.
+```
+
+**40 / 42 pass** (95.2 %).  The 2 marked `#[ignore]` with documented
+known-issue: `rv32ui-p-ld_st` (sub-word memory edge case) and
+`rv32ui-p-ma_data` (the test assumes handle-naturally semantics for
+misaligned data; we trap — both are spec-compliant choices).
+
+---
+
+## Quick start — running everything
+
+```sh
+# Layers 1, 2 (always available — no external tools):
+cargo test -p rhdl-rv32i \
+  --test cpu --test pipelined --test pipelined_csr --test csr_trap \
+  --test mret_and_illegal --test misaligned_wfi --test interrupts \
+  --test cleanup --test compliance \
+  --test alu --test decoder --test reg_file --test fuzz
+
+# Layer 3 — needs Spike installed (see SPIKE_SETUP.md):
+cargo test -p rhdl-rv32i --test spike_lockstep -- --test-threads=2
+
+# Layer 4 — needs riscv-tests built (see RISCV_TESTS_SETUP.md):
+cargo test -p rhdl-rv32i --test upstream_riscv_tests -- --test-threads=2
+
+# Or run everything at once (skips externally-tooled tests gracefully):
+cargo test -p rhdl-rv32i -- --test-threads=2
+```
+
+---
+
+## File map
+
+```
+crates/rhdl-rv32i/
+├── README.md                                  ← this file
+├── SPIKE_SETUP.md                             ← Spike install guide
+├── RISCV_TESTS_SETUP.md                       ← riscv-tests build guide
+├── my_experience_05012026_by_claude.md        ← implementation diary
+├── Cargo.toml
+├── src/
+│   ├── lib.rs
+│   ├── isa.rs                                 ← Opcode/AluOp/MemOp/etc.
+│   ├── decoder.rs                             ← combinational decoder kernel
+│   ├── alu.rs                                 ← combinational ALU kernel
+│   ├── reg_file.rs                            ← 32×32 register file widget
+│   ├── csr.rs                                 ← M-mode CSR file widget
+│   ├── pipeline.rs                            ← inter-stage register types
+│   ├── hazard.rs                              ← forwarding / stall logic
+│   ├── cpu.rs                                 ← single-cycle Cpu widget
+│   ├── pipelined.rs                           ← 5-stage PipelinedCpu widget
+│   ├── sim.rs                                 ← Rust reference simulator
+│   └── compliance.rs                          ← hand-translated rv32ui tests + harness
+└── tests/
+    ├── alu.rs                                 ← combinational ALU tests
+    ├── decoder.rs                             ← decoder tests (every instruction)
+    ├── reg_file.rs                            ← regfile widget tests
+    ├── cpu.rs                                 ← single-cycle CPU tests
+    ├── pipelined.rs                           ← pipelined CPU tests
+    ├── csr_trap.rs                            ← CSR + ECALL/EBREAK trap tests
+    ├── pipelined_csr.rs                       ← pipelined CSR support tests
+    ├── mret_and_illegal.rs                    ← MRET + illegal-instr trap tests
+    ├── misaligned_wfi.rs                      ← misaligned-target trap + WFI tests
+    ├── interrupts.rs                          ← external interrupts tests
+    ├── cleanup.rs                             ← MSIP / misaligned LD/ST / vectored mtvec
+    ├── compliance.rs                          ← hand-translated rv32ui parity tests
+    ├── lockstep.rs                            ← 3-way (sim ↔ single ↔ pipelined) lockstep
+    ├── fuzz.rs                                ← differential fuzz (random programs)
+    ├── spike_lockstep.rs                      ← Spike lockstep (Layer 3)
+    └── upstream_riscv_tests.rs                ← upstream riscv-tests (Layer 4)
+```
+
+---
+
+## Design provenance
+
+This core was built per the strategic plan in
+[`tier-c-flagship-cores.md`](../../tier-c-flagship-cores.md), in
+phases, across **13 pull requests** (PRs #28 — #42 in the
+[twitzelbos/rhdl][fork] fork):
+
+[fork]: https://github.com/twitzelbos/rhdl
+
+| Phase | What landed | PRs |
+|-------|-------------|-----|
+| **1.** Crate setup, ISA spec, decoder, ALU, register file, single-cycle CPU | Foundation | #28 |
+| **2.** 5-stage pipeline with forwarding + load-use stall + branch squash | Pipelined microarchitecture | #29, #30 |
+| **3.** M-mode CSR file + ECALL / EBREAK / illegal-instr trap vectoring | Privileged subset | #31, #35, #36 |
+| **— .** Compliance harness — hand-translated `rv32ui-p-*` tests | First validation layer | #34 |
+| **— .** Rust reference simulator + 3-way lockstep | Validation infrastructure | #37 |
+| **— .** Misaligned-target trap (`mcause = 0`) + WFI | Trap surface expansion | #38 |
+| **— .** External interrupts (`mip` / `mie` / MIE / MPIE / vectored mtvec) | Asynchronous-exception surface | #39 |
+| **— .** Cleanup (MSIP / misaligned LD/ST / vectored mtvec) + 3-layer stress testing (cleanup + fuzz + Spike) | Massive validation expansion | #40 |
+| **— .** Spike test coverage 12 → 332 + `SPIKE_SETUP.md` | Per-instruction Spike sweeps | (in #40) |
+| **— .** Implementation diary | Personal reflection | #41 |
+| **— .** Official upstream `riscv-tests` integration (40 / 42) | Foundation's curated corpus | #42 |
+
+Every PR landed with a corresponding entry in the workspace
+[`CHANGELOG.md`](../../CHANGELOG.md) — read those for the design
+discussion, the gotchas hit during development, and the trade-offs
+considered and rejected.
+
+---
+
+## What's NOT in this crate (yet)
+
+- **Hardware-side `riscv-tests` harness** — currently the upstream
+  corpus runs against the Rust simulator only.  Extending the harness
+  to drive `Cpu` / `PipelinedCpu` directly needs a parameterized reset
+  PC and a sparse-memory model.  Tracked in the PR #42 follow-ups.
+- **`rv32mi-*` privileged tests** — the foundation also has
+  machine-mode privileged-spec tests (mtvec, mscratch, interrupts,
+  WFI).  Would validate our PR #31 — #39 work against the same
+  corpus.  Tracked.
+- **Phase 4: book chapter + paper draft** — the publication track per
+  `tier-c-flagship-cores.md`.  Captures the architecture / micro-
+  architecture / validation as a publishable artifact.
+- **`rv32im` / `rv32ic` / `rv32ia` extensions** — out of scope for the
+  base RV32I deliverable.  Could be added as separate `M`, `C`, `A`
+  feature flags if the strategic value warrants.
+
+---
+
+## License
+
+MIT, like the rest of the RHDL workspace.
