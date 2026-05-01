@@ -170,6 +170,11 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         WritebackSrc::Alu     => q.ex_mem.alu_result,
         WritebackSrc::Mem     => mem_value,
         WritebackSrc::PcPlus4 => q.ex_mem.pc_plus_4,
+        // Phase 3 CSR support not yet wired into the pipelined
+        // core; for now any Csr writeback is reported as zero.
+        // The single-cycle CPU is the reference implementation
+        // for CSR semantics; pipelined-CSR support is a follow-up.
+        WritebackSrc::Csr     => bits::<32>(0),
     };
     let next_mem_wb_en: bool = q.ex_mem.valid
         && q.ex_mem.writeback_src != WritebackSrc::None

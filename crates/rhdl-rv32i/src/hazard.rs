@@ -99,5 +99,6 @@ pub fn writes_back(src: WritebackSrc) -> bool {
         WritebackSrc::Alu => true,
         WritebackSrc::Mem => true,
         WritebackSrc::PcPlus4 => true,
+        WritebackSrc::Csr => true,
     }
 }

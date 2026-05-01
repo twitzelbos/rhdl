@@ -130,6 +130,48 @@ pub enum WritebackSrc {
     Mem,
     /// PC + 4 (return address for JAL/JALR).
     PcPlus4,
+    /// Pre-modify value of the CSR (for `CSRR{W,S,C}{I,}`).
+    Csr,
+}
+
+/// CSR-access operation encoded by the `funct3` field of a SYSTEM
+/// instruction (when the instruction is *not* `ECALL`/`EBREAK`).
+///
+/// All forms read the CSR into rd, then optionally write back to
+/// the CSR using the operand (rs1 value or zero-extended 5-bit
+/// immediate).  The "Imm" variants take the source from the rs1
+/// register field (zero-extended) instead of the actual rs1
+/// register's value.
+#[derive(PartialEq, Eq, Debug, Digital, Clone, Copy, Default)]
+pub enum CsrOp {
+    /// Not a CSR instruction.
+    #[default]
+    None,
+    /// `CSRRW` — `rd ← csr; csr ← rs1`.
+    ReadWrite,
+    /// `CSRRS` — `rd ← csr; csr ← csr | rs1` (write only if rs1 != x0).
+    ReadSet,
+    /// `CSRRC` — `rd ← csr; csr ← csr & ~rs1` (write only if rs1 != x0).
+    ReadClear,
+    /// `CSRRWI` — `rd ← csr; csr ← zext(uimm)`.
+    ReadWriteImm,
+    /// `CSRRSI` — `rd ← csr; csr ← csr | zext(uimm)` (write only if uimm != 0).
+    ReadSetImm,
+    /// `CSRRCI` — `rd ← csr; csr ← csr & ~zext(uimm)` (write only if uimm != 0).
+    ReadClearImm,
+}
+
+/// SYSTEM-opcode variants other than CSR access.
+#[derive(PartialEq, Eq, Debug, Digital, Clone, Copy, Default)]
+pub enum SystemOp {
+    /// Not an ECALL or EBREAK (this includes CSR instructions —
+    /// see [`CsrOp`]).
+    #[default]
+    None,
+    /// `ECALL` — environment call (M-mode here).
+    Ecall,
+    /// `EBREAK` — debugger breakpoint.
+    Ebreak,
 }
 
 /// Decoder output — every signal the executor and writeback stages
@@ -176,4 +218,11 @@ pub struct DecodedInstruction {
     /// True if this instruction is illegal (decoder couldn't match
     /// any RV32I encoding).
     pub illegal: bool,
+    /// CSR-access operation (only meaningful when `opcode == System`
+    /// and the instruction is one of `CSRR{W,S,C}{I,}`).
+    pub csr_op: CsrOp,
+    /// CSR address (12-bit `funct12` field for CSR instructions).
+    pub csr_addr: Bits<12>,
+    /// SYSTEM opcode sub-type (`ECALL` / `EBREAK` / none).
+    pub system_op: SystemOp,
 }
