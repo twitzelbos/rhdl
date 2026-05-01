@@ -31,6 +31,57 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-04-30 — rhdl-rule Phase 1 — conflict matrix + priority scheduler + multi-rule examples
+
+**Paths:** `crates/rhdl-rule-core/src/lib.rs` (extended with read-set extraction, conflict matrix, priority-arbitrated scheduler synthesis), `crates/rhdl-rule/tests/priority_demo.rs` (new — write-write conflict test), `crates/rhdl-rule/tests/coupled_rules.rs` (new — read-write conflict test), `crates/rhdl-rule/tests/counter_and_flag.rs` (new — multi-rule, compound-input test mirroring design plan §4.1), `crates/rhdl-rule/tests/simple_counter.rs` (extended with HDL snapshot + iverilog round-trip).
+
+**Why this, why now:** Phase 0 (PR #19) shipped the smallest possible rule kernel — one register, one rule, last-write-wins.  Phase 1 closes the load-bearing gap from `rule-architecture.md` §6–§7: the conflict matrix and priority-arbitrated scheduler.  Without it, multi-rule kernels with conflicting writes give silently wrong results.  With it, the priority chain ensures that for any register, at most one rule's write fires per cycle — the actual Bluespec semantics.
+
+**Design decisions:**
+
+- **Read-set tracking via the existing rewriter.**  The Phase-0 macro already rewrote `*ctx.field` to `q.field`; Phase 1 adds a `BTreeSet<String>` of field-names-read alongside the rewrite.  The same rewriter walks both guards (via `rewrite_ctx_reads_in_expr`) and `set!` value expressions.  Returns the set of fields seen so the caller can fold into the rule's `read_set`.
+- **Conflict matrix per `rule-architecture.md` §6.1.**  `Rule::conflicts_with(&other)` returns true iff:
+  - `write_set ∩ other.write_set ≠ ∅` (write-write), OR
+  - `write_set ∩ other.read_set ≠ ∅` (other reads what self writes), OR
+  - `read_set ∩ other.write_set ≠ ∅` (self reads what other writes).
+  Read-read overlap is *not* a conflict (both rules see the same pre-firing value).  This matches the spec.
+- **Priority chain per `rule-architecture.md` §7.**  For N rules in source-code order:
+  ```
+  let _can_fire_<rule_i> = (guard_1) && (guard_2) && ...;
+  let _fire_<rule_i> = _can_fire_<rule_i>
+      && !(_fire_<rule_j>)         for every j < i where j conflicts with i
+      ...;
+  ```
+  Source-code order = priority order.  Lower index wins.  Annotation-based priorities (`#[rule(priority = N)]`) and other `urgent_before`/`conflict_free`/`mutually_exclusive` annotations are Phase 2.
+- **Action emission unchanged in shape.**  The let-rebinding chain from Phase 0 stays; only the condition variable changes from `_rule_guard` to `_fire_<rule_name>`.  This composes cleanly with the priority-chain calculation.
+- **Conservative read-set.**  A guard like `if cond { use(*ctx.field) }` is treated as reading `field` even when the conditional path is statically false.  This matches the plan §18 ("Read-set extraction precision: conservative; over-approximates conflicts").  Acceptable for v1; users can refactor pathological cases.
+
+**Surprises and gotchas:**
+
+- **Write-write conflict tests cleanly demonstrate the priority chain.**  Two rules that both `set!(ctx.val, …)` with always-true guards: Phase 0 produces 99 (last-write-wins); Phase 1 produces 7 (priority-0 wins).  Same kernel; the only change is the scheduler's emitted code.  Useful demo of the semantic fix.
+- **Read-write conflicts also cleanly demonstrate.**  Rule A reads `q.a` and writes `q.b`; rule B writes `q.a`.  Phase 1 suppresses B when A fires (priority chain).  Without the conflict matrix, both would fire; `a` would be set to B's value every cycle, and `b = old_a + 7` would always reference the previous-cycle's `a`.  With suppression, `a` stays at its reset value (B never fires) and `b = a + 7` consistently.
+- **Compound input types work end-to-end.**  The `CounterAndFlag` test uses a 2-field struct `CnfIn { start, enable }` as its input.  The macro requires every rule + the output to declare the same input *name* (canonicalised to the first rule's input parameter); the input *type* is determined by the output method.  Field accesses (`i.enable`, `i.start`) work like normal struct field reads in the kernel.
+- **Iverilog round-trip works.**  `simple_counter` lowers all the way down to Verilog and runs through iverilog cleanly.  Proves the rule kernel is structurally correct as RHDL — not just compileable as Rust.
+
+**Validation:**
+
+- **8 tests pass** across 4 test files in `crates/rhdl-rule/tests/`:
+  - `simple_counter` (4): counter_holds_when_disabled, counter_counts_when_enabled, simple_counter_compiles_to_valid_hdl (HDL = 1340 chars), simple_counter_iverilog_round_trip.
+  - `priority_demo` (1): priority_chain_picks_the_first_writer — write-write conflict test.
+  - `coupled_rules` (1): read_write_conflict_suppresses_lower_priority_writer — read-write conflict test.
+  - `counter_and_flag` (2): counter_only_counts_after_flag_is_raised, counter_holds_when_flag_is_low — multi-rule with compound input.
+
+**Follow-ups (Phase 1 remainder + Phase 2):**
+
+- **`#[rule(priority = N)]` annotation.**  Phase 1 plan calls for explicit priority numbering; v0/v1 uses source-order priority.
+- **`urgent_before` / `conflict_free` / `mutually_exclusive` annotations** — Phase 2.
+- **Macro shape migration to `#[derive(RuleKernel)]`** — Phase 0 used a function-like form for simplicity; the user-facing surface from the design plan calls for the derive form.
+- **`Reg<T>` ergonomic alias + `RuleCtx<W>` runtime type** — needs a runtime crate that depends on `rhdl-core`.
+- **Three real-widget rewrites** as the plan §16 specifies (`core::round_robin_arbiter`, `fifo::write_logic`, one protocol PHY).
+- **No-input rules** — currently every rule must take an input parameter (even `_i: In`).  Spec example `reset_on_max(ctx)` takes none; supporting that needs a small extension.
+
+---
+
 ## 2026-04-30 — rhdl-rule Phase 0 — first working Bluespec-style rule kernel
 
 **Paths:** `crates/rhdl-rule/` (new proc-macro shim crate, ~70 LOC), `crates/rhdl-rule-core/` (new implementation crate, ~400 LOC), `crates/rhdl-rule/tests/simple_counter.rs` (working acceptance test), `Cargo.toml` (workspace registers the two new crates).
