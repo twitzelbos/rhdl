@@ -31,6 +31,41 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-04-30 — RHIF property-based testing — Phase 2 follow-ups
+
+**Paths:** `crates/rhdl-core/src/rhif/property_tests.rs` (extended +500 LOC: synthetic SymbolMap helper, structured-arguments helper, six new random-program shape generators, three new tests), `crates/rhdl-core/src/rhif/spec_drift.rs` (new, ~110 LOC), `crates/rhdl-core/src/rhif/mod.rs` (registers the new module), `crates/rhdl-fpga/src/widget_property_corpus.rs` (extended: `InputStrategy` enum, `StructuredFirstCycle` path, Modbus master + slave re-added to lowering correctness corpus).
+
+**Why this, why now:** Phase 2 (PR #15) shipped the foundation — well-formedness checkers + per-pass widget corpus + semantic preservation + lowering correctness on a subset of widgets — and explicitly deferred four follow-up tasks.  This entry covers all four, completing the engineering scope of Phase 2.  The remaining deferrals (CI integration, Phases 3–5) are by user choice or research-target framing, not engineering gaps.
+
+**Design decisions (per follow-up):**
+
+- **(1) Synthetic `SymbolMap` for random programs.**  `synthetic_symbol_map(fn_id)` builds a minimal valid `SymbolMap` with a single `SpannedSource` entry, fallback `NodeId(0)`, and an empty source string.  This is enough to satisfy the VM's preflight `obj.fn_id` lookup, which previously panicked on default-empty SymbolMaps.  Synthetic programs are now VM-runnable; the random-program semantic-preservation test (deferred in PR #15) is restored.
+- **(2) Extended random program generator.**  Six new shape generators added: `generate_tuple_program` (Tuple + Index), `generate_array_program` (Array + Index), `generate_select_program` (Binary + Select), `generate_repeat_program` (Repeat + Index), `generate_splice_program` (Tuple + Splice + Index), `generate_cast_program` (Resize chain).  Each produces a single-arg, single-return Object exercising the named opcodes.  Together with the existing chain generator, this covers ~12 of the 19 RHIF opcodes — `Binary`, `Unary`, `Assign`, `Index`, `Splice`, `Tuple`, `Array`, `Repeat`, `Select`, `Resize`.  The 7 remaining (`Struct`, `Enum`, `Case`, `Exec`, `AsBits`, `AsSigned`, `Retime`, `Wrap`) require either constant `template`s (Struct/Enum/Case need pre-built `TypedBits` of struct/enum kind) or a callee table (Exec) — those are larger generators best ramped up incrementally.
+- **(3) Structure-aware fuzzers via `InputStrategy`.**  Original framing was "Modbus / CAN frame generator," but the actual blocker was simpler: random-bit `q` (the kernel's current internal state) puts protocol-PHY widgets into states that ICE on dynamic-index reads.  Zero-`q` (the kernel's *post-reset* state) is well-defined for any random `i` (kernel input).  The fix is the `InputStrategy` enum with two variants: `Random` (fully random three-arg) and `StructuredFirstCycle` (cr=zero, q=zero, i=random).  Modbus master + slave lowering correctness now passes under `StructuredFirstCycle`; previous "deferred — random fuzzer can't reach in-domain" omission is gone.
+- **(4) Spec-drift check.**  `spec_drift.rs` is a `cargo test` module with three tests: every `OpCode` variant has a corresponding `doc/rhif-spec/opcodes/<name>.md` page; every page corresponds to a variant; the variant count matches `spec.rs`'s expected 19.  Adding a new opcode now fails three tests if the docs aren't updated — the drift contract is mechanically enforceable from `cargo test` without CI plumbing.
+
+**Surprises and gotchas:**
+
+- **`index.md` looks like a directory-index file but isn't.**  My first version of the drift checker excluded it in a "drop README/index" filter, then the test failed because `OpCode::Index` had no page.  The fix: keep `index.md` as the page for the `Index` opcode and only exclude `README.md`.  Caught immediately by the drift test itself, which is the right kind of self-validation.
+- **`StructuredFirstCycle` is the correct fix for "random Modbus inputs ICE."**  I initially thought I'd need to build a Modbus-frame generator that produces valid `[Bits<8>; N]` byte sequences.  But the actual problem was that `q.extras.build_idx` (slot 1 of arg 2 = q) was getting a random byte, and the kernel uses it as a runtime array index against a 64-element buffer — random byte ≥ 64 ⇒ ICE.  Zeroing `q` puts the slave in its post-reset state where `build_idx = 0`, which is in-range.  Fix the right layer: the input shape matters more than the input distribution.
+- **Six of the 19 opcodes still don't have random-program generators.**  `Struct`, `Enum`, `Case`, `Exec`, `AsBits`, `AsSigned`, `Retime`, `Wrap`.  Adding generators for these is mechanical but each requires building a `TypedBits` of the right kind (for `template`) or a synthetic callee `Object` (for `Exec`).  Documented as a follow-up.
+
+**Validation:**
+
+- **3 new spec drift tests** in `rhdl-core::rhif::spec_drift`.
+- **5 new property tests** in `rhdl-core::rhif::property_tests`: `random_programs_preserve_semantics_through_passes` (restored), `extended_generators_produce_well_formed_programs`, `extended_generators_preserve_semantics_through_passes`, plus inherent coverage of the new `synthetic_symbol_map`, `zero_typed_bits`, `structured_synchronous_arguments`, and six shape generators.
+- **2 new widget corpus tests** in `rhdl-fpga::widget_property_corpus::lowering_correctness`: `modbus_rtu_master`, `modbus_rtu_slave` (using `StructuredFirstCycle`).
+- **Full test suite green:** 140 `rhdl-core` lib tests + 844 `rhdl-fpga` lib tests + 1 ignored.
+
+**Follow-ups that remain:**
+
+- **CI integration.**  Wire the property suite into the CI matrix (per user direction: still deferred).
+- **Random program generators for the remaining 7 opcodes** (`Struct`, `Enum`, `Case`, `Exec`, `AsBits`, `AsSigned`, `Retime`, `Wrap`).  Mechanical extensions to the existing generator catalogue.
+- **Multi-cycle structure-aware fuzzers for protocol PHYs** that need iterator-based cycle stepping to reach interesting states (deeper than first-cycle property testing).  Most naturally lives in the per-widget integration tests rather than the RHIF property suite.
+- **Phases 3–5** (PLT Redex, Coq, verified extraction) remain research-target sketches.
+
+---
+
 ## 2026-04-30 — RHIF property-based testing (Phase 2, Level 2)
 
 **Paths:** `crates/rhdl-core/src/rhif/well_formedness.rs` (new, ~600 LOC), `crates/rhdl-core/src/rhif/property_tests.rs` (new, ~520 LOC), `crates/rhdl-core/src/compiler/stage1.rs` (extended with `compile_with_checkpoints`), `crates/rhdl-core/src/compiler/driver.rs` (exposes `compile_design_stage1_with_checkpoints`), `crates/rhdl-core/src/compiler/mod.rs` (exposes `CheckpointFn` and the `rhif_passes` module), `crates/rhdl-fpga/src/widget_well_formedness.rs` (new, 37 widgets), `crates/rhdl-fpga/src/widget_property_corpus.rs` (new, 36 tests across semantic preservation + lowering correctness), `crates/rhdl-fpga/src/lib.rs` (registers the two new test modules), `rhif-formalization-plan.md` updated to mark Phase 2 shipped.
