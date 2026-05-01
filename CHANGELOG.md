@@ -31,6 +31,70 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-01 — Tier C: rhdl-rv32i Phase 2 — 5-stage pipelined CPU with forwarding, load-use stall, branch squash
+
+**Paths:**
+
+- `crates/rhdl-rv32i/src/pipeline.rs` (new) — inter-stage register bundles `IfId`, `IdEx`, `ExMem`, `MemWb`, all `Digital`-derived; `ForwardSrc` enum used by the hazard unit's forwarding-mux selector.
+- `crates/rhdl-rv32i/src/hazard.rs` (new) — three pure combinational kernels: `forward_select` (decides ExMem / MemWb / None for one Execute-stage operand), `detect_load_use_stall` (1-bit hazard detector), `writes_back` (predicate over `WritebackSrc`).
+- `crates/rhdl-rv32i/src/pipelined.rs` (new) — `PipelinedCpu` widget composing the same `decoder` / `alu` / `reg_file` sub-circuits as the v0.1 single-cycle core, but with PC + 4 inter-stage registers as state.  Single big kernel implementing all 5 stages combinationally per cycle (computed in reverse W → M → E → D → F so the regfile-write feeds the same-cycle regfile-read).  Predict-not-taken branch policy with 2-cycle squash.
+- `crates/rhdl-rv32i/tests/pipelined.rs` (new, 6 tests) — closed-loop harness using `run_fn` to drive program memory based on the CPU's actual `pc` output (and a 256-word data scratchpad with in-place store updates).  Tests: pure-ALU parity vs single-cycle, EX/MEM forwarding, MEM/WB forwarding, load-use stall + forward, JAL squash + redirect, iverilog RTL round-trip.
+
+**Why this, why now:** Phase 2 of the RV32I plan per `tier-c-flagship-cores.md` §3.5.  The v0.1 single-cycle core is the executable specification; the pipelined version validates against it byte-identically on the architectural-state side (final scratchpad memory after running the same program through both).  Phase 2 unlocks "real" RV32I execution (CoreMark, Dhrystone) at one-instruction-per-cycle steady state instead of the v0.1's deeply-stalled effective rate.
+
+**Design decisions:**
+
+- **Single `Synchronous` widget, not 5 separate stage widgets.**  §3.4 describes 5 widgets composed by a top-level `Rv32iCore`; v0.2 ships them all in one widget whose state is the 4 inter-stage registers + PC + register file.  Reasons: (a) writing 5 separate widgets multiplies the inter-stage wiring complexity by ~3× without buying any additional clarity (the per-stage logic is small enough to read inline); (b) the kernel-language already lets us split the body into helper kernels (`forward_select`, `forward_value`, `detect_load_use_stall`, `branch_taken`, `load_format`) that document each stage's intent.  Splitting into multiple widgets is a refactor we can do later if profiling shows a per-stage timing budget benefit.
+
+- **Stages computed in reverse (W → M → E → D → F).**  Each stage reads from its incoming `q.<reg>` and writes its `next_<reg>`.  The reverse order matters for the register-file write-port: MEM/WB drives the regfile write in the same cycle that Decode drives the regfile read, and the read combinationally sees the `q.rf` (pre-write snapshot) — which means dependence on MEM/WB writeback comes via the explicit forwarding path, not via a same-cycle regfile bypass.  Pedagogically clean.
+
+- **EX/MEM forwarding beats MEM/WB.**  `forward_select` checks EX/MEM first.  When the same destination register is being written by both stages, EX/MEM has the newer value (it's the more-recently-issued instruction).  Standard Patterson/Hennessy choice.
+
+- **Load-use stall freezes PC + IF/ID and bubbles ID/EX.**  Standard policy: when ID/EX is a load and IF/ID's source registers include the load's destination, the next cycle inserts a NOP-equivalent into ID/EX so the load result has time to reach MEM/WB.  Then the usual MEM/WB → Execute forwarding path picks it up.
+
+- **Branch squash is 2 cycles wide.**  Predict-not-taken.  When EX resolves `take_branch || take_jal || take_jalr`, both IF/ID and ID/EX are squashed (replaced with bubble defaults whose `valid` is false), and PC is redirected to the branch / jump target.  2-cycle penalty; matches every textbook.  No branch predictor in v0.2.
+
+- **`q.if_id` freeze on stall via `q.if_id` re-emission.**  When stalled, `next_if_id = q.if_id` — the slot stays exactly as it is so the same instruction re-decodes next cycle.
+
+- **Closed-loop test harness uses `run_fn`.**  First attempt at the test harness drove `program[cycle]` blindly each cycle, which works for sequential programs but fails the moment the pipeline stalls or redirects (the CPU's PC stops advancing while the harness keeps incrementing).  Switched to `run_fn` with an input function that reads `out.pc` and `out.mem_addr` to compute the next instruction and memory response.  This is the correct simulation model for any closed-loop CPU test.
+
+**Surprises and gotchas:**
+
+- **Initial test harness was wrong for stall paths.**  The pure-ALU and JAL tests passed under the cycle-blind harness because PC advances by 4 per cycle in those cases.  The load-use test exposed the bug — the stall meant PC stayed put while the harness incremented, so the CPU saw garbage instructions and the SW never fired.  Lesson: closed-loop CPU tests **need** PC-driven instruction fetching from the start.
+
+- **`ResetOrData` lives at `rhdl::core::sim`, not `rhdl::prelude`.**  Worth a one-line addition to the prelude in a future polish PR; for now the test imports it explicitly.
+
+- **The pipeline's structurally-correct register-file shape is `dff::DFF<[Bits<32>; 32]>`, same as the single-cycle.**  Writeback wins per the priority chain: only the MEM/WB stage drives `d.rf.wen`.  No race between WB write and Decode read because the single-port write commits at the cycle edge.
+
+- **`Bits<32>` arithmetic wraps cleanly** — no special handling needed for branch-target overflow or PC wraparound at 0xFFFFFFFF.  Per RHDL semantics.
+
+**Validation:**
+
+- **44 tests pass** in `rhdl-rv32i` (38 from v0.1 + 6 new pipelined tests).
+- **Six pipelined tests** cover: pure-ALU parity (no hazards), back-to-back EX/MEM forwarding, three-deep MEM/WB forwarding, load-use stall + forward, JAL squash + redirect, **iverilog RTL round-trip on the full pipelined CPU**.
+- **Byte-identical parity vs single-cycle** verified via final-scratchpad-state comparison for every functional test.  The v0.1 single-cycle Cpu remains the executable spec; the pipelined version's correctness is established by agreement with it.
+- All 92 rule-track tests still pass — RV32I is purely additive; no shared-code changes.
+
+**What's deferred (Phase 3 + cross-cutting):**
+
+- **CSRs and M-mode trap handling** (Phase 3 per `tier-c-flagship-cores.md` §3.5).  ECALL / EBREAK still set the `illegal` flag rather than vectoring; no mstatus/mtvec/mepc/mcause/mtval/mscratch/misa/mhartid; no trap-on-misaligned-target.
+- **Branch / JAL / JALR misaligned-target trap.**  RV32I requires a misaligned-instruction trap when a branch / jump computes a target that's not 4-byte-aligned.  v0.2 silently masks bit 0 to zero (matching v0.1).  Trap implementation comes with the CSR file.
+- **Conditional-branch test coverage.**  Only JAL is exercised in v0.2's pipelined tests; the six BEQ/BNE/BLT/BGE/BLTU/BGEU comparators are tested in `decoder.rs` (encoding) and `cpu.rs` (single-cycle execution) but not yet in the pipelined harness.  Add when the CSR work lands so the trap interactions can be tested together.
+- **JALR with non-zero rs1 in the pipelined harness.**  The squash + redirect path is tested via JAL; JALR uses the same squash path but with a different target-source mux.  Add to the pipelined-test set.
+- **Memory interface using `RCStream`** (per §3.4).  v0.2 keeps the v0.1 combinational memory ports.  RCStream switch is Phase 2.5+ work.
+- **riscv-tests harness + Spike lockstep** (cross-cutting Tier C infrastructure per §7).  This is the load-bearing validation; v0.2's parity-vs-single-cycle is a strong stand-in for sequential programs but doesn't cover the full ISA-compliance surface.
+- **CoreMark / Dhrystone** runs.  Once the harness can execute a real binary end-to-end, these provide the "DMIPS / MHz" headline number.
+
+**Test plan for follow-up PRs:**
+
+1. Add the six conditional-branch parity tests to the pipelined test set.
+2. Add a JALR test with non-trivial `rs1+imm` target.
+3. Switch the memory interface to `RCStream` per §3.4 (interlocks with `stream-bus-architecture.md`).
+4. Build the riscv-tests harness as the cross-cutting Tier C v1 infrastructure.
+5. CSR file + M-mode traps (Phase 3).
+
+---
+
 ## 2026-05-01 — Tier C: rhdl-rv32i v0.1 — single-cycle RV32I core foundations
 
 **Paths:**
