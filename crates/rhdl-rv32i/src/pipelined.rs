@@ -278,8 +278,31 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
 
     // Read register-file values via `q.rf` (driven from `d.rf`
     // below — combinational read ports).
-    let id_rs1_val: Bits<32> = q.rf.rdata1;
-    let id_rs2_val: Bits<32> = q.rf.rdata2;
+    //
+    // **WB→Decode bypass**: when MEM/WB is about to commit a
+    // writeback to a register the Decode stage just read, the
+    // regfile output is stale (the write commits at the cycle
+    // edge, AFTER Decode reads).  Bypass the MEM/WB writeback
+    // value here so Decode sees the post-commit value this cycle.
+    // Without this, a 3-instructions-back dependency
+    // (e.g. `add x12,…; lui …; addi …; bne x12,…`) reads the
+    // stale x12 — EX/MEM and MEM/WB forwarding can only reach
+    // back 1 and 2 instructions, not 3.
+    let wb_bypass_x12: bool = q.mem_wb.valid
+        && q.mem_wb.writeback_en
+        && q.mem_wb.rd != bits::<5>(0);
+    let raw_rs1: Bits<32> = q.rf.rdata1;
+    let raw_rs2: Bits<32> = q.rf.rdata2;
+    let id_rs1_val: Bits<32> = if wb_bypass_x12 && q.mem_wb.rd == dec.rs1 {
+        q.mem_wb.writeback_value
+    } else {
+        raw_rs1
+    };
+    let id_rs2_val: Bits<32> = if wb_bypass_x12 && q.mem_wb.rd == dec.rs2 {
+        q.mem_wb.writeback_value
+    } else {
+        raw_rs2
+    };
 
     // Load-use stall: based on ID/EX's load destination + the
     // current IF/ID instruction's source registers.
