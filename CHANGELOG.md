@@ -39,6 +39,7 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 - `crates/rhdl-rule/tests/pilot_fifo_write_logic.rs` (new, 2 tests) — `RuleFIFOWriteCore` as a single-rule rewrite of `fifo::write_logic::FIFOWriteCore`.  Parity-tested cycle-by-cycle against the original for 15-cycle write/read pattern.  RTL+NTL iverilog round-trip.
 - `crates/rhdl-rule/tests/pilot_simple_uart_tx.rs` (new, 4 tests) — `RuleSimpleUartTx` as a 3-rule state-transition PHY (load / advance / finish), all writing the same `bit_counter` field with `mutually_exclusive` annotations.  Built from scratch (not a rewrite — see entry below for why).  Frame-shape validation + back-to-back-byte test + RTL+NTL iverilog round-trip.
 - `crates/rhdl-rule/tests/pilot_composition.rs` (new, 4 tests) — `MonitoredArbiter`: a hand-written `Synchronous` widget that composes a rule-kernel sub-circuit (`PriorityArbiter`) with a traditional sub-circuit (`dff::DFF<Bits<32>>` grant counter).  RTL+NTL iverilog round-trip on the wrapper-with-rule-kernel-inside.  Validates `rule-architecture.md` §9.1 composition claim end-to-end.
+- `crates/rhdl-rule/tests/pilot_attribute_form_example.rs` (new, 5 tests) — companion demo: `AttrFormCounter` (using `#[rule_kernel_attr]`) and `FnFormCounter` (using `rule_kernel! { ... }`) defined side by side with the same widget shape.  Runtime parity test asserts byte-identical output sequences for the same input stream — confirms the §4.5 design note's claim that both forms are interchangeable, validated in a real-widget context (in addition to the token-level parity test from PR #24).  RTL+NTL iverilog round-trip on the attribute form.
 
 **Why this, why now:** the design plan's Phase-1 contract (`rule-architecture.md` §15 / §16 / §21) committed to "rewrite three real RHDL widgets as rule kernels" as the validation that the rule-kernel surface holds up against real designs.  PRs #20–#24 shipped the macro infrastructure but left the widget rewrites outstanding.  This PR closes that contract and adds a fourth pilot specifically requested during planning: a composition demo proving that rule kernels and traditional widgets compose without modification (`§9.1` claim).
 
@@ -64,11 +65,12 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 **Validation:**
 
-- **67 tests pass** across the rule crates (53 from PR #24 + 14 new):
+- **72 tests pass** across the rule crates (53 from PR #24 + 19 new):
   - 4 in `pilot_round_robin_arbiter.rs` (single + rotation + parity + iverilog)
   - 2 in `pilot_fifo_write_logic.rs` (parity + iverilog)
   - 4 in `pilot_simple_uart_tx.rs` (idle + frame-shape + back-to-back + iverilog)
   - 4 in `pilot_composition.rs` (compiles + counter advances + counter holds + iverilog)
+  - 5 in `pilot_attribute_form_example.rs` (increment + clear + priority + runtime parity vs function-like + iverilog)
 - All 53 pre-existing tests continue to pass; the pilot work added no regressions.
 - Iverilog RTL+NTL round-trip succeeds on every pilot, including the wrapper-with-rule-kernel-inside (Pilot 4).
 
