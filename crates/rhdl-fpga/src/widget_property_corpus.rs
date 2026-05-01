@@ -34,8 +34,9 @@
 #![cfg(test)]
 
 use rhdl::core::rhif::property_tests::{
-    check_lowering_correctness, check_semantic_preservation, random_arguments, seeded_rng,
-    LoweringCorrectnessOutcome, SemanticPreservationOutcome,
+    check_lowering_correctness, check_semantic_preservation, random_arguments,
+    seeded_rng, structured_synchronous_arguments, LoweringCorrectnessOutcome,
+    SemanticPreservationOutcome,
 };
 
 const SAMPLES_PER_WIDGET: usize = 4;
@@ -68,7 +69,25 @@ where
     }
 }
 
+/// Sample inputs for the kernel.  `Random` uses
+/// [`random_arguments`] (all three kernel args are random bits);
+/// `StructuredFirstCycle` uses [`structured_synchronous_arguments`]
+/// (cr=zero, q=zero, i=random) — useful for widgets whose `q` has
+/// dynamic-index reads that ICE on random states.
+#[derive(Clone, Copy)]
+enum InputStrategy {
+    Random,
+    StructuredFirstCycle,
+}
+
 fn assert_lowering_correctness_synchronous<W>(seed: u64)
+where
+    W: rhdl::core::circuit::synchronous::SynchronousIO,
+{
+    assert_lowering_correctness_synchronous_with_strategy::<W>(seed, InputStrategy::Random);
+}
+
+fn assert_lowering_correctness_synchronous_with_strategy<W>(seed: u64, strategy: InputStrategy)
 where
     W: rhdl::core::circuit::synchronous::SynchronousIO,
 {
@@ -91,7 +110,12 @@ where
         if in_domain >= SAMPLES_PER_WIDGET {
             break;
         }
-        let args = random_arguments(&obj, &mut rng);
+        let args = match strategy {
+            InputStrategy::Random => random_arguments(&obj, &mut rng),
+            InputStrategy::StructuredFirstCycle => {
+                structured_synchronous_arguments(&obj, &mut rng)
+            }
+        };
         let outcome = check_lowering_correctness::<W::Kernel>(
             rhdl::core::CompilationMode::Synchronous,
             args.clone(),
@@ -113,9 +137,9 @@ where
     }
     assert!(
         in_domain >= MIN_IN_DOMAIN_SAMPLES,
-        "widget {} produced no in-domain random inputs in {MAX_ATTEMPTS} attempts — \
-         the random sampler can't exercise this kernel's runtime constraints; \
-         consider tightening the input distribution",
+        "widget {} produced no in-domain inputs in {MAX_ATTEMPTS} attempts — \
+         the input sampler can't exercise this kernel's runtime constraints; \
+         consider switching strategies or tightening the input distribution",
         std::any::type_name::<W>(),
     );
 }
@@ -337,17 +361,31 @@ mod lowering_correctness {
         assert_lowering_correctness_synchronous::<I2cMaster<4>>(210);
     }
 
-    // ModbusRtuMaster<8, 8> and ModbusRtuSlave<8, 8> are deliberately
-    // omitted from the lowering-correctness corpus: their input
-    // structures (8-byte register arrays + protocol framing) are
-    // dense enough that 64 random samples never produce an in-domain
-    // input in the random-bits sampler.  Both widgets are still
-    // exercised by `semantic_preservation` (where the comparison
-    // works fine on out-of-domain inputs because the same kernel runs
-    // on both sides) and by their per-widget iverilog round-trip
-    // tests in `serial_bus::modbus_rtu_*::tests`.  Adding a
-    // structure-aware Modbus-frame generator would re-enable
-    // lowering-correctness here; left as a Phase 2 follow-up.
+    // ModbusRtuMaster / ModbusRtuSlave use the StructuredFirstCycle
+    // strategy: cr=zero, q=zero (initial state), i=random.  Random-
+    // bits q would put `q.extras.build_idx` at an arbitrary value
+    // that the kernel uses as a runtime array index, ICEing on
+    // ArrayIndexOutOfBounds nearly 100 % of the time.  Zeroing q
+    // gives the kernel its post-reset state, which is well-defined
+    // for any random `i`.
+
+    #[test]
+    fn modbus_rtu_master() {
+        use crate::serial_bus::modbus_rtu_master::ModbusRtuMaster;
+        assert_lowering_correctness_synchronous_with_strategy::<ModbusRtuMaster<8, 8>>(
+            220,
+            InputStrategy::StructuredFirstCycle,
+        );
+    }
+
+    #[test]
+    fn modbus_rtu_slave() {
+        use crate::serial_bus::modbus_rtu_slave::ModbusRtuSlave;
+        assert_lowering_correctness_synchronous_with_strategy::<ModbusRtuSlave<8, 8>>(
+            221,
+            InputStrategy::StructuredFirstCycle,
+        );
+    }
 
     #[test]
     fn ps2_keyboard() {

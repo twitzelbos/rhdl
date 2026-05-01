@@ -7,5 +7,7 @@ pub mod display_rhif;
 pub mod remap;
 pub mod property_tests;
 pub mod runtime_ops;
+#[cfg(test)]
+mod spec_drift;
 pub mod visit;
 pub mod well_formedness;
