@@ -249,6 +249,36 @@ Concretely:
 - The attribute form's macro analyses the impl alone, derives field names from the union of every rule's read/write set + the output method's field reads, and emits the `SynchronousIO` impl + the `#[kernel]` function. The struct (with its derives) is the user's responsibility.
 - `lower_rule_kernel` in `rhdl-rule-core` is the single source of truth for both. Pre-PR refactor: the function-like form was the only entry point; the attribute form is a ~20-line wrapper that calls the same inner function.
 
+#### Auto-hold for unused struct fields (function-like form only)
+
+The function-like form passes the struct's actual field list to the lowering. Any field that no rule reads or writes and that the `#[output]` method doesn't reference gets **auto-hold semantics**: the lowered kernel emits `_next_<field> = q.<field>` and no rule ever overwrites it, so the field stays at its current value forever. The user can declare DFF fields without being forced to add `let _ = *self_q.x;` workarounds in the output method just to satisfy the macro.
+
+The attribute form can't see the struct, so it has no field list to compare against — unused fields will surface as Rust compile errors ("missing field `xyz` in initializer of D"). Three options for users of the attribute form:
+1. Touch the field in some rule (`*ctx.field` read or `ctx.field = ...` write) — explicit auto-hold equivalent.
+2. Reference the field in the `#[output]` method.
+3. Switch the widget to the function-like form for auto-hold.
+
+This asymmetry is the price the attribute form pays for not seeing the struct definition. The diagnostic surface is on the roadmap (a clear miette-style "field `xyz` is missing" message that names the field and suggests the three fixes).
+
+#### `#[output]` without `self_q` when state isn't read
+
+The `#[output]` method accepts two signatures:
+
+```rust
+// Form A — receiver + input.  Use when the body reads state via
+// `*self_q.field` or `self_q.field`.
+#[output]
+fn output(self_q: &Self, i: I) -> O { ... }
+
+// Form B — input only.  Use when the body is purely a function of
+// the input (no state read).  No need to declare or silence an
+// unused `self_q` parameter.
+#[output]
+fn output(i: I) -> O { ... }
+```
+
+The macro detects which form by counting parameters and checking the first parameter's shape: a receiver (`&self`) or a typed reference (`self_q: &Self`) signals Form A; otherwise it's Form B with the parameter as the input. If the body of a Form B method later needs to read state, switch to Form A and the `*self_q.field` rewriting kicks in. The two forms are otherwise identical in everything they emit — Form B just drops the dead parameter.
+
 #### When each form reads better
 
 | Situation | Recommended form |

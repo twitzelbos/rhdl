@@ -61,12 +61,12 @@ rule_kernel! {
             ctx.last_idx = if found { winner } else { *ctx.last_idx };
         }
 
+        // No `self_q` parameter — output is purely a function of
+        // input.  The PR #25 workaround `let _ = *self_q.last_idx;`
+        // (needed back when every struct field had to be touched and
+        // `self_q` had to be declared even when unused) is gone.
         #[output]
-        fn output(self_q: &Self, requests: Bits<N>) -> Option<Bits<W>> {
-            // Reads from self_q via *self_q.last_idx to satisfy the
-            // macro's "every field of the struct must be touched"
-            // invariant.  The value isn't used in the output.
-            let _ = *self_q.last_idx;
+        fn output(requests: Bits<N>) -> Option<Bits<W>> {
             let mut winner: Bits<W> = bits::<W>(0);
             let mut found = false;
             for i in 0..N {
