@@ -67,6 +67,15 @@ impl SynchronousIO for RegFile {
 /// (pre-firing) `regs` snapshot; synchronous write commits at the
 /// next clock edge.  x0 is hardwired to zero — reads always
 /// return zero, writes are silently dropped.
+///
+/// **No same-cycle write-read bypass.**  In the single-cycle CPU
+/// the write port's `wdata` is the ALU result, which depends
+/// (transitively) on the regfile read — adding the bypass would
+/// create a combinational loop on `addi x1, x1, 1`-style
+/// instructions.  The pipelined CPU handles the WB→Decode bypass
+/// at the Decode-stage level (see `pipelined::pipelined_cpu_kernel`
+/// where `rs1_val_decoded` muxes against MEM/WB's writeback before
+/// latching into ID/EX).
 pub fn reg_file_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let mut d = D::dont_care();
     let mut o = Out::dont_care();

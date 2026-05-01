@@ -47,6 +47,7 @@
 //! either way; this is a packaging decision.
 
 pub mod alu;
+pub mod compliance;
 pub mod cpu;
 pub mod csr;
 pub mod decoder;

@@ -31,6 +31,52 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-01 — Tier C: rhdl-rv32i ISA-compliance harness + WB→Decode bypass
+
+**Paths:**
+
+- `crates/rhdl-rv32i/src/compliance.rs` (new) — hand-translated subset of `riscv-tests` rv32ui-p-* with the framework: `RrTest` test-case type; `make_rr_program` program builder; `run_signature_single` / `run_signature_pipelined` harnesses (signature == 1 = pass; sub-test ID = fail); 6 hand-translated test programs (add, sub, and, or, xor, addi).
+- `crates/rhdl-rv32i/tests/compliance.rs` (new, 6 tests) — runs each compliance program through both single-cycle and pipelined CPUs, asserts signature == 1 on both.
+- `crates/rhdl-rv32i/src/pipelined.rs` — adds **WB→Decode bypass** in the Decode stage: when MEM/WB is about to commit a writeback to a register Decode just read, mux the MEM/WB writeback value in instead of using the stale regfile output.
+
+**Why this, why now:** PR #33 unblocked the riscv-tests harness by adding ECALL trap vectoring.  This PR delivers a v0 of that harness — hand-translated tests that don't require the riscv-gnu-toolchain or vendored binaries, but do exercise real ISA edge cases for both cores.  This is the first test surface that could find a bug both cores share (parity tests can't, by construction).  And it did — see the WB→Decode bypass below.
+
+**Design decisions:**
+
+- **Hand-translated, not vendored.**  The plan §3.6 calls for running upstream `riscv-tests` ELFs.  That requires either the riscv-gnu-toolchain (a 30-60 minute compile, several hundred MB) or vendored pre-built ELFs.  Both add significant friction.  Hand-translation avoids the toolchain dependency, gives us real ISA-compliance testing today, and produces a framework that will accept upstream binaries when the toolchain story is sorted.
+
+- **Signature contract**: scratchpad word 0 holds the test outcome.  Pass writes 1; fail writes the failing sub-test's ID.  This is exactly the shape the upstream `.tohost` mechanism uses, so swapping in real ELF tests later is a clean drop-in.
+
+- **One test program per RV32I instruction (subset for v0.5)**: ADD, SUB, AND, OR, XOR (R-type ALU); ADDI (I-type ALU).  6 programs, ~5-15 sub-tests each.  More to come (SLL/SRL/SRA/SLT/SLTU; LUI/AUIPC; LB/LH/LW/SB/SH/SW; BEQ/BNE/BLT/BGE/BLTU/BGEU; JAL/JALR) once the framework is proven.
+
+- **Test data is `(id, a, b)` triples; `expected = a OP b` is computed.**  My first attempt hand-coded the expected values, and I got several wrong.  The fix: compute the expected from the operation in Rust, so the test data only specifies the inputs.  Loses a slight bit of "is this really what the spec says?" rigor — but for AND/OR/XOR there's no ambiguity in what the operation does.  ADD/SUB/ADDI test data was already correct because the upstream tests use specific overflow-edge values that I lifted directly.
+
+**Surprises and gotchas (the load-bearing ones):**
+
+- **WB→Decode bypass was missing.**  First attempt at the compliance suite passed on the single-cycle CPU but failed every test on the pipelined CPU at sub-test 3.  Investigation: each sub-test computes a result with an R-type op then immediately checks it with `bne`, with `li x13, expected` (LUI + ADDI) sandwiched between.  The `bne` is 3 instructions after the result-producing `add`, which means at the cycle bne is in EX, the add's result has already been COMMITTED to the regfile but neither EX/MEM nor MEM/WB still hold it.  Standard 5-stage handling: regfile-write-on-rising-edge, regfile-read-on-falling-edge gives same-cycle visibility.  In our simulation that's a same-cycle bypass.
+
+- **First fix attempt: bypass in the regfile.  Wrong.**  Adding `if wen && raddr == waddr { return wdata }` to the regfile read port causes a combinational loop in the SINGLE-cycle CPU: `o.rdata1` → ALU → `d.rf.wdata` → `o.rdata1`.  The single-cycle has no clock-edge separation between the read and the write; the bypass is acyclic only when the write data comes from a register (i.e., in the pipelined CPU, MEM/WB.writeback_value).
+
+- **Second fix attempt: bypass at the pipelined Decode stage.  Right.**  The bypass mux lives in the pipelined CPU's Decode stage, where it muxes between `q.rf.rdata1` (regfile output) and `q.mem_wb.writeback_value` (the about-to-commit WB) based on `q.mem_wb.rd == dec.rs1`.  No cycle because both sides are pre-firing values.  Single-cycle is unaffected.  All 6 compliance tests pass on both cores.
+
+- **The bug went undetected until this PR.**  PR #31's pipelined tests included three-deep MEM/WB-forwarding (`addi x1, ... ; addi x2, x1, ... ; addi x3, x1, ... ; sw x3, ...`) but in that pattern the third addi is exactly 2 instructions after the producer, so MEM/WB forwarding catches it.  The compliance suite's 3-instructions-back pattern (`add ; lui ; addi ; bne x12,...`) was the first thing to exercise the WB→Decode bypass case.  Validates the strategic call in PR #33's discussion: parity-only testing can miss bugs both cores share, but the one-sided "single passes, pipelined fails" was easy to diagnose because we already had a known-good reference.
+
+**Validation:**
+
+- **69 tests pass** in `rhdl-rv32i` (63 from PR #33 + 6 new compliance tests).
+- **All 6 compliance tests pass on BOTH cores** (single-cycle and pipelined).
+- All 92 rule-track tests still pass.
+
+**What's deferred:**
+
+- **More compliance tests**: SLL/SRL/SRA/SLT/SLTU, LUI/AUIPC, LB/LH/LW/SB/SH/SW, BEQ/BNE/BLT/BGE/BLTU/BGEU, JAL/JALR, FENCE.  Mechanical follow-up — each test is one `make_*_program` function plus one `#[test]` entry.
+- **Upstream-ELF support**: vendor pre-built `rv32ui-p-*.bin` / `.hex` files; write a small ELF/HEX loader; switch the harness to load from disk.  v0.6+ work.
+- **Spike lockstep**: run the same binary on Spike and the RHDL core, compare per-instruction state.  Cross-cutting Tier C v1 infrastructure per §7.
+
+**Next strategic move:** more compliance tests (mechanical scale-up) OR pipelined CSR support (closes the Phase 3 gap; needed for ECALL-using tests on the pipelined core).
+
+---
+
 ## 2026-05-01 — Tier C: rhdl-rv32i Phase 3 — M-mode CSRs + ECALL/EBREAK trap vectoring (single-cycle)
 
 **Paths:**
