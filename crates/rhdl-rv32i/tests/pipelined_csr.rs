@@ -64,6 +64,8 @@ fn csrrwi(rd: u32, uimm: u32, csr: u32) -> u32 {
 
 const ECALL: u32 = 0x0000_0073;
 const EBREAK: u32 = 0x0010_0073;
+/// `beq x0, x0, +0` infinite-loop terminator.
+const HALT: u32 = 0x0000_0063;
 
 // ---- Closed-loop harnesses ---------------------------------------
 
@@ -235,6 +237,7 @@ fn pipelined_ecall_trap_parity() {
         csrrs(3, 0, CSR_MCAUSE),
         sw(2, 0, 0),
         sw(3, 0, 4),
+        HALT,                            // park CPU
     ];
     let single = run_single(program.clone(), 24);
     let pipelined = run_pipelined(program, 50);
@@ -260,6 +263,7 @@ fn pipelined_ebreak_trap_parity() {
         csrrs(3, 0, CSR_MCAUSE),
         sw(2, 0, 0),
         sw(3, 0, 4),
+        HALT,
     ];
     let single = run_single(program.clone(), 24);
     let pipelined = run_pipelined(program, 50);

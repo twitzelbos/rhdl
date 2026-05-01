@@ -72,9 +72,12 @@ pub struct In {
 pub struct Out {
     /// Data read from the CSR at `raddr` (combinational).
     pub rdata: Bits<32>,
-    /// Current `mtvec` (always exposed so the CPU can vector traps
-    /// without going through the read port).
+    /// Current `mtvec` — exposed directly so the CPU can vector
+    /// traps without going through the read port.
     pub mtvec: Bits<32>,
+    /// Current `mepc` — exposed directly so the CPU can compute
+    /// the MRET target without going through the read port.
+    pub mepc: Bits<32>,
 }
 
 /// CSR file widget — six read-write CSRs as separate DFFs.
@@ -142,6 +145,7 @@ pub fn csr_file_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
 
     o.rdata = csr_read(i.raddr, q);
     o.mtvec = q.mtvec;
+    o.mepc = q.mepc;
 
     let mstatus_a: Bits<12>  = bits::<12>(0x300);
     let mtvec_a: Bits<12>    = bits::<12>(0x305);
@@ -193,6 +197,11 @@ pub fn csr_file_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         d.mepc = bits::<32>(0);
         d.mcause = bits::<32>(0);
         d.mtval = bits::<32>(0);
+        // Mirror the reset values onto the live outputs so the
+        // CPU sees zeros immediately rather than `dont_care`.
+        o.rdata = bits::<32>(0);
+        o.mtvec = bits::<32>(0);
+        o.mepc = bits::<32>(0);
     }
     (o, d)
 }

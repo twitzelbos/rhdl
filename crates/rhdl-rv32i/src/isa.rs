@@ -164,7 +164,7 @@ pub enum CsrOp {
 /// SYSTEM-opcode variants other than CSR access.
 #[derive(PartialEq, Eq, Debug, Digital, Clone, Copy, Default)]
 pub enum SystemOp {
-    /// Not an ECALL or EBREAK (this includes CSR instructions —
+    /// Not an ECALL/EBREAK/MRET (this includes CSR instructions —
     /// see [`CsrOp`]).
     #[default]
     None,
@@ -172,6 +172,11 @@ pub enum SystemOp {
     Ecall,
     /// `EBREAK` — debugger breakpoint.
     Ebreak,
+    /// `MRET` — return from M-mode trap.  Sets PC ← `mepc`.
+    /// Should also restore `mstatus.MIE` from `mstatus.MPIE`,
+    /// but interrupts aren't implemented in v0.7 so the
+    /// mstatus restore is a no-op.
+    Mret,
 }
 
 /// Decoder output — every signal the executor and writeback stages

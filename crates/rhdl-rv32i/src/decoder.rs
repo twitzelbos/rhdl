@@ -322,16 +322,20 @@ pub fn decode(instr: Bits<32>) -> DecodedInstruction {
         d.opcode = Opcode::System;
         d.illegal = false;
         if funct3 == f3_zero {
-            // ECALL or EBREAK.
-            // funct12 = instr[31:20] = 0 → ECALL, 1 → EBREAK.
+            // SYSTEM-funct12 dispatch:
+            //   0x000 → ECALL
+            //   0x001 → EBREAK
+            //   0x302 → MRET   (M-mode return-from-trap)
+            //   anything else → illegal (WFI, SFENCE.VMA, SRET,
+            //                            etc. not implemented).
             let funct12: Bits<12> = ((instr >> 20) & bits::<32>(0xFFF)).resize();
             if funct12 == bits::<12>(0) {
                 d.system_op = SystemOp::Ecall;
             } else if funct12 == bits::<12>(1) {
                 d.system_op = SystemOp::Ebreak;
+            } else if funct12 == bits::<12>(0x302) {
+                d.system_op = SystemOp::Mret;
             } else {
-                // Other system funct12 values (MRET, WFI, SFENCE.VMA, …)
-                // are not implemented in v0.3.
                 d.illegal = true;
             }
         } else {
