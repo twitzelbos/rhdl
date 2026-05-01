@@ -31,6 +31,47 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-04-30 — rhdl-rule Phase 1.6 — prefixed Q/D removes single-module collision + a 3-rule toggle-FF demo
+
+**Paths:** `crates/rhdl-rule-core/src/lib.rs` (drops `#[rhdl(dq_no_prefix)]` injection; uses `<Name>Q` / `<Name>D` in the generated kernel), `crates/rhdl-rule/tests/multiple_widgets_one_module.rs` (new — proves 2 rule kernels coexist in 1 module), `crates/rhdl-rule/tests/toggle_ff.rs` (new — 3-rule toggle FF with enum input).
+
+**Why this, why now:** PR #21 surfaced a real ergonomic friction: multiple `rule_kernel!` invocations in one module collided on the auto-generated `Q`/`D` types because the macro injected `#[rhdl(dq_no_prefix)]` into the user's struct.  The fix: drop the prefix-suppression and reference `<StructName>Q` / `<StructName>D` explicitly in the generated kernel function.  No more workaround; multiple widgets in one module just work.
+
+**Design decisions:**
+
+- **Drop the `#[rhdl(dq_no_prefix)]` injection.**  Originally added so the kernel function could write `q: Q` and `D { ... }` without typing the struct name.  Removing it means the kernel function now writes `q: <Name>Q` and `<Name>D { ... }`.  Cosmetic in single-widget modules; load-bearing in multi-widget modules.
+- **Compute `<Name>Q` / `<Name>D` idents at the macro layer.**  `format_ident!("{}Q", struct_name)` and `format_ident!("{}D", struct_name)`.  Substituted everywhere the kernel previously wrote `Q` or `D`.
+- **No user-facing API change.**  The user still writes `rule_kernel! { struct + impl }`; the kernel function's signature is generated; the user references `MyWidget::default()` etc. as before.
+
+**Surprises and gotchas:**
+
+- **`super::EnumName` doesn't work inside a rule body any more** because the macro emits everything in the user's module (no submodule).  The toggle FF test originally used `super::ToggleEvent`; switched to bare `ToggleEvent`.
+- **Existing tests with `mod foo { ... rule_kernel! { ... } }` workarounds still work**, just unnecessarily nested.  Left as-is for now — removing the wrappers is mechanical churn.
+
+**Validation:**
+
+- **20 tests pass across 8 test files** in `crates/rhdl-rule/tests/`:
+  - `simple_counter` (4): single-rule baseline + HDL + iverilog round-trip.
+  - `priority_demo` (1): write-write conflict + priority chain.
+  - `coupled_rules` (1): read-write conflict suppression.
+  - `counter_and_flag` (3): 2-rule + 3-rule (with input-less `reset_on_max`).
+  - `annotated_rules` (3): explicit priority + no-input rule + `conflict_free` true-positive.
+  - `conflict_free_violation` (2): negative tests for `conflict_free` validation.
+  - `multiple_widgets_one_module` (3, new): two rule kernels coexist in one module + iverilog round-trip on the multi-rule kernel.
+  - `toggle_ff` (3, new): 3-rule toggle FF with `ToggleEvent` enum input — set / clear / toggle commands, all writing the same register, write-write conflicts handled by the priority chain.
+
+**Follow-ups:**
+
+- Strip the now-unnecessary `mod ... { ... }` workarounds in the existing tests (mechanical cleanup).
+- `urgent_before` annotation (Phase 2 scheduler ordering).
+- `mutually_exclusive` proof of pairwise unsatisfiability (Phase 2).
+- Macro shape migration to `#[derive(RuleKernel)]` (Phase 2 plan §4).
+- `Reg<T>` ergonomic alias + `RuleCtx<W>` runtime type — needs runtime crate.
+- Real-widget rewrites: `core::round_robin_arbiter` and `fifo::write_logic` are the plan's Phase-1 pilots; both are mostly single-FSM widgets that aren't naturally rule-shaped.  A more rule-shaped pilot (multi-port arbiter, multi-rule scheduler) would be a better validation than mechanically rewriting existing widgets.
+- Generic struct support — currently the macro doesn't handle `pub struct Foo<const N: usize>` or other generic parameters.  Needed for the FIFO/arbiter rewrites.
+
+---
+
 ## 2026-04-30 — rhdl-rule Phase 1.5 — annotations, no-input rules, conflict-free validation
 
 **Paths:** `crates/rhdl-rule-core/src/lib.rs` (extended: `parse_rule_annotations`, no-input rule support, priority-aware sort, conflict_free validation against the matrix), `crates/rhdl-rule/Cargo.toml` (adds `rhdl-rule-core` + `proc-macro2` + `quote` as dev-deps for negative tests), `crates/rhdl-rule/tests/annotated_rules.rs` (new — 3 positive tests), `crates/rhdl-rule/tests/conflict_free_violation.rs` (new — 2 negative tests), `crates/rhdl-rule/tests/counter_and_flag.rs` (extended with the 3-rule canonical example).

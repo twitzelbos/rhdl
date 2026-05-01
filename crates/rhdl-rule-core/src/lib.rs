@@ -315,6 +315,8 @@ pub fn expand_rule_kernel(input: TokenStream) -> syn::Result<TokenStream> {
     // Generate.
     let kernel_fn_name = lower_camel_to_snake(struct_name);
     let kernel_fn_ident = format_ident!("{kernel_fn_name}");
+    let q_ident = format_ident!("{}Q", struct_name);
+    let d_ident = format_ident!("{}D", struct_name);
 
     // Augment the struct with the standard derives.
     let mut struct_emit = item_struct.clone();
@@ -379,6 +381,8 @@ pub fn expand_rule_kernel(input: TokenStream) -> syn::Result<TokenStream> {
         let next_ident = format_ident!("_next_{field}");
         next_decls.push(quote! { let #next_ident = q.#field; });
     }
+    let _ = &q_ident;
+    let _ = &d_ident;
     for rule in &rules_sorted {
         let fire_ident = format_ident!("_fire_{}", rule.name);
         for action in &rule.actions {
@@ -459,8 +463,8 @@ pub fn expand_rule_kernel(input: TokenStream) -> syn::Result<TokenStream> {
         pub fn #kernel_fn_ident(
             cr: ::rhdl::prelude::ClockReset,
             #in_param: #input_type,
-            q: Q,
-        ) -> (#output_type, D) {
+            q: #q_ident,
+        ) -> (#output_type, #d_ident) {
             // Phase 1 scheduler: compute can_fire / fire for each rule.
             #(#scheduler_decls)*
 
@@ -482,7 +486,7 @@ pub fn expand_rule_kernel(input: TokenStream) -> syn::Result<TokenStream> {
             // own reset value) so the kernel does not need an
             // explicit reset block in Phase 0.
             let _ = cr;
-            (o, D { #(#d_field_inits),* })
+            (o, #d_ident { #(#d_field_inits),* })
         }
 
         #other_items_out
@@ -1000,9 +1004,14 @@ fn lower_camel_to_snake(ident: &Ident) -> String {
     out
 }
 
-/// Add `Synchronous`, `SynchronousDQ`, `Default` and the
-/// `#[rhdl(dq_no_prefix)]` attribute to the user's struct (if not
-/// already present).
+/// Add `Synchronous`, `SynchronousDQ`, `Default` derives to the
+/// user's struct (if not already present).
+///
+/// **Phase 1.6:** we no longer inject `#[rhdl(dq_no_prefix)]`.
+/// The default SynchronousDQ behaviour generates `<Name>Q` and
+/// `<Name>D` types, which lets multiple `rule_kernel!` invocations
+/// coexist in the same module without `Q`/`D` name collisions.
+/// The kernel function references `<Name>Q` / `<Name>D` explicitly.
 fn inject_derives(item_struct: &mut ItemStruct) {
     // Find existing #[derive(...)] attribute or append a new one.
     let target_derives = ["Synchronous", "SynchronousDQ"];
@@ -1057,13 +1066,4 @@ fn inject_derives(item_struct: &mut ItemStruct) {
     }
 
     let _ = target_derives_idents;
-
-    // Add #[rhdl(dq_no_prefix)] if not already present.
-    let has_rhdl_attr = item_struct.attrs.iter().any(|a| a.path().is_ident("rhdl"));
-    if !has_rhdl_attr {
-        let new_attr: syn::Attribute = syn::parse_quote! {
-            #[rhdl(dq_no_prefix)]
-        };
-        item_struct.attrs.push(new_attr);
-    }
 }
