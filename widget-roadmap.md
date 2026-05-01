@@ -132,6 +132,26 @@ These widgets all depend on hardened SERDES blocks (multi-gigabit transceivers /
 
 ---
 
+## Tier C — Flagship capability demonstration cores
+
+The cores in this tier exist *specifically* to demonstrate RHDL's expressive power. They are not the most useful additions to the widget library; they are the cores that prove RHDL's strategic claim — *that the language can express any digital design clearly*, from modern RISC, to extreme CISC, to microcoded heterogeneous-compute machines. Their value is illustrative and publicational, not utilitarian.
+
+A core belongs in Tier C if and only if it is (a) a complete, documented, historically real machine; (b) chosen because some specific aspect of its design defeated other HDLs or required heroic effort to express; (c) validatable end-to-end against original binaries, original microcode, or a gold-reference simulator; and (d) citable in conference papers and recruiting demos.
+
+The full plan — including specification sources, implementation derivation, validation strategy, phased milestones, and risks — lives in `tier-c-flagship-cores.md`.
+
+| # | Core | Strategic claim | Sequencing |
+|---|---|---|---|
+| C-1 | **RISC-V 32I (RV32I)** — full base integer ISA, 5-stage pipeline, M-mode privileged subset, lockstep validated against Spike running CoreMark and Dhrystone | RHDL is a credible target for the dominant open-ISA ecosystem; absence of this core signals "not a serious HDL" to the academic and RISC-V-startup communities. The table-stakes flagship. | First. 15-21 weeks, one engineer. Lowest risk, highest immediate strategic value. |
+| C-2 | **Xerox Alto** — full microengine, all 16 priority-ordered hardware tasks (Emulator, Disk Sector/Word, Display Word/Horizontal/Vertical, Cursor, BLT, Mouse; optionally Ethernet), framebuffer output, lockstep validated against ContrAlto running Smalltalk-76 | RHDL expresses heterogeneous-microcoded compute — the abstraction that descended into x86 microcode and modern microsequencers. The most aggressive demonstration of microcoded design ever shipped commercially. | Second. 25-39 weeks, one to two engineers. Times naturally with `rhdl-rule` Phase 1, since the 16-task arbiter is the canonical rule-based use case. |
+| C-3 | **DEC VAX (Phase A integer subset, ~80 instructions)** — variable-length operand-specifier decoder for all 12 addressing modes, microsequenced execution pipeline, full procedure-call standard (CALLG/CALLS/RET), lockstep validated against SIMH running OpenVMS Hobbyist boot | RHDL expresses the most complex CISC ever shipped without compromising readability. If RHDL can do VAX cleanly, it can do anything. | Third. 26-38 weeks, one to two engineers. Highest difficulty, biggest scope, strongest publishable result. Doing it last benefits from the lessons learned in C-1 (pipeline) and C-2 (microcode). |
+
+Tier C v1 is "done" when each core (a) runs its canonical real binary in lockstep with its gold reference simulator with zero divergence, (b) has the standard documentation surface (book chapter, FSM diagrams, waveform traces, runnable example, per CLAUDE.md §6), and (c) has a paper draft for its target publication venue. Acceptance criteria are detailed in `tier-c-flagship-cores.md` §11.
+
+The total Tier C effort is approximately 18-24 calendar months for one to two engineers running serially. It is independently scheduled from the Tier 0-4 widget library work; the cores share infrastructure (the lockstep cosimulation harness pattern is the same across all three) but exercise different RHDL features.
+
+---
+
 ## Recommended first eight (two-week scope)
 
 In order. Each widget unblocks the next.
