@@ -70,10 +70,16 @@ pub struct Cpu {
     /// the hardware's mem-write trace.
     pub mem_writes: Vec<(u32, u32)>,
     /// External-interrupt-pending vector (mirrors into `mip`).
-    /// Bits 3 (M-software), 7 (M-timer), 11 (M-external).  Set by
-    /// the test harness; the simulator polls this at the start of
-    /// each `step` (interrupts taken between instructions).
+    /// Bits 7 (M-timer) and 11 (M-external) flow from this input
+    /// directly into `mip`.  Bit 3 (M-software) is OR'ed with the
+    /// software-writable MSIP register (see [`Cpu::msip`]).
+    /// Set by the test harness; the simulator polls this at the
+    /// start of each `step` (interrupts taken between instructions).
     pub int_pending: u32,
+    /// Software-writable MSIP register (bit 3 of `mip` when this
+    /// is set).  CSR writes to mip update this; reads of mip return
+    /// `(int_pending & 0x880) | (msip ? 0x8 : 0)`.
+    pub msip: bool,
 }
 
 impl Cpu {
@@ -93,7 +99,14 @@ impl Cpu {
             halted: false,
             mem_writes: Vec::new(),
             int_pending: 0,
+            msip: false,
         }
+    }
+
+    /// Effective `mip` value: platform bits 3/7/11 from
+    /// `int_pending` OR'd with software MSIP (`msip`).
+    pub fn effective_mip(&self) -> u32 {
+        (self.int_pending & 0x888) | if self.msip { 0x8 } else { 0 }
     }
 
     /// Read a register; x0 always returns 0.
@@ -108,13 +121,22 @@ impl Cpu {
     }
 
     /// Read a CSR (returns 0 for unimplemented addresses).
+    /// `mip` (0x344) is composed from `int_pending` and `msip`.
     pub fn read_csr(&self, addr: u16) -> u32 {
+        if addr == 0x344 {
+            return self.effective_mip();
+        }
         *self.csrs.get(&addr).unwrap_or(&0)
     }
     /// Write a CSR (silently dropped for read-only addresses misa
-    /// (0x301) and mhartid (0xF14)).
+    /// (0x301) and mhartid (0xF14); `mip` write only updates the
+    /// software-writable MSIP bit).
     pub fn write_csr(&mut self, addr: u16, value: u32) {
         if addr == 0x301 || addr == 0xF14 {
+            return;
+        }
+        if addr == 0x344 {
+            self.msip = (value & 0x8) != 0;
             return;
         }
         self.csrs.insert(addr, value);
@@ -143,17 +165,30 @@ impl Cpu {
     /// mtval; atomically save mstatus.MIE → MPIE and clear MIE.
     /// Used for sync exceptions (the simulator's `take_trap` wraps
     /// it with tval=0) and for interrupts.
+    ///
+    /// Vectored mtvec (mtvec[1:0] = 0b01): interrupts (cause bit 31
+    /// set) vector to `(mtvec & ~0x3) + 4 * (cause & 0xF)`; sync
+    /// exceptions go to the base regardless of mode.
     fn take_trap_with_val(&mut self, cause: u32, tval: u32) {
         self.write_csr(0x341, self.pc);     // mepc
         self.write_csr(0x342, cause);       // mcause
         self.write_csr(0x343, tval);        // mtval
         // mstatus.MIE → MPIE; mstatus.MIE ← 0.
         let mstatus = self.read_csr(0x300);
-        let mie_bit = mstatus & 0x8;                  // bit 3
-        let cleared = mstatus & !0x88u32;             // clear bits 3 and 7
-        let new_mstatus = cleared | (mie_bit << 4);   // bit 3 → bit 7
+        let mie_bit = mstatus & 0x8;
+        let cleared = mstatus & !0x88u32;
+        let new_mstatus = cleared | (mie_bit << 4);
         self.write_csr(0x300, new_mstatus);
-        self.pc = self.read_csr(0x305);     // mtvec
+        // Compute vector target.
+        let mtvec = self.read_csr(0x305);
+        let base = mtvec & !0x3u32;
+        let mode = mtvec & 0x3;
+        let is_interrupt = (cause & 0x8000_0000) != 0;
+        self.pc = if is_interrupt && mode == 1 {
+            base + 4 * (cause & 0xF)
+        } else {
+            base
+        };
     }
 
     /// MRET: restore mstatus.MIE from MPIE; set MPIE = 1; PC ← mepc.
@@ -168,7 +203,7 @@ impl Cpu {
 
     /// Pending+enabled M-mode interrupts: `mip & mie & MIE_M_MASK`.
     fn int_pending_enabled(&self) -> u32 {
-        self.int_pending & self.read_csr(0x304) & 0x888
+        self.effective_mip() & self.read_csr(0x304) & 0x888
     }
 
     /// Should an interrupt fire this cycle?  True iff mstatus.MIE
@@ -307,17 +342,31 @@ impl Cpu {
             BranchOp::Geu => rs1_val >= rs2_val,
         };
 
+        // Misaligned-load/store detection (mcause = 4 / 6).
+        let h_mis = (alu_result & 0x1) != 0;
+        let w_mis = (alu_result & 0x3) != 0;
+        let mem_misaligned = match dec.mem_op {
+            MemOp::Lh | MemOp::Lhu | MemOp::Sh => h_mis,
+            MemOp::Lw | MemOp::Sw              => w_mis,
+            _                                  => false,
+        };
+        if dec.mem_read && mem_misaligned {
+            self.take_trap_with_val(4, alu_result);
+            return;
+        }
+        if dec.mem_write && mem_misaligned {
+            self.take_trap_with_val(6, alu_result);
+            return;
+        }
+
         // Memory access.
         if dec.mem_write {
             let addr = alu_result;
             let store_data = rs2_val;
-            // v0.8 only handles SW (32-bit aligned writes); SB/SH
-            // would need byte-masked stores.  Compliance tests
-            // don't use SB/SH yet.
             match dec.mem_op {
                 MemOp::Sw => self.store_word(addr, store_data),
-                MemOp::Sh => self.store_word(addr & !3, store_data & 0xFFFF), // simplified
-                MemOp::Sb => self.store_word(addr & !3, store_data & 0xFF),   // simplified
+                MemOp::Sh => self.store_word(addr & !3, store_data & 0xFFFF),
+                MemOp::Sb => self.store_word(addr & !3, store_data & 0xFF),
                 _         => {}
             }
         }

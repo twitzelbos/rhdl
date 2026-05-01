@@ -315,6 +315,20 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let target_misaligned: bool = (prospective_target & bits::<32>(0x3)) != bits::<32>(0);
     let take_misaligned: bool = attempts_redirect && target_misaligned;
 
+    // Misaligned-load/store detection.  Same logic as single-cycle.
+    let h_misalign: bool = (alu_result & bits::<32>(0x1)) != bits::<32>(0);
+    let w_misalign: bool = (alu_result & bits::<32>(0x3)) != bits::<32>(0);
+    let mem_misaligned: bool = match q.id_ex.mem_op {
+        MemOp::Lh  => h_misalign,
+        MemOp::Lhu => h_misalign,
+        MemOp::Lw  => w_misalign,
+        MemOp::Sh  => h_misalign,
+        MemOp::Sw  => w_misalign,
+        _          => false,
+    };
+    let take_load_misaligned:  bool = q.id_ex.valid && q.id_ex.mem_read  && mem_misaligned;
+    let take_store_misaligned: bool = q.id_ex.valid && q.id_ex.mem_write && mem_misaligned;
+
     // External-interrupt detection.  Fired when the in-flight
     // Execute-stage instruction is valid AND mstatus.MIE is set
     // AND any pending+enabled M-mode interrupt bit is asserted.
@@ -350,8 +364,11 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let take_ecall:   bool = !take_interrupt && q.id_ex.valid && q.id_ex.system_op == SystemOp::Ecall;
     let take_ebreak:  bool = !take_interrupt && q.id_ex.valid && q.id_ex.system_op == SystemOp::Ebreak;
     let take_illegal: bool = !take_interrupt && q.id_ex.valid && q.id_ex.opcode == Opcode::Illegal;
-    let take_sync_misaligned: bool = !take_interrupt && take_misaligned;
-    let take_sync_trap: bool = take_ecall || take_ebreak || take_illegal || take_sync_misaligned;
+    let take_sync_misaligned:    bool = !take_interrupt && take_misaligned;
+    let take_load_misalign_eff:  bool = !take_interrupt && take_load_misaligned;
+    let take_store_misalign_eff: bool = !take_interrupt && take_store_misaligned;
+    let take_sync_trap: bool = take_ecall || take_ebreak || take_illegal
+        || take_sync_misaligned || take_load_misalign_eff || take_store_misalign_eff;
     let take_trap:    bool = take_interrupt || take_sync_trap;
     let take_mret:    bool = !take_interrupt && q.id_ex.valid && q.id_ex.system_op == SystemOp::Mret;
     let trap_cause: Bits<32> = if take_interrupt {
@@ -362,11 +379,17 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         bits::<32>(2)
     } else if take_ebreak {
         bits::<32>(3)
+    } else if take_load_misalign_eff {
+        bits::<32>(4)
+    } else if take_store_misalign_eff {
+        bits::<32>(6)
     } else {
         bits::<32>(11)
     };
     let trap_val: Bits<32> = if take_sync_misaligned {
         prospective_target
+    } else if take_load_misalign_eff || take_store_misalign_eff {
+        alu_result
     } else {
         bits::<32>(0)
     };
@@ -378,11 +401,25 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let take_jalr:   bool = take_jalr_raw   && !take_misaligned;
 
     // Redirect = branch / jump / trap / MRET.  Trap target is
-    // mtvec; MRET target is mepc; branch / jump targets are
-    // computed above.
+    // mtvec (with vectored-mode handling for interrupts); MRET
+    // target is mepc; branch / jump targets are computed above.
+    //
+    // Vectored mtvec (mtvec[1:0] = 0b01): interrupts vector to
+    // `base + 4 * cause_low4`.  Sync exceptions still go to base.
+    let mtvec_raw: Bits<32> = q.csrs.mtvec;
+    let mtvec_base: Bits<32> = mtvec_raw & bits::<32>(0xFFFF_FFFC);
+    let mtvec_mode: Bits<32> = mtvec_raw & bits::<32>(0x3);
+    let int_cause_low: Bits<32> = trap_cause & bits::<32>(0xF);
+    let vectored_target: Bits<32> = mtvec_base + (int_cause_low << 2);
+    let trap_target_pl: Bits<32> = if take_interrupt && mtvec_mode == bits::<32>(1) {
+        vectored_target
+    } else {
+        mtvec_base
+    };
+
     let redirect: bool = take_branch || take_jal || take_jalr || take_trap || take_mret;
     let redirect_target: Bits<32> = if take_trap {
-        q.csrs.mtvec
+        trap_target_pl
     } else if take_mret {
         q.csrs.mepc
     } else if take_jalr {

@@ -138,8 +138,12 @@ pub struct Out {
     pub int_pending_enabled: Bits<32>,
 }
 
-/// CSR file widget — seven read-write CSRs as separate DFFs.
-/// `mip` is not stored; it mirrors the `int_pending` input directly.
+/// CSR file widget — eight read-write registers as separate DFFs.
+/// `mip` exposed via CSR 0x344 is the OR of two sources: the
+/// `int_pending` input (M-timer / M-external bits 7, 11) and the
+/// software-writable MSIP register (bit 3).  Per the RISC-V spec,
+/// MSIP is software-writable in M-mode; we model the platform side
+/// (MTIP / MEIP) as input-driven and MSIP as software-driven.
 #[derive(Clone, Debug, Default, Synchronous, SynchronousDQ)]
 #[rhdl(dq_no_prefix)]
 pub struct CsrFile {
@@ -150,6 +154,12 @@ pub struct CsrFile {
     mepc: dff::DFF<Bits<32>>,
     mcause: dff::DFF<Bits<32>>,
     mtval: dff::DFF<Bits<32>>,
+    /// Software-writable MSIP bit.  When software writes mip via
+    /// CSRRW/CSRRS/CSRRC, only bit 3 (MSIP) is captured here; bits
+    /// 7 (MTIP) and 11 (MEIP) are read-only and come from input.
+    /// The effective `mip` value seen by software is
+    /// `(int_pending & ~MSIE_BIT) | (msip << 3)`.
+    msip: dff::DFF<bool>,
 }
 
 impl SynchronousIO for CsrFile {
@@ -212,9 +222,14 @@ pub fn csr_file_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let mut d = D::dont_care();
     let mut o = Out::dont_care();
 
-    // mip mirrors the int_pending input directly (read-only from
-    // software's POV; the platform owns the pending bits).
-    let mip: Bits<32> = i.int_pending;
+    // mip composition: bits 3, 7, 11 of `int_pending` flow in
+    // directly (the platform/harness can drive any of them), AND
+    // the software-writable MSIP register OR's into bit 3.  Per
+    // spec, MSIP is platform-writable (memory-mapped IPI) AND
+    // software-writable (CSR write); both paths set the bit.
+    let plat_bits: Bits<32> = i.int_pending & bits::<32>(0x888);
+    let msip_bit: Bits<32> = if q.msip { bits::<32>(0x8) } else { bits::<32>(0) };
+    let mip: Bits<32> = plat_bits | msip_bit;
 
     o.rdata = csr_read(i.raddr, q, mip);
     o.mtvec = q.mtvec;
@@ -226,6 +241,7 @@ pub fn csr_file_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let mie_m_mask: Bits<32> = bits::<32>(0x888);  // bits 3, 7, 11
     let mie_bit: Bits<32> = bits::<32>(8);          // 1 << 3
     o.mstatus_mie = (q.mstatus & mie_bit) != bits::<32>(0);
+    // Use the composed mip (platform bits 7/11 + software MSIP bit 3).
     o.int_pending_enabled = mip & q.mie & mie_m_mask;
 
     let mstatus_a: Bits<12>  = bits::<12>(0x300);
@@ -235,6 +251,7 @@ pub fn csr_file_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let mepc_a: Bits<12>     = bits::<12>(0x341);
     let mcause_a: Bits<12>   = bits::<12>(0x342);
     let mtval_a: Bits<12>    = bits::<12>(0x343);
+    let mip_a: Bits<12>      = bits::<12>(0x344);
 
     // Default: hold every CSR.
     d.mstatus  = q.mstatus;
@@ -244,6 +261,7 @@ pub fn csr_file_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     d.mepc     = q.mepc;
     d.mcause   = q.mcause;
     d.mtval    = q.mtval;
+    d.msip     = q.msip;
 
     // CSR-instruction write port.
     if i.wen {
@@ -261,8 +279,12 @@ pub fn csr_file_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
             d.mcause = i.wdata;
         } else if i.waddr == mtval_a {
             d.mtval = i.wdata;
+        } else if i.waddr == mip_a {
+            // Software write to mip: only bit 3 (MSIP) is captured;
+            // bits 7 and 11 (MTIP / MEIP) are read-only platform bits.
+            d.msip = (i.wdata & bits::<32>(0x8)) != bits::<32>(0);
         }
-        // Read-only CSRs (misa, mip, mhartid) and unrecognized
+        // Read-only CSRs (misa, mhartid) and unrecognized
         // addresses silently drop the write.
     }
 
@@ -303,6 +325,7 @@ pub fn csr_file_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         d.mepc = bits::<32>(0);
         d.mcause = bits::<32>(0);
         d.mtval = bits::<32>(0);
+        d.msip = false;
         // Mirror the reset values onto the live outputs so the
         // CPU sees zeros immediately rather than `dont_care`.
         o.rdata = bits::<32>(0);
