@@ -106,6 +106,38 @@ struct Rule {
     guards: Vec<Expr>,
     /// All `set!(ctx.field, value)` actions, in source order.
     actions: Vec<Action>,
+    /// Every register field read by this rule (in guards and in
+    /// action values).  Used to build the conflict matrix per
+    /// `rule-architecture.md` §6.
+    read_set: std::collections::BTreeSet<String>,
+}
+
+impl Rule {
+    /// Set of fields written by this rule (action targets).
+    fn write_set(&self) -> std::collections::BTreeSet<String> {
+        self.actions.iter().map(|a| a.field.to_string()).collect()
+    }
+
+    /// True iff this rule conflicts with `other` per the
+    /// rule-architecture.md §6.1 conflict definition.  Read-only
+    /// overlap is *not* a conflict.
+    fn conflicts_with(&self, other: &Rule) -> bool {
+        let w_self = self.write_set();
+        let w_other = other.write_set();
+        // write-write
+        if !w_self.is_disjoint(&w_other) {
+            return true;
+        }
+        // write-read (other reads what self writes)
+        if !w_self.is_disjoint(&other.read_set) {
+            return true;
+        }
+        // read-write
+        if !self.read_set.is_disjoint(&w_other) {
+            return true;
+        }
+        false
+    }
 }
 
 struct Action {
@@ -222,19 +254,20 @@ pub fn expand_rule_kernel(input: TokenStream) -> syn::Result<TokenStream> {
         .filter_map(|f| f.ident.as_ref())
         .collect();
 
-    // For each register field, emit a chain of let-rebindings:
-    //   let _next_<field> = q.<field>;                    (default hold)
-    //   let _next_<field> = if rule_fires { value } else { _next_<field> }; (per rule that writes)
-    // At the end, build D as a single struct expression from
-    // _next_<field> bindings.  This matches the canonical RHDL
-    // kernel pattern (no `let mut` rebinding of D).
-    let mut next_decls: Vec<TokenStream> = Vec::new();
-    for field in &field_names {
-        let next_ident = format_ident!("_next_{field}");
-        next_decls.push(quote! { let #next_ident = q.#field; });
-    }
-    // Emit each rule as a sequence of guarded conditional rebindings.
-    for rule in &rules {
+    // ---------------------------------------------------------------
+    // Phase 1 scheduler synthesis.
+    //
+    // For N rules in source-code priority order:
+    //   let _can_fire_<rule_i> = (guard_1) && (guard_2) && ...;
+    //   let _fire_<rule_i> = _can_fire_<rule_i>
+    //       && !(_fire_<rule_j>)         // for every j < i where j conflicts with i
+    //       && !(_fire_<rule_j>)         // ...
+    //       ;
+    //
+    // This is exactly the priority chain from rule-architecture.md §7.
+    // ---------------------------------------------------------------
+    let mut scheduler_decls: Vec<TokenStream> = Vec::new();
+    for (i, rule) in rules.iter().enumerate() {
         let guard_expr: Expr = if rule.guards.is_empty() {
             syn::parse_quote! { true }
         } else {
@@ -243,12 +276,43 @@ pub fn expand_rule_kernel(input: TokenStream) -> syn::Result<TokenStream> {
             let rest = iter;
             syn::parse_quote! { (#first) #( && (#rest) )* }
         };
+        let can_fire_ident = format_ident!("_can_fire_{}", rule.name);
+        let fire_ident = format_ident!("_fire_{}", rule.name);
+
+        // Conflicts with higher-priority rules.
+        let mut suppressors: Vec<TokenStream> = Vec::new();
+        for prior in rules.iter().take(i) {
+            if rule.conflicts_with(prior) {
+                let prior_fire = format_ident!("_fire_{}", prior.name);
+                suppressors.push(quote! { && !(#prior_fire) });
+            }
+        }
+
+        scheduler_decls.push(quote! {
+            let #can_fire_ident: bool = (#guard_expr);
+            let #fire_ident: bool = #can_fire_ident #(#suppressors)*;
+        });
+    }
+
+    // For each register field, emit a chain of let-rebindings:
+    //   let _next_<field> = q.<field>;
+    //   let _next_<field> = if _fire_<rule> { value } else { _next_<field> };
+    // The priority chain ensures that for any field, at most one
+    // `_fire_<rule>` is true among rules that write the field —
+    // so last-write-wins still produces the correct result.
+    let mut next_decls: Vec<TokenStream> = Vec::new();
+    for field in &field_names {
+        let next_ident = format_ident!("_next_{field}");
+        next_decls.push(quote! { let #next_ident = q.#field; });
+    }
+    for rule in &rules {
+        let fire_ident = format_ident!("_fire_{}", rule.name);
         for action in &rule.actions {
             let field = &action.field;
             let value = &action.value;
             let next_ident = format_ident!("_next_{field}");
             next_decls.push(quote! {
-                let #next_ident = if (#guard_expr) { #value } else { #next_ident };
+                let #next_ident = if #fire_ident { #value } else { #next_ident };
             });
         }
     }
@@ -314,8 +378,12 @@ pub fn expand_rule_kernel(input: TokenStream) -> syn::Result<TokenStream> {
             #in_param: #input_type,
             q: Q,
         ) -> (#output_type, D) {
-            // Per-register next-value chains (last-write-wins via
-            // sequence of let-rebindings).
+            // Phase 1 scheduler: compute can_fire / fire for each rule.
+            #(#scheduler_decls)*
+
+            // Per-register next-value chains.  The fire signals
+            // above ensure at most one rule's write fires per
+            // register per cycle; last-write-wins is therefore safe.
             #(#next_decls)*
 
             // Output kernel: shadow the kernel's input parameter
@@ -399,6 +467,7 @@ fn parse_rule(method: &ImplItemFn) -> syn::Result<Rule> {
     let mut walker = RuleBodyWalker {
         guards: Vec::new(),
         actions: Vec::new(),
+        read_set: std::collections::BTreeSet::new(),
         errors: Vec::new(),
     };
     let mut body = method.block.clone();
@@ -413,6 +482,7 @@ fn parse_rule(method: &ImplItemFn) -> syn::Result<Rule> {
         input_type,
         guards: walker.guards,
         actions: walker.actions,
+        read_set: walker.read_set,
     })
 }
 
@@ -510,6 +580,7 @@ fn parse_output(method: &ImplItemFn) -> syn::Result<OutputMethod> {
 struct RuleBodyWalker {
     guards: Vec<Expr>,
     actions: Vec<Action>,
+    read_set: std::collections::BTreeSet<String>,
     errors: Vec<syn::Error>,
 }
 
@@ -543,7 +614,8 @@ impl VisitMut for RuleBodyWalker {
                 return;
             }
         }
-        if let Some(rewritten) = try_rewrite_ctx_read(expr) {
+        if let Some((rewritten, field)) = try_rewrite_ctx_read_with_field(expr) {
+            self.read_set.insert(field);
             *expr = rewritten;
             return;
         }
@@ -565,8 +637,10 @@ impl RuleBodyWalker {
                 // Parse the macro's tokens as a single expression.
                 match parse2::<Expr>(mac.tokens.clone()) {
                     Ok(mut e) => {
-                        // Rewrite `*ctx.field` reads inside the guard.
-                        rewrite_ctx_reads_in_expr(&mut e);
+                        // Rewrite `*ctx.field` reads inside the guard,
+                        // tracking the fields read.
+                        let reads = rewrite_ctx_reads_in_expr(&mut e);
+                        self.read_set.extend(reads);
                         self.guards.push(e);
                         Some(unit_expr(mac.span()))
                     }
@@ -580,7 +654,8 @@ impl RuleBodyWalker {
                 // Parse: `ctx.field, value`.
                 match parse2::<SetMacroArgs>(mac.tokens.clone()) {
                     Ok(SetMacroArgs { field, mut value }) => {
-                        rewrite_ctx_reads_in_expr(&mut value);
+                        let reads = rewrite_ctx_reads_in_expr(&mut value);
+                        self.read_set.extend(reads);
                         self.actions.push(Action { field, value });
                         Some(unit_expr(mac.span()))
                     }
@@ -612,9 +687,9 @@ impl Parse for SetMacroArgs {
     }
 }
 
-/// If the expression is `*ctx.field`, rewrite to `q.field`.  Returns
-/// `Some(rewritten)` if a rewrite happened, `None` otherwise.
-fn try_rewrite_ctx_read(expr: &Expr) -> Option<Expr> {
+/// If the expression is `*ctx.field`, rewrite to `q.field` and
+/// return the rewritten expression plus the field name read.
+fn try_rewrite_ctx_read_with_field(expr: &Expr) -> Option<(Expr, String)> {
     if let Expr::Unary(syn::ExprUnary {
         op: syn::UnOp::Deref(_),
         expr: inner,
@@ -628,7 +703,8 @@ fn try_rewrite_ctx_read(expr: &Expr) -> Option<Expr> {
             if let Expr::Path(syn::ExprPath { path, .. }) = &**base {
                 if path.is_ident("ctx") {
                     if let syn::Member::Named(field) = member {
-                        return Some(syn::parse_quote! { q.#field });
+                        let name = field.to_string();
+                        return Some((syn::parse_quote! { q.#field }, name));
                     }
                 }
             }
@@ -637,18 +713,27 @@ fn try_rewrite_ctx_read(expr: &Expr) -> Option<Expr> {
     None
 }
 
-fn rewrite_ctx_reads_in_expr(expr: &mut Expr) {
-    struct Rewriter;
+/// Rewrite all `*ctx.field` reads in `expr`.  Returns the set of
+/// fields that were read.
+fn rewrite_ctx_reads_in_expr(expr: &mut Expr) -> std::collections::BTreeSet<String> {
+    struct Rewriter {
+        reads: std::collections::BTreeSet<String>,
+    }
     impl VisitMut for Rewriter {
         fn visit_expr_mut(&mut self, expr: &mut Expr) {
-            if let Some(replacement) = try_rewrite_ctx_read(expr) {
+            if let Some((replacement, field)) = try_rewrite_ctx_read_with_field(expr) {
+                self.reads.insert(field);
                 *expr = replacement;
                 return;
             }
             visit_mut::visit_expr_mut(self, expr);
         }
     }
-    Rewriter.visit_expr_mut(expr);
+    let mut r = Rewriter {
+        reads: std::collections::BTreeSet::new(),
+    };
+    r.visit_expr_mut(expr);
+    r.reads
 }
 
 struct OutputBodyWalker {
@@ -701,6 +786,11 @@ impl VisitMut for OutputBodyWalker {
 // Code generation
 // ---------------------------------------------------------------
 
+/// Legacy Phase-0 emission helper; superseded by the inline
+/// scheduler-synthesis loop in `expand_rule_kernel`.  Kept for
+/// reference and in case Phase 2 wants to re-enable per-rule
+/// blocks for diagnostics.
+#[allow(dead_code)]
 fn emit_rule_block(rule: &Rule) -> TokenStream {
     // Combine all guards via &&, defaulting to `true`.
     let guard_expr: Expr = if rule.guards.is_empty() {

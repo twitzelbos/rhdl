@@ -14,6 +14,7 @@
 //! This is the "very basic example" the user asked for in their
 //! pivot to rule-based RHDL.
 
+use expect_test::expect;
 use rhdl::prelude::*;
 use rhdl_fpga::core::dff;
 use rhdl_rule::rule_kernel;
@@ -51,6 +52,28 @@ fn counter_holds_when_disabled() {
         .map(|s| s.output.raw())
         .unwrap_or(99);
     assert_eq!(final_count, 0, "counter should stay at 0 when disabled");
+}
+
+#[test]
+fn simple_counter_compiles_to_valid_hdl() -> Result<(), RHDLError> {
+    let uut: SimpleCounter = SimpleCounter::default();
+    let desc = uut.descriptor("top".into())?;
+    let hdl = desc.hdl()?.modules.pretty();
+    let expect = expect!["1340"];
+    expect.assert_eq(&hdl.len().to_string());
+    Ok(())
+}
+
+#[test]
+fn simple_counter_iverilog_round_trip() -> Result<(), RHDLError> {
+    let uut: SimpleCounter = SimpleCounter::default();
+    let stream = std::iter::repeat_n(true, 4)
+        .with_reset(2)
+        .clock_pos_edge(100);
+    let test_bench = uut.run(stream).collect::<SynchronousTestBench<_, _>>();
+    let tm = test_bench.rtl(&uut, &Default::default())?;
+    tm.run_iverilog()?;
+    Ok(())
 }
 
 #[test]
