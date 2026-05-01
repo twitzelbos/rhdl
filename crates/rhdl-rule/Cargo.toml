@@ -1,0 +1,21 @@
+[package]
+name = "rhdl-rule"
+version = "0.0.1"
+edition = "2024"
+license = "MIT"
+description = "Bluespec-style guarded atomic rules for RHDL — proc-macro entry points (Phase 0)."
+homepage = "https://rhdl.org"
+repository = "https://github.com/samitbasu/rhdl"
+keywords = ["fpga", "hdl", "hardware", "rules", "bluespec"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+rhdl-rule-core = { path = "../rhdl-rule-core" }
+
+[dev-dependencies]
+rhdl = { path = "../rhdl" }
+rhdl-bits = { path = "../rhdl-bits" }
+rhdl-fpga = { path = "../rhdl-fpga" }
+expect-test = "1.5.1"

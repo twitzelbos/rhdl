@@ -31,6 +31,49 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-04-30 — rhdl-rule Phase 0 — first working Bluespec-style rule kernel
+
+**Paths:** `crates/rhdl-rule/` (new proc-macro shim crate, ~70 LOC), `crates/rhdl-rule-core/` (new implementation crate, ~400 LOC), `crates/rhdl-rule/tests/simple_counter.rs` (working acceptance test), `Cargo.toml` (workspace registers the two new crates).
+
+**Why this, why now:** Pivot from the formalization track to begin building rule-based RHDL per `rule-architecture.md`.  The target was "don't stop until you can do at least some very basic example."  This entry covers the **Phase 0** slice — a function-like `rule_kernel! { struct + impl }` proc-macro that emits a regular RHDL `Synchronous` widget + `#[kernel]` function, exercising the smallest non-trivial rule pattern (one register, one rule, one input).  Phase 1 (the full plan) ships the conflict-matrix scheduler, priority annotations, three widget rewrites; this is the substrate it builds on.
+
+**Design decisions:**
+
+- **Function-like macro `rule_kernel! { ... }` for Phase 0.**  The plan calls for `#[derive(RuleKernel)]` on the struct + `#[rule]`/`#[output]` attributes on impl methods.  That requires two coordinated proc-macros — derives can't see the impl block directly.  The function-like form takes both as a single token stream and is straightforward to implement.  The user-facing surface can move to the derive form in a later phase without changing the lowering.
+- **Crate split per `architecture.md` §19.**  `rhdl-rule` is `proc-macro = true` and contains only the entry-point shim; `rhdl-rule-core` is the regular library that does the work.  Mirrors the `rhdl-macro` / `rhdl-macro-core` split.  `rhdl-rule-core` does **not** depend on `rhdl-core` (proc-macro support crates can't pull in the runtime crate per the architecture rule).
+- **No `Reg<T>` ergonomic alias yet.**  The plan introduces `Reg<T>` as the user-facing register type (with a `*ctx.field` Deref convention for reads).  That requires a runtime crate (which can depend on `rhdl-core`) — postponed until the runtime-crate split is sorted.  Phase 0 has the user write `dff::DFF<T>` directly; the macro recognizes it as a state field.
+- **Last-write-wins scheduler, no conflict analysis.**  The Phase 1 plan calls for a full conflict matrix and priority-arbitrated scheduler.  Phase 0 ships the simpler version: rules fire in source-code order, later rules' writes overwrite earlier ones.  Sufficient for non-conflicting rule sets and many real widgets.  The lowering shape (per-register let-rebinding chain ending in a single `D { ... }` struct expression) generalizes cleanly to the priority scheduler in Phase 1.
+- **Per-register let-rebinding chain.**  The generated kernel uses the canonical RHDL pattern: `let _next_<field> = q.<field>; let _next_<field> = if rule_fires { value } else { _next_<field> };` per rule, then a single `D { #fields: #_next_<field> }` struct expression at the end.  This avoids `let mut d = D::dont_care()` + reassignment — which the kernel macro's compile-time evaluator initially struggled to type-infer for non-generic D (likely a kernel-macro limitation; using the canonical struct-expression form sidesteps it).
+- **Output method body shadows the input parameter.**  The user's `#[output] fn output(self_q: &Self, _enable: bool) -> Bits<8>` declares `_enable` as its parameter name, but the kernel's parameter is taken from the first rule's input name (e.g., `enable`).  The macro emits `let _enable = enable;` inside the output block to shadow under the user's expected name.  Avoids requiring strict name-equality between the rule and the output.
+- **No reset block in the generated kernel.**  Each `dff::DFF<T>` has its own reset value (`T::default()`); the wrapping DFF handles reset.  The kernel's behaviour during reset is irrelevant.  Phase 1 may add explicit reset blocks if rule semantics need them.
+- **Macro vocabulary recognized:** `guard!(expr)` (statement form) and `set!(ctx.field, value)` (statement form).  `*ctx.field` (dereferencing a register read) is rewritten to `q.field`.  Macros in expression position are also supported but rare.
+
+**Surprises and gotchas:**
+
+- **`Stmt::Macro` is not `Expr::Macro`.**  My first walker only visited expressions and missed every `guard!(...)` and `set!(...)` statement.  Fix: override `visit_block_mut` to inspect `Stmt::Macro` directly and filter them out (extracted, not executed).  The macros in the rule body are *removed* from the visible block — they're metadata that drives the kernel-emission step, not statements to keep around.
+- **`Default::default()` is unsupported inside a `#[kernel]` body.**  My initial reset block emitted `d.counter = ::std::default::Default::default();` and the kernel macro rejected it as an unsupported literal.  Fix: drop the reset block entirely.  The DFFs handle reset; the kernel doesn't need to.
+- **`let mut d = D::dont_care(); d.field = ...;` had a type-inference problem in non-generic kernels.**  Other widgets that use this pattern have explicit generics on `D::<...>::dont_care()`; with no generics, the `D` inference failed under the kernel macro's compile-time evaluator.  Switching to the canonical "let-rebinding + final struct expression" pattern (which is what counter, the simplest existing widget, uses) sidesteps this.
+- **`#[kernel]` is in `rhdl::prelude`, not `rhdl::core`.**  Initially emitted `#[rhdl::core::kernel]`; it doesn't exist there.  The right path is `#[::rhdl::prelude::kernel]`.
+
+**Validation:**
+
+- **2 acceptance tests pass** in `crates/rhdl-rule/tests/simple_counter.rs`:
+  - `counter_holds_when_disabled` — counter stays at 0 when input is false.
+  - `counter_counts_when_enabled` — counter reaches ~5 after 5 enabled cycles.
+- The generated widget runs through RHDL's existing simulator (`uut.run(stream).synchronous_sample()`) end-to-end.
+
+**Follow-ups (Phase 1+):**
+
+- **Conflict matrix + priority scheduler.**  The Phase 1 plan §6–§7 work.  Largest delta from Phase 0.
+- **`Reg<T>` ergonomic alias** + the `RuleCtx<W>` convention.  Needs a runtime crate (`rhdl-rule-rt` or similar) that can depend on `rhdl-core`.
+- **Annotations** (`urgent_before`, `conflict_free`, `mutually_exclusive`) — Phase 2.
+- **Macro shape migration** to `#[derive(RuleKernel)]` + `#[rule]`/`#[output]` attributes per the plan.  Phase 0 uses a function-like form for simplicity.
+- **Multi-rule examples** — counter + flag, FIFO write logic, the `core::round_robin_arbiter` rewrite from the plan §16 Phase 1.
+- **iverilog round-trip** for the generated widget.
+- **Snapshot testing** of the macro output via `expect_test`.
+
+---
+
 ## 2026-04-30 — kernel-language-extensions.md §5.5: type-system library prerequisites + refinement-types research target
 
 **Paths:** `kernel-language-extensions.md` (new §5.5, ~330 lines).
