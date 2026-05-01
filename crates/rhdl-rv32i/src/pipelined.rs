@@ -285,36 +285,65 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         CsrOp::ReadClearImm => q.id_ex.rs1 != bits::<5>(0),
     };
 
+    // Branch / jump resolution.
+    let branch_t: bool = branch_taken(q.id_ex.branch_op, rs1_fwd, rs2_fwd);
+    let take_branch_raw: bool = q.id_ex.valid && q.id_ex.opcode == Opcode::Branch && branch_t;
+
+    let branch_target: Bits<32> = q.id_ex.pc + q.id_ex.imm;
+    let jal_target: Bits<32>    = q.id_ex.pc + q.id_ex.imm;
+    let jalr_target: Bits<32>   = (rs1_fwd + q.id_ex.imm) & bits::<32>(0xFFFF_FFFE);
+
+    let take_jal_raw: bool  = q.id_ex.valid && q.id_ex.opcode == Opcode::Jal;
+    let take_jalr_raw: bool = q.id_ex.valid && q.id_ex.is_jalr;
+
+    // Misaligned-target trap detection: any branch/JAL/JALR whose
+    // target's low 2 bits are nonzero is rejected with mcause = 0
+    // (Instruction address misaligned) and mtval = the misaligned
+    // target.  The redirect itself is suppressed — the redirect
+    // becomes the trap-vector redirect instead.
+    let prospective_target: Bits<32> = if take_jalr_raw {
+        jalr_target
+    } else if take_jal_raw {
+        jal_target
+    } else {
+        branch_target
+    };
+    let attempts_redirect: bool = take_jalr_raw || take_jal_raw || take_branch_raw;
+    let target_misaligned: bool = (prospective_target & bits::<32>(0x3)) != bits::<32>(0);
+    let take_misaligned: bool = attempts_redirect && target_misaligned;
+
     // Trap detection in Execute: ECALL / EBREAK / illegal
     // instruction (recognised by the decoder's `illegal` flag,
-    // forwarded via id_ex.opcode == Illegal).  All three squash
-    // IF/ID, ID/EX, and EX/MEM-next; redirect PC to mtvec; and
-    // signal the CSR file's trap port.  MRET is the inverse:
-    // PC ← mepc; squashes the same three slots so the trap
-    // handler's tail doesn't get re-executed.
+    // forwarded via id_ex.opcode == Illegal) / misaligned-target.
+    // All four squash IF/ID, ID/EX, and EX/MEM-next; redirect PC
+    // to mtvec; and signal the CSR file's trap port.  MRET is the
+    // inverse: PC ← mepc; squashes the same three slots so the
+    // trap handler's tail doesn't get re-executed.
     let take_ecall:   bool = q.id_ex.valid && q.id_ex.system_op == SystemOp::Ecall;
     let take_ebreak:  bool = q.id_ex.valid && q.id_ex.system_op == SystemOp::Ebreak;
     let take_illegal: bool = q.id_ex.valid && q.id_ex.opcode == Opcode::Illegal;
-    let take_trap:    bool = take_ecall || take_ebreak || take_illegal;
+    let take_trap:    bool = take_ecall || take_ebreak || take_illegal || take_misaligned;
     let take_mret:    bool = q.id_ex.valid && q.id_ex.system_op == SystemOp::Mret;
-    let trap_cause: Bits<32> = if take_illegal {
+    let trap_cause: Bits<32> = if take_misaligned {
+        bits::<32>(0)
+    } else if take_illegal {
         bits::<32>(2)
     } else if take_ebreak {
         bits::<32>(3)
     } else {
         bits::<32>(11)
     };
+    let trap_val: Bits<32> = if take_misaligned {
+        prospective_target
+    } else {
+        bits::<32>(0)
+    };
 
-    // Branch / jump resolution.
-    let branch_t: bool = branch_taken(q.id_ex.branch_op, rs1_fwd, rs2_fwd);
-    let take_branch: bool = q.id_ex.valid && q.id_ex.opcode == Opcode::Branch && branch_t;
-
-    let branch_target: Bits<32> = q.id_ex.pc + q.id_ex.imm;
-    let jal_target: Bits<32>    = q.id_ex.pc + q.id_ex.imm;
-    let jalr_target: Bits<32>   = (rs1_fwd + q.id_ex.imm) & bits::<32>(0xFFFF_FFFE);
-
-    let take_jal: bool  = q.id_ex.valid && q.id_ex.opcode == Opcode::Jal;
-    let take_jalr: bool = q.id_ex.valid && q.id_ex.is_jalr;
+    // Suppress branch/jump redirect when the same instruction also
+    // takes a misaligned-target trap — the trap target wins.
+    let take_branch: bool = take_branch_raw && !take_misaligned;
+    let take_jal:    bool = take_jal_raw    && !take_misaligned;
+    let take_jalr:   bool = take_jalr_raw   && !take_misaligned;
 
     // Redirect = branch / jump / trap / MRET.  Trap target is
     // mtvec; MRET target is mepc; branch / jump targets are
@@ -502,7 +531,7 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         trap_en: take_trap,
         trap_pc: q.id_ex.pc,
         trap_cause,
-        trap_val: bits::<32>(0),  // v0.6 doesn't compute mtval
+        trap_val,
     };
 
     // ---- Commit pipeline registers ----------------------------------

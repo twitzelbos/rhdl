@@ -174,9 +174,13 @@ pub enum SystemOp {
     Ebreak,
     /// `MRET` — return from M-mode trap.  Sets PC ← `mepc`.
     /// Should also restore `mstatus.MIE` from `mstatus.MPIE`,
-    /// but interrupts aren't implemented in v0.7 so the
+    /// but interrupts aren't implemented in v0.9 so the
     /// mstatus restore is a no-op.
     Mret,
+    /// `WFI` — wait for interrupt.  Without external interrupts
+    /// (deferred to a follow-up), WFI executes as a NOP per the
+    /// privileged-ISA spec's allowance.
+    Wfi,
 }
 
 /// Decoder output — every signal the executor and writeback stages
