@@ -143,6 +143,8 @@ impl Cpu {
     }
 
     /// Load a word from memory (returns 0 for uninitialized).
+    /// Byte-addressed: extracts the 32-bit word starting at the
+    /// (4-byte aligned portion of the) given address.
     pub fn load_word(&self, byte_addr: u32) -> u32 {
         let word_addr = byte_addr / 4;
         *self.memory.get(&word_addr).unwrap_or(&0)
@@ -152,6 +154,40 @@ impl Cpu {
         let word_addr = byte_addr / 4;
         self.memory.insert(word_addr, value);
         self.mem_writes.push((byte_addr, value));
+    }
+    /// Load an unsigned byte at byte_addr.
+    pub fn load_byte(&self, byte_addr: u32) -> u8 {
+        let word = self.load_word(byte_addr & !3);
+        let off = (byte_addr & 3) * 8;
+        ((word >> off) & 0xFF) as u8
+    }
+    /// Load an unsigned halfword at byte_addr (which must be 2-aligned;
+    /// the misaligned-load trap happens in `step` before this is called).
+    pub fn load_halfword(&self, byte_addr: u32) -> u16 {
+        let word = self.load_word(byte_addr & !3);
+        let off = (byte_addr & 2) * 8;
+        ((word >> off) & 0xFFFF) as u16
+    }
+    /// Store a byte at byte_addr — read-modify-write the containing word.
+    pub fn store_byte(&mut self, byte_addr: u32, value: u8) {
+        let word_addr = byte_addr / 4;
+        let off = (byte_addr & 3) * 8;
+        let mask = !(0xFFu32 << off);
+        let old = *self.memory.get(&word_addr).unwrap_or(&0);
+        let new_word = (old & mask) | ((value as u32) << off);
+        self.memory.insert(word_addr, new_word);
+        self.mem_writes.push((byte_addr, value as u32));
+    }
+    /// Store a halfword (16 bits) at byte_addr — read-modify-write.
+    /// byte_addr must be 2-aligned.
+    pub fn store_halfword(&mut self, byte_addr: u32, value: u16) {
+        let word_addr = byte_addr / 4;
+        let off = (byte_addr & 2) * 8;
+        let mask = !(0xFFFFu32 << off);
+        let old = *self.memory.get(&word_addr).unwrap_or(&0);
+        let new_word = (old & mask) | ((value as u32) << off);
+        self.memory.insert(word_addr, new_word);
+        self.mem_writes.push((byte_addr, value as u32));
     }
 
     /// Vector to mtvec; save trapping PC to mepc; set mcause.
@@ -359,26 +395,25 @@ impl Cpu {
             return;
         }
 
-        // Memory access.
+        // Memory access — proper byte-addressed sub-word semantics.
         if dec.mem_write {
             let addr = alu_result;
             let store_data = rs2_val;
             match dec.mem_op {
                 MemOp::Sw => self.store_word(addr, store_data),
-                MemOp::Sh => self.store_word(addr & !3, store_data & 0xFFFF),
-                MemOp::Sb => self.store_word(addr & !3, store_data & 0xFF),
+                MemOp::Sh => self.store_halfword(addr, store_data as u16),
+                MemOp::Sb => self.store_byte(addr, store_data as u8),
                 _         => {}
             }
         }
         let load_value: u32 = if dec.mem_read {
-            let raw = self.load_word(alu_result);
             match dec.mem_op {
-                MemOp::Lb  => ((raw << 24) as i32 >> 24) as u32,
-                MemOp::Lh  => ((raw << 16) as i32 >> 16) as u32,
-                MemOp::Lw  => raw,
-                MemOp::Lbu => raw & 0xFF,
-                MemOp::Lhu => raw & 0xFFFF,
-                _          => raw,
+                MemOp::Lb  => ((self.load_byte(alu_result) as i8) as i32) as u32,
+                MemOp::Lh  => ((self.load_halfword(alu_result) as i16) as i32) as u32,
+                MemOp::Lw  => self.load_word(alu_result),
+                MemOp::Lbu => self.load_byte(alu_result) as u32,
+                MemOp::Lhu => self.load_halfword(alu_result) as u32,
+                _          => self.load_word(alu_result),
             }
         } else {
             0
