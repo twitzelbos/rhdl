@@ -31,6 +31,49 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-04-30 — rhdl-rule Move 3 — BSV → RHDL porting guide (book chapter)
+
+**Paths:**
+
+- `doc/book/src/migration/from-bsv.md` (new chapter, ~13 sections) — the BSV-to-RHDL porting guide called for in `rule-architecture.md` §17.4 play 3.  Covers: the at-a-glance translation table; module definition (both function-like and attribute forms shown side-by-side); register writes (`<=` ⇄ `=` with the operator-change rationale); combinational let-bindings (per-rule preamble); rules with guards; the three annotation translations (`descending_urgency` ⇄ `urgent_before`, `mutually_exclusive`, `conflict_free`); per-rule `trace` annotation; rule-kernel + traditional-widget composition; "when *not* to use rule kernels" (single-rule-is-right pattern); the worked round-robin-arbiter port with full BSV and RHDL versions side by side; what RHDL has that BSV doesn't (clock-domain typing, `cargo`, generics); honest BSV-has-RHDL-doesn't gaps (methods / cross-module scheduling / maximal parallel firing / cross-clock rules); shipped diagnostic table.
+- `doc/book/src/SUMMARY.md` — adds the chapter pointer at top level (after Counting Ones).
+
+**Why this, why now:** Move 3 closes the BSV-capture strategic plan from `rule-architecture.md` §17.4.  Plays 1 (semantics-at-least-as-strong-as-BSV) and 2 (diagnostics, the wedge) were completed by PRs #20-#28 across the rule track.  Play 3 — "publish a BSV → RHDL porting guide as a chapter in the RHDL book" — is the third leg and the user-facing recruiting artifact.  A BSV user who clicks through to the book should find a translation table they can work from immediately.
+
+**Design decisions:**
+
+- **Single chapter, comprehensive translation table.**  One markdown file rather than a multi-file mini-section.  BSV users typically know exactly which idiom they need to translate; a flat structure (translation table at the top, idiom-by-idiom expansions below) lets them ctrl-F to the specific row.
+- **Worked example is the round-robin arbiter, not a RISC-V pipeline.**  §17.4 play 3 mentions "a small RISC-V pipeline or a cache controller" as the worked example.  Those are massive efforts each; in the spirit of "ship Move 3 in one PR" the chapter uses the round-robin arbiter as the worked example since that pilot already exists in the repo (`pilot_round_robin_arbiter.rs`) and was validated against the original RHDL widget byte-identically.  Larger worked examples (RISC-V pipeline, cache controller) are deferred to follow-up chapters when those designs ship as Tier-C cores per `tier-c-flagship-cores.md`.
+- **Honest "what BSV has and RHDL v1 doesn't" section.**  Methods (modular rules), cross-module scheduling, maximal parallel firing, cross-clock rules — listed plainly with pointers to where each gap is tracked in `rule-architecture.md` §16.  BSV users who hit one of these gaps shouldn't have to discover it by failing.
+- **"When NOT to use rule kernels" section.**  Distilled from the Move-1 pilot retrospectives (PR #25): single-rule-is-right is a real pattern for widgets where every-cycle behaviour is "everything happens together."  Without this section, BSV users coming from a "rules everywhere" mindset would over-decompose simple widgets and hit the conflict-suppression footgun.
+- **Diagnostic table at the end.**  Lists every compile-time error the macro raises (conflict_free violation, urgent_before cycle/self-loop/unknown/meaningless), so BSV users know what the macro will and will not catch for them.  Deferred diagnostics flagged honestly as follow-ups.
+
+**Validation:**
+
+- 92 tests still pass (no code changes; documentation-only PR).
+- Chapter referenced from `SUMMARY.md` at top level so it appears in the book TOC.
+- `mdbook build` not run in CI of this PR's local checkout (`mdbook` not installed); the chapter is plain markdown with no `include_str!` references and no broken intra-doc links.
+- Cross-references to `pilot_*.rs`, `direct_assignment.rs`, and `rule-architecture.md` use file-relative names that match the repository layout.
+
+**Move 3 closure:**
+
+This PR closes Move 3 — the third and final leg of the BSV-capture strategic plan from §17.4.  Strategic-plan recap:
+
+| §17.4 play | Closed by |
+|---|---|
+| Play 1 — Ship `rhdl-rule` with semantics at least as strong as BSV's | PRs #20-#23 (Phase 1, 1.5, 1.6, 2) |
+| Play 2 — Beat BSV on rule-scheduler diagnostics (the wedge) | PRs #21, #23, #27, #28 (Move 2) |
+| Play 3 — Publish a "BSV → RHDL" porting guide as a chapter in the RHDL book | this PR (Move 3) |
+
+The full Move 1 / Move 2 / Move 3 sequence is now complete.  The rule-track work that remains is documented as follow-ups in the prior CHANGELOG entries: methods (modular rules), cross-module scheduling, maximal parallel firing, cross-clock rules, write-read-suppression diagnostic, conflict-graph visualization, framework-side VCD integration of the `fire_<rule>` aliases — none of these are on the critical path for the BSV-capture strategy as written.
+
+Next strategic options after Move 3 lands:
+- **Tier C flagship cores** (RV32I → Alto → VAX per `tier-c-flagship-cores.md`).  RV32I is first; Alto's 16-task arbiter is the canonical multi-rule rule-kernel use case.
+- **Combinational reachability matrix** (`combinational-reachability-and-loop-detection.md`).  Foundational compiler work that unblocks both auto-pipelining Phase 1 and Package Manager Phase 2.
+- **Package Manager Phase 1** (`package-manager-architecture.md`).  Highest-leverage non-rule-track work; the network-effects moat.
+
+---
+
 ## 2026-04-30 — rhdl-rule Move 2 wrap-up — `#[rule(trace)]` opt-in per-rule trace signals
 
 **Paths:**
