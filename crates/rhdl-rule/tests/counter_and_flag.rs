@@ -107,6 +107,96 @@ fn counter_only_counts_after_flag_is_raised() {
     );
 }
 
+// ===========================================================
+// Three-rule version, mirroring `rule-architecture.md` §4.1
+// faithfully — including the input-less `reset_on_max` rule.
+// Note: priorities are inverted from the plan's example (which
+// orders them in a way that's logically wrong — see the §4.1
+// note); we use reset_on_max = 0 so it actually wins when the
+// counter saturates.
+// ===========================================================
+
+mod three_rules {
+    use super::*;
+
+    rule_kernel! {
+        pub struct CounterAndFlag3 {
+            counter: dff::DFF<Bits<8>>,
+            flag: dff::DFF<bool>,
+        }
+
+        impl CounterAndFlag3 {
+            // Highest priority — fires when counter == 255 and
+            // resets both registers.  No input parameter.
+            #[rule(priority = 0)]
+            fn reset_on_max(ctx: &mut RuleCtx<Self>) {
+                guard!(*ctx.counter == bits::<8>(255));
+                set!(ctx.counter, bits::<8>(0));
+                set!(ctx.flag, false);
+            }
+
+            // Mid priority — counts up when the flag is raised.
+            #[rule(priority = 1)]
+            fn count_up(ctx: &mut RuleCtx<Self>, i: super::CnfIn) {
+                guard!(*ctx.flag);
+                guard!(i.enable);
+                set!(ctx.counter, *ctx.counter + bits::<8>(1));
+            }
+
+            // Lowest priority — raises the flag on a start pulse.
+            #[rule(priority = 2)]
+            fn raise_flag(ctx: &mut RuleCtx<Self>, i: super::CnfIn) {
+                guard!(i.start);
+                guard!(!*ctx.flag);
+                set!(ctx.flag, true);
+            }
+
+            #[output]
+            fn output(self_q: &Self, _i: super::CnfIn) -> super::CnfOut {
+                super::CnfOut {
+                    counter: *self_q.counter,
+                    flag: *self_q.flag,
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn three_rule_counter_with_no_input_reset_compiles_and_runs() {
+    use three_rules::CounterAndFlag3;
+    let uut: CounterAndFlag3 = CounterAndFlag3::default();
+    // Pulse start, then enable for many cycles.  The counter
+    // should run up but never exceed 255 (reset_on_max wraps it
+    // at the cap).  We don't run long enough to actually hit 255
+    // here — just verify the kernel compiles and runs cleanly
+    // with the input-less rule.
+    let mut stream_in: Vec<CnfIn> = vec![CnfIn {
+        start: true,
+        enable: false,
+    }];
+    for _ in 0..10 {
+        stream_in.push(CnfIn {
+            start: false,
+            enable: true,
+        });
+    }
+    let stream = stream_in.into_iter().with_reset(2).clock_pos_edge(100);
+    let final_state = uut
+        .run(stream)
+        .synchronous_sample()
+        .filter(|s| !s.input.0.reset.any())
+        .last()
+        .map(|s| s.output)
+        .expect("no outputs");
+    assert!(final_state.flag);
+    let counter = final_state.counter.raw();
+    assert!(
+        counter >= 9 && counter <= 10,
+        "expected counter near 10 after 10 enabled cycles; got {counter}",
+    );
+}
+
 #[test]
 fn counter_holds_when_flag_is_low() {
     let uut: CounterAndFlag = CounterAndFlag::default();

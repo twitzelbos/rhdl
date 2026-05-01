@@ -99,9 +99,10 @@ impl Parse for RuleKernelInput {
 struct Rule {
     name: Ident,
     /// Name of the input parameter (the second arg, after ctx).
-    input_name: Ident,
-    /// Type of the input parameter.
-    input_type: Type,
+    /// `None` if the rule takes only `ctx` (no input parameter).
+    input_name: Option<Ident>,
+    /// Type of the input parameter.  `None` if no input parameter.
+    input_type: Option<Type>,
     /// All `guard!(...)` expressions, in source order.
     guards: Vec<Expr>,
     /// All `set!(ctx.field, value)` actions, in source order.
@@ -110,6 +111,17 @@ struct Rule {
     /// action values).  Used to build the conflict matrix per
     /// `rule-architecture.md` §6.
     read_set: std::collections::BTreeSet<String>,
+    /// Explicit `#[rule(priority = N)]` annotation, if present.
+    /// Lower N = higher priority (fires first).  None = source-order.
+    priority: Option<u32>,
+    /// Rule names asserted to be conflict-free with this rule
+    /// (`#[rule(conflict_free = "other")]`).  Validated against the
+    /// computed conflict matrix.
+    conflict_free_with: Vec<String>,
+    /// Rule names asserted to be mutually exclusive with this rule
+    /// (`#[rule(mutually_exclusive = "other")]`).  Phase 1 records
+    /// but does not yet prove the assertion (Phase 2 follow-up).
+    mutually_exclusive_with: Vec<String>,
 }
 
 impl Rule {
@@ -224,20 +236,81 @@ pub fn expand_rule_kernel(input: TokenStream) -> syn::Result<TokenStream> {
         }
     };
 
-    // Validate: every rule's input type matches the output method's
-    // input type.  Phase 0: single In type for the whole widget.
+    // Validate: every rule that *has* an input parameter shares its
+    // type with the #[output] method.  Rules without an input
+    // parameter are unconstrained.
     for rule in &rules {
-        if !types_equal(&rule.input_type, &output.input_type) {
-            return Err(syn::Error::new(
-                rule.input_type.span(),
-                format!(
-                    "rule_kernel! Phase 0 requires every #[rule] and the #[output] to share \
-                     the same input type; rule `{}` has a different input type than #[output]",
-                    rule.name,
-                ),
-            ));
+        if let Some(rule_input_type) = rule.input_type.as_ref() {
+            if !types_equal(rule_input_type, &output.input_type) {
+                return Err(syn::Error::new(
+                    rule_input_type.span(),
+                    format!(
+                        "every #[rule] that takes an input must use the same type as #[output]; \
+                         rule `{}`'s input differs from the #[output] method's input",
+                        rule.name,
+                    ),
+                ));
+            }
         }
     }
+
+    // Validate `conflict_free = "other"` assertions: if rule X
+    // claims to be conflict-free with Y, but the computed conflict
+    // matrix says they DO conflict, that's a compile error per
+    // `rule-architecture.md` §12.
+    let rules_by_name: std::collections::BTreeMap<String, &Rule> =
+        rules.iter().map(|r| (r.name.to_string(), r)).collect();
+    for rule in &rules {
+        for cf_name in &rule.conflict_free_with {
+            let other = match rules_by_name.get(cf_name.as_str()) {
+                Some(o) => *o,
+                None => {
+                    return Err(syn::Error::new(
+                        rule.name.span(),
+                        format!(
+                            "#[rule(conflict_free = \"{cf_name}\")] on `{}` references unknown \
+                             rule `{cf_name}`",
+                            rule.name,
+                        ),
+                    ));
+                }
+            };
+            if rule.conflicts_with(other) {
+                return Err(syn::Error::new(
+                    rule.name.span(),
+                    format!(
+                        "#[rule(conflict_free = \"{cf_name}\")] on `{}` violates the computed \
+                         conflict matrix: `{}` and `{cf_name}` overlap on read/write sets.  \
+                         Either drop the assertion or refactor the rules so they don't share state.",
+                        rule.name, rule.name,
+                    ),
+                ));
+            }
+        }
+        // mutually_exclusive: Phase 1 records but doesn't yet prove
+        // mutual exclusion of guards.  Validate the named rule
+        // exists; defer the proof to Phase 2.
+        for me_name in &rule.mutually_exclusive_with {
+            if !rules_by_name.contains_key(me_name.as_str()) {
+                return Err(syn::Error::new(
+                    rule.name.span(),
+                    format!(
+                        "#[rule(mutually_exclusive = \"{me_name}\")] on `{}` references unknown \
+                         rule `{me_name}`",
+                        rule.name,
+                    ),
+                ));
+            }
+        }
+    }
+
+    // Sort rules into priority order.  Tuple key: (explicit priority
+    // or u32::MAX/2 default, source index).  This places explicitly-
+    // prioritised rules ahead of unannotated ones, with source order
+    // as a stable tiebreaker.
+    let mut order: Vec<usize> = (0..rules.len()).collect();
+    order.sort_by_key(|&i| (rules[i].priority.unwrap_or(u32::MAX / 2), i));
+    let rules_sorted: Vec<&Rule> = order.iter().map(|&i| &rules[i]).collect();
 
     // Generate.
     let kernel_fn_name = lower_camel_to_snake(struct_name);
@@ -267,7 +340,7 @@ pub fn expand_rule_kernel(input: TokenStream) -> syn::Result<TokenStream> {
     // This is exactly the priority chain from rule-architecture.md §7.
     // ---------------------------------------------------------------
     let mut scheduler_decls: Vec<TokenStream> = Vec::new();
-    for (i, rule) in rules.iter().enumerate() {
+    for (i, rule) in rules_sorted.iter().enumerate() {
         let guard_expr: Expr = if rule.guards.is_empty() {
             syn::parse_quote! { true }
         } else {
@@ -279,9 +352,10 @@ pub fn expand_rule_kernel(input: TokenStream) -> syn::Result<TokenStream> {
         let can_fire_ident = format_ident!("_can_fire_{}", rule.name);
         let fire_ident = format_ident!("_fire_{}", rule.name);
 
-        // Conflicts with higher-priority rules.
+        // Conflicts with higher-priority rules (those earlier in
+        // `rules_sorted`).
         let mut suppressors: Vec<TokenStream> = Vec::new();
-        for prior in rules.iter().take(i) {
+        for prior in rules_sorted.iter().take(i) {
             if rule.conflicts_with(prior) {
                 let prior_fire = format_ident!("_fire_{}", prior.name);
                 suppressors.push(quote! { && !(#prior_fire) });
@@ -305,7 +379,7 @@ pub fn expand_rule_kernel(input: TokenStream) -> syn::Result<TokenStream> {
         let next_ident = format_ident!("_next_{field}");
         next_decls.push(quote! { let #next_ident = q.#field; });
     }
-    for rule in &rules {
+    for rule in &rules_sorted {
         let fire_ident = format_ident!("_fire_{}", rule.name);
         for action in &rule.actions {
             let field = &action.field;
@@ -331,21 +405,30 @@ pub fn expand_rule_kernel(input: TokenStream) -> syn::Result<TokenStream> {
 
     let input_type = &output.input_type;
     let output_type = &output.return_type;
-    // The kernel function's input parameter must have the same
-    // name that the rule bodies use to refer to it.  Phase 0
-    // requires every rule to use the same input *name*; we use the
-    // first rule's name as the canonical one and validate the rest.
-    let in_param = &rules[0].input_name;
-    for rule in rules.iter().skip(1) {
-        if rule.input_name != *in_param {
-            return Err(syn::Error::new(
-                rule.input_name.span(),
-                format!(
-                    "rule_kernel! Phase 0 requires every #[rule] to use the same input \
-                     parameter name; rule `{}` uses `{}` but the first rule uses `{}`",
-                    rule.name, rule.input_name, in_param,
-                ),
-            ));
+    // The kernel function's input parameter must have a stable name
+    // that any rule body referring to the input uses.  Find the
+    // first rule that takes an input and use its name.  If no rule
+    // takes an input, fall back to the output method's input name
+    // (still needed because the kernel function's signature has an
+    // input parameter).
+    let in_param: Ident = rules
+        .iter()
+        .find_map(|r| r.input_name.clone())
+        .unwrap_or_else(|| output.input_name.clone());
+    // Validate: every rule that *has* an input parameter uses the
+    // same name as `in_param`.  Rules without input are unaffected.
+    for rule in &rules {
+        if let Some(name) = rule.input_name.as_ref() {
+            if name != &in_param {
+                return Err(syn::Error::new(
+                    name.span(),
+                    format!(
+                        "every #[rule] that takes an input parameter must use the same \
+                         parameter name; rule `{}` uses `{}` but the canonical name is `{}`",
+                        rule.name, name, in_param,
+                    ),
+                ));
+            }
         }
     }
     // The output method's input name may differ; we shadow it
@@ -422,7 +505,12 @@ fn has_attr(method: &ImplItemFn, name: &str) -> bool {
 fn parse_rule(method: &ImplItemFn) -> syn::Result<Rule> {
     let name = method.sig.ident.clone();
 
-    // Expect: fn <name>(ctx: &mut RuleCtx<Self>, <input>: <Type>) { ... }
+    // Parse `#[rule(priority = N, conflict_free = "x", mutually_exclusive = "y")]`.
+    let (priority, conflict_free_with, mutually_exclusive_with) =
+        parse_rule_annotations(method)?;
+
+    // Expect: fn <name>(ctx: &mut RuleCtx<Self>) { ... }
+    //     or: fn <name>(ctx: &mut RuleCtx<Self>, <input>: <Type>) { ... }
     let mut iter = method.sig.inputs.iter();
     let _ctx = iter.next().ok_or_else(|| {
         syn::Error::new(
@@ -430,20 +518,16 @@ fn parse_rule(method: &ImplItemFn) -> syn::Result<Rule> {
             "rule must take a `ctx: &mut RuleCtx<Self>` first parameter",
         )
     })?;
-    let input_arg = iter.next().ok_or_else(|| {
-        syn::Error::new(
-            method.sig.span(),
-            "rule must take a second `input: <Type>` parameter",
-        )
-    })?;
+    let input_arg = iter.next();
     if iter.next().is_some() {
         return Err(syn::Error::new(
             method.sig.span(),
-            "rule must take exactly two parameters: `ctx` and `input`",
+            "rule must take at most two parameters: `ctx` and an optional input",
         ));
     }
-    let (input_name, input_type) = match input_arg {
-        FnArg::Typed(pat_type) => {
+    let (input_name, input_type): (Option<Ident>, Option<Type>) = match input_arg {
+        None => (None, None),
+        Some(FnArg::Typed(pat_type)) => {
             let name = match &*pat_type.pat {
                 Pat::Ident(pi) => pi.ident.clone(),
                 _ => {
@@ -453,11 +537,11 @@ fn parse_rule(method: &ImplItemFn) -> syn::Result<Rule> {
                     ));
                 }
             };
-            (name, (*pat_type.ty).clone())
+            (Some(name), Some((*pat_type.ty).clone()))
         }
-        FnArg::Receiver(_) => {
+        Some(FnArg::Receiver(_)) => {
             return Err(syn::Error::new(
-                input_arg.span(),
+                input_arg.unwrap().span(),
                 "rule's second parameter must be a typed input, not `self`",
             ));
         }
@@ -483,7 +567,55 @@ fn parse_rule(method: &ImplItemFn) -> syn::Result<Rule> {
         guards: walker.guards,
         actions: walker.actions,
         read_set: walker.read_set,
+        priority,
+        conflict_free_with,
+        mutually_exclusive_with,
     })
+}
+
+/// Parse `#[rule(priority = N, conflict_free = "x", mutually_exclusive = "y")]`
+/// annotations.  Returns `(priority, conflict_free_names, mutually_exclusive_names)`.
+fn parse_rule_annotations(
+    method: &ImplItemFn,
+) -> syn::Result<(Option<u32>, Vec<String>, Vec<String>)> {
+    let mut priority: Option<u32> = None;
+    let mut conflict_free: Vec<String> = Vec::new();
+    let mut mutually_exclusive: Vec<String> = Vec::new();
+
+    for attr in &method.attrs {
+        if !attr.path().is_ident("rule") {
+            continue;
+        }
+        // Empty `#[rule]` is fine — no nested args to parse.
+        if matches!(attr.meta, syn::Meta::Path(_)) {
+            continue;
+        }
+        attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("priority") {
+                let value: syn::LitInt = meta.value()?.parse()?;
+                priority = Some(value.base10_parse()?);
+                Ok(())
+            } else if meta.path.is_ident("conflict_free") {
+                let value: syn::LitStr = meta.value()?.parse()?;
+                conflict_free.push(value.value());
+                Ok(())
+            } else if meta.path.is_ident("mutually_exclusive") {
+                let value: syn::LitStr = meta.value()?.parse()?;
+                mutually_exclusive.push(value.value());
+                Ok(())
+            } else if meta.path.is_ident("urgent_before") {
+                // Reserved for Phase 2 — accepted but ignored.
+                let _value: syn::LitStr = meta.value()?.parse()?;
+                Ok(())
+            } else {
+                Err(meta.error(
+                    "unknown #[rule(...)] argument; supported: \
+                     priority, conflict_free, mutually_exclusive, urgent_before",
+                ))
+            }
+        })?;
+    }
+    Ok((priority, conflict_free, mutually_exclusive))
 }
 
 fn parse_output(method: &ImplItemFn) -> syn::Result<OutputMethod> {

@@ -31,6 +31,49 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-04-30 — rhdl-rule Phase 1.5 — annotations, no-input rules, conflict-free validation
+
+**Paths:** `crates/rhdl-rule-core/src/lib.rs` (extended: `parse_rule_annotations`, no-input rule support, priority-aware sort, conflict_free validation against the matrix), `crates/rhdl-rule/Cargo.toml` (adds `rhdl-rule-core` + `proc-macro2` + `quote` as dev-deps for negative tests), `crates/rhdl-rule/tests/annotated_rules.rs` (new — 3 positive tests), `crates/rhdl-rule/tests/conflict_free_violation.rs` (new — 2 negative tests), `crates/rhdl-rule/tests/counter_and_flag.rs` (extended with the 3-rule canonical example).
+
+**Why this, why now:** PR #20 (Phase 1) shipped the scheduler.  This entry adds the annotation surface and removes a workaround:
+
+- The plan's canonical CounterAndFlag example (§4.1) uses `#[rule(priority = N)]` annotations and includes `reset_on_max(ctx)` with no input parameter.  Phase 1 supported neither — the plan example couldn't be expressed.  This entry closes both gaps.
+- `conflict_free` is the first annotation that does compile-time validation against the macro's computed conflict matrix.  Wiring it up is the template for `urgent_before` and `mutually_exclusive` later.
+
+**Design decisions:**
+
+- **Sort rules by `(priority.unwrap_or(MAX/2), source_index)`.**  Explicit priorities take effect; rules without an annotation fall back to source order.  Mixing the two is allowed: explicit-priority rules are placed before unannotated rules.  Stable sort by source index is the tie-breaker.
+- **Rules can take only `ctx`** (no input parameter).  Useful for rules that operate purely on internal state — the canonical `reset_on_max(ctx)` from the plan §4.1.  The kernel function still has an input parameter (computed from rules that do take input, or from the output method).
+- **`conflict_free = "other"` is validated against the conflict matrix.**  If rule X claims to be conflict-free with Y but the read/write sets overlap, the macro emits a compile error pointing at X with a message that names Y and suggests the fix.  This is the diagnostic story the plan §12 calls for: "Conflict-free assertion violated → compile error."
+- **`mutually_exclusive = "other"` is parsed but the proof is deferred.**  Phase 1 verifies the named rule exists; Phase 2 will prove pairwise unsatisfiability of guards (or accept an SMT-style assertion).  Today the annotation is documentary; tomorrow the macro could use it to optimize the scheduler (skip the conflict-suppression term for mutually-exclusive pairs).
+- **`urgent_before` is parsed but ignored** for now (Phase 2).  Reserved keyword in `#[rule(...)]` arguments so users can experiment with it without compile errors.
+- **Negative tests via direct `expand_rule_kernel` calls.**  For the conflict_free violation test, I call the macro implementation function directly (added `rhdl-rule-core` as a dev-dep on `rhdl-rule`).  Avoids needing a `trybuild`-style infrastructure for one negative test.  The two negative tests cover the conflict-detected case and the unknown-rule-name case.
+
+**Surprises and gotchas:**
+
+- **Multiple `rule_kernel!` invocations in one module clash on `Q` and `D`.**  The `SynchronousDQ` derive emits `pub struct Q { ... }` and `pub struct D { ... }` in the parent module's namespace.  Two widgets in the same module ⇒ duplicate definitions ⇒ E0119 conflicting impls.  The fix in tests is to wrap each `rule_kernel!` invocation in its own submodule.  Documented in the test file.  A potential future improvement to the macro: emit each widget into its own anonymous module with its types re-exported under the widget's name.  Out of scope for this entry.
+
+**Validation:**
+
+- **14 tests pass across 7 test files** in `crates/rhdl-rule/tests/`:
+  - `simple_counter` (4): single-rule baseline + HDL snapshot + iverilog round-trip.
+  - `priority_demo` (1): write-write conflict + source-order priority.
+  - `coupled_rules` (1): read-write conflict suppression.
+  - `counter_and_flag` (3): 2-rule version + 3-rule version with input-less `reset_on_max`.
+  - `annotated_rules` (3): explicit `priority` annotation + no-input rule + `conflict_free` true-positive.
+  - `conflict_free_violation` (2): negative tests — `conflict_free` with actual conflict + nonexistent rule reference.
+
+**Follow-ups:**
+
+- **`urgent_before` annotation** (Phase 2).
+- **`mutually_exclusive` proof** (Phase 2 — currently records but doesn't prove pairwise unsatisfiability of guards).
+- **Macro shape migration to `#[derive(RuleKernel)]`** (still Phase 2; the function-like form keeps working).
+- **Submodule-per-widget output** so multiple `rule_kernel!` invocations in one file don't collide on `Q`/`D`.
+- **`Reg<T>` ergonomic alias** + `RuleCtx<W>` runtime type — needs a runtime crate.
+- **Three real-widget rewrites** (`core::round_robin_arbiter`, `fifo::write_logic`, one protocol PHY) per plan §16.
+
+---
+
 ## 2026-04-30 — rhdl-rule Phase 1 — conflict matrix + priority scheduler + multi-rule examples
 
 **Paths:** `crates/rhdl-rule-core/src/lib.rs` (extended with read-set extraction, conflict matrix, priority-arbitrated scheduler synthesis), `crates/rhdl-rule/tests/priority_demo.rs` (new — write-write conflict test), `crates/rhdl-rule/tests/coupled_rules.rs` (new — read-write conflict test), `crates/rhdl-rule/tests/counter_and_flag.rs` (new — multi-rule, compound-input test mirroring design plan §4.1), `crates/rhdl-rule/tests/simple_counter.rs` (extended with HDL snapshot + iverilog round-trip).
