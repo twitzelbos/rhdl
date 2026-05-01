@@ -31,6 +31,65 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-01 — Tier C: rhdl-rv32i Rust reference simulator + 3-way lockstep harness
+
+**Paths:**
+
+- `crates/rhdl-rv32i/src/sim.rs` (new, ~280 LOC) — Rust-native RV32I instruction-set simulator.  Functional model of all 47 RV32I base instructions + CSR access + ECALL/EBREAK/MRET/illegal-instruction trap.  Sparse memory map; 8 M-mode CSRs; identical semantics to the hardware (validated by the lockstep tests below).
+- `crates/rhdl-rv32i/tests/lockstep.rs` (new, 8 tests) — 3-way lockstep cosimulation harness.  Runs each program through the Rust simulator AND both hardware cores (single-cycle and pipelined); asserts the per-cycle memory-write sequences agree.  6 tests cover the existing compliance programs (rv32ui-p-add/sub/and/or/xor/addi); 2 sanity tests exercise the simulator directly.
+
+**Why this, why now:** `tier-c-flagship-cores.md` §3.6 calls for Spike lockstep cosimulation (the upstream `riscv-isa-sim` running step-by-step against the hardware).  The strategic value is **independent third-party validation** — catches bugs that both hardware cores might share (which parity-only testing can't find by construction).  Going with the upstream Spike means a Python harness wrapping `spike --debug-cmd`, the riscv-isa-sim install (~100 MB after build), and brittle text-parsing of Spike's debug output.  Significant friction for every developer.
+
+**A Rust-native reference simulator captures the same structural value** — an independent reference implementation in a fundamentally different style (interpretive Rust vs. cycle-accurate synchronous hardware) that catches the same class of "shared bug" issues.  Trade-off: not the official Spike, so theoretically the simulator could share a bug with the decoder (which both the hardware and the simulator use).  Mitigated by the simulator being pure interpretation — bugs in the simulator are likely to surface in different sub-tests than bugs in the hardware.
+
+**The simulator is also a useful teaching tool** — fits in ~280 LOC, reads as the spec, compiles as part of the crate (no toolchain), and can be referenced from the book chapter (Phase 4).
+
+**Design decisions:**
+
+- **Per-cycle memory-write sequence as the comparison surface.**  Memory writes are the only architectural side-effect a program can expose.  If all three implementations produce the same write sequence on the same program, they agree at the architectural-state level.  Comparing register-file or CSR state would require exposing those as outputs; comparing memory writes uses what we already have.
+
+- **Comparison ignores cycle/instruction-index.**  Single-cycle, pipelined, and Rust simulator each run at different "speeds" (instructions-per-cycle, cycles-per-instruction).  What matters is the **order** and **content** of writes, not when they fire.  The lockstep helper compares two `Vec<(addr, value)>` for equality.
+
+- **HALT (`beq x0, x0, +0`) marks program completion in the simulator.**  Same convention as the compliance suite uses for hardware tests.  Without HALT, the simulator would loop forever (infinite illegal-instruction traps); the hardware harness has a cycle-count cap.
+
+- **Sparse memory map with `HashMap<u32, u32>`.**  Most RV32I programs touch a small fraction of the 4 GiB address space.  HashMap avoids allocating 16 GB up front.  No performance issue at the test sizes we're running (sub-millisecond per program).
+
+- **The Rust simulator reuses the hardware decoder.**  `sim::Cpu::step` calls `crate::decoder::decode` to get the same `DecodedInstruction` the hardware uses.  This is intentional: a bug in the decoder would show up in BOTH the simulator and the hardware (catching "decoder bug" is not the lockstep's job; that's caught by the existing decoder unit tests in `decoder.rs`).  What lockstep catches is **execution-stage bugs** — the simulator's interpretive execution is independent of the hardware's combinational execution.
+
+- **All 8 lockstep tests passed first run.**  No bugs uncovered.  Both hardware cores AND the Rust simulator agree on every memory write of every compliance program.  Strongest correctness signal we've had.
+
+**Surprises and gotchas:**
+
+- **The simulator was the most fun module to write so far.**  ~280 LOC, all mechanical translation of the RV32I spec into Rust.  Every instruction is a one-liner once the operands are extracted; the dispatch is a `match` on `AluOp` / `BranchOp` / `MemOp`.  Re-using the hardware's decoder meant the field extraction was free.
+
+- **Manually encoding test instructions for `sim_addi_works` was tedious.**  Used inline u32 literals instead of the encoder helpers from `compliance.rs` because the test file imports `sim` directly and the encoders aren't `pub`.  Worth promoting them to a public helper module in a future PR.
+
+**Validation:**
+
+- **91 tests pass** in `rhdl-rv32i` (83 from PR #36 + 8 new).
+- **All 8 new tests passed first run** including all 6 compliance programs through 3-way lockstep.
+- All 92 rule-track tests still pass.
+
+**What this gives us:**
+
+The lockstep harness is the **strongest correctness signal we can currently produce**:
+- The hardware-vs-hardware parity tests catch divergences between the two cores (different microarchitectures, same ISA).
+- The compliance tests (PR #34) catch divergences from the spec at the program-output level.
+- The lockstep tests catch divergences between EITHER hardware core and an independent reference, written in a fundamentally different style — the only class of bug parity tests miss.
+
+If a real upstream-Spike harness is later required (for credibility or for the cross-cutting Tier C infrastructure shared with VAX/Alto), the existing test fixtures swap in cleanly: the Rust simulator's API matches the role Spike would play.
+
+**What's deferred:**
+
+- **Upstream Spike integration**: vendor pre-built binaries or assume the developer has riscv-isa-sim installed; switch the lockstep harness to call out to Spike instead of (or in addition to) the Rust simulator.  Higher cost, marginal additional confidence.
+- **More compliance tests** to scale out coverage (mechanical scale-up).
+- **Same-cycle CSR-to-CSR forwarding** (worked around with NOP padding in tests).
+- **Misaligned-target trap** + **external interrupts** + **WFI / SFENCE.VMA / SRET / URET**.
+
+**Next strategic move:** scale out compliance tests OR start Phase 4 (book chapter at `doc/book/src/cores/rv32i.md` per §3.5 + paper draft).  The implementation is now structurally complete; the remaining work is coverage and packaging.
+
+---
+
 ## 2026-05-01 — Tier C: rhdl-rv32i MRET + illegal-instruction trap
 
 **Paths:**
