@@ -147,6 +147,52 @@ impl CounterAndFlag {
 
 The `#[output]` method runs at the end of every cycle, after all rules fire and the next-state has been computed. It's a pure function of the (post-firing) state and the (current cycle's) input.
 
+### 4.5 Why the function-like macro is canonical (and why `#[derive(RuleKernel)]` is deferred)
+
+The §4.1 sketch shows `#[derive(RuleKernel)]` on the struct. The shipped Phase-1/Phase-2 surface is the function-like form `rule_kernel! { struct + impl }` instead. This is intentional, and the rest of this section explains why.
+
+**The proc-macro constraint.** A Rust `#[derive(X)]` macro receives *only the annotated item* — typically a struct. It cannot:
+- See the `impl` block that holds the `#[rule]` and `#[output]` methods.
+- Add or rewrite items elsewhere in the module (it can only emit additional items at the same scope, and even then those items cannot reference identifiers that aren't already in scope at the derive site).
+- Inject attributes on other items (such as the `#[kernel]` attribute we need on the synthesized kernel function).
+
+A rule kernel needs to read the struct *and* the impl block together — the struct gives field types (the register set), the impl block gives rule bodies (the read/write sets and guards). The function-like form `rule_kernel! { ... }` receives both items in one token stream, lets the macro analyse them jointly, and emits the struct + the SynchronousIO impl + the kernel function + per-rule scheduler.
+
+**What a derive-form would actually require.** A working `#[derive(RuleKernel)]` would have to be split across at least two macros:
+1. `#[derive(RuleKernel)]` on the struct — emits a marker trait impl and stashes the field-set somewhere the second macro can find it.
+2. `#[rule_kernel_impl]` (an attribute macro) on the impl block — finds the marker (via the marker trait, via a hand-written cross-macro registry, or via stringly-typed name matching), then does the work.
+
+The cross-macro coordination is the awkward part. Rust's proc-macro framework offers no first-class way for one macro invocation to read state stashed by another in the same compilation; every workaround (lazy_static, file-system stash, name-based convention) has either a soundness or an ergonomic cost. The Bluespec-style derive form looks similar in *appearance* to the function-like form but pays this cost on every invocation.
+
+**The function-like form is no harder for users to write.** Compare:
+
+```rust
+// Function-like (canonical, shipped today)
+rule_kernel! {
+    pub struct Foo { ... }
+    impl Foo {
+        #[rule] fn bump(...) { ... }
+        #[output] fn output(...) -> ... { ... }
+    }
+}
+
+// Derive form (sketch, not implemented)
+#[derive(RuleKernel)]
+pub struct Foo { ... }
+
+#[rule_kernel_impl]
+impl Foo {
+    #[rule] fn bump(...) { ... }
+    #[output] fn output(...) -> ... { ... }
+}
+```
+
+The function-like form uses one less attribute and one extra brace pair. The user-facing simplification of the derive form is essentially zero; the implementation cost is non-trivial.
+
+**Decision recorded.** The function-like form is the canonical surface for the foreseeable future. The `#[derive(RuleKernel)]` syntax in §4.1 is preserved as the *aspirational sketch* — the shape we would ship if Rust grew first-class cross-macro coordination. The shipped form delivers the same hardware, the same scheduler semantics, and the same diagnostic surface. No widget loses any expressive power by using `rule_kernel!`.
+
+**Migration path if this changes.** If a future Rust version (or a stable proc-macro extension crate) gives us reliable cross-macro state, we can ship `#[derive(RuleKernel)]` as a thin wrapper that forwards to the function-like form's expansion. Existing user code remains valid; new code can choose either spelling. Until then: function-like is the supported form, and the `Phase 2` checklist treating "derive form" as a deliverable is closed by this design note.
+
 ---
 
 ## 5 — Execution semantics

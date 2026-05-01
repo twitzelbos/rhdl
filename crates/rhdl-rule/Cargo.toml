@@ -19,6 +19,7 @@ rhdl = { path = "../rhdl" }
 rhdl-bits = { path = "../rhdl-bits" }
 rhdl-fpga = { path = "../rhdl-fpga" }
 rhdl-rule-core = { path = "../rhdl-rule-core" }
+rhdl-rule-rt = { path = "../rhdl-rule-rt" }
 proc-macro2 = "1.0.66"
 quote = "1.0.33"
 expect-test = "1.5.1"
