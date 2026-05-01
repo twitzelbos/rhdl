@@ -254,24 +254,51 @@ pub fn cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         CsrOp::ReadClearImm => dec.rs1 != bits::<5>(0),
     };
 
-    // Trap handling.  ECALL/EBREAK/illegal-instruction all vector
-    // to mtvec; mcause distinguishes:
+    // Misaligned-target trap detection.  RV32I requires:
+    //   - branch / JAL: target must be 4-byte aligned (bits[1:0] = 00)
+    //   - JALR:         after masking bit 0, target must be 4-byte
+    //                   aligned (bit 1 must also be 0)
+    // When the trap fires, mcause = 0 (Instruction address misaligned)
+    // and mtval = the misaligned target.  The trapping instruction
+    // does not commit (writeback suppressed; PC vectors to mtvec).
+    let prospective_target: Bits<32> = if dec.is_jalr {
+        jalr_target
+    } else if dec.opcode == Opcode::Jal {
+        jal_target
+    } else {
+        branch_target
+    };
+    let attempts_redirect: bool = dec.is_jalr
+        || (dec.opcode == Opcode::Jal)
+        || take_branch;
+    let target_misaligned: bool = (prospective_target & bits::<32>(0x3)) != bits::<32>(0);
+    let take_misaligned: bool = attempts_redirect && target_misaligned;
+
+    // Trap handling.  ECALL/EBREAK/illegal-instruction/misaligned
+    // all vector to mtvec; mcause distinguishes:
+    //   0 — Instruction address misaligned
     //   2 — Illegal instruction
     //   3 — Breakpoint (EBREAK)
     //  11 — Environment call from M-mode (ECALL)
-    // MRET is the inverse: PC ← mepc; mstatus restoration is a
-    // no-op since v0.7 doesn't have interrupts.
-    let take_ecall:   bool = dec.system_op == SystemOp::Ecall;
-    let take_ebreak:  bool = dec.system_op == SystemOp::Ebreak;
-    let take_illegal: bool = dec.illegal;
-    let take_trap:    bool = take_ecall || take_ebreak || take_illegal;
-    let take_mret:    bool = dec.system_op == SystemOp::Mret;
-    let trap_cause: Bits<32> = if take_illegal {
+    // MRET is the inverse: PC ← mepc.  WFI is a NOP.
+    let take_ecall:      bool = dec.system_op == SystemOp::Ecall;
+    let take_ebreak:     bool = dec.system_op == SystemOp::Ebreak;
+    let take_illegal:    bool = dec.illegal;
+    let take_trap:       bool = take_ecall || take_ebreak || take_illegal || take_misaligned;
+    let take_mret:       bool = dec.system_op == SystemOp::Mret;
+    let trap_cause: Bits<32> = if take_misaligned {
+        bits::<32>(0)
+    } else if take_illegal {
         bits::<32>(2)
     } else if take_ebreak {
         bits::<32>(3)
     } else {
         bits::<32>(11)
+    };
+    let trap_val: Bits<32> = if take_misaligned {
+        prospective_target
+    } else {
+        bits::<32>(0)
     };
 
     // Pick writeback value.
@@ -309,7 +336,7 @@ pub fn cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         trap_en: take_trap,
         trap_pc: q.pc,
         trap_cause,
-        trap_val: bits::<32>(0),  // v0.3 doesn't compute mtval
+        trap_val,
     };
 
     // Commit next PC — trap entry overrides everything else;

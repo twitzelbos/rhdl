@@ -31,6 +31,74 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-01 — Tier C: rhdl-rv32i misaligned-target trap (mcause = 0) + WFI
+
+**Paths:**
+
+- `crates/rhdl-rv32i/src/isa.rs` — added `SystemOp::Wfi` variant (funct12 = 0x105).
+- `crates/rhdl-rv32i/src/decoder.rs` — SYSTEM funct3=0 dispatch now recognises WFI alongside ECALL/EBREAK/MRET.
+- `crates/rhdl-rv32i/src/cpu.rs` — single-cycle: detect misaligned target (any branch / JAL / JALR with low 2 bits of target nonzero) → trap with `mcause = 0`, `mtval = the misaligned target`.  Wired `trap_val` into the CSR-file's trap port (was hard-zero).
+- `crates/rhdl-rv32i/src/pipelined.rs` — same logic in the Execute stage; misaligned-trap suppresses the would-be redirect AND vectors to mtvec; same trap_val wiring.
+- `crates/rhdl-rv32i/src/sim.rs` — Rust reference simulator: same logic; introduced `take_trap_with_val` helper so the simulator records mtval correctly.  Restructured `step` so writeback decisions follow the trap detection (matching the hardware's `!take_trap` gating).
+- `crates/rhdl-rv32i/tests/misaligned_wfi.rs` (new, 9 tests) — covers the 4 trap cases (misaligned branch, misaligned JAL, misaligned JALR, aligned-branch sanity), 3 WFI cases (single-cycle NOP, pipelined NOP parity, "WFI is not illegal" trap-handler discriminator), and a 3-way lockstep program combining WFI and a misaligned branch.
+
+**Why this, why now:** PR #37 closed the lockstep loop (Rust sim + single-cycle + pipelined all agree).  The remaining trap-cause surface had two gaps relative to the privileged-ISA spec: misaligned-target (`mcause = 0`) and WFI.  Both are required reading for any RV32I implementation that claims privileged-ISA compliance, and both compose into a single coherent change (they share the Execute-stage trap path and the simulator's `step` rewrite).
+
+External interrupts (`mip`/`mie` CSRs, mstatus.MIE/MPIE save-restore, an external interrupt input port) were intentionally deferred — they need a real design conversation about edge-vs-level semantics and an interrupt port that doesn't exist yet on the CPU widget's `In` struct.  WFI ships as a NOP per the privileged-ISA spec's explicit allowance ("when interrupts are not enabled at any privilege level, WFI may be implemented as a NOP").
+
+**Design decisions:**
+
+- **Misaligned-target detection at Execute stage, not at Fetch.**  We can't detect misalignment at Fetch — Fetch doesn't know what the next instruction will be (and therefore doesn't know what target it might compute).  Detection has to happen where the target is computed: in single-cycle CPU, in the same combinational mux that selects `next_pc`; in pipelined, in the Execute stage where branch-resolve already happens.  Both implementations gate the redirect on `!take_misaligned` and add `take_misaligned` to the existing trap-OR.
+
+- **`trap_val` is the misaligned target, not the trapping PC.**  Per the privileged-ISA spec table for `mtval`: for instruction-address-misaligned, `mtval` holds the misaligned address that would have been the next PC.  The hardware previously hard-coded `trap_val: bits::<32>(0)` (left over from PR #31 when only ECALL/EBREAK/illegal were handled — none of which use mtval).  Wired up properly now.
+
+- **WFI lowers to a "natural NOP", not a special case.**  The decoder sets `system_op = Wfi` but leaves `writeback_src = None`, `mem_write = false`, `mem_read = false`, `alu_op = Add` (default).  In the executor, none of the trap or MRET branches fire for `SystemOp::Wfi`, so the instruction falls through to the default "no-effect" path: `writeback_en = false`, `next_pc = pc + 4`.  Zero new state machine.
+
+  This works because the executor explicitly checks for each SystemOp variant individually (`take_ecall = system_op == Ecall`, etc.) rather than "anything non-None traps."  WFI just doesn't appear in any of those checks.
+
+- **Simulator restructuring: writeback decision moves AFTER the trap detection.**  The old code in `sim::Cpu::step` did writeback before computing the next PC.  When the next-PC computation triggered a misaligned-target trap, the writeback had already committed — the JAL/JALR's PC+4 stuck in `rd` even though hardware would have suppressed it (gated by `!take_trap`).  Reordering: compute prospective_target → check misalignment → if trap, vector and return (no writeback) → otherwise writeback and advance PC.  Now matches hardware exactly.
+
+- **JALR's bit 1 trap is the right test for the JALR case.**  The spec mandates JALR always clears bit 0 of `(rs1 + imm)` (the `& 0xFFFE` step in the executor).  After that, bit 1 must be 0 for the target to be 4-byte-aligned.  Test uses `JALR x5, x6, 0` with `x6 = 0x42` → masked target = 0x42 → bit 1 set → trap with `mtval = 0x42`.  This is the canonical "JALR aligned the wrong way" case.
+
+- **All three implementations agree, validated by lockstep.**  The 9th test is a 3-way lockstep on a program that exercises both WFI (as NOP) and a misaligned branch (as trap) plus the handler that reads back mepc/mcause/mtval.  Sim ↔ single-cycle ↔ pipelined memory-write sequences match.
+
+**Surprises and gotchas:**
+
+- **Hard-coded `trap_val: bits::<32>(0)` in TWO files.**  Both `cpu.rs` (PR #31) and `pipelined.rs` (PR #36) had a comment "v0.X doesn't compute mtval" and a hard-zero literal.  Both needed updating.  Caught by realising the misaligned-trap test reads `mtval` from CSR after the trap.
+
+- **In the simulator, the writeback-before-trap bug was a real correctness issue.**  Initial draft had: `writeback → compute_next_pc → if misaligned { trap }`.  This let JALR's PC+4 writeback commit even when JALR trapped.  Fixed by inverting the order.  Hardware doesn't have this issue because the trap signal is computed combinationally and `writeback_en` is gated by `!take_trap` in the same cycle (a single cycle's worth of "happens after" doesn't exist in a synchronous design — everything is concurrent).
+
+- **WFI's encoding (`0x10500073`) is just SYSTEM with funct12 = 0x105.**  Easy to miss because the spec presents it under "Privileged Architectures" in Volume II rather than alongside ECALL/EBREAK in Volume I.
+
+- **All 9 tests passed first run.**  No iteration needed for misaligned-target or WFI on either core — the structural pattern from PR #36 (existing trap-OR, redirect-if-trap path) generalised cleanly.
+
+**Validation:**
+
+- **100 tests pass** in `rhdl-rv32i` (91 from PR #37 + 9 new): 3 misaligned tests on single-cycle, 1 pipelined parity, 1 aligned-sanity, 2 WFI on single-cycle, 1 WFI pipelined parity, 1 lockstep.
+- All 100 tests pass with `cargo test -p rhdl-rv32i`.  No existing tests regressed.
+- `cargo check -p rhdl-rv32i` clean.
+- The lockstep harness from PR #37 still passes for all 6 compliance programs (sim ↔ single-cycle ↔ pipelined parity unchanged).
+
+**What this completes:**
+
+The trap-cause surface for the synchronous-exception classes is now complete:
+- `mcause = 0` — Instruction address misaligned (this PR)
+- `mcause = 2` — Illegal instruction (PR #36)
+- `mcause = 3` — Breakpoint / EBREAK (PR #31)
+- `mcause = 11` — Environment call from M-mode / ECALL (PR #31)
+
+Plus MRET return-from-trap (PR #36) and WFI (this PR).
+
+The asynchronous-exception classes (mcause bit 31 set: machine timer interrupt, machine external interrupt, machine software interrupt) are deferred to a follow-up PR that will add the interrupt input port, mip/mie CSRs, and mstatus.MIE/MPIE save-restore semantics.
+
+**Follow-ups:**
+
+- **External interrupts** — separate PR, needs interrupt input port + mip/mie CSRs + mstatus.MIE/MPIE wiring + edge-vs-level semantics decision.
+- **Misaligned-load/store traps** (`mcause = 4` / `mcause = 6`) — RV32I lets implementations either trap or handle naturally.  We currently handle naturally (the data memory model is word-addressed), but a strict-mode flag could be added if compliance demands it.
+- **Per-instruction-type breakdown of the trap path** — when external interrupts land, the currently-monolithic `take_trap` could split into `take_sync` vs. `take_async` for clarity.
+
+---
+
 ## 2026-05-01 — Tier C: rhdl-rv32i Rust reference simulator + 3-way lockstep harness
 
 **Paths:**

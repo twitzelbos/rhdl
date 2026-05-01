@@ -326,8 +326,9 @@ pub fn decode(instr: Bits<32>) -> DecodedInstruction {
             //   0x000 → ECALL
             //   0x001 → EBREAK
             //   0x302 → MRET   (M-mode return-from-trap)
-            //   anything else → illegal (WFI, SFENCE.VMA, SRET,
-            //                            etc. not implemented).
+            //   0x105 → WFI    (wait for interrupt; NOP w/o interrupts)
+            //   anything else → illegal (SFENCE.VMA, SRET, URET,
+            //                            DRET, etc. not implemented).
             let funct12: Bits<12> = ((instr >> 20) & bits::<32>(0xFFF)).resize();
             if funct12 == bits::<12>(0) {
                 d.system_op = SystemOp::Ecall;
@@ -335,6 +336,8 @@ pub fn decode(instr: Bits<32>) -> DecodedInstruction {
                 d.system_op = SystemOp::Ebreak;
             } else if funct12 == bits::<12>(0x302) {
                 d.system_op = SystemOp::Mret;
+            } else if funct12 == bits::<12>(0x105) {
+                d.system_op = SystemOp::Wfi;
             } else {
                 d.illegal = true;
             }

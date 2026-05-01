@@ -127,9 +127,19 @@ impl Cpu {
     }
 
     /// Vector to mtvec; save trapping PC to mepc; set mcause.
+    /// `mtval` is left at its previous value (callers that care
+    /// about mtval should use [`Cpu::take_trap_with_val`]).
     fn take_trap(&mut self, cause: u32) {
+        self.take_trap_with_val(cause, 0);
+    }
+
+    /// Vector to mtvec; save trapping PC to mepc; set mcause and
+    /// mtval.  Used for the misaligned-target trap (cause = 0),
+    /// which writes the misaligned target address to mtval.
+    fn take_trap_with_val(&mut self, cause: u32, tval: u32) {
         self.write_csr(0x341, self.pc);     // mepc
         self.write_csr(0x342, cause);       // mcause
+        self.write_csr(0x343, tval);        // mtval
         self.pc = self.read_csr(0x305);     // mtvec
     }
 
@@ -156,13 +166,20 @@ impl Cpu {
             return;
         }
 
-        // SYSTEM ops (ECALL/EBREAK/MRET) — handled before the
-        // generic ALU/branch dispatch.
+        // SYSTEM ops (ECALL/EBREAK/MRET/WFI) — handled before the
+        // generic ALU/branch dispatch.  WFI is a NOP without
+        // external interrupts (per the privileged-ISA spec's
+        // explicit allowance).
         match dec.system_op {
             SystemOp::Ecall  => { self.take_trap(11); return; }
             SystemOp::Ebreak => { self.take_trap(3); return; }
             SystemOp::Mret   => {
                 self.pc = self.read_csr(0x341);  // PC ← mepc
+                return;
+            }
+            SystemOp::Wfi    => {
+                // NOP: advance PC and retire normally.
+                self.pc = self.pc.wrapping_add(4);
                 return;
             }
             SystemOp::None => {}
@@ -254,7 +271,33 @@ impl Cpu {
             0
         };
 
-        // Writeback.
+        // Compute next-PC (and detect misaligned-target trap)
+        // before committing writeback, so the trap can suppress
+        // both the writeback and the redirect — matching the
+        // hardware (where `writeback_en` is gated by `!take_trap`).
+        let take_branch = dec.opcode == Opcode::Branch && branch_taken;
+        let take_jal    = dec.opcode == Opcode::Jal;
+        let take_jalr   = dec.is_jalr;
+
+        let prospective_target: u32 = if take_jalr {
+            (rs1_val.wrapping_add(imm)) & !1u32
+        } else if take_jal || take_branch {
+            self.pc.wrapping_add(imm)
+        } else {
+            pc_plus_4
+        };
+
+        // Misaligned-target trap (mcause = 0): branch / JAL / JALR
+        // whose target is not 4-byte aligned.  Suppresses writeback
+        // and redirects to mtvec instead of the misaligned target.
+        let attempts_redirect = take_branch || take_jal || take_jalr;
+        let target_misaligned = (prospective_target & 0x3) != 0;
+        if attempts_redirect && target_misaligned {
+            self.take_trap_with_val(0, prospective_target);
+            return;
+        }
+
+        // Writeback (only after we know we're not trapping).
         let writeback_value: u32 = match dec.writeback_src {
             WritebackSrc::None    => 0,
             WritebackSrc::Alu     => alu_result,
@@ -266,18 +309,7 @@ impl Cpu {
             self.write_reg(dec.rd.raw() as u32, writeback_value);
         }
 
-        // Next PC.
-        let take_branch = dec.opcode == Opcode::Branch && branch_taken;
-        let take_jal    = dec.opcode == Opcode::Jal;
-        let take_jalr   = dec.is_jalr;
-
-        self.pc = if take_jalr {
-            (rs1_val.wrapping_add(imm)) & !1u32
-        } else if take_jal || take_branch {
-            self.pc.wrapping_add(imm)
-        } else {
-            pc_plus_4
-        };
+        self.pc = prospective_target;
     }
 
     /// Run the simulator until halted or `max_steps` instructions
