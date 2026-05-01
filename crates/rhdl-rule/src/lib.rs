@@ -31,6 +31,41 @@
 //!   + priority-arbitrated scheduler.
 //! - The `guard!` and `set!` macros, recognised inside rule bodies.
 //!
+//! # What rule bodies can contain
+//!
+//! Rule bodies are lowered into the surrounding kernel function;
+//! they accept the same Rust subset as any RHDL `#[kernel]` plus
+//! the rule-specific extras.  Concretely:
+//!
+//! - **Guards**: `guard!(expr)` — rule's firing predicate.
+//! - **Direct assignments to DFF fields**: `ctx.field = expr;` and
+//!   the equivalent `set!(ctx.field, expr)` — recognised as atomic
+//!   non-blocking commits at the cycle boundary.
+//! - **DFF reads**: `*ctx.field` — rewritten to `q.field` and
+//!   tracked in the rule's read-set (drives the conflict matrix).
+//! - **Let-binding preambles**: `let x = expr;` — kept verbatim
+//!   in the lowered kernel; in scope for every direct-assignment
+//!   that follows.  Right tool for shared computation across
+//!   multiple writes.
+//! - **Cross-kernel calls**: rule bodies can freely call other
+//!   `#[kernel]`-marked functions defined at module scope, the
+//!   same way regular RHDL kernels can call other kernels.  This
+//!   is the rhdl-rule analogue of BSV's "rule bodies can call any
+//!   pure `function`."  See `tests/cross_kernel_call.rs` for
+//!   worked examples.
+//!
+//! # What rule bodies can NOT contain (yet)
+//!
+//! - **Sub-widget access through `ctx`** — `ctx.<sub_widget>.<field>`
+//!   does not lower today.  The rule-body walker only recognises
+//!   `*ctx.<dff_field>` reads, not nested paths into composed
+//!   sub-widgets.  Workaround: keep the `rule_kernel_attr` widget
+//!   pure-DFF, and compose with sub-widgets at the parent layer
+//!   via a regular `Synchronous` widget.  See `tests/
+//!   subwidget_access_known_failing.rs` for the documented
+//!   limitation and `crates/rhdl-alto/src/task_system.rs` for the
+//!   real-world workaround pattern.
+//!
 //! # Example
 //!
 //! ```ignore

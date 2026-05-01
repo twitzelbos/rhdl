@@ -31,6 +31,44 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-01 — `rhdl-rule`: cross-kernel calls in rule bodies (regression suite + correction to PR #44)
+
+**Paths:**
+
+- `crates/rhdl-rule/tests/cross_kernel_call.rs` (new, 5 tests) — pins down that rule bodies *can* call other `#[kernel]`-marked functions defined at module scope.  Covers: single-arg helper called from preamble, multi-arg helper returning a `Digital` struct (the canonical "factor shared computation" pattern), chains of helper calls, helpers used in multi-rule kernels with priority arbitration, and iverilog round-trip on the rule-kernel-generated Verilog.
+- `crates/rhdl-rule/tests/subwidget_access_known_failing.rs` (new, `#[cfg(any())]`-gated demo) — pins down what *doesn't* work: sub-widget state access through `ctx` (`ctx.<sub_widget>.<field>`).  Gated behind `cfg(any())` so the test suite stays green; flip the cfg to manually verify the failure when investigating.  Documents the workaround (compose sub-widgets at the parent layer) and points at `rhdl-alto::task_system` as the real-world example of that pattern.
+- `crates/rhdl-rule/src/lib.rs` — module docs now spell out what rule bodies *can* and *cannot* contain.
+
+**Why this, why now:** PR #44's CHANGELOG attributed the Alto Phase 2 build failure ("Unsupported statement type" + "cannot find value `ctx`") to rhdl-rule rejecting cross-kernel calls.  When the user asked for a fix, I started with a minimal repro to confirm the failure mode — and discovered the cross-kernel call **already worked**.  The actual blocker was **sub-widget access through `ctx`** (`ctx.regs.cells[mi.rsel]` in my first-cut Phase 2).
+
+The honest correction is therefore:
+
+1. **Cross-kernel calls don't need a fix** — they already work.  This PR adds a regression suite that pins the behaviour, plus updated docs that say so explicitly, plus an iverilog round-trip test that proves the lowering produces real synthesisable hardware.
+
+2. **Sub-widget access via `ctx` is the actual limitation.**  The rule-body walker only recognises `*ctx.<dff_field>` reads, not nested paths into composed sub-widgets.  Documented as a `#[cfg(any())]`-gated test that demonstrates the failure shape, plus a workaround note (compose sub-widgets at the parent layer; what `rhdl-alto::task_system` does).
+
+**What this means for the PR #44 follow-ups:**
+
+- The "rhdl-rule cross-kernel calls" follow-up listed in PR #44's CHANGELOG is **not a real follow-up** — the feature exists.  This PR is the corrective documentation.
+- The "rhdl-rule sub-widget access via ctx" piece **is** real and remains as a follow-up.  It's the bigger fix (the walker needs to know which struct fields are DFFs vs. sub-widgets and emit different lowering for each).
+
+**Why I'm shipping a correction PR rather than silently updating the original CHANGELOG:**
+
+Per CLAUDE.md §15 (reporting status honestly), the previous PR's claim that cross-kernel calls were a real limitation is wrong.  The right move is a public correction with regression tests, not a quiet edit.  Future contributors who read the CHANGELOG will see both the original claim and this correction, which is more useful than a clean revisionist history.
+
+**Validation:**
+
+- **5 new cross-kernel-call regression tests pass** in `rhdl-rule` (4 functional + 1 iverilog round-trip).
+- All 70+ pre-existing `rhdl-rule` tests still pass — no regressions.
+- `cargo check -p rhdl-rule` clean.
+
+**Follow-ups:**
+
+- **Sub-widget access via `ctx`** — the bigger fix.  Tractable but invasive: the macro needs to introspect field types at parse time to distinguish DFFs from sub-widgets, then emit different rewrites for each (DFF reads → `q.field`; sub-widget output reads → `q.subwidget.output_field`; sub-widget input writes → `d.subwidget.input_field`).  Roughly tracks how Bluespec handles submodule-method calls in rule bodies via the schedule analysis.
+- **Refactor `AltoTaskSystem`** to use cross-kernel calls (now that we've pinned the behaviour).  Each task body's "call into compute_cycle" pattern would shrink the implementation from ~200 lines (16 rules × 12 lines) to maybe ~100 lines.  Optional but reduces line count meaningfully.
+
+---
+
 ## 2026-05-01 — Tier C core 2: rhdl-alto Phases 1+2 (microengine + 16-task `rhdl-rule` arbiter)
 
 **Paths:**
