@@ -119,9 +119,16 @@ struct Rule {
     /// computed conflict matrix.
     conflict_free_with: Vec<String>,
     /// Rule names asserted to be mutually exclusive with this rule
-    /// (`#[rule(mutually_exclusive = "other")]`).  Phase 1 records
-    /// but does not yet prove the assertion (Phase 2 follow-up).
+    /// (`#[rule(mutually_exclusive = "other")]`).  Phase 2 trusts the
+    /// assertion and uses it as a scheduler-optimisation hint
+    /// (the priority chain skips the suppression term for the
+    /// asserted pair).
     mutually_exclusive_with: Vec<String>,
+    /// `#[rule(urgent_before = "other")]` — explicit ordering: this
+    /// rule MUST be scheduled before "other".  If both are ready
+    /// and conflict, this one fires.  Composes with `priority` (an
+    /// urgent_before edge takes precedence over numeric priority).
+    urgent_before: Vec<String>,
 }
 
 impl Rule {
@@ -304,19 +311,66 @@ pub fn expand_rule_kernel(input: TokenStream) -> syn::Result<TokenStream> {
         }
     }
 
-    // Sort rules into priority order.  Tuple key: (explicit priority
-    // or u32::MAX/2 default, source index).  This places explicitly-
-    // prioritised rules ahead of unannotated ones, with source order
-    // as a stable tiebreaker.
-    let mut order: Vec<usize> = (0..rules.len()).collect();
-    order.sort_by_key(|&i| (rules[i].priority.unwrap_or(u32::MAX / 2), i));
+    // Sort rules into schedule order.
+    //
+    // Phase 2 — `urgent_before` edges are honoured first by way of a
+    // topological sort over the DAG induced by them.  Among nodes
+    // that are simultaneously available (in-degree 0), the
+    // tie-breaker is `(explicit priority or u32::MAX/2, source
+    // index)`, so explicitly-prioritised rules still come first and
+    // unannotated rules retain source order.
+    let order = build_schedule_order(&rules)?;
     let rules_sorted: Vec<&Rule> = order.iter().map(|&i| &rules[i]).collect();
+
+    // Validate `urgent_before` semantics: the edge is only meaningful
+    // when the two rules conflict (per the conflict matrix).  If they
+    // never conflict, the user has either misunderstood the
+    // annotation or the edge is dead — warn at the call site.  Phase
+    // 2 treats a non-conflicting urgent_before edge as a hard error
+    // because there is no honest interpretation: the scheduler can't
+    // do anything observable with it.
+    for (i, rule) in rules.iter().enumerate() {
+        for ub_name in &rule.urgent_before {
+            let j = rules
+                .iter()
+                .position(|r| r.name == ub_name.as_str())
+                .expect("name was validated during schedule-order build");
+            if i == j {
+                continue; // already errored in build_schedule_order
+            }
+            if !rule.conflicts_with(&rules[j]) {
+                return Err(syn::Error::new(
+                    rule.name.span(),
+                    format!(
+                        "#[rule(urgent_before = \"{ub_name}\")] on `{}` is meaningless: \
+                         the two rules don't conflict (no shared read/write set), so \
+                         there is no schedule choice to influence.",
+                        rule.name,
+                    ),
+                ));
+            }
+        }
+    }
 
     // Generate.
     let kernel_fn_name = lower_camel_to_snake(struct_name);
     let kernel_fn_ident = format_ident!("{kernel_fn_name}");
     let q_ident = format_ident!("{}Q", struct_name);
     let d_ident = format_ident!("{}D", struct_name);
+
+    // Phase 2: thread the struct's generics through every emitted item.
+    // `split_for_impl` gives us:
+    //   - impl_generics : `<T: Digital, const N: usize>` (with bounds)
+    //   - ty_generics   : `<T, N>` (no bounds, for type position)
+    //   - where_clause  : `where rhdl::bits::W<N>: BitWidth`
+    // For expression position (e.g. constructing the D struct
+    // value) we can rely on field-driven inference, so no turbofish
+    // is needed.
+    let (impl_generics, ty_generics, where_clause) = item_struct.generics.split_for_impl();
+    // For expression position we use the turbofish form so const-generic
+    // values flow into the D constructor without Rust having to infer
+    // them from field types (inference can fail on const generics).
+    let ty_generics_turbofish = ty_generics.as_turbofish();
 
     // Augment the struct with the standard derives.
     let mut struct_emit = item_struct.clone();
@@ -356,12 +410,32 @@ pub fn expand_rule_kernel(input: TokenStream) -> syn::Result<TokenStream> {
 
         // Conflicts with higher-priority rules (those earlier in
         // `rules_sorted`).
+        //
+        // Phase 2 — `mutually_exclusive` optimisation: when the user
+        // has declared two rules pairwise mutually exclusive (their
+        // guards can never both be true on the same cycle), the
+        // suppressor `&& !(_fire_other)` is redundant and we can
+        // drop it from the priority chain.  We trust the user's
+        // assertion (no formal proof in Phase 2) — the assertion
+        // composes with the conflict matrix only as an optimisation
+        // hint; it never *introduces* permission to fire.
+        let i_name = rule.name.to_string();
         let mut suppressors: Vec<TokenStream> = Vec::new();
         for prior in rules_sorted.iter().take(i) {
-            if rule.conflicts_with(prior) {
-                let prior_fire = format_ident!("_fire_{}", prior.name);
-                suppressors.push(quote! { && !(#prior_fire) });
+            if !rule.conflicts_with(prior) {
+                continue;
             }
+            let prior_name = prior.name.to_string();
+            let mutually_exclusive = rule.mutually_exclusive_with.iter().any(|n| n == &prior_name)
+                || prior
+                    .mutually_exclusive_with
+                    .iter()
+                    .any(|n| n == &i_name);
+            if mutually_exclusive {
+                continue;
+            }
+            let prior_fire = format_ident!("_fire_{}", prior.name);
+            suppressors.push(quote! { && !(#prior_fire) });
         }
 
         scheduler_decls.push(quote! {
@@ -444,7 +518,7 @@ pub fn expand_rule_kernel(input: TokenStream) -> syn::Result<TokenStream> {
         quote! {}
     } else {
         quote! {
-            impl #struct_name {
+            impl #impl_generics #struct_name #ty_generics #where_clause {
                 #(#other_items)*
             }
         }
@@ -453,18 +527,23 @@ pub fn expand_rule_kernel(input: TokenStream) -> syn::Result<TokenStream> {
     let expanded = quote! {
         #struct_emit
 
-        impl ::rhdl::core::circuit::synchronous::SynchronousIO for #struct_name {
+        impl #impl_generics ::rhdl::core::circuit::synchronous::SynchronousIO
+            for #struct_name #ty_generics
+            #where_clause
+        {
             type I = #input_type;
             type O = #output_type;
-            type Kernel = #kernel_fn_ident;
+            type Kernel = #kernel_fn_ident #ty_generics;
         }
 
         #[::rhdl::prelude::kernel]
-        pub fn #kernel_fn_ident(
+        pub fn #kernel_fn_ident #impl_generics (
             cr: ::rhdl::prelude::ClockReset,
             #in_param: #input_type,
-            q: #q_ident,
-        ) -> (#output_type, #d_ident) {
+            q: #q_ident #ty_generics,
+        ) -> (#output_type, #d_ident #ty_generics)
+        #where_clause
+        {
             // Phase 1 scheduler: compute can_fire / fire for each rule.
             #(#scheduler_decls)*
 
@@ -484,15 +563,117 @@ pub fn expand_rule_kernel(input: TokenStream) -> syn::Result<TokenStream> {
             // Build D as a single struct expression.  Reset
             // semantics live in the wrapping DFFs (each holds its
             // own reset value) so the kernel does not need an
-            // explicit reset block in Phase 0.
+            // explicit reset block in Phase 0.  Field-type inference
+            // determines the generic parameters of D, so no
+            // turbofish is needed here.
             let _ = cr;
-            (o, #d_ident { #(#d_field_inits),* })
+            (o, #d_ident #ty_generics_turbofish { #(#d_field_inits),* })
         }
 
         #other_items_out
     };
 
     Ok(expanded)
+}
+
+// ---------------------------------------------------------------
+// Schedule-order construction
+// ---------------------------------------------------------------
+
+/// Build a stable topological order over rules.
+///
+/// Edges come from `#[rule(urgent_before = "other")]` annotations:
+/// `A.urgent_before.contains(B.name)` means A must precede B in the
+/// schedule.  Among nodes simultaneously available (in-degree 0)
+/// the tie-breaker is `(explicit priority, source index)`, so
+/// explicitly-prioritised rules still come first and unannotated
+/// rules retain source order.
+///
+/// Returns the rule indices in schedule order.  Errors on:
+/// - an `urgent_before` name that doesn't refer to any defined rule,
+/// - a self-loop (`A.urgent_before` contains `A`), or
+/// - a cycle in the urgent_before graph.
+fn build_schedule_order(rules: &[Rule]) -> syn::Result<Vec<usize>> {
+    use std::cmp::Reverse;
+    use std::collections::BinaryHeap;
+
+    let n = rules.len();
+    let name_to_idx: std::collections::BTreeMap<String, usize> = rules
+        .iter()
+        .enumerate()
+        .map(|(i, r)| (r.name.to_string(), i))
+        .collect();
+
+    let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+    let mut in_deg: Vec<usize> = vec![0; n];
+    for (i, rule) in rules.iter().enumerate() {
+        for ub_name in &rule.urgent_before {
+            let j = match name_to_idx.get(ub_name.as_str()) {
+                Some(&j) => j,
+                None => {
+                    return Err(syn::Error::new(
+                        rule.name.span(),
+                        format!(
+                            "#[rule(urgent_before = \"{ub_name}\")] on `{}` references \
+                             unknown rule `{ub_name}`",
+                            rule.name,
+                        ),
+                    ));
+                }
+            };
+            if j == i {
+                return Err(syn::Error::new(
+                    rule.name.span(),
+                    format!(
+                        "#[rule(urgent_before = \"{ub_name}\")] on `{}` references itself",
+                        rule.name,
+                    ),
+                ));
+            }
+            adj[i].push(j);
+            in_deg[j] += 1;
+        }
+    }
+
+    // Kahn's algorithm with a stable, priority-aware tiebreaker.
+    let priority_key = |i: usize| (rules[i].priority.unwrap_or(u32::MAX / 2), i);
+
+    let mut available: BinaryHeap<Reverse<((u32, usize), usize)>> = BinaryHeap::new();
+    for (i, &deg) in in_deg.iter().enumerate() {
+        if deg == 0 {
+            available.push(Reverse((priority_key(i), i)));
+        }
+    }
+
+    let mut order: Vec<usize> = Vec::with_capacity(n);
+    while let Some(Reverse((_, i))) = available.pop() {
+        order.push(i);
+        for &j in &adj[i] {
+            in_deg[j] -= 1;
+            if in_deg[j] == 0 {
+                available.push(Reverse((priority_key(j), j)));
+            }
+        }
+    }
+
+    if order.len() != n {
+        // Cycle: at least one rule still has in-degree > 0.  Point at
+        // any such rule; if the user has multiple, the diagnostic at
+        // least names one concrete entry-point into the cycle.
+        let cycle_rule = (0..n)
+            .find(|&i| in_deg[i] > 0)
+            .map(|i| &rules[i].name)
+            .expect("non-empty cycle");
+        return Err(syn::Error::new(
+            cycle_rule.span(),
+            format!(
+                "#[rule(urgent_before = ...)] forms a cycle involving `{cycle_rule}`; \
+                 cycles are not allowed in the urgent_before graph",
+            ),
+        ));
+    }
+
+    Ok(order)
 }
 
 // ---------------------------------------------------------------
@@ -508,10 +689,6 @@ fn has_attr(method: &ImplItemFn, name: &str) -> bool {
 
 fn parse_rule(method: &ImplItemFn) -> syn::Result<Rule> {
     let name = method.sig.ident.clone();
-
-    // Parse `#[rule(priority = N, conflict_free = "x", mutually_exclusive = "y")]`.
-    let (priority, conflict_free_with, mutually_exclusive_with) =
-        parse_rule_annotations(method)?;
 
     // Expect: fn <name>(ctx: &mut RuleCtx<Self>) { ... }
     //     or: fn <name>(ctx: &mut RuleCtx<Self>, <input>: <Type>) { ... }
@@ -564,6 +741,12 @@ fn parse_rule(method: &ImplItemFn) -> syn::Result<Rule> {
         return Err(err);
     }
 
+    let RuleAnnotations {
+        priority,
+        conflict_free_with,
+        mutually_exclusive_with,
+        urgent_before,
+    } = parse_rule_annotations(method)?;
     Ok(Rule {
         name,
         input_name,
@@ -574,17 +757,21 @@ fn parse_rule(method: &ImplItemFn) -> syn::Result<Rule> {
         priority,
         conflict_free_with,
         mutually_exclusive_with,
+        urgent_before,
     })
 }
 
-/// Parse `#[rule(priority = N, conflict_free = "x", mutually_exclusive = "y")]`
-/// annotations.  Returns `(priority, conflict_free_names, mutually_exclusive_names)`.
-fn parse_rule_annotations(
-    method: &ImplItemFn,
-) -> syn::Result<(Option<u32>, Vec<String>, Vec<String>)> {
-    let mut priority: Option<u32> = None;
-    let mut conflict_free: Vec<String> = Vec::new();
-    let mut mutually_exclusive: Vec<String> = Vec::new();
+#[derive(Default)]
+struct RuleAnnotations {
+    priority: Option<u32>,
+    conflict_free_with: Vec<String>,
+    mutually_exclusive_with: Vec<String>,
+    urgent_before: Vec<String>,
+}
+
+/// Parse `#[rule(priority = N, conflict_free = "x", mutually_exclusive = "y", urgent_before = "z")]`.
+fn parse_rule_annotations(method: &ImplItemFn) -> syn::Result<RuleAnnotations> {
+    let mut anno = RuleAnnotations::default();
 
     for attr in &method.attrs {
         if !attr.path().is_ident("rule") {
@@ -597,19 +784,19 @@ fn parse_rule_annotations(
         attr.parse_nested_meta(|meta| {
             if meta.path.is_ident("priority") {
                 let value: syn::LitInt = meta.value()?.parse()?;
-                priority = Some(value.base10_parse()?);
+                anno.priority = Some(value.base10_parse()?);
                 Ok(())
             } else if meta.path.is_ident("conflict_free") {
                 let value: syn::LitStr = meta.value()?.parse()?;
-                conflict_free.push(value.value());
+                anno.conflict_free_with.push(value.value());
                 Ok(())
             } else if meta.path.is_ident("mutually_exclusive") {
                 let value: syn::LitStr = meta.value()?.parse()?;
-                mutually_exclusive.push(value.value());
+                anno.mutually_exclusive_with.push(value.value());
                 Ok(())
             } else if meta.path.is_ident("urgent_before") {
-                // Reserved for Phase 2 — accepted but ignored.
-                let _value: syn::LitStr = meta.value()?.parse()?;
+                let value: syn::LitStr = meta.value()?.parse()?;
+                anno.urgent_before.push(value.value());
                 Ok(())
             } else {
                 Err(meta.error(
@@ -619,7 +806,7 @@ fn parse_rule_annotations(
             }
         })?;
     }
-    Ok((priority, conflict_free, mutually_exclusive))
+    Ok(anno)
 }
 
 fn parse_output(method: &ImplItemFn) -> syn::Result<OutputMethod> {
