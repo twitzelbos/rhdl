@@ -43,6 +43,14 @@
 //!   non-blocking commits at the cycle boundary.
 //! - **DFF reads**: `*ctx.field` — rewritten to `q.field` and
 //!   tracked in the rule's read-set (drives the conflict matrix).
+//! - **DFF sub-field / method access**: `ctx.field.<inner>` (no
+//!   leading `*`) — rewritten to `q.field.<inner>`.  Lets a rule
+//!   directly access a method or inner field on a DFF-stored
+//!   value without first reading the whole DFF into a let-binding:
+//!   `ctx.flags.any()`, `ctx.table[idx]`, etc.  Same syntax also
+//!   works for sub-widget output reads (`ctx.subwidget.out_field`),
+//!   though full sub-widget composition has a separate next-decls
+//!   issue tracked as a follow-up — see below.
 //! - **Let-binding preambles**: `let x = expr;` — kept verbatim
 //!   in the lowered kernel; in scope for every direct-assignment
 //!   that follows.  Right tool for shared computation across
@@ -56,15 +64,30 @@
 //!
 //! # What rule bodies can NOT contain (yet)
 //!
-//! - **Sub-widget access through `ctx`** — `ctx.<sub_widget>.<field>`
-//!   does not lower today.  The rule-body walker only recognises
-//!   `*ctx.<dff_field>` reads, not nested paths into composed
-//!   sub-widgets.  Workaround: keep the `rule_kernel_attr` widget
-//!   pure-DFF, and compose with sub-widgets at the parent layer
-//!   via a regular `Synchronous` widget.  See `tests/
-//!   subwidget_access_known_failing.rs` for the documented
-//!   limitation and `crates/rhdl-alto/src/task_system.rs` for the
-//!   real-world workaround pattern.
+//! - **Full sub-widget composition** — composing a sub-widget as
+//!   a struct field of the rule kernel breaks the "auto-hold of
+//!   unwritten fields" path: the next-decls emit
+//!   `let _next_<field> = q.<field>;` for every field that no
+//!   rule writes, but `q.<field>` is the sub-widget's `Out`
+//!   struct while `d.<field>` is its `In` struct — the two have
+//!   different types and the assignment fails to type-check.
+//!   The walker rewrite (`ctx.X.Y` → `q.X.Y`) lowers the *read*
+//!   half of sub-widget access correctly; the missing piece is
+//!   the auto-hold strategy when the field is a sub-widget.
+//!   Fixing that needs struct-type introspection (which the
+//!   function-like form has but the attribute form doesn't) and
+//!   a different lowering for sub-widget vs DFF auto-holds.
+//!   Workaround: keep the rule kernel pure-DFF, and compose with
+//!   sub-widgets at the parent layer via a regular `Synchronous`
+//!   widget.  See `tests/subwidget_access_known_failing.rs` for
+//!   the documented limitation and `crates/rhdl-alto/src/
+//!   task_system.rs` for the real-world workaround pattern.
+//!
+//! - **Driving sub-widget inputs from a rule body** — same root
+//!   cause as the above; needs the per-field type classification
+//!   to know whether `ctx.field = expr` writes a DFF (existing
+//!   path) or drives a sub-widget input (would need a different
+//!   action lowering).
 //!
 //! # Example
 //!
