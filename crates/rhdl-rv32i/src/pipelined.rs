@@ -285,16 +285,24 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         CsrOp::ReadClearImm => q.id_ex.rs1 != bits::<5>(0),
     };
 
-    // Trap detection: ECALL or EBREAK in Execute.  Squashes
-    // IF/ID, ID/EX, and EX/MEM-next; redirects PC to mtvec;
-    // signals the CSR file's trap port to commit mepc/mcause.
-    let take_ecall: bool  = q.id_ex.valid && q.id_ex.system_op == SystemOp::Ecall;
-    let take_ebreak: bool = q.id_ex.valid && q.id_ex.system_op == SystemOp::Ebreak;
-    let take_trap: bool   = take_ecall || take_ebreak;
-    let trap_cause: Bits<32> = if take_ecall {
-        bits::<32>(11)  // M-mode environment call
+    // Trap detection in Execute: ECALL / EBREAK / illegal
+    // instruction (recognised by the decoder's `illegal` flag,
+    // forwarded via id_ex.opcode == Illegal).  All three squash
+    // IF/ID, ID/EX, and EX/MEM-next; redirect PC to mtvec; and
+    // signal the CSR file's trap port.  MRET is the inverse:
+    // PC ← mepc; squashes the same three slots so the trap
+    // handler's tail doesn't get re-executed.
+    let take_ecall:   bool = q.id_ex.valid && q.id_ex.system_op == SystemOp::Ecall;
+    let take_ebreak:  bool = q.id_ex.valid && q.id_ex.system_op == SystemOp::Ebreak;
+    let take_illegal: bool = q.id_ex.valid && q.id_ex.opcode == Opcode::Illegal;
+    let take_trap:    bool = take_ecall || take_ebreak || take_illegal;
+    let take_mret:    bool = q.id_ex.valid && q.id_ex.system_op == SystemOp::Mret;
+    let trap_cause: Bits<32> = if take_illegal {
+        bits::<32>(2)
+    } else if take_ebreak {
+        bits::<32>(3)
     } else {
-        bits::<32>(3)   // Breakpoint
+        bits::<32>(11)
     };
 
     // Branch / jump resolution.
@@ -308,11 +316,14 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let take_jal: bool  = q.id_ex.valid && q.id_ex.opcode == Opcode::Jal;
     let take_jalr: bool = q.id_ex.valid && q.id_ex.is_jalr;
 
-    // Redirect = branch / jump / trap.  Trap target is mtvec;
-    // branch / jump targets are computed above.
-    let redirect: bool = take_branch || take_jal || take_jalr || take_trap;
+    // Redirect = branch / jump / trap / MRET.  Trap target is
+    // mtvec; MRET target is mepc; branch / jump targets are
+    // computed above.
+    let redirect: bool = take_branch || take_jal || take_jalr || take_trap || take_mret;
     let redirect_target: Bits<32> = if take_trap {
         q.csrs.mtvec
+    } else if take_mret {
+        q.csrs.mepc
     } else if take_jalr {
         jalr_target
     } else if take_jal {
@@ -347,7 +358,11 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         csr_writes: csr_writes_ex,
         valid: q.id_ex.valid,
     };
-    let next_ex_mem: ExMem = if take_trap {
+    // On a trap or MRET, the in-flight EX/MEM slot becomes a
+    // bubble — the trap squashes the trapping instruction's
+    // writeback and any memory side-effect; the MRET itself
+    // doesn't write any register.
+    let next_ex_mem: ExMem = if take_trap || take_mret {
         ExMem::default()
     } else {
         next_ex_mem_real

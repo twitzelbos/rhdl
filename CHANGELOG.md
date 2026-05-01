@@ -31,6 +31,69 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-01 — Tier C: rhdl-rv32i MRET + illegal-instruction trap
+
+**Paths:**
+
+- `crates/rhdl-rv32i/src/isa.rs` — adds `SystemOp::Mret` variant.
+- `crates/rhdl-rv32i/src/decoder.rs` — recognises `funct12 = 0x302` as MRET (was previously marked illegal).
+- `crates/rhdl-rv32i/src/csr.rs` — adds `mepc` to the `Out` struct so the CPU can compute the MRET target without going through the read port (mirror of the existing `mtvec` exposure for trap entry).
+- `crates/rhdl-rv32i/src/cpu.rs` — single-cycle CPU now detects illegal instructions (`take_illegal = dec.illegal`) and traps with `mcause = 2`; handles MRET by routing PC to `q.csrs.mepc`.
+- `crates/rhdl-rv32i/src/pipelined.rs` — pipelined CPU adds illegal-instruction trap (detected at Execute via `q.id_ex.opcode == Opcode::Illegal`) and MRET handling (squashes IF/ID + ID/EX + EX/MEM and redirects PC to `q.csrs.mepc`).
+- `crates/rhdl-rv32i/tests/mret_and_illegal.rs` (new, 5 tests) — trap-then-return round-trip on both cores; illegal-instruction trap on both cores; iverilog RTL round-trip on the pipelined CPU executing a full ECALL → handler → MRET → user-code sequence.
+- `crates/rhdl-rv32i/tests/csr_trap.rs` and `crates/rhdl-rv32i/tests/pipelined_csr.rs` — adds `HALT` (`beq x0, x0, +0`) terminators to the existing ECALL/EBREAK trap tests.  Without the HALT, PC walked past the program end, instr=0 was decoded as illegal, fired a re-trap, and overwrote the test's mepc/mcause writes.
+
+**Why this, why now:** completes the trap surface from PR #35 (Phase 3 closure).  Without MRET, trap handlers can set up state but can't return to user code — so any program that takes a trap can't continue.  Without illegal-instruction trap, the decoder marks `illegal: true` but the CPU silently advances PC by 4, executing whatever the decoder filled in as the default-case fields.  Both gaps had to close before the riscv-tests harness can run programs that handle traps explicitly.
+
+**Design decisions:**
+
+- **Single `WritebackSrc::Csr` channel for MRET.**  MRET doesn't write any register (rd is x0 implicitly), so the writeback path is unchanged — MRET is purely a PC redirect.  Trap-port not signalled (no mepc/mcause update on MRET).
+
+- **Squash three slots on MRET.**  Same shape as ECALL/EBREAK: IF/ID, ID/EX, and EX/MEM all get squashed.  These hold the three instructions immediately after the MRET in program order — they shouldn't commit because they're "wrong path" (MRET redirects).
+
+- **Illegal-instruction trap detected at Execute, not Decode.**  In the pipelined CPU the `dec.illegal` flag flows into `id_ex.opcode == Opcode::Illegal`; Execute checks `q.id_ex.opcode == Opcode::Illegal && q.id_ex.valid` and treats it as a trap.  Same vectoring path as ECALL.  Decoding-time detection would require a Decode-stage trap; pushing it to Execute keeps the pipeline-trap logic in one place.
+
+- **`mepc` exposed as a separate Out field on the CSR file.**  Mirror of the existing `mtvec` exposure.  Avoids forcing the CPU to use the CSR file's read port (which is already busy serving CSR-instruction reads).
+
+- **HALT terminators on existing trap tests.**  The new illegal-instruction trap means a program that walks off its instruction memory now traps (instr=0 = unrecognized opcode = illegal).  Existing ECALL/EBREAK tests didn't anticipate this — their handlers wrote mepc/mcause to scratchpad, then PC walked past the handler, hit the implicit illegal-trap, vectored back to the handler, and OVERWROTE the scratchpad with the new (wrong) mepc/mcause.  The fix is one line per test: add `beq x0, x0, +0` (encoded as the constant `HALT`) at the end so PC parks instead of falling off.  Worth documenting because every future trap-using test will need this pattern.
+
+**Surprises and gotchas:**
+
+- **Test pattern for trap-then-return needs handler to bump mepc.**  Without `addi x2, x2, 4; csrrw x0, x2, mepc`, MRET would return to the trapping ECALL instruction itself — re-trapping immediately.  The handler must advance mepc past the trapping instruction.  Standard RISC-V handler pattern; documented in the test.
+
+- **Pipelined MRET needs NOP padding before MRET.**  v0.7 still doesn't have CSR-to-CSR forwarding (PR #35 follow-up).  When the handler updates mepc via CSRRW and immediately MRETs, the pipelined CPU's MRET reads the OLD mepc (the CSRRW hasn't committed yet — it's still in MEM/WB).  Fix: add 3 NOPs between the CSRRW and the MRET.  The single-cycle test doesn't need padding.  Documented in the test.
+
+- **ECALL test had to be updated even though ECALL is unchanged.**  The illegal-instruction trap kicks in when PC walks off the program end (instr=0).  ECALL handlers in the existing tests were quietly relying on PC-walking-off-the-end being a no-op.  Now it's a re-trap.  HALT terminators fix this cleanly.
+
+**Validation:**
+
+- **83 tests pass** in `rhdl-rv32i` (78 from PR #35 + 5 new).
+- **All 5 new tests pass** including pipelined MRET parity and iverilog RTL round-trip on the pipelined CPU executing a full ECALL → handler → MRET → user-code sequence.
+- All 92 rule-track tests still pass.
+- The compliance tests (PR #34) still pass — they don't use CSRs or traps so they're unaffected.
+
+**What's deferred:**
+
+- **Same-cycle CSR-to-CSR forwarding** for back-to-back CSR ops on the same address.  Worked around with NOP padding in the pipelined MRET test.
+- **Misaligned-target trap** (RV32I requires this on branch / JAL / JALR; v0.7 still silently masks).
+- **External interrupts** (mip / mie / mtimer / PLIC).
+- **More compliance tests** to scale out coverage of the rv32ui-p-* suite.
+- **Spike lockstep cosimulation** (cross-cutting Tier C v1 infrastructure per §7).
+- **WFI / SFENCE.VMA / SRET / URET** — other SYSTEM-funct12 values.
+
+**Trap surface is now feature-complete:**
+
+| Trap | mcause | Both cores? |
+|---|---|---|
+| Illegal instruction | 2 | yes |
+| Breakpoint (EBREAK) | 3 | yes |
+| Environment call from M-mode (ECALL) | 11 | yes |
+| MRET (return-from-trap) | n/a (not a trap) | yes |
+
+Trap handlers can now take a trap, examine mepc/mcause, advance mepc (for ECALL/EBREAK; not strictly needed for illegal), and MRET to resume execution.  Self-hosted programs that handle their own faults are now expressible.
+
+---
+
 ## 2026-05-01 — Tier C: rhdl-rv32i pipelined CSR support — Phase 3 gap closed
 
 **Paths:**

@@ -254,17 +254,24 @@ pub fn cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         CsrOp::ReadClearImm => dec.rs1 != bits::<5>(0),
     };
 
-    // Trap handling.  ECALL and EBREAK both vector to mtvec; the
-    // distinction is the cause code (11 for M-mode ECALL, 3 for
-    // breakpoint).  v0.3 doesn't implement misaligned-target,
-    // illegal-instruction, or external-interrupt traps.
-    let take_ecall: bool = dec.system_op == SystemOp::Ecall;
-    let take_ebreak: bool = dec.system_op == SystemOp::Ebreak;
-    let take_trap: bool = take_ecall || take_ebreak;
-    let trap_cause: Bits<32> = if take_ecall {
-        bits::<32>(11)  // Environment call from M-mode
+    // Trap handling.  ECALL/EBREAK/illegal-instruction all vector
+    // to mtvec; mcause distinguishes:
+    //   2 — Illegal instruction
+    //   3 — Breakpoint (EBREAK)
+    //  11 — Environment call from M-mode (ECALL)
+    // MRET is the inverse: PC ← mepc; mstatus restoration is a
+    // no-op since v0.7 doesn't have interrupts.
+    let take_ecall:   bool = dec.system_op == SystemOp::Ecall;
+    let take_ebreak:  bool = dec.system_op == SystemOp::Ebreak;
+    let take_illegal: bool = dec.illegal;
+    let take_trap:    bool = take_ecall || take_ebreak || take_illegal;
+    let take_mret:    bool = dec.system_op == SystemOp::Mret;
+    let trap_cause: Bits<32> = if take_illegal {
+        bits::<32>(2)
+    } else if take_ebreak {
+        bits::<32>(3)
     } else {
-        bits::<32>(3)   // Breakpoint
+        bits::<32>(11)
     };
 
     // Pick writeback value.
@@ -305,10 +312,14 @@ pub fn cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         trap_val: bits::<32>(0),  // v0.3 doesn't compute mtval
     };
 
-    // Commit next PC — trap entry overrides everything else.
+    // Commit next PC — trap entry overrides everything else;
+    // MRET overrides next_pc to redirect to mepc.
     let trap_target: Bits<32> = q.csrs.mtvec;
+    let mret_target: Bits<32> = q.csrs.mepc;
     let next_pc_with_trap: Bits<32> = if take_trap {
         trap_target
+    } else if take_mret {
+        mret_target
     } else {
         next_pc
     };

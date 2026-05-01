@@ -63,6 +63,12 @@ fn lui(rd: u32, imm: u32) -> u32 {
     ((imm & 0xFFFF_F000)) | (rd & 0x1F) << 7 | 0x37
 }
 
+/// `beq x0, x0, +0` — infinite loop terminator.  Used to park the
+/// CPU at the end of a test program so PC doesn't walk off the
+/// end (which would now trigger an illegal-instruction trap and
+/// overwrite mepc/mcause).
+const HALT: u32 = 0x0000_0063;
+
 // CSR instruction encodings.  All have opcode 0x73 and funct12 in
 // bits [31:20] = the CSR address.
 fn csrrw(rd: u32, rs1: u32, csr: u32) -> u32 {
@@ -286,6 +292,7 @@ fn ecall_traps_to_mtvec_with_correct_mepc_and_mcause() {
         csrrs(3, 0, CSR_MCAUSE),
         sw(2, 0, 0),
         sw(3, 0, 4),
+        HALT,                  // park CPU so PC doesn't fall off the end
     ];
     let mem = run_cpu(program, 24);
     assert_eq!(mem[0], 0x0C, "mepc should hold the ECALL's PC");
@@ -305,6 +312,7 @@ fn ebreak_traps_with_cause_3() {
         csrrs(3, 0, CSR_MCAUSE),
         sw(2, 0, 0),
         sw(3, 0, 4),
+        HALT,                  // park CPU
     ];
     let mem = run_cpu(program, 24);
     assert_eq!(mem[0], 0x0C, "mepc should hold the EBREAK's PC");
