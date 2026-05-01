@@ -307,6 +307,290 @@ Fixed-point type as a library before being a compiler feature. Minifloat after `
 
 ---
 
+## 5.5 — Type-system library prerequisites and the kernel-domain gap
+
+> **Why this section exists.** The earlier sections (§§2–4) extend the *syntax* of the kernel — what Rust spellings the proc-macro accepts. This section addresses a parallel concern: the *type-system library surface* in `crates/rhdl-core/src/types/`. Two of the items below are concrete, ready-to-implement library helpers that close real footguns surfaced by the Phase-2 RHIF property test work (see `rhif-formalization-plan.md`). The third is a research-grade language extension that the first two would set up, but that has independent value as a planning anchor.
+>
+> All three were surfaced as concrete consequences of building the Phase-2 random-program generators (PRs #15, #16, #17). They are bundled here because they form a coherent arc — from "make the type system easier to construct correctly" to "let the type system express the safe-input domain so the kernel doesn't need runtime checks for it."
+
+### 5.5.1 — Public `Kind::option_of(T)` and `Kind::result_of(T, E)` helpers
+
+**What.** Two new public methods on `Kind` (in `crates/rhdl-core/src/types/kind.rs`):
+
+```rust
+impl Kind {
+    /// Construct the `Option<T>` enum kind in the canonical shape
+    /// expected by `TypedBits::wrap_some` / `wrap_none` and the
+    /// `Kind::is_option` predicate.
+    pub fn option_of(payload: Kind) -> Kind { ... }
+
+    /// Construct the `Result<T, E>` enum kind in the canonical
+    /// shape expected by `TypedBits::wrap_ok` / `wrap_err`.
+    pub fn result_of(ok: Kind, err: Kind) -> Kind { ... }
+}
+```
+
+**Why we'd want this.**
+
+The shape of `Option<T>` and `Result<T, E>` as `Kind::Enum` values is non-trivial: 2 variants in a specific order with specific names (`"None"` then `"Some"`; `"Ok"` then `"Err"`); a 1-bit MSB-aligned unsigned discriminant; the payload variant carrying a single-element tuple of the inner type; and a name string in the format `"Option::<{T:?}>"`.
+
+This shape is currently established in *two separate places* — the `Digital` derive in `rhdl-macro-core` produces it, and `Kind::is_option` validates it. There is no public constructor. Anyone constructing `Option<T>` outside the proc-macro path (synthetic random-program generators, hand-built test fixtures, future external IR consumers) must re-derive the shape from `is_option`'s validation predicate, with the risk of getting it subtly wrong.
+
+The Phase-2 random-program generator hit this exactly: `build_option_kind` lives privately in `crates/rhdl-core/src/rhif/property_tests.rs`, re-deriving the same shape the proc-macro already knows. That's a duplicated source of truth.
+
+**Why it matters that this is harder than it looks: the canonical-form trap.**
+
+`Kind::Enum` uses `internment::Intern<Enum>` for structural identity. Two `Kind::Enum` values are `==` only if their interned pointers match. If a user constructs `Option<Bits<8>>` via the proc-macro derive *and* via a hand-rolled helper, even a one-character difference (a stray space, a different name format, a different field ordering) produces two non-equal kinds that `is_option` accepts but `==` distinguishes.
+
+In practice this would silently break any pass that does `kind == <Option<Bits<8>> as Digital>::static_kind()`. The pass would see "two Option<Bits<8>> kinds, neither equal to the other" and miss one of them. No diagnostic; just incorrect behaviour.
+
+**Downstream benefits.**
+
+1. **One canonical source of truth** for the shape of `Option<T>` and `Result<T, E>`. The proc-macro derive can call this helper instead of inlining the construction, eliminating the duplication.
+2. **Test fixtures get safer.** Anyone writing a test that constructs an `Option<Bits<N>>` value (for VM inputs, for kind assertions, for RHIF construction) uses the canonical helper rather than reverse-engineering the shape.
+3. **Random-program generators stop forking the type system.** The Phase-2 `build_option_kind` private helper goes away; the public helper takes its place.
+4. **External IR consumers get a stable API.** Anyone (a future Coq mechanization, an IDE plugin, a debugger UI) that needs to construct `Option<T>` works against a stable public API rather than reading proc-macro internals.
+5. **Sets up §5.5.3.** The refinement-types extension (below) needs canonical kind constructors for the bounded-integer shapes (`BoundedBits<N, MAX>`). The same problem appears at larger scale; solving it for `Option`/`Result` first establishes the pattern.
+
+**Implementation sketch.**
+
+`option_of` follows the form already documented in `Kind::is_option`:
+
+```rust
+pub fn option_of(payload: Kind) -> Kind {
+    Kind::make_enum(
+        &format!("Option::<{payload:?}>"),
+        vec![
+            Kind::make_variant("None", Kind::Empty, 0),
+            Kind::make_variant("Some", Kind::make_tuple(vec![payload].into()), 1),
+        ],
+        Kind::make_discriminant_layout(
+            1,
+            DiscriminantAlignment::Msb,
+            DiscriminantType::Unsigned,
+        ),
+    )
+}
+```
+
+The complementary `is_option` predicate becomes the spec — any change to `option_of`'s output must keep `is_option` accepting it. Same for `result_of` and `is_result` (already present).
+
+**Test discipline.**
+
+The headline correctness test is the *equivalence-with-derive* assertion:
+
+```rust
+#[test]
+fn option_of_matches_derive() {
+    assert_eq!(
+        Kind::option_of(<bool as Digital>::static_kind()),
+        <Option<bool> as Digital>::static_kind(),
+    );
+    assert_eq!(
+        Kind::option_of(<Bits<8> as Digital>::static_kind()),
+        <Option<Bits<8>> as Digital>::static_kind(),
+    );
+    // Plus a struct-payload case, a tuple-payload case, and a
+    // nested-Option case (which is structurally fine — RHDL's
+    // `no nested Signal` rule applies to Signal, not to Option).
+}
+```
+
+If the helper produces the wrong shape, this test fails immediately and the helper is retracted.
+
+**Cost.** ~50 LOC of public API + ~50 LOC of equivalence tests. Single small PR, no compiler-pass changes, no IR changes.
+
+**Position in the plan.** Ship before §5.5.2 (it's a dependency) and well before §5.5.3 (which presupposes it). Compatible with shipping in the same PR as §5.5.2.
+
+---
+
+### 5.5.2 — Safe `TypedBits::enum_variant(kind, variant_name, payload)` constructor
+
+**What.** A new public method on `TypedBits` (in `crates/rhdl-core/src/types/typed_bits.rs`):
+
+```rust
+impl TypedBits {
+    /// Construct a `TypedBits` value of `kind` (which must be a
+    /// `Kind::Enum`) representing the named variant, with the
+    /// supplied payload bits inserted at the correct position
+    /// per the kind's discriminant layout.
+    pub fn enum_variant(
+        kind: Kind,
+        variant_name: &str,
+        payload: TypedBits,
+    ) -> Result<TypedBits>;
+}
+```
+
+**Why we'd want this.**
+
+Constructing a `TypedBits` of enum kind manually requires knowing the *bit layout*: where the discriminant lives (per `Kind::pad`), how variant payloads are placed (MSB-aligned vs LSB-aligned), how the discriminant is encoded (unsigned vs signed; how many bits). This layout is documented in `Kind::pad`'s comments but is implicit in the derive-generated bit emission.
+
+Concrete example from the Phase-2 enum random-program generator:
+
+```rust
+// Build template: discriminant = 1 (variant B), payload = zero.
+// MSB-aligned 1-bit discriminant → discriminant lives at the
+// last (highest) bit position.
+let mut bits = vec![BitX::Zero; enum_kind.bits()];
+*bits.last_mut().unwrap() = BitX::One;
+let template = TypedBits::new(bits, enum_kind);
+```
+
+This works, but the author must know that "the discriminant goes in the last bit" — a specific consequence of `MSB`-alignment that is not visible from the variant API. Anyone unfamiliar with `Kind::pad`'s rules would write `bits[0] = One` (LSB-style) and produce a value that has discriminant 0 instead of 1. The VM would then dispatch on the wrong variant; the resulting bug would surface as "case dispatch picks the wrong arm" with no obvious cause.
+
+**Why this is harder than it looks.**
+
+The bit layout is a function of *both* the variant's payload size and the enum's full discriminant layout. For variant `B(payload)` of an enum where the largest variant has a 64-bit payload but `B` has only an 8-bit payload, the bits emitted for `B`'s payload must be *padded* to fit the largest payload region — and the padding goes in a specific place (depends on `MSB`/`LSB` alignment). The proc-macro derive handles this through `Kind::pad`; manual constructors silently produce wrong bit patterns that the VM will accept but interpret incorrectly.
+
+This is the same canonical-form trap as §5.5.1 but at the value level rather than the kind level. A `TypedBits` whose bits don't match the kind's expected layout is "well-formed" by the type system (the bit count matches `kind.bits()`) but semantically wrong (the VM reads the discriminant from the wrong position).
+
+**Downstream benefits.**
+
+1. **Tests stop encoding implicit layout knowledge.** Hand-built enum test fixtures use `TypedBits::enum_variant(kind, "B", payload)` instead of `bits.last_mut() = One`. The intent is explicit; the layout is an implementation detail of `enum_variant`.
+2. **Random-program generators get safer.** Phase-2's `generate_enum_program` constructs the template by direct bit manipulation; with `enum_variant`, that becomes a single function call.
+3. **The `Wrap` opcode constructors compose with this.** `wrap_some(kind, payload)` is conceptually `enum_variant(kind, "Some", Tuple([payload]))` plus a discriminant check. Either `wrap_some` becomes a thin wrapper over `enum_variant`, or both share a common bit-layout helper.
+4. **Diagnostic surface improves.** A wrong variant name returns `Err` (not a panic, not a silent miscompare); a payload-kind mismatch is caught at construction time rather than at the next VM read.
+5. **Sets up §5.5.3.** Refinement / bounded-integer types need a parallel "construct a `Bits<N>` value with a runtime bound predicate" helper. The same canonical-construction pattern.
+
+**Implementation sketch.**
+
+`TypedBits::enum_variant(kind, name, payload)`:
+1. Verify `kind` is `Kind::Enum`; otherwise return `Err(DynamicTypeError::CannotConstructEnumVariantOfNonEnumKind)`.
+2. Look up the variant by name; if not found, `Err(DynamicTypeError::UnknownEnumVariant)`.
+3. Verify `payload.kind == variant.kind`; if mismatched, `Err(DynamicTypeError::EnumVariantPayloadKindMismatch)`.
+4. Pad the payload bits to the largest variant's size per the discriminant layout (use the existing `Kind::pad` infrastructure).
+5. Concatenate the discriminant bits and the padded payload bits per the alignment rule.
+6. Return `TypedBits { bits, kind }`.
+
+The implementation reuses `Kind::pad`, `Kind::discriminant_layout`, and the existing per-variant kind lookup; it doesn't introduce new layout logic.
+
+**Test discipline.**
+
+The headline correctness test is *bit-equivalence with the proc-macro-derived `Digital::bin()`*:
+
+```rust
+#[test]
+fn enum_variant_matches_digital_bin() {
+    let derived: TypedBits = MyEnum::B(42u8).typed_bits();
+    let helper = TypedBits::enum_variant(
+        <MyEnum as Digital>::static_kind(),
+        "B",
+        42u8.typed_bits(),
+    ).unwrap();
+    assert_eq!(derived.bits(), helper.bits());
+    assert_eq!(derived.kind(), helper.kind());
+}
+```
+
+If the helper emits a different bit pattern than `Digital::bin()` for the same logical value, this test fails. Cover at least: `Option`-shaped enum, a `Result`-shaped enum, an enum with mixed-size variant payloads (so the padding logic is exercised), an enum with `LSB`-aligned discriminant, and an enum with multi-bit discriminant.
+
+**Cost.** ~80 LOC of implementation + ~100 LOC of tests covering the layout corner cases. Single small PR, bundle with §5.5.1.
+
+**Position in the plan.** Ship as a single PR with §5.5.1. The two together are the "type-system library improvements" PR.
+
+---
+
+### 5.5.3 — Refinement / bounded-integer types — closing the kernel-domain gap
+
+> **Status: research target.** A genuine language extension; estimated 2–6 months for a competent compiler engineer. Sketched here so future work has a starting point.
+
+**What.** Extend the kernel type system with refinement-typed integer kinds:
+
+```rust
+// Sugar at the kernel layer; lowers to Bits<N> + a static
+// well-formedness check at construction time.
+type SmallIdx = BoundedBits<8, 64>;        // 8-bit value, MUST be < 64
+type RegId    = BoundedBits<5, 32>;        // 5-bit value, MUST be < 32
+```
+
+The type system would then enforce, at *type-check time*, that any value of kind `BoundedBits<N, MAX>` satisfies `value < MAX`. Constructing such a value requires either a literal that statically satisfies the bound, or an explicit `try_into` from a wider unconstrained `Bits<N>` (returning `Option<BoundedBits<N, MAX>>`).
+
+**Why we'd want this.**
+
+The kernel-language type system today says "any `Bits<8>` value is a `Bits<8>`," but a kernel that uses one as an array index into a 64-element buffer rejects 192 of the 256 values at *runtime* (via `RHDLDynamicTypeError::ArrayIndexOutOfBounds`). The type system permits values the kernel rejects.
+
+This is the *kernel-domain gap*: the static type predicate is broader than the safe runtime domain. The runtime check (in the simulator and the synthesised hardware) is the safety net.
+
+This shows up everywhere:
+
+- **Array indexing.** `q.req_buf[idx]` where `q.req_buf: [Bits<8>; 64]` and `idx: Bits<8>` — 75% of `Bits<8>` values trip the bound.
+- **Shift amounts.** `arg << amount` where `arg: Bits<32>` and `amount: Bits<8>` — values ≥ 32 trip `ShiftAmountMustBeLessThan`.
+- **Discriminant values.** A `match` on a `Bits<3>` discriminant where only 5 of the 8 values are valid variant tags — the remaining 3 silently produce `dont_care` results.
+- **FSM state transitions.** A `Bits<5>` representing a 21-state FSM — 11 of the 32 representable values are unreachable; reaching one would be a kernel bug, but the type system can't say so.
+
+The Phase-2 property test work surfaced this empirically: random-bit fuzzing of widget inputs hits an out-of-domain ICE rate of ~25–100% depending on the widget. The Phase-2 `StructuredFirstCycle` workaround sidesteps the gap for one specific case (random `q` on protocol PHYs), but it's a workaround, not a solution.
+
+**Why it matters for hardware specifically.**
+
+Hardware doesn't have exceptions or panics. An out-of-range dynamic index in synthesised RTL is *implementation-defined*: depending on the synthesis tool, it might wrap, saturate, produce X, or emit a multiplexer with undefined behaviour for the out-of-range case. The simulator's panic is a development-time signal; the synthesised hardware just produces wrong data.
+
+If the type system tracked the bound, the compiler would either:
+- (a) Reject the kernel at compile time when an unbounded value is used as a bounded operand without an explicit `try_into`.
+- (b) Lower the bound to a hardware check that explicitly handles the out-of-range case (e.g., generates a multiplexer that returns a known default for out-of-range indices, plus an error flag).
+
+(a) is the type-system view; (b) is the codegen view. The right answer probably combines both: by default reject at compile time, but offer an explicit `BoundedBits::clamping_index` (or similar) for users who want the codegen to handle it.
+
+**Why this is hard.**
+
+Refinement types are a known-difficult research area (LiquidHaskell, RefinementML, F*, Z3-backed solvers). For RHDL specifically, the constraints are simpler than the general case:
+- Bounds are integer constants, not arbitrary predicates.
+- All values are finite-bit-width integers.
+- No recursion, no higher-order functions, no closures with captures.
+
+This narrows the problem from "general refinement types" to "value-range tracking on integer kinds with const-bound upper limits." That's tractable — it's essentially what type-state programming does for state machines, but on integer values.
+
+The implementation likely involves:
+1. A new kind `Kind::BoundedBits(N, MAX)` (and `BoundedSigned(N, MIN, MAX)`) added to `crates/rhdl-core/src/types/kind.rs`.
+2. Type-rule extensions in the proc-macro (and in `crates/rhdl-core/src/types/`) so the inferred type of `idx_lit` (a literal) is `BoundedBits<W, MAX>` where `MAX` is the literal's value+1.
+3. Subtyping: `BoundedBits<N, MAX1>` is a subtype of `BoundedBits<N, MAX2>` when `MAX1 ≤ MAX2`. Subtyping of `BoundedBits<N, MAX>` to `Bits<N>` (the unbounded supertype) is fine; the reverse needs an explicit `try_into`.
+4. Dynamic index annotations: `arr[idx]` requires `idx: BoundedBits<_, N>` where `N = arr.len()`. Otherwise the kernel doesn't compile.
+5. Runtime support: a `BoundedBits::try_new(value: Bits<N>) -> Option<BoundedBits<N, MAX>>` constructor that performs the bound check at runtime — the only place runtime checks remain.
+
+**Downstream benefits.**
+
+1. **The type system catches what the simulator currently catches with a panic.** "This `Bits<8>` cannot be used as an index into `[T; 64]`" becomes a compile-time error with a `miette` diagnostic, not a silent ICE at runtime.
+2. **Synthesis becomes safer.** The compiler knows the bound, so it can either reject (the safe default) or generate explicit hardware (the opt-in path). Either way the silent "implementation-defined" case in synthesised RTL goes away.
+3. **Property tests can fully randomise.** Random `BoundedBits<N, MAX>` values are by-construction in-domain, so the Phase-2 property suite no longer needs the `StructuredFirstCycle` workaround for protocol PHYs. Lowering correctness can run on fully-random `q` for any widget.
+4. **State-machine encoding improves.** A `BoundedBits<5, 21>` FSM state is a self-documenting type — the bound says "this is a 21-state machine," and the type system enforces the unreachable-state constraint.
+5. **Documentation becomes mechanical.** The bound is the documentation. `arr[idx: BoundedBits<8, 64>]` documents itself; today's `arr[idx: Bits<8>]` requires a comment explaining the implicit invariant.
+6. **LLM-generated kernels get safer.** An LLM is likely to use `Bits<8>` for an FSM state in a 5-state machine, then forget that values 5–255 are unreachable. With `BoundedBits<3, 5>`, the LLM gets a compile error if it tries; with `Bits<8>`, the bug ships.
+
+**What §§5.5.1 and 5.5.2 contribute.**
+
+The refinement extension multiplies the surface of the type-system construction API: every `BoundedBits<N, MAX>` is a new `Kind` that needs a constructor, every `BoundedBits<N, MAX>` value needs a layout-correct `TypedBits`. The same canonical-form-trap that motivates §5.5.1 and §5.5.2 reappears at larger scale.
+
+If §§5.5.1 and 5.5.2 ship first, the refinement extension can plug into the existing canonical construction pattern instead of forking it. If they don't ship, the refinement extension would either inline the kind construction (introducing N more places where the type-system shape can drift from the proc-macro derive) or block on §§5.5.1–5.5.2 anyway. Cleaner to ship the dependencies first.
+
+**What §5.5.3 does not solve.**
+
+- **Dynamic predicates.** `BoundedBits<N, MAX>` is a constant bound at type level; it cannot express "this value is the count of 1-bits in `arr`," which would require Z3-style solving. Out of scope.
+- **Cross-kernel proofs.** A kernel that takes a `BoundedBits<8, 64>` from a caller relies on the caller having proved the bound. The type system tracks this through normal subtyping, but inter-kernel proofs across multiple compilation units may need additional machinery. Likely fine in practice given RHDL's strict no-recursion model.
+- **Saturating arithmetic.** `a + b` where `a, b: BoundedBits<8, 64>` overflows the bound when the sum is ≥ 64. The type system needs an arithmetic rule that produces `BoundedBits<8, 127>` (sum bound), or an explicit `saturating_add` method that re-clamps. This is a design choice.
+
+**Implementation sketch (high-level phases).**
+
+1. **Phase A — Kind extension** (~3 weeks). Add `Kind::BoundedBits(N, MAX)` and `Kind::BoundedSigned(N, MIN, MAX)` to `types/kind.rs`. Extend `Kind::is_*`, `Kind::pad`, and `Kind::bits()` to handle them. Update `TypedBits` construction. No proc-macro changes yet.
+2. **Phase B — Subtyping** (~3 weeks). Type-rule extensions in `rhdl-core::types::infer` so a `BoundedBits<N, MAX1>` flows to a `BoundedBits<N, MAX2>` context iff `MAX1 ≤ MAX2`, and to a `Bits<N>` context unconditionally.
+3. **Phase C — Literal inference** (~2 weeks). Extend the proc-macro so an integer literal is inferred at the tightest possible bound; e.g., `4` in a context expecting `BoundedBits<8, _>` is inferred as `BoundedBits<8, 5>`.
+4. **Phase D — Index typing** (~3 weeks). Make `arr[idx]` require `idx: BoundedBits<_, N>`. Provide a clear `miette` diagnostic when not satisfied.
+5. **Phase E — Try-into API** (~1 week). Add `BoundedBits::try_new` and `Bits::clamp_to_bound` (or similar). Ergonomic surface for the explicit-conversion case.
+6. **Phase F — Widget migration** (~2 weeks). Convert the protocol-PHY widgets (Modbus, CAN, etc.) to use `BoundedBits` for their internal indices and verify the property suite passes without the `StructuredFirstCycle` workaround.
+
+Total: ~3–4 months of focused work. The estimate assumes a single experienced compiler engineer; with LLM assistance and good tooling, possibly faster.
+
+**Test discipline.**
+
+- Every type rule in `rhif-spec/type-system.md` gets a corresponding `BoundedBits` extension entry.
+- Every widget that uses dynamic indexing gets a `BoundedBits` migration test that verifies the kernel still compiles and produces bit-identical Verilog.
+- The Phase-2 property suite's `StructuredFirstCycle` workaround can be removed for any widget whose indices are `BoundedBits`-typed; that's the validation that the gap closed.
+
+**Position in the plan.**
+
+After §§5.5.1 and 5.5.2 (small dependencies). After Phase 4 of the existing kernel-language phasing (§5) — that work establishes the const-generic-arithmetic infrastructure that bounded-integer types depend on. Probably Phase 7 or 8 in the overall ordering.
+
+---
+
 ## 6 — What stays forbidden
 
 These are not items deferred to a later phase; they are intentionally outside the language for hardware-modelling reasons. Document them clearly so users (and LLMs) don't waste time trying.
