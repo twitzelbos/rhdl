@@ -141,6 +141,15 @@ struct Rule {
     /// and conflict, this one fires.  Composes with `priority` (an
     /// urgent_before edge takes precedence over numeric priority).
     urgent_before: Vec<String>,
+    /// `#[rule(trace)]` (or `#[rule(trace = true)]`) — opt-in: when
+    /// set, the macro emits an additional `let fire_<rule>: bool =
+    /// _fire_<rule>;` binding (and likewise for `can_fire_<rule>`)
+    /// in the kernel body.  Both bindings are visible (no
+    /// underscore prefix), so RHDL's trace infrastructure surfaces
+    /// them in VCDs.  Off by default to keep generated kernels lean
+    /// and VCDs uncluttered for the common case where the user
+    /// doesn't need to inspect rule firing.
+    trace: bool,
 }
 
 impl Rule {
@@ -587,6 +596,27 @@ fn lower_rule_kernel(
             let #can_fire_ident: bool = (#guard_expr);
             let #fire_ident: bool = #can_fire_ident #(#suppressors)*;
         });
+
+        // Per-rule trace exposure (`#[rule(trace)]`).  When opted-in,
+        // emit `let can_fire_<rule>` and `let fire_<rule>` aliases —
+        // visible names (no underscore prefix) that RHDL's trace
+        // infrastructure surfaces in VCDs.  Off by default: the
+        // common case shouldn't pay the kernel-emission and VCD-
+        // clutter cost for debug-only signals.
+        //
+        // The trailing `let _trace_<rule> = (...)` consumes the
+        // visible names so the kernel's `unused_variables` lint
+        // (deny-by-default inside `#[kernel]`) doesn't fire.
+        if rule.trace {
+            let trace_can_fire = format_ident!("can_fire_{}", rule.name);
+            let trace_fire = format_ident!("fire_{}", rule.name);
+            let trace_anchor = format_ident!("_trace_{}", rule.name);
+            scheduler_decls.push(quote! {
+                let #trace_can_fire: bool = #can_fire_ident;
+                let #trace_fire: bool = #fire_ident;
+                let #trace_anchor: (bool, bool) = (#trace_can_fire, #trace_fire);
+            });
+        }
     }
 
     // For each register field, emit a chain of let-rebindings:
@@ -960,6 +990,7 @@ fn parse_rule(method: &ImplItemFn) -> syn::Result<Rule> {
         conflict_free_with,
         mutually_exclusive_with,
         urgent_before,
+        trace,
     } = parse_rule_annotations(method)?;
     Ok(Rule {
         name,
@@ -973,6 +1004,7 @@ fn parse_rule(method: &ImplItemFn) -> syn::Result<Rule> {
         conflict_free_with,
         mutually_exclusive_with,
         urgent_before,
+        trace,
     })
 }
 
@@ -982,9 +1014,14 @@ struct RuleAnnotations {
     conflict_free_with: Vec<String>,
     mutually_exclusive_with: Vec<String>,
     urgent_before: Vec<String>,
+    trace: bool,
 }
 
-/// Parse `#[rule(priority = N, conflict_free = "x", mutually_exclusive = "y", urgent_before = "z")]`.
+/// Parse `#[rule(priority = N, conflict_free = "x", mutually_exclusive = "y", urgent_before = "z", trace)]`.
+///
+/// `trace` accepts both the bare `#[rule(trace)]` form and the
+/// explicit `#[rule(trace = true)]` form; the latter also accepts
+/// `false` to disable.
 fn parse_rule_annotations(method: &ImplItemFn) -> syn::Result<RuleAnnotations> {
     let mut anno = RuleAnnotations::default();
 
@@ -1013,10 +1050,20 @@ fn parse_rule_annotations(method: &ImplItemFn) -> syn::Result<RuleAnnotations> {
                 let value: syn::LitStr = meta.value()?.parse()?;
                 anno.urgent_before.push(value.value());
                 Ok(())
+            } else if meta.path.is_ident("trace") {
+                // Accept both `trace` (bare) and `trace = <bool>`.
+                if let Ok(value) = meta.value() {
+                    let v: syn::LitBool = value.parse()?;
+                    anno.trace = v.value;
+                } else {
+                    anno.trace = true;
+                }
+                Ok(())
             } else {
                 Err(meta.error(
                     "unknown #[rule(...)] argument; supported: \
-                     priority, conflict_free, mutually_exclusive, urgent_before",
+                     priority, conflict_free, mutually_exclusive, \
+                     urgent_before, trace",
                 ))
             }
         })?;

@@ -31,6 +31,60 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-04-30 — rhdl-rule Move 2 wrap-up — `#[rule(trace)]` opt-in per-rule trace signals
+
+**Paths:**
+
+- `crates/rhdl-rule-core/src/lib.rs` — adds `trace: bool` to the `Rule` struct and the `RuleAnnotations` parser.  When `#[rule(trace)]` (or `#[rule(trace = true)]`) is set, the macro emits two extra bindings per rule: `let can_fire_<rule>: bool = _can_fire_<rule>;` and `let fire_<rule>: bool = _fire_<rule>;`.  These are visible names (no underscore prefix) that RHDL's trace infrastructure surfaces in VCDs.  A trailing `let _trace_<rule> = (can_fire_<rule>, fire_<rule>);` consumes the bindings so the kernel's deny-by-default `unused_variables` lint doesn't fire.
+- `rule-architecture.md` §4.3 — adds the `trace` annotation alongside the existing `priority` / `urgent_before` / `conflict_free` / `mutually_exclusive` rule attributes.
+- `crates/rhdl-rule/tests/rule_trace.rs` (new, 8 tests) — no annotation → no public bindings; bare `#[rule(trace)]` → both `fire_*` and `can_fire_*` emitted; explicit `trace = true` → emitted; explicit `trace = false` → not emitted; mixing annotated and non-annotated rules in the same kernel; non-bool value rejected at expansion; runtime + iverilog round-trip on a traced kernel.
+
+**Why this, why now:** Move 2 (the BSV-capture diagnostic-polish wedge per `rule-architecture.md` §17.4 play 2) needed one last concrete shipping piece beyond the diagnostics already shipped in PRs #21, #23, and #27.  Per-rule trace exposure is the most actionable remaining item — BSV users routinely need to inspect rule firing patterns when debugging a scheduler choice; without visible per-rule signals in the VCD, that's hard.
+
+User feedback steered the design: first attempt was to rename `_fire_<rule>` → `fire_<rule>` unconditionally (always-on tracing).  User pushed back: "Make the per rule fire vcd emission a parameter, so its not always on."  Right — most kernels don't need to expose every internal scheduler signal; opt-in keeps the common case lean.
+
+**Design decisions:**
+
+- **Per-rule annotation, not per-kernel.**  `#[rule(trace)]` lets the user pick which rules they care about.  A multi-rule kernel might want to trace just the one rule whose firing is suspect; tracing every rule would add VCD noise without value.
+- **Bare `trace` is shorthand for `trace = true`.**  Matches Rust idiom for boolean attributes.
+- **`trace = false` is accepted** so the user can turn off a previously-traced rule by editing the annotation rather than deleting it (helps when debugging is iterative).
+- **Visible names mirror the internal names.**  `_fire_<rule>` (internal, scheduler logic) → `fire_<rule>` (visible alias).  Same for `_can_fire_<rule>` → `can_fire_<rule>`.  Symmetric and predictable.
+- **Internal underscore-prefixed names are unchanged.**  All existing tests that pattern-match on `_fire_<name>` (e.g. `mutually_exclusive_emission.rs`) keep working unchanged.  No risk of breaking the suppressor-elision optimisation tests.
+
+**Surprises and gotchas:**
+
+- **`#[kernel]` denies unused-variable warnings.**  My first emission was just `let fire_<rule>: bool = _fire_<rule>;` with no consumer; the kernel macro turned the `unused_variables` lint into an error.  Fix: emit a trailing `let _trace_<rule>: (bool, bool) = (can_fire_<rule>, fire_<rule>);` that "uses" both bindings.  The `_`-prefixed `_trace_<rule>` is itself allowed-unused per Rust convention.
+- **Whether the trace bindings actually appear in VCDs depends on the framework.**  This PR ensures the bindings are emitted; surfacing them through to the VCD is the trace infrastructure's job.  If RHDL's NTL passes optimise away dead-code bindings before the trace stage runs, the trace exposure may be a no-op until the framework integrates with this signal-naming convention.  Tracked as a follow-up for the trace track.
+
+**Validation:**
+
+- **92 tests pass** across the rule crates (84 from PR #27 + 8 new in `rule_trace.rs`).
+- All 84 pre-existing tests continue to pass — including the existing `mutually_exclusive_emission.rs` token-level tests that pattern-match on `_fire_<rule>`, confirming the underscore-prefixed internal names are unchanged.
+- Iverilog RTL+NTL round-trip succeeds on the traced kernel.
+
+### Move 2 closure
+
+This PR closes Move 2 (diagnostic polish for the BSV-capture wedge, `rule-architecture.md` §17.4 play 2).  Recap of what shipped along the way:
+
+| Diagnostic / surface | Shipped in |
+|---|---|
+| `conflict_free` violation rejected at expansion | PR #21 |
+| `urgent_before` cycle / self-loop / unknown / meaningless edge | PR #23 |
+| `mutually_exclusive` suppressor elision (and token-level proof) | PR #23 |
+| Auto-hold for unused struct fields (function-like form) | PR #27 |
+| `#[output]` Form B (no `self_q` parameter) | PR #27 |
+| `#[rule(trace)]` opt-in per-rule trace signals | this PR |
+
+What's deferred to Move 2.5 / future polish:
+- **Conflict-suppression diagnostic at expansion** — surface "rule X is suppressed by rule Y because of write-read overlap" as a compile-time NOTE.  Useful for the FIFO-pilot footgun catch.
+- **Diagnose-and-suggest annotations** — when the macro emits a suppressor, suggest the right annotation (`mutually_exclusive`, `conflict_free`, `urgent_before`) at the call site.  The §17.4 wedge mentions this as the bar for "noticeable within five minutes of a BSV user trying RHDL."
+- **Conflict-graph visualisation in errors** — render the conflict matrix as a graph in the diagnostic.  Bigger lift; depends on miette's rendering capability.
+- **Framework-side VCD integration** — make the new `fire_<rule>` / `can_fire_<rule>` aliases actually surface in VCDs (not just live as `let` bindings in the kernel).  Cross-cutting; tracked as a separate trace-track item.
+
+Move 2 is **wrapped up** for the rule-track surface.  Next strategic move: **Move 3 — BSV → RHDL porting guide chapter** (`doc/book/src/migration/from-bsv.md` per §17.4 play 3).  The pilot widgets and converted-syntax patterns from PRs #25 / #26 are the worked examples that chapter needs.
+
+---
+
 ## 2026-04-30 — rhdl-rule auto-hold for unused struct fields + `#[output]` without `self_q`
 
 **Paths:**
