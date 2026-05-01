@@ -231,10 +231,25 @@ pub fn expand_rule_kernel(input: TokenStream) -> syn::Result<TokenStream> {
     }
 
     let struct_generics = item_struct.generics.clone();
+
+    // Extract the struct's field names so the lowering can auto-hold
+    // any field that no rule touches.  Only the function-like form
+    // can do this — the attribute form doesn't see the struct.
+    let expected_field_names: Vec<Ident> = item_struct
+        .fields
+        .iter()
+        .filter_map(|f| f.ident.clone())
+        .collect();
+
     let mut struct_emit = item_struct.clone();
     inject_derives(&mut struct_emit);
 
-    let body = lower_rule_kernel(&struct_name, &struct_generics, item_impl)?;
+    let body = lower_rule_kernel(
+        &struct_name,
+        &struct_generics,
+        item_impl,
+        Some(expected_field_names),
+    )?;
     Ok(quote! {
         #struct_emit
         #body
@@ -280,7 +295,13 @@ pub fn expand_rule_kernel_attr(item: TokenStream) -> syn::Result<TokenStream> {
     };
 
     let struct_generics = item_impl.generics.clone();
-    lower_rule_kernel(&struct_ident, &struct_generics, item_impl)
+    // Attribute form can't see the struct, so it can't supply the
+    // expected-field list.  Unused fields will surface as Rust
+    // compile errors ("missing field `xyz` in initializer of D").
+    // The user can either touch the field in some rule, remove it
+    // from the struct, or use the function-like form which auto-
+    // holds.  Documented in `rule-architecture.md` §4.5.
+    lower_rule_kernel(&struct_ident, &struct_generics, item_impl, None)
 }
 
 /// Shared lowering — the heart of the macro.  Both the function-like
@@ -299,6 +320,7 @@ fn lower_rule_kernel(
     struct_name: &Ident,
     struct_generics: &Generics,
     item_impl: ItemImpl,
+    expected_field_names: Option<Vec<Ident>>,
 ) -> syn::Result<TokenStream> {
     // Walk impl items, classify.
     let mut rules: Vec<Rule> = Vec::new();
@@ -471,17 +493,18 @@ fn lower_rule_kernel(
     // field reads.  Order of iteration is stable (BTreeSet) so the
     // emitted code is deterministic across compilations.
     //
-    // Rationale: the function-like form historically derived this
-    // list from the struct definition.  The attribute form
-    // (`#[rule_kernel]` on an impl block) doesn't see the struct,
-    // so the only universally-available source is the impl itself.
-    // Both forms now share this code so the two emit byte-identical
-    // output for the same impl block.  The implication for the
-    // user: **every register field of the struct must be touched
-    // by at least one rule (read, written) or by the #[output]
-    // method**; otherwise the generated D constructor will be
-    // missing that field and the user will get a clear Rust error
-    // ("missing field `xyz` in initializer of D").
+    // The function-like form ALSO supplies the struct's actual field
+    // list (`expected_field_names`); any field that exists in the
+    // struct but isn't touched by any rule or output gets **auto-hold
+    // semantics** in the lowered kernel — `_next_<field> = q.<field>`
+    // with no rule ever overwriting it, so the field stays at its
+    // current value forever.  This means users can declare DFF fields
+    // in the struct without being forced to add `let _ = *self_q.x;`
+    // workarounds in the output method just to satisfy the macro.
+    //
+    // The attribute form can't see the struct, so it skips this and
+    // relies on the user to either touch every field in some rule or
+    // accept Rust's "missing field" error.  Documented in §4.5.
     let mut field_name_set: std::collections::BTreeSet<String> =
         std::collections::BTreeSet::new();
     for rule in &rules {
@@ -494,6 +517,11 @@ fn lower_rule_kernel(
     }
     for f in &output.field_reads {
         field_name_set.insert(f.clone());
+    }
+    if let Some(expected) = expected_field_names.as_ref() {
+        for f in expected {
+            field_name_set.insert(f.to_string());
+        }
     }
     let field_names: Vec<Ident> = field_name_set
         .iter()
@@ -997,39 +1025,55 @@ fn parse_rule_annotations(method: &ImplItemFn) -> syn::Result<RuleAnnotations> {
 }
 
 fn parse_output(method: &ImplItemFn) -> syn::Result<OutputMethod> {
-    // Expect: fn output(self_q: &Self, <input>: <Type>) -> <Out> { ... }
-    let mut iter = method.sig.inputs.iter();
-    let first = iter.next().ok_or_else(|| {
-        syn::Error::new(method.sig.span(), "#[output] must take two parameters")
-    })?;
-    // Validate the first argument structurally; we only use it to
-    // confirm the user followed the convention.
-    match first {
-        FnArg::Typed(pt) => {
-            if !matches!(&*pt.ty, Type::Reference(_)) {
-                return Err(syn::Error::new(
-                    pt.ty.span(),
-                    "#[output]'s first parameter must be `self_q: &Self` (a typed reference)",
-                ));
-            }
-        }
-        FnArg::Receiver(_) => {
-            // Allow `&self` too; we'll rewrite `self.field` to
-            // `q.field` in the body.
-        }
-    }
-    let input_arg = iter.next().ok_or_else(|| {
-        syn::Error::new(
-            method.sig.span(),
-            "#[output] must take a second `input: <Type>` parameter",
-        )
-    })?;
-    if iter.next().is_some() {
+    // Two accepted signatures:
+    //   1. `fn output(self_q: &Self, input: <Type>) -> <Out>` — the
+    //      historical form; output reads state via `*self_q.field`.
+    //   2. `fn output(input: <Type>) -> <Out>` — new shorthand for
+    //      stateless outputs (output is purely a function of input).
+    //      Useful when no field-read is needed, so the user doesn't
+    //      have to declare and silence an unused `self_q` parameter.
+    //
+    // We distinguish purely by parameter count and first-parameter
+    // shape: if the first parameter looks like a receiver
+    // (`FnArg::Receiver` or `FnArg::Typed` whose type is a
+    // reference), we treat it as the receiver.  Otherwise we treat
+    // it as the input.  The macro requires at least one parameter
+    // (the input) and at most two (receiver + input).
+    let params: Vec<&FnArg> = method.sig.inputs.iter().collect();
+    if params.is_empty() || params.len() > 2 {
         return Err(syn::Error::new(
             method.sig.span(),
-            "#[output] takes exactly two parameters: `self_q: &Self` and `input: <Type>`",
+            "#[output] takes either one parameter (`input: <Type>`) or two \
+             (`self_q: &Self, input: <Type>`); got a different shape",
         ));
     }
+
+    let first_is_receiver = match params[0] {
+        FnArg::Receiver(_) => true,
+        FnArg::Typed(pt) => matches!(&*pt.ty, Type::Reference(_)),
+    };
+
+    let (receiver_param, input_arg) = if params.len() == 2 {
+        if !first_is_receiver {
+            return Err(syn::Error::new(
+                params[0].span(),
+                "#[output]'s first parameter (when two are present) must be \
+                 a receiver — `self_q: &Self` or `&self`",
+            ));
+        }
+        (Some(params[0]), params[1])
+    } else {
+        // 1 parameter — it must be the input.
+        if first_is_receiver {
+            return Err(syn::Error::new(
+                params[0].span(),
+                "#[output] takes the input as its sole parameter when no \
+                 receiver is declared; got something that looks like a \
+                 receiver instead",
+            ));
+        }
+        (None, params[0])
+    };
     let (input_name, input_type) = match input_arg {
         FnArg::Typed(pat_type) => {
             let name = match &*pat_type.pat {
@@ -1046,7 +1090,7 @@ fn parse_output(method: &ImplItemFn) -> syn::Result<OutputMethod> {
         FnArg::Receiver(_) => {
             return Err(syn::Error::new(
                 input_arg.span(),
-                "#[output]'s second parameter must be a typed input",
+                "#[output]'s input parameter must be a typed input, not `self`",
             ));
         }
     };
@@ -1061,13 +1105,15 @@ fn parse_output(method: &ImplItemFn) -> syn::Result<OutputMethod> {
         }
     };
 
-    // Determine the receiver name (`self_q` or `self`) so we
-    // can rewrite its field-access references to `q.field`.
-    let receiver_name: Ident = match first {
-        FnArg::Receiver(_) => Ident::new("self", first.span()),
-        FnArg::Typed(pt) => match &*pt.pat {
+    // Determine the receiver name (`self_q` or `self`) so we can
+    // rewrite its field-access references to `q.field`.  If there
+    // is no receiver, use a sentinel name that matches nothing.
+    let receiver_name: Ident = match receiver_param {
+        None => Ident::new("__no_receiver__", method.sig.span()),
+        Some(FnArg::Receiver(_)) => Ident::new("self", method.sig.span()),
+        Some(FnArg::Typed(pt)) => match &*pt.pat {
             Pat::Ident(pi) => pi.ident.clone(),
-            _ => Ident::new("self_q", first.span()),
+            _ => Ident::new("self_q", method.sig.span()),
         },
     };
 

@@ -31,6 +31,52 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-04-30 — rhdl-rule auto-hold for unused struct fields + `#[output]` without `self_q`
+
+**Paths:**
+
+- `crates/rhdl-rule-core/src/lib.rs` — `lower_rule_kernel` takes a new optional `expected_field_names: Option<Vec<Ident>>` parameter; the function-like entry point passes the struct's field list, the attribute form passes `None`.  When `Some`, those names are unioned into the field-name set so the auto-hold (`_next_<field> = q.<field>` initialization with no overwrite) covers struct fields no rule touches.
+  Also relaxes `parse_output` to accept either `fn output(self_q: &Self, i: I) -> O` (Form A — current) or `fn output(i: I) -> O` (Form B — new, no receiver when the output body doesn't read state).
+- `crates/rhdl-rule/tests/auto_hold_unused_fields.rs` (new, 6 tests) — single unused field, multiple unused fields, output-only field reference, **`#[output]` with no receiver parameter**, iverilog round-trip.
+- `crates/rhdl-rule/tests/pilot_composition.rs` — removes the `let _ = *self_q.last_idx;` workaround that was needed only to satisfy the every-field-touched constraint AND switches the `PriorityArbiter` output method to the no-receiver form (`fn output(requests: Bits<N>) -> Option<Bits<W>>`) since it doesn't read state.
+- `rule-architecture.md` §4.5 — adds two new subsections: "Auto-hold for unused struct fields" (the function-like-only auto-hold + attribute-form workarounds) and "`#[output]` without `self_q` when state isn't read" (Form A vs Form B).
+
+**Why this, why now:** the every-field-touched constraint was the load-bearing footgun called out in PR #25's Move-1 retrospective.  Pilot 4 (the rule-kernel-plus-traditional-widget composition demo) had to add `let _ = *self_q.last_idx;` purely to dodge a cryptic Rust compile error ("missing field `last_idx` in initializer of D"), with no semantic purpose.  The follow-up planned a miette-style diagnostic; this PR ships the better fix instead — the macro auto-emits hold semantics for unused fields, so the workaround disappears.
+
+The `#[output]` Form-B addition came out of removing the workaround: with auto-hold, Pilot 4's output method had nothing left for `self_q` to do, but the macro still required the parameter.  User pointed out: "Functions that don't use `self_q` shouldn't have it as argument."  Right.  Form B drops the parameter entirely; the macro detects which form by counting parameters.
+
+**Design decisions:**
+
+- **Auto-hold, not error-with-suggestion.**  The first plan was to replace Rust's cryptic "missing field" error with a clear miette diagnostic at the macro level.  Auto-hold goes one step further: the macro just *does* the obvious thing (hold the field forever) instead of asking the user to.  The user's intent — "I want this field to exist" — is satisfied; the lowering does the trivially-correct thing.
+
+- **Function-like form only.**  Auto-hold requires knowing the struct's field list.  The function-like form passes both struct and impl into the macro; the attribute form sees only the impl.  No way for the attribute form to know what struct fields exist without cross-macro state, which `architecture.md` doesn't permit.  The asymmetry is documented in §4.5; users of the attribute form keep the every-field-touched contract.
+
+- **No cycle-cost penalty.**  An auto-held field's `_next_<field> = q.<field>` reduces in NTL to a wire-through; the synthesizer prunes it as dead.  Same gate count as if the field weren't there.
+
+- **Doesn't change the conflict matrix or the scheduler.**  Auto-hold is purely a kernel-emission concern.  The conflict matrix is built from rule read/write sets; auto-held fields participate in neither, so the matrix is unchanged.
+
+**Surprises and gotchas:**
+
+- **Output method bare reads of `self_q` still don't lower.**  When removing the Pilot 4 workaround, my first attempt was `let _ = self_q;` (silence the unused-parameter warning).  This fails because `self_q` isn't bound in the kernel function's scope — the macro only rewrites `*self_q.field` and `self_q.field` (field accesses), not bare `self_q`.  Fix: `#[allow(unused_variables)]` on the output method.  Worth a future enhancement: have the OutputBodyWalker recognise and drop bare `self_q` references too.
+
+- **Non-DFF struct fields would also get auto-held.**  The macro doesn't distinguish DFF fields from sub-circuit fields; it auto-holds whatever's in the struct.  For a sub-circuit (`Constant<T>`, a FIFO, etc.), the `_next_<field> = q.<field>` pattern would fail to compile because the `Q` and `D` types differ.  This is the same limitation as before — rule kernels assume DFF-shaped fields throughout — auto-hold doesn't make it worse.  Tracked separately as the "non-DFF sub-circuit support" follow-up.
+
+**Validation:**
+
+- **84 tests pass** across the rule crates (78 from PR #26 + 6 new in `auto_hold_unused_fields.rs`).
+- All pre-existing tests pass — including Pilot 4 with the workaround removed AND with the no-receiver output form.  The auto-hold is byte-identical to the user's previous workaround at the hardware level.
+- Iverilog RTL+NTL round-trip succeeds on every test in the new file.
+
+**Follow-ups:**
+
+- **Diagnostic surface for the attribute form's "missing field" error.**  Today the attribute form lets Rust's "missing field `xyz`" error reach the user.  A miette-spanned message at the macro level naming the offending struct field and suggesting the three fixes (touch in rule / reference in output / switch to function-like form) would be much friendlier.  Cheap to add once we have a way to peek at the struct's field list in the attribute-form invocation context (which today we don't, but a `#[rule_kernel_attr(fields(...))]` annotation would do it).
+
+- **OutputBodyWalker drops bare `self_q` references.**  When the body uses `let _ = self_q;` for the unused-parameter warning, drop the statement (or rewrite it to `let _ = ();`).  Removes the need for `#[allow(unused_variables)]` on the output method.
+
+- **Per-rule trace signals** (`_fire_<rule>` exposed in the VCD).  Independent of auto-hold; on the Move-2 polish list.
+
+---
+
 ## 2026-04-30 — rhdl-rule direct-assignment + per-rule preamble (the `set!` macro retires from primary use)
 
 **Paths:**
