@@ -92,6 +92,7 @@ fn run_single(program: Vec<u32>, max_cycles: usize) -> [u32; 256] {
             Some(ResetOrData::Data(SInIn {
                 instr: bits::<32>(instr as u128),
                 mem_rdata: bits::<32>(mem_rdata as u128),
+                int_pending: bits::<32>(0),
             }))
         },
         100,
@@ -120,6 +121,7 @@ fn run_pipelined(program: Vec<u32>, max_cycles: usize) -> [u32; 256] {
             Some(ResetOrData::Data(PIn {
                 instr: bits::<32>(instr as u128),
                 mem_rdata: bits::<32>(mem_rdata as u128),
+                int_pending: bits::<32>(0),
             }))
         },
         100,
@@ -298,6 +300,7 @@ fn mret_iverilog_round_trip() -> Result<(), RHDLError> {
                 _ => HALT as u128,
             }),
             mem_rdata: bits::<32>(0),
+            int_pending: bits::<32>(0),
         })
         .collect();
     let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);

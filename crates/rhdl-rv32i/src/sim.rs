@@ -69,6 +69,11 @@ pub struct Cpu {
     /// in order.  Used by the lockstep harness to compare against
     /// the hardware's mem-write trace.
     pub mem_writes: Vec<(u32, u32)>,
+    /// External-interrupt-pending vector (mirrors into `mip`).
+    /// Bits 3 (M-software), 7 (M-timer), 11 (M-external).  Set by
+    /// the test harness; the simulator polls this at the start of
+    /// each `step` (interrupts taken between instructions).
+    pub int_pending: u32,
 }
 
 impl Cpu {
@@ -87,6 +92,7 @@ impl Cpu {
             retired: 0,
             halted: false,
             mem_writes: Vec::new(),
+            int_pending: 0,
         }
     }
 
@@ -134,20 +140,78 @@ impl Cpu {
     }
 
     /// Vector to mtvec; save trapping PC to mepc; set mcause and
-    /// mtval.  Used for the misaligned-target trap (cause = 0),
-    /// which writes the misaligned target address to mtval.
+    /// mtval; atomically save mstatus.MIE → MPIE and clear MIE.
+    /// Used for sync exceptions (the simulator's `take_trap` wraps
+    /// it with tval=0) and for interrupts.
     fn take_trap_with_val(&mut self, cause: u32, tval: u32) {
         self.write_csr(0x341, self.pc);     // mepc
         self.write_csr(0x342, cause);       // mcause
         self.write_csr(0x343, tval);        // mtval
+        // mstatus.MIE → MPIE; mstatus.MIE ← 0.
+        let mstatus = self.read_csr(0x300);
+        let mie_bit = mstatus & 0x8;                  // bit 3
+        let cleared = mstatus & !0x88u32;             // clear bits 3 and 7
+        let new_mstatus = cleared | (mie_bit << 4);   // bit 3 → bit 7
+        self.write_csr(0x300, new_mstatus);
         self.pc = self.read_csr(0x305);     // mtvec
+    }
+
+    /// MRET: restore mstatus.MIE from MPIE; set MPIE = 1; PC ← mepc.
+    pub fn execute_mret(&mut self) {
+        let mstatus = self.read_csr(0x300);
+        let mpie_bit = mstatus & 0x80;                // bit 7
+        let cleared = mstatus & !0x88u32;             // clear bits 3 and 7
+        let new_mstatus = cleared | (mpie_bit >> 4) | 0x80;  // bit 7 → bit 3, MPIE = 1
+        self.write_csr(0x300, new_mstatus);
+        self.pc = self.read_csr(0x341);  // PC ← mepc
+    }
+
+    /// Pending+enabled M-mode interrupts: `mip & mie & MIE_M_MASK`.
+    fn int_pending_enabled(&self) -> u32 {
+        self.int_pending & self.read_csr(0x304) & 0x888
+    }
+
+    /// Should an interrupt fire this cycle?  True iff mstatus.MIE
+    /// is set AND any M-mode interrupt is pending+enabled.
+    fn interrupt_pending(&self) -> bool {
+        let mstatus_mie = (self.read_csr(0x300) & 0x8) != 0;
+        mstatus_mie && self.int_pending_enabled() != 0
+    }
+
+    /// Pick the highest-priority pending+enabled interrupt cause.
+    /// Per spec: M-external > M-software > M-timer.
+    fn interrupt_cause(&self) -> u32 {
+        let pe = self.int_pending_enabled();
+        if pe & 0x800 != 0 {
+            0x8000_000B  // M-external
+        } else if pe & 0x008 != 0 {
+            0x8000_0003  // M-software
+        } else {
+            0x8000_0007  // M-timer
+        }
     }
 
     /// Execute one instruction.  Fetches from `program[pc/4]`;
     /// if pc/4 is past the end of `program`, treats the fetched
     /// instruction as 0 (which decodes as illegal and triggers a
     /// trap).
+    ///
+    /// Interrupt-pending check happens FIRST — interrupts taken
+    /// between instructions per the privileged-ISA spec, so a
+    /// pending+enabled interrupt squashes the to-be-executed
+    /// instruction and traps.  Same priority/cause as the hardware
+    /// path.
     pub fn step(&mut self, program: &[u32]) {
+        // Check for pending interrupts FIRST.  When an interrupt
+        // fires, the in-flight instruction is squashed and mepc =
+        // current PC (so MRET re-executes it).
+        if self.interrupt_pending() {
+            self.retired += 1;
+            let cause = self.interrupt_cause();
+            self.take_trap_with_val(cause, 0);
+            return;
+        }
+
         let pc_word = (self.pc / 4) as usize;
         let instr = if pc_word < program.len() { program[pc_word] } else { 0 };
         self.retired += 1;
@@ -174,7 +238,7 @@ impl Cpu {
             SystemOp::Ecall  => { self.take_trap(11); return; }
             SystemOp::Ebreak => { self.take_trap(3); return; }
             SystemOp::Mret   => {
-                self.pc = self.read_csr(0x341);  // PC ← mepc
+                self.execute_mret();              // restore MIE; PC ← mepc
                 return;
             }
             SystemOp::Wfi    => {

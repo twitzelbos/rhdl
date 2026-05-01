@@ -64,6 +64,9 @@ pub struct In {
     pub instr: Bits<32>,
     /// Data-memory read response.
     pub mem_rdata: Bits<32>,
+    /// External-interrupt-pending vector (mirrors into `mip`).
+    /// See [`crate::cpu::In::int_pending`].
+    pub int_pending: Bits<32>,
 }
 
 /// Outputs from the pipelined core.  Same shape as the single-cycle
@@ -312,19 +315,48 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let target_misaligned: bool = (prospective_target & bits::<32>(0x3)) != bits::<32>(0);
     let take_misaligned: bool = attempts_redirect && target_misaligned;
 
+    // External-interrupt detection.  Fired when the in-flight
+    // Execute-stage instruction is valid AND mstatus.MIE is set
+    // AND any pending+enabled M-mode interrupt bit is asserted.
+    // (The "valid" gate prevents an interrupt from firing on a
+    // bubble — interrupts must be tied to a retired instruction
+    // boundary; without a valid in-flight, mepc would be ambiguous.)
+    //
+    // Priority among pending+enabled interrupts (per spec):
+    //   M-external (bit 11) > M-software (bit 3) > M-timer (bit 7)
+    let int_pe: Bits<32> = q.csrs.int_pending_enabled;
+    let int_meip: bool = (int_pe & bits::<32>(0x800)) != bits::<32>(0);
+    let int_msip: bool = (int_pe & bits::<32>(0x008)) != bits::<32>(0);
+    let int_mtip: bool = (int_pe & bits::<32>(0x080)) != bits::<32>(0);
+    let take_interrupt: bool = q.id_ex.valid
+        && q.csrs.mstatus_mie
+        && (int_meip || int_msip || int_mtip);
+    let interrupt_cause: Bits<32> = if int_meip {
+        bits::<32>(0x8000_000B)
+    } else if int_msip {
+        bits::<32>(0x8000_0003)
+    } else {
+        bits::<32>(0x8000_0007)
+    };
+
     // Trap detection in Execute: ECALL / EBREAK / illegal
     // instruction (recognised by the decoder's `illegal` flag,
-    // forwarded via id_ex.opcode == Illegal) / misaligned-target.
-    // All four squash IF/ID, ID/EX, and EX/MEM-next; redirect PC
-    // to mtvec; and signal the CSR file's trap port.  MRET is the
-    // inverse: PC ← mepc; squashes the same three slots so the
-    // trap handler's tail doesn't get re-executed.
-    let take_ecall:   bool = q.id_ex.valid && q.id_ex.system_op == SystemOp::Ecall;
-    let take_ebreak:  bool = q.id_ex.valid && q.id_ex.system_op == SystemOp::Ebreak;
-    let take_illegal: bool = q.id_ex.valid && q.id_ex.opcode == Opcode::Illegal;
-    let take_trap:    bool = take_ecall || take_ebreak || take_illegal || take_misaligned;
-    let take_mret:    bool = q.id_ex.valid && q.id_ex.system_op == SystemOp::Mret;
-    let trap_cause: Bits<32> = if take_misaligned {
+    // forwarded via id_ex.opcode == Illegal) / misaligned-target /
+    // external-interrupt.  All five squash IF/ID, ID/EX, and
+    // EX/MEM-next; redirect PC to mtvec; and signal the CSR file's
+    // trap port.  Interrupts take priority over sync exceptions
+    // and over MRET — so any in-flight instruction is squashed when
+    // an interrupt fires.  MRET is the inverse: PC ← mepc.
+    let take_ecall:   bool = !take_interrupt && q.id_ex.valid && q.id_ex.system_op == SystemOp::Ecall;
+    let take_ebreak:  bool = !take_interrupt && q.id_ex.valid && q.id_ex.system_op == SystemOp::Ebreak;
+    let take_illegal: bool = !take_interrupt && q.id_ex.valid && q.id_ex.opcode == Opcode::Illegal;
+    let take_sync_misaligned: bool = !take_interrupt && take_misaligned;
+    let take_sync_trap: bool = take_ecall || take_ebreak || take_illegal || take_sync_misaligned;
+    let take_trap:    bool = take_interrupt || take_sync_trap;
+    let take_mret:    bool = !take_interrupt && q.id_ex.valid && q.id_ex.system_op == SystemOp::Mret;
+    let trap_cause: Bits<32> = if take_interrupt {
+        interrupt_cause
+    } else if take_sync_misaligned {
         bits::<32>(0)
     } else if take_illegal {
         bits::<32>(2)
@@ -333,7 +365,7 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     } else {
         bits::<32>(11)
     };
-    let trap_val: Bits<32> = if take_misaligned {
+    let trap_val: Bits<32> = if take_sync_misaligned {
         prospective_target
     } else {
         bits::<32>(0)
@@ -532,6 +564,8 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         trap_pc: q.id_ex.pc,
         trap_cause,
         trap_val,
+        mret_en: take_mret,
+        int_pending: i.int_pending,
     };
 
     // ---- Commit pipeline registers ----------------------------------

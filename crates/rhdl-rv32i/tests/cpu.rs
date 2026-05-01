@@ -82,6 +82,7 @@ fn run_program(program: Vec<u32>, cycles: usize) -> Vec<(Bits<32>, Out)> {
             In {
                 instr: bits::<32>(instr as u128),
                 mem_rdata: bits::<32>(0),
+                int_pending: bits::<32>(0),
             }
         })
         .collect();
@@ -193,6 +194,7 @@ fn cpu_iverilog_round_trip() -> Result<(), RHDLError> {
         .map(|cycle| In {
             instr: bits::<32>(addi(1, 0, cycle as i32) as u128),
             mem_rdata: bits::<32>(0),
+            int_pending: bits::<32>(0),
         })
         .collect();
     let uut = Cpu::default();

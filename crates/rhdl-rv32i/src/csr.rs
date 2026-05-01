@@ -9,22 +9,39 @@
 //!
 //! | Address | Name      | RW | Purpose |
 //! |---------|-----------|----|---------|
-//! | 0x300   | mstatus   | RW | Machine status register (a few bits used; reserved bits read 0) |
+//! | 0x300   | mstatus   | RW | Machine status register (MIE bit 3, MPIE bit 7) |
 //! | 0x301   | misa      | RO | ISA encoding — `0x4000_0100` for RV32I |
+//! | 0x304   | mie       | RW | Machine interrupt enable (MSIE 3 / MTIE 7 / MEIE 11) |
 //! | 0x305   | mtvec     | RW | Trap vector base address |
 //! | 0x340   | mscratch  | RW | Scratch register for trap handlers |
 //! | 0x341   | mepc      | RW | Saved PC at trap entry |
-//! | 0x342   | mcause    | RW | Trap cause code |
+//! | 0x342   | mcause    | RW | Trap cause code (bit 31 set for interrupts) |
 //! | 0x343   | mtval     | RW | Trap value (badaddr or instruction) |
+//! | 0x344   | mip       | RO | Machine interrupt pending — mirrors input port |
 //! | 0xF14   | mhartid   | RO | Hart ID — always 0 (single hart) |
 //!
 //! Writes to read-only CSRs are silently dropped; reads always
 //! return the constant value.  Writes to the read-write CSRs commit
 //! at the next clock edge.
 //!
+//! ## Interrupt model
+//!
+//! `mip` is read-only and mirrors the CPU's `int_pending` input
+//! port directly — the platform (test harness, in our case) is
+//! responsible for asserting the appropriate bits.  `mie` is
+//! software-writable.  An interrupt fires when:
+//!
+//!   `mstatus.MIE && ((mip & mie) & {bit3, bit7, bit11}) != 0`
+//!
+//! at any inter-instruction boundary.  Trap entry atomically
+//! saves `mstatus.MIE` into `mstatus.MPIE`, clears `mstatus.MIE`,
+//! and updates `mepc` / `mcause` / `mtval`.  `MRET` restores
+//! `mstatus.MIE` from `mstatus.MPIE` and sets `mstatus.MPIE = 1`
+//! per the privileged-ISA spec.
+//!
 //! Unrecognized CSR addresses return 0 on read and silently drop
 //! writes.  The RV32I privileged spec requires unimplemented CSR
-//! access to trap as illegal instruction; v0.3 simplifies to no-op
+//! access to trap as illegal instruction; we simplify to no-op
 //! for the addresses our tests don't exercise.  Tracked as a
 //! follow-up.
 
@@ -35,16 +52,39 @@ use rhdl_fpga::core::dff;
 // and the CPU executor.
 pub const CSR_MSTATUS: u32  = 0x300;
 pub const CSR_MISA: u32     = 0x301;
+pub const CSR_MIE: u32      = 0x304;
 pub const CSR_MTVEC: u32    = 0x305;
 pub const CSR_MSCRATCH: u32 = 0x340;
 pub const CSR_MEPC: u32     = 0x341;
 pub const CSR_MCAUSE: u32   = 0x342;
 pub const CSR_MTVAL: u32    = 0x343;
+pub const CSR_MIP: u32      = 0x344;
 pub const CSR_MHARTID: u32  = 0xF14;
 
 /// `misa` value reported to the program: bit 8 = "I" extension;
 /// bits 31:30 = 01 indicating XLEN = 32.
 pub const MISA_VALUE: u32 = (1 << 30) | (1 << 8);
+
+/// `mstatus.MIE` (Machine Interrupt Enable) — bit 3.
+pub const MSTATUS_MIE_BIT: u32  = 3;
+/// `mstatus.MPIE` (Machine Previous Interrupt Enable) — bit 7.
+pub const MSTATUS_MPIE_BIT: u32 = 7;
+
+/// Bit positions inside `mip` / `mie` for the three M-mode
+/// interrupt sources (per RISC-V privileged spec).
+pub const MIE_MSIE_BIT: u32 = 3;   // M-software
+pub const MIE_MTIE_BIT: u32 = 7;   // M-timer
+pub const MIE_MEIE_BIT: u32 = 11;  // M-external
+
+/// Combined mask of the three M-mode interrupt-source bits.
+/// `mip & mie & MIE_M_MASK` is the set of pending+enabled M-mode
+/// interrupts.
+pub const MIE_M_MASK: u32 = (1 << MIE_MSIE_BIT) | (1 << MIE_MTIE_BIT) | (1 << MIE_MEIE_BIT);
+
+/// `mcause` interrupt cause codes (with bit 31 set for interrupts).
+pub const MCAUSE_M_SOFTWARE: u32 = 0x8000_0003;
+pub const MCAUSE_M_TIMER:    u32 = 0x8000_0007;
+pub const MCAUSE_M_EXTERNAL: u32 = 0x8000_000B;
 
 /// Inputs to the CSR file.
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
@@ -58,13 +98,24 @@ pub struct In {
     /// Write enable.
     pub wen: bool,
     /// Trap-side write port: when `trap_en` is true, mepc/mcause/mtval
-    /// are loaded from `trap_pc`/`trap_cause`/`trap_val`.  This is
-    /// separate from the CSR-instruction write port so a trap doesn't
-    /// have to go through CSRRW.
+    /// are loaded from `trap_pc`/`trap_cause`/`trap_val`, AND
+    /// `mstatus.MIE` is saved into `mstatus.MPIE` and then cleared.
+    /// This is separate from the CSR-instruction write port so a
+    /// trap doesn't have to go through CSRRW.
     pub trap_en: bool,
     pub trap_pc: Bits<32>,
     pub trap_cause: Bits<32>,
     pub trap_val: Bits<32>,
+    /// MRET-side: when `mret_en` is true, restore `mstatus.MIE`
+    /// from `mstatus.MPIE` and set `mstatus.MPIE = 1` per the
+    /// privileged-ISA spec.  Mutually exclusive with `trap_en`
+    /// (the executor never asserts both in the same cycle).
+    pub mret_en: bool,
+    /// External interrupt-pending input.  Mirrors directly into
+    /// `mip` (which is therefore read-only from software's POV).
+    /// Only bits 3 (MSI), 7 (MTI), and 11 (MEI) are meaningful;
+    /// all other bits are ignored.
+    pub int_pending: Bits<32>,
 }
 
 /// Output from the CSR file.
@@ -78,13 +129,22 @@ pub struct Out {
     /// Current `mepc` — exposed directly so the CPU can compute
     /// the MRET target without going through the read port.
     pub mepc: Bits<32>,
+    /// Current `mstatus.MIE` — exposed for the CPU's interrupt-
+    /// pending computation (avoids round-tripping through the
+    /// CSR read port for every cycle).
+    pub mstatus_mie: bool,
+    /// Pending+enabled M-mode interrupts: `mip & mie & MIE_M_MASK`.
+    /// When non-zero AND `mstatus_mie` is set, an interrupt fires.
+    pub int_pending_enabled: Bits<32>,
 }
 
-/// CSR file widget — six read-write CSRs as separate DFFs.
+/// CSR file widget — seven read-write CSRs as separate DFFs.
+/// `mip` is not stored; it mirrors the `int_pending` input directly.
 #[derive(Clone, Debug, Default, Synchronous, SynchronousDQ)]
 #[rhdl(dq_no_prefix)]
 pub struct CsrFile {
     mstatus: dff::DFF<Bits<32>>,
+    mie: dff::DFF<Bits<32>>,
     mtvec: dff::DFF<Bits<32>>,
     mscratch: dff::DFF<Bits<32>>,
     mepc: dff::DFF<Bits<32>>,
@@ -100,15 +160,19 @@ impl SynchronousIO for CsrFile {
 
 #[kernel]
 /// Read the CSR addressed by `addr`.  Read-only CSRs return their
-/// hardcoded values; unimplemented addresses return 0.
-pub fn csr_read(addr: Bits<12>, q: Q) -> Bits<32> {
+/// hardcoded values; unimplemented addresses return 0.  `mip` is
+/// derived from the live `int_pending` input rather than a stored
+/// register.
+pub fn csr_read(addr: Bits<12>, q: Q, mip: Bits<32>) -> Bits<32> {
     let mstatus_a: Bits<12>  = bits::<12>(0x300);
     let misa_a: Bits<12>     = bits::<12>(0x301);
+    let mie_a: Bits<12>      = bits::<12>(0x304);
     let mtvec_a: Bits<12>    = bits::<12>(0x305);
     let mscratch_a: Bits<12> = bits::<12>(0x340);
     let mepc_a: Bits<12>     = bits::<12>(0x341);
     let mcause_a: Bits<12>   = bits::<12>(0x342);
     let mtval_a: Bits<12>    = bits::<12>(0x343);
+    let mip_a: Bits<12>      = bits::<12>(0x344);
     let mhartid_a: Bits<12>  = bits::<12>(0xF14);
     let misa_v: Bits<32>     = bits::<32>(0x4000_0100);
 
@@ -116,6 +180,8 @@ pub fn csr_read(addr: Bits<12>, q: Q) -> Bits<32> {
         q.mstatus
     } else if addr == misa_a {
         misa_v
+    } else if addr == mie_a {
+        q.mie
     } else if addr == mtvec_a {
         q.mtvec
     } else if addr == mscratch_a {
@@ -126,6 +192,8 @@ pub fn csr_read(addr: Bits<12>, q: Q) -> Bits<32> {
         q.mcause
     } else if addr == mtval_a {
         q.mtval
+    } else if addr == mip_a {
+        mip
     } else if addr == mhartid_a {
         bits::<32>(0)
     } else {
@@ -136,18 +204,32 @@ pub fn csr_read(addr: Bits<12>, q: Q) -> Bits<32> {
 #[kernel]
 /// CSR file kernel.  Combinational read on `raddr`; synchronous
 /// write on `waddr` when `wen`; trap port writes mepc/mcause/mtval
-/// when `trap_en`.  When both `wen` and `trap_en` target the same
-/// register, the trap-port wins (matches BSV's "trap-takes-priority"
-/// convention).
+/// (and updates mstatus.MIE/MPIE) when `trap_en`; mret port
+/// restores mstatus.MIE from MPIE when `mret_en`.  When both `wen`
+/// and `trap_en` target the same register, the trap-port wins
+/// (matches BSV's "trap-takes-priority" convention).
 pub fn csr_file_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let mut d = D::dont_care();
     let mut o = Out::dont_care();
 
-    o.rdata = csr_read(i.raddr, q);
+    // mip mirrors the int_pending input directly (read-only from
+    // software's POV; the platform owns the pending bits).
+    let mip: Bits<32> = i.int_pending;
+
+    o.rdata = csr_read(i.raddr, q, mip);
     o.mtvec = q.mtvec;
     o.mepc = q.mepc;
 
+    // Expose mstatus.MIE and the pending+enabled interrupt mask
+    // as direct outputs so the CPU's interrupt-detection path
+    // doesn't have to round-trip through the CSR read port.
+    let mie_m_mask: Bits<32> = bits::<32>(0x888);  // bits 3, 7, 11
+    let mie_bit: Bits<32> = bits::<32>(8);          // 1 << 3
+    o.mstatus_mie = (q.mstatus & mie_bit) != bits::<32>(0);
+    o.int_pending_enabled = mip & q.mie & mie_m_mask;
+
     let mstatus_a: Bits<12>  = bits::<12>(0x300);
+    let mie_a: Bits<12>      = bits::<12>(0x304);
     let mtvec_a: Bits<12>    = bits::<12>(0x305);
     let mscratch_a: Bits<12> = bits::<12>(0x340);
     let mepc_a: Bits<12>     = bits::<12>(0x341);
@@ -156,6 +238,7 @@ pub fn csr_file_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
 
     // Default: hold every CSR.
     d.mstatus  = q.mstatus;
+    d.mie      = q.mie;
     d.mtvec    = q.mtvec;
     d.mscratch = q.mscratch;
     d.mepc     = q.mepc;
@@ -166,6 +249,8 @@ pub fn csr_file_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     if i.wen {
         if i.waddr == mstatus_a {
             d.mstatus = i.wdata;
+        } else if i.waddr == mie_a {
+            d.mie = i.wdata;
         } else if i.waddr == mtvec_a {
             d.mtvec = i.wdata;
         } else if i.waddr == mscratch_a {
@@ -177,21 +262,42 @@ pub fn csr_file_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         } else if i.waddr == mtval_a {
             d.mtval = i.wdata;
         }
-        // Read-only CSRs (misa, mhartid) and unrecognized
+        // Read-only CSRs (misa, mip, mhartid) and unrecognized
         // addresses silently drop the write.
     }
 
     // Trap-port writes — take priority over CSR-instruction writes
     // because a trap occurs at the cycle boundary and the in-flight
     // CSRRW would also be squashed.
+    //
+    // On trap entry, atomically:
+    //   - mepc  ← trap_pc
+    //   - mcause ← trap_cause
+    //   - mtval ← trap_val
+    //   - mstatus.MPIE ← mstatus.MIE  (save current enable)
+    //   - mstatus.MIE  ← 0            (disable interrupts in handler)
     if i.trap_en {
-        d.mepc = i.trap_pc;
+        d.mepc   = i.trap_pc;
         d.mcause = i.trap_cause;
-        d.mtval = i.trap_val;
+        d.mtval  = i.trap_val;
+
+        // Atomic mstatus update: clear bits 3 and 7 (mask 0xFFFFFF77),
+        // then OR in (old MIE shifted to MPIE position).
+        let old_mie_bit: Bits<32> = q.mstatus & bits::<32>(0x8);        // bit 3
+        let old_mie_to_mpie: Bits<32> = old_mie_bit << 4;              // bit 3 → bit 7
+        let mstatus_cleared: Bits<32> = q.mstatus & bits::<32>(0xFFFF_FF77);
+        d.mstatus = mstatus_cleared | old_mie_to_mpie;
+    } else if i.mret_en {
+        // MRET: restore MIE from MPIE; set MPIE to 1 per spec.
+        let old_mpie_bit: Bits<32> = q.mstatus & bits::<32>(0x80);     // bit 7
+        let old_mpie_to_mie: Bits<32> = old_mpie_bit >> 4;             // bit 7 → bit 3
+        let mstatus_cleared: Bits<32> = q.mstatus & bits::<32>(0xFFFF_FF77);
+        d.mstatus = mstatus_cleared | old_mpie_to_mie | bits::<32>(0x80);
     }
 
     if cr.reset.any() {
         d.mstatus = bits::<32>(0);
+        d.mie = bits::<32>(0);
         d.mtvec = bits::<32>(0);
         d.mscratch = bits::<32>(0);
         d.mepc = bits::<32>(0);
@@ -202,6 +308,8 @@ pub fn csr_file_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         o.rdata = bits::<32>(0);
         o.mtvec = bits::<32>(0);
         o.mepc = bits::<32>(0);
+        o.mstatus_mie = false;
+        o.int_pending_enabled = bits::<32>(0);
     }
     (o, d)
 }
