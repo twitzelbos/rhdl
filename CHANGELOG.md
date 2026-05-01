@@ -31,6 +31,46 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-04-30 — RHIF random-program generators for the remaining 9 opcodes — Phase 2 closes
+
+**Paths:** `crates/rhdl-core/src/rhif/property_tests.rs` (extended +400 LOC: nine new shape generators, two new tests covering them).
+
+**Why this, why now:** PR #16 left a documented gap — random-program generators for `Struct`, `Enum`, `Case`, `Exec`, `AsBits`, `AsSigned`, `Retime`, and `Wrap` (split as `Some` and `None`) — characterised as "mechanical but each requires a constant template Object built first."  This entry closes that gap.  Combined with the chain generator + the six shape generators in PR #16 + the implicit coverage of `Noop` (via the pipeline) and `Index`/`Assign` (used pervasively), all 19 RHIF opcodes are now exercised by random-program well-formedness and semantic-preservation tests.
+
+**Design decisions (per generator):**
+
+- **`generate_as_bits_program(in_w, out_w)`** — `r = arg as Bits<out_w>`.  Trivial wrapper around `op_as_bits`.
+- **`generate_as_signed_program(in_w, out_w)`** — `r = arg as SignedBits<out_w>`.  Same shape as `as_bits` but produces signed.
+- **`generate_retime_program(bit_width)`** — `r = signal::<Red>(arg); return Index(r, [SignalValue])`.  Round-trips through a `Signal<T, Red>` wrapper.  Exercises `Retime` and the signal-aware `Index`.
+- **`generate_wrap_some_program(bit_width)`** — `opt = Some(arg); return opt.discriminant`.  Builds the `Option<Bits<N>>` kind via `build_option_kind` (matches the shape RHDL's `wrap_some` helper expects: 2 variants `None`/`Some`, MSB-aligned 1-bit discriminant, `Some` carrying a single-element tuple of payload).  Returns the discriminant as `Bits(1)`.
+- **`generate_wrap_none_program(bit_width)`** — `opt = None; return opt.discriminant`.  Forces an empty literal as the wrap arg (since `wrap_none` requires the arg to be of kind `Empty`).
+- **`generate_struct_program(bit_width, rng)`** — Builds a 2-field struct `{a: arg, b: lit}`, returns `field a`.  Uses an all-zero `TypedBits` of the struct kind as the template.
+- **`generate_case_program(bit_width, rng)`** — `case (disc) { lit_a => arm_a, lit_b => arm_b, _ => arg }`.  Mixes `Slot` and `Wild` arms.
+- **`generate_enum_program(bit_width)`** — Builds the `B(arg)` variant of a 2-variant `RandEnum { A, B(_) }`, returns the discriminant.  Carefully constructs the template `TypedBits` with the discriminant bit set in the right position (MSB-aligned 1-bit).
+- **`generate_exec_program(bit_width, rng)`** — `r = call(arg)` where `call` is itself a synthetic `generate_chain_program(bit_width, 2, rng)` Object stored in `obj.externals`.  Validates the externals-consistency invariant (which would otherwise have no test against synthesised Objects).
+
+**Surprises and gotchas:**
+
+- **`op_wrap` builder doesn't take a `kind` arg.**  The `rhif_builder::op_wrap` helper sets `kind: None` because the front-end leaves it for type inference.  My synthetic Objects skip inference, so I had to construct `OpCode::Wrap` directly with `kind: Some(option_kind)` rather than going through the builder.  Same trick for `OpCode::Enum`, where I needed to set the template's discriminant bit explicitly.
+- **Enum template bit layout.**  For an MSB-aligned 1-bit discriminant + N-bit payload kind, the discriminant occupies the LAST bit of the bit vector (per `Kind::pad`).  Setting variant `B` (discriminant 1) means setting `bits.last_mut() = One` on an otherwise all-zero template — the spec for `Kind::pad` is what told me to look there.
+- **`Exec` wants its callee in `obj.externals`.**  I add the callee after `b.finish(...)` constructs the Object — `ProgramBuilder` doesn't have first-class support for externals (didn't seem worth a builder method for the one generator that needs it).
+- **`build_result_kind` is currently unused.**  I built it for parity with `build_option_kind`; no `Wrap(Ok)` / `Wrap(Err)` generators yet because they'd be near-duplicates of the `Some`/`None` pair.  Marked `#[allow(dead_code)]` with a note for the future.
+
+**Validation:**
+
+- **9 new shape generators** in `rhdl-core::rhif::property_tests`: `generate_as_bits_program`, `generate_as_signed_program`, `generate_retime_program`, `generate_wrap_some_program`, `generate_wrap_none_program`, `generate_struct_program`, `generate_case_program`, `generate_enum_program`, `generate_exec_program`.
+- **2 new tests** that cover all 9 — one for well-formedness by construction, one for semantic preservation across the manual pass pipeline.
+- **All 19 RHIF opcodes are now covered** by random-program testing (counting `Noop` via the pipeline's `Noop`-insertion and `Index`/`Assign` via implicit use in other generators).
+- **Full test suite green:** 142 `rhdl-core` lib tests + 844 `rhdl-fpga` lib tests + 1 ignored.
+
+**Follow-ups that remain:**
+
+- **CI integration.** Per direction.
+- **Multi-cycle structure-aware fuzzers for protocol PHYs** — best done at the per-widget integration level rather than the RHIF property level.
+- **Phases 3–5** (PLT Redex, Coq, verified extraction) remain research-target sketches.
+
+---
+
 ## 2026-04-30 — RHIF property-based testing — Phase 2 follow-ups
 
 **Paths:** `crates/rhdl-core/src/rhif/property_tests.rs` (extended +500 LOC: synthetic SymbolMap helper, structured-arguments helper, six new random-program shape generators, three new tests), `crates/rhdl-core/src/rhif/spec_drift.rs` (new, ~110 LOC), `crates/rhdl-core/src/rhif/mod.rs` (registers the new module), `crates/rhdl-fpga/src/widget_property_corpus.rs` (extended: `InputStrategy` enum, `StructuredFirstCycle` path, Modbus master + slave re-added to lowering correctness corpus).

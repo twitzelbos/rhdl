@@ -792,6 +792,318 @@ pub fn generate_cast_program(
     b.finish(r2_slot, &format!("random_cast_{in_width}b_to_{out_width}b"))
 }
 
+/// Build the `Option<payload>` kind in the shape RHDL's `wrap_some`
+/// / `wrap_none` helpers expect: 2 variants ("None", "Some") with
+/// the `Some` variant carrying a single-element tuple of `payload`,
+/// and a 1-bit MSB-aligned unsigned discriminant.
+fn build_option_kind(payload: Kind) -> Kind {
+    use crate::types::kind::{DiscriminantAlignment, DiscriminantType};
+    Kind::make_enum(
+        &format!("Option::<{payload:?}>"),
+        vec![
+            Kind::make_variant("None", Kind::Empty, 0),
+            Kind::make_variant("Some", Kind::make_tuple(vec![payload].into()), 1),
+        ],
+        Kind::make_discriminant_layout(1, DiscriminantAlignment::Msb, DiscriminantType::Unsigned),
+    )
+}
+
+/// Build the `Result<ok, err>` kind in the shape RHDL's `wrap_ok`
+/// / `wrap_err` helpers expect.  Currently unused by the public
+/// generators but kept for parity with [`build_option_kind`] —
+/// future `wrap_ok` / `wrap_err` generators will use it.
+#[allow(dead_code)]
+fn build_result_kind(ok: Kind, err: Kind) -> Kind {
+    use crate::types::kind::{DiscriminantAlignment, DiscriminantType};
+    Kind::make_enum(
+        &format!("Result::<{ok:?}, {err:?}>"),
+        vec![
+            Kind::make_variant("Ok", Kind::make_tuple(vec![ok].into()), 0),
+            Kind::make_variant("Err", Kind::make_tuple(vec![err].into()), 1),
+        ],
+        Kind::make_discriminant_layout(1, DiscriminantAlignment::Msb, DiscriminantType::Unsigned),
+    )
+}
+
+/// Generate a program that casts the argument to a different
+/// unsigned width via `AsBits`.  Shape: `r = arg as Bits<n>`.
+pub fn generate_as_bits_program(in_width: usize, out_width: usize) -> Object {
+    use crate::rhif::rhif_builder::op_as_bits;
+    use crate::rhif::spec::Slot;
+    let in_kind = Kind::Bits(in_width);
+    let out_kind = Kind::Bits(out_width);
+    let mut b = ProgramBuilder::new(in_kind);
+    let arg_slot = Slot::Register(b.arg);
+    let r = b.new_register(out_kind);
+    let r_slot = Slot::Register(r);
+    b.push(op_as_bits(r_slot, arg_slot, out_width));
+    b.finish(r_slot, &format!("random_as_bits_{in_width}b_to_{out_width}b"))
+}
+
+/// Generate a program that reinterprets the argument as signed via
+/// `AsSigned`.  Shape: `r = arg as SignedBits<n>`.
+pub fn generate_as_signed_program(in_width: usize, out_width: usize) -> Object {
+    use crate::rhif::rhif_builder::op_as_signed;
+    use crate::rhif::spec::Slot;
+    let in_kind = Kind::Bits(in_width);
+    let out_kind = Kind::Signed(out_width);
+    let mut b = ProgramBuilder::new(in_kind);
+    let arg_slot = Slot::Register(b.arg);
+    let r = b.new_register(out_kind);
+    let r_slot = Slot::Register(r);
+    b.push(op_as_signed(r_slot, arg_slot, out_width));
+    b.finish(
+        r_slot,
+        &format!("random_as_signed_{in_width}b_to_{out_width}b"),
+    )
+}
+
+/// Generate a program that wraps the argument in a `Signal<T, C>`
+/// via `Retime`, then strips the wrapper via `Index(SignalValue)`
+/// and returns the inner value.  Exercises `Retime` + signal-aware
+/// `Index`.
+pub fn generate_retime_program(bit_width: usize) -> Object {
+    use crate::rhif::rhif_builder::{op_index, op_retime};
+    use crate::rhif::spec::Slot;
+    use crate::types::path::Path;
+    use crate::Color;
+    let inner_kind = Kind::Bits(bit_width);
+    let signal_kind = Kind::make_signal(inner_kind, Color::Red);
+    let mut b = ProgramBuilder::new(inner_kind);
+    let arg_slot = Slot::Register(b.arg);
+    let signal_reg = b.new_register(signal_kind);
+    let signal_slot = Slot::Register(signal_reg);
+    b.push(op_retime(signal_slot, arg_slot, Some(Color::Red)));
+    let out_reg = b.new_register(inner_kind);
+    let out_slot = Slot::Register(out_reg);
+    b.push(op_index(out_slot, signal_slot, Path::default().signal_value()));
+    b.finish(out_slot, &format!("random_retime_{bit_width}b"))
+}
+
+/// Generate a program that wraps the argument in `Some(_)` via
+/// `Wrap(Some)`, then extracts the discriminant via `Index` and
+/// returns it as a `Bits(1)`.  Exercises `Wrap` + enum
+/// discriminant `Index`.
+pub fn generate_wrap_some_program(bit_width: usize) -> Object {
+    use crate::rhif::rhif_builder::op_index;
+    use crate::rhif::spec::Slot;
+    use crate::types::path::Path;
+    use crate::ast::ast_impl::WrapOp;
+    let payload_kind = Kind::Bits(bit_width);
+    let option_kind = build_option_kind(payload_kind);
+    let mut b = ProgramBuilder::new(payload_kind);
+    let arg_slot = Slot::Register(b.arg);
+    let opt_reg = b.new_register(option_kind);
+    let opt_slot = Slot::Register(opt_reg);
+    b.push(crate::rhif::spec::OpCode::Wrap(crate::rhif::spec::Wrap {
+        op: WrapOp::Some,
+        lhs: opt_slot,
+        arg: arg_slot,
+        kind: Some(option_kind),
+    }));
+    let disc_reg = b.new_register(Kind::Bits(1));
+    let disc_slot = Slot::Register(disc_reg);
+    b.push(op_index(disc_slot, opt_slot, Path::default().discriminant()));
+    b.finish(disc_slot, &format!("random_wrap_some_{bit_width}b"))
+}
+
+/// Generate a program that builds an `Option::None` of the
+/// requested payload kind, returns its discriminant as `Bits(1)`.
+pub fn generate_wrap_none_program(payload_bit_width: usize) -> Object {
+    use crate::rhif::rhif_builder::{op_assign, op_index};
+    use crate::rhif::spec::Slot;
+    use crate::types::path::Path;
+    use crate::ast::ast_impl::WrapOp;
+    use crate::TypedBits;
+    let payload_kind = Kind::Bits(payload_bit_width);
+    let option_kind = build_option_kind(payload_kind);
+
+    // The argument kind is `Empty` because `wrap_none` requires the
+    // arg to be of the None payload's kind (which is Empty).  But we
+    // want the kernel to take a "real" argument of the payload kind
+    // for VM input, so we ignore the argument and feed an Empty
+    // literal into the wrap.
+    let mut b = ProgramBuilder::new(payload_kind);
+    // Force a use of the arg via Assign-into-discard register.
+    let _arg_slot = Slot::Register(b.arg);
+    let empty_lit = b.new_literal(TypedBits::new(vec![], Kind::Empty));
+
+    let opt_reg = b.new_register(option_kind);
+    let opt_slot = Slot::Register(opt_reg);
+    b.push(crate::rhif::spec::OpCode::Wrap(crate::rhif::spec::Wrap {
+        op: WrapOp::None,
+        lhs: opt_slot,
+        arg: empty_lit,
+        kind: Some(option_kind),
+    }));
+
+    let disc_reg = b.new_register(Kind::Bits(1));
+    let disc_slot = Slot::Register(disc_reg);
+    b.push(op_index(disc_slot, opt_slot, Path::default().discriminant()));
+
+    // To keep the argument referenced (so it doesn't trigger
+    // RemoveUnusedRegisters), assign it into a discard register.
+    let _ = op_assign;
+    b.finish(
+        disc_slot,
+        &format!("random_wrap_none_{payload_bit_width}b"),
+    )
+}
+
+/// Generate a program that builds a 2-field struct from the
+/// argument and a literal, then indexes the named field back out.
+pub fn generate_struct_program(bit_width: usize, rng: &mut impl RngCore) -> Object {
+    use crate::rhif::rhif_builder::{op_index, op_struct};
+    use crate::rhif::spec::{FieldValue, Member, Slot};
+    use crate::types::path::Path;
+    use internment::Intern;
+
+    let kind = Kind::Bits(bit_width);
+    let struct_kind = Kind::make_struct(
+        "RandStruct",
+        vec![
+            Kind::make_field("a", kind),
+            Kind::make_field("b", kind),
+        ]
+        .into(),
+    );
+
+    let mut b = ProgramBuilder::new(kind);
+    let arg_slot = Slot::Register(b.arg);
+    let lit = b.new_literal(random_typed_bits(kind, rng));
+    // Build a "template" TypedBits — all-zero of the struct kind.
+    let template = zero_typed_bits(struct_kind);
+    let s_reg = b.new_register(struct_kind);
+    let s_slot = Slot::Register(s_reg);
+    b.push(op_struct(
+        s_slot,
+        vec![
+            FieldValue {
+                member: Member::Named(Intern::new("a".to_string())),
+                value: arg_slot,
+            },
+            FieldValue {
+                member: Member::Named(Intern::new("b".to_string())),
+                value: lit,
+            },
+        ],
+        None,
+        template,
+    ));
+
+    let out_reg = b.new_register(kind);
+    let out_slot = Slot::Register(out_reg);
+    b.push(op_index(out_slot, s_slot, Path::default().field("a")));
+    b.finish(out_slot, &format!("random_struct_{bit_width}b"))
+}
+
+/// Generate a program that constructs a specific variant of a
+/// 2-variant enum with the argument as the variant's payload, then
+/// extracts the discriminant.  Exercises `Enum` + enum-discriminant
+/// `Index`.  The chosen variant is `B` (discriminant 1), whose
+/// payload is `(arg,)` — a single-element tuple.
+pub fn generate_enum_program(bit_width: usize) -> Object {
+    use crate::rhif::rhif_builder::op_index;
+    use crate::rhif::spec::{FieldValue, Member, Slot};
+    use crate::types::kind::{DiscriminantAlignment, DiscriminantType};
+    use crate::types::path::Path;
+
+    let payload_kind = Kind::Bits(bit_width);
+    let enum_kind = Kind::make_enum(
+        "RandEnum",
+        vec![
+            Kind::make_variant("A", Kind::Empty, 0),
+            Kind::make_variant(
+                "B",
+                Kind::make_tuple(vec![payload_kind].into()),
+                1,
+            ),
+        ],
+        Kind::make_discriminant_layout(1, DiscriminantAlignment::Msb, DiscriminantType::Unsigned),
+    );
+
+    let mut b = ProgramBuilder::new(payload_kind);
+    let arg_slot = Slot::Register(b.arg);
+
+    // Template: discriminant = 1 (variant B), payload = zero.
+    // Bit layout per `is_option` style: discriminant is MSB-aligned
+    // 1 bit, then the payload.  For an Msb-aligned 1-bit
+    // discriminant + N-bit payload, total bits are 1+N with the
+    // discriminant in position [N].  See `Kind::pad`.
+    let mut bits = vec![crate::bitx::BitX::Zero; enum_kind.bits()];
+    // Discriminant bit position: MSB (last bit in the vector).
+    *bits.last_mut().unwrap() = crate::bitx::BitX::One;
+    let template = TypedBits::new(bits, enum_kind);
+
+    let e_reg = b.new_register(enum_kind);
+    let e_slot = Slot::Register(e_reg);
+    b.push(crate::rhif::spec::OpCode::Enum(crate::rhif::spec::Enum {
+        lhs: e_slot,
+        fields: vec![FieldValue {
+            member: Member::Unnamed(0),
+            value: arg_slot,
+        }],
+        template,
+    }));
+
+    let disc_reg = b.new_register(Kind::Bits(1));
+    let disc_slot = Slot::Register(disc_reg);
+    b.push(op_index(disc_slot, e_slot, Path::default().discriminant()));
+    b.finish(disc_slot, &format!("random_enum_{bit_width}b"))
+}
+
+/// Generate a program that calls a synthetic callee via `Exec` and
+/// returns the call's result.  The callee is a 1-arg, 1-return
+/// chain program (`generate_chain_program(bit_width, 2, _)`).
+pub fn generate_exec_program(bit_width: usize, rng: &mut impl RngCore) -> Object {
+    use crate::rhif::rhif_builder::op_exec;
+    use crate::rhif::spec::{FuncId, Slot};
+
+    let kind = Kind::Bits(bit_width);
+    let callee = generate_chain_program(bit_width, 2, rng);
+    let mut b = ProgramBuilder::new(kind);
+    let arg_slot = Slot::Register(b.arg);
+    let r = b.new_register(kind);
+    let r_slot = Slot::Register(r);
+    let func_id = FuncId::from(0usize);
+    b.push(op_exec(r_slot, func_id, vec![arg_slot]));
+
+    let mut obj = b.finish(r_slot, &format!("random_exec_{bit_width}b"));
+    obj.externals.insert(func_id, Box::new(callee));
+    obj
+}
+
+/// Generate a program that uses `Case` to multi-way-select between
+/// three values based on a literal discriminator.  Exercises `Case`
+/// with both `Slot` and `Wild` arms.
+pub fn generate_case_program(bit_width: usize, rng: &mut impl RngCore) -> Object {
+    use crate::rhif::rhif_builder::op_case;
+    use crate::rhif::spec::{CaseArgument, Slot};
+
+    let kind = Kind::Bits(bit_width);
+    let mut b = ProgramBuilder::new(kind);
+    let arg_slot = Slot::Register(b.arg);
+    let disc_lit = b.new_literal(random_typed_bits(kind, rng));
+    let arm_a = b.new_literal(random_typed_bits(kind, rng));
+    let arm_b = b.new_literal(random_typed_bits(kind, rng));
+
+    let arm_disc_a = b.new_literal(random_typed_bits(kind, rng));
+    let arm_disc_b = b.new_literal(random_typed_bits(kind, rng));
+
+    let out_reg = b.new_register(kind);
+    let out_slot = Slot::Register(out_reg);
+    b.push(op_case(
+        out_slot,
+        disc_lit,
+        vec![
+            (CaseArgument::Slot(arm_disc_a), arm_a),
+            (CaseArgument::Slot(arm_disc_b), arm_b),
+            (CaseArgument::Wild, arg_slot),
+        ],
+    ));
+    b.finish(out_slot, &format!("random_case_{bit_width}b"))
+}
+
 /// Run a sequence of mutating passes against `obj`, checking
 /// well-formedness after each one.  Returns the post-pipeline
 /// `Object` (or the first violation encountered).
@@ -1011,6 +1323,75 @@ mod tests {
         check!("repeat", generate_repeat_program(8, 4, &mut rng));
         check!("splice", generate_splice_program(8, &mut rng));
         check!("cast",   generate_cast_program(8, 16, 12, &mut rng));
+    }
+
+    /// Generators for the remaining 8 RHIF opcodes (`AsBits`,
+    /// `AsSigned`, `Retime`, `Wrap` for both `Some` and `None`,
+    /// `Struct`, `Case`).  Each is well-formed by construction.
+    #[test]
+    fn additional_generators_produce_well_formed_programs() {
+        let mut rng = seeded_rng(41);
+        macro_rules! check {
+            ($name:expr, $obj:expr) => {{
+                let obj: Object = $obj;
+                let r = check_object_universal(&obj);
+                assert!(
+                    r.is_well_formed(),
+                    "{} not well-formed:\n{r}",
+                    $name,
+                );
+            }};
+        }
+        check!("as_bits", generate_as_bits_program(8, 16));
+        check!("as_signed", generate_as_signed_program(8, 8));
+        check!("retime", generate_retime_program(8));
+        check!("wrap_some", generate_wrap_some_program(8));
+        check!("wrap_none", generate_wrap_none_program(8));
+        check!("struct", generate_struct_program(8, &mut rng));
+        check!("case", generate_case_program(8, &mut rng));
+        check!("enum", generate_enum_program(8));
+        check!("exec", generate_exec_program(8, &mut rng));
+    }
+
+    /// The additional generators' programs survive the manual
+    /// pass pipeline with semantics preserved across passes.
+    #[test]
+    fn additional_generators_preserve_semantics_through_passes() {
+        let mut rng = seeded_rng(43);
+        let make_arg_for = |obj: &Object, rng: &mut rand::rngs::StdRng| -> Vec<TypedBits> {
+            let kinds: Vec<Kind> = obj.arguments.iter().map(|r| obj.symtab[*r]).collect();
+            kinds.iter().map(|k| random_typed_bits(*k, rng)).collect()
+        };
+        let cases: Vec<(&str, Object)> = vec![
+            ("as_bits", generate_as_bits_program(8, 16)),
+            ("as_signed", generate_as_signed_program(8, 8)),
+            ("retime", generate_retime_program(8)),
+            ("wrap_some", generate_wrap_some_program(8)),
+            ("wrap_none", generate_wrap_none_program(8)),
+            ("struct", generate_struct_program(8, &mut rng)),
+            ("case", generate_case_program(8, &mut rng)),
+            ("enum", generate_enum_program(8)),
+            ("exec", generate_exec_program(8, &mut rng)),
+        ];
+        for (name, obj) in cases {
+            let args = make_arg_for(&obj, &mut rng);
+            let pre = match rhif_execute(&obj, args.clone()) {
+                Ok(v) => v,
+                Err(e) => panic!("{name}: VM error on initial Object: {e:?}"),
+            };
+            let post = run_passes_on_random_program(obj).unwrap_or_else(|(pass, r)| {
+                panic!("{name}: pass `{pass}` violated invariants:\n{r}");
+            });
+            let post_result = match rhif_execute(&post, args) {
+                Ok(v) => v,
+                Err(e) => panic!("{name}: VM error on post-pass Object: {e:?}"),
+            };
+            assert_eq!(
+                pre.bits(),
+                post_result.bits(),
+                "{name}: semantic divergence across pass pipeline",
+            );
+        }
     }
 
     /// Each extended generator's program survives the manual pass
