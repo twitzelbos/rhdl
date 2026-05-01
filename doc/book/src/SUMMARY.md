@@ -136,3 +136,4 @@
 	- [Testing the One Counter](ones_counter/testing.md)
 	- [Hardware Testing](ones_counter/hardware.md)
 	- [Timing Estimation](ones_counter/timing.md)
+- [Migrating from Bluespec SystemVerilog](migration/from-bsv.md)
