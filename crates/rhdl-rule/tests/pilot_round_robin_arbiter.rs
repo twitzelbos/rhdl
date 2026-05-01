@@ -45,49 +45,32 @@ rule_kernel! {
         /// rotated priority order and grant the first set bit.
         /// Same algorithm as the original kernel.
         ///
-        /// Each `set!` value is a self-contained block expression
-        /// because the macro extracts each `set!` argument
-        /// independently and does NOT preserve let-bindings from
-        /// the surrounding rule body.  The downstream NTL passes
-        /// CSE the duplicated scan computations.
+        /// The scan runs once in the rule's preamble; both writes
+        /// reference its result.  Direct-assignment + preamble
+        /// (added in PR #26) makes this read like a Rust function.
         #[rule]
         fn arbitrate(ctx: &mut RuleCtx<Self>, requests: Bits<N>) {
-            set!(ctx.last_granted, {
-                let start: Bits<W> = if *ctx.valid {
-                    *ctx.last_granted + bits::<W>(1)
-                } else {
-                    bits::<W>(0)
-                };
-                let mut winner_idx: Bits<W> = bits::<W>(0);
-                let mut found = false;
-                for i in 0..N {
-                    let offset: Bits<W> = bits::<W>(i as u128);
-                    let idx: Bits<W> = start + offset;
-                    let bit_at_idx = (requests >> idx) & bits::<N>(1);
-                    if bit_at_idx != bits::<N>(0) && !found {
-                        winner_idx = idx;
-                        found = true;
-                    }
+            // Preamble — runs once per cycle; in scope for all writes.
+            let start: Bits<W> = if *ctx.valid {
+                *ctx.last_granted + bits::<W>(1)
+            } else {
+                bits::<W>(0)
+            };
+            let mut winner_idx: Bits<W> = bits::<W>(0);
+            let mut found = false;
+            for i in 0..N {
+                let offset: Bits<W> = bits::<W>(i as u128);
+                let idx: Bits<W> = start + offset;
+                let bit_at_idx = (requests >> idx) & bits::<N>(1);
+                if bit_at_idx != bits::<N>(0) && !found {
+                    winner_idx = idx;
+                    found = true;
                 }
-                if found { winner_idx } else { *ctx.last_granted }
-            });
-            set!(ctx.valid, {
-                let start: Bits<W> = if *ctx.valid {
-                    *ctx.last_granted + bits::<W>(1)
-                } else {
-                    bits::<W>(0)
-                };
-                let mut found = false;
-                for i in 0..N {
-                    let offset: Bits<W> = bits::<W>(i as u128);
-                    let idx: Bits<W> = start + offset;
-                    let bit_at_idx = (requests >> idx) & bits::<N>(1);
-                    if bit_at_idx != bits::<N>(0) && !found {
-                        found = true;
-                    }
-                }
-                found
-            });
+            }
+
+            // Two non-blocking writes referencing the preamble.
+            ctx.last_granted = if found { winner_idx } else { *ctx.last_granted };
+            ctx.valid = found;
         }
 
         /// Output: same Some/None convention as the original.

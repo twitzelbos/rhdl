@@ -45,19 +45,20 @@ rule_kernel! {
     impl PriorityArbiter {
         #[rule]
         fn arbitrate(ctx: &mut RuleCtx<Self>, requests: Bits<N>) {
-            set!(ctx.last_idx, {
-                let mut winner: Bits<W> = bits::<W>(0);
-                let mut found = false;
-                for i in 0..N {
-                    let idx: Bits<W> = bits::<W>(i as u128);
-                    let bit_at_idx = (requests >> idx) & bits::<N>(1);
-                    if bit_at_idx != bits::<N>(0) && !found {
-                        winner = idx;
-                        found = true;
-                    }
+            // Preamble — find the first set request bit.
+            let mut winner: Bits<W> = bits::<W>(0);
+            let mut found = false;
+            for i in 0..N {
+                let idx: Bits<W> = bits::<W>(i as u128);
+                let bit_at_idx = (requests >> idx) & bits::<N>(1);
+                if bit_at_idx != bits::<N>(0) && !found {
+                    winner = idx;
+                    found = true;
                 }
-                if found { winner } else { *ctx.last_idx }
-            });
+            }
+
+            // Direct-assignment write — hold prior value when no requester.
+            ctx.last_idx = if found { winner } else { *ctx.last_idx };
         }
 
         #[output]

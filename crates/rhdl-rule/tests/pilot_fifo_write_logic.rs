@@ -13,22 +13,21 @@
 //! `write_address`) and `tick_delayed` (reads `write_address`),
 //! and the priority chain *suppresses* `tick_delayed` whenever
 //! `do_write` fires — breaking the byte-identical-behaviour
-//! guarantee.  This is the right call for the macro: it doesn't
-//! know whether `tick_delayed`'s read should see the pre- or
-//! post-firing value of `write_address`.  Reading from `q.field`
-//! (pre-firing snapshot) is the kernel-emission convention; but
-//! a rule that reads a field another rule writes is, by the
-//! conflict definition (`rule-architecture.md` §6.1, write-read
-//! overlap), a real conflict.
+//! guarantee.  Right call for the macro; wrong shape for this
+//! widget.  See `rule-architecture.md` §6.1 for the conflict
+//! definition.
 //!
-//! The honest rewrite is therefore a single rule whose body
-//! captures all three actions atomically.  Same ground as the
-//! round-robin pilot.  The lesson for the design plan: a widget
-//! whose every-cycle behaviour is "everything happens together"
-//! is naturally one rule, not several — even if you can name
-//! the sub-actions.  Multi-rule decomposition shines when at
-//! most one of several sub-actions fires per cycle (e.g.
-//! `toggle_ff` — see Pilot 3).
+//! The honest rewrite is a single rule whose body captures all
+//! three writes atomically.  With the **per-rule preamble** added
+//! in PR #26, the body reads naturally: shared computation
+//! (`full`, `will_write`) lives at the top of the rule body and
+//! is in scope for every direct-assignment that follows.
+//!
+//! The lesson for the design plan: a widget whose every-cycle
+//! behaviour is "everything happens together" is naturally one
+//! rule, not several — even if you can name the sub-actions.
+//! Multi-rule decomposition shines when at most one of several
+//! sub-actions fires per cycle (e.g. `toggle_ff` — see Pilot 3).
 //!
 //! Parity-tested against `fifo::write_logic::FIFOWriteCore` for a
 //! representative input stream (varying `read_address` and
@@ -81,30 +80,20 @@ rule_kernel! {
         /// Single rule firing every cycle.  Captures the entire
         /// write-side state transition atomically.
         ///
-        /// Each `set!` is independently expressible because the
-        /// macro reads from `q` (the pre-firing snapshot), so all
-        /// three writes see the same `q.write_address`,
-        /// `q.write_address_delayed`, and `q.overflow`.
+        /// Reads from `*ctx.field` see the pre-firing snapshot;
+        /// writes (`ctx.field = expr`) commit at the cycle
+        /// boundary.  `full` and `will_write` are computed once
+        /// in the preamble and visible to every write below.
         #[rule]
         fn step(ctx: &mut RuleCtx<Self>, i: RuleFIFOWriteIn<N>) {
-            // Pointer advances iff write_enable && !full.
-            set!(
-                ctx.write_address,
-                if i.write_enable && ((*ctx.write_address + bits::<N>(1)) != i.read_address) {
-                    *ctx.write_address + bits::<N>(1)
-                } else {
-                    *ctx.write_address
-                }
-            );
-            // Overflow latches on first write-when-full; stays latched.
-            set!(
-                ctx.overflow,
-                *ctx.overflow
-                    || (i.write_enable
-                        && ((*ctx.write_address + bits::<N>(1)) == i.read_address))
-            );
-            // Delayed pointer always tracks the previous cycle's pointer.
-            set!(ctx.write_address_delayed, *ctx.write_address);
+            // Preamble — shared computation.
+            let full       = (*ctx.write_address + bits::<N>(1)) == i.read_address;
+            let will_write = i.write_enable && !full;
+
+            // Three non-blocking writes.
+            ctx.write_address         = if will_write { *ctx.write_address + bits::<N>(1) } else { *ctx.write_address };
+            ctx.overflow              = *ctx.overflow || (i.write_enable && full);
+            ctx.write_address_delayed = *ctx.write_address;
         }
 
         /// Output: same shape and semantics as the original

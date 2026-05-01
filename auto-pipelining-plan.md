@@ -54,6 +54,20 @@ The pass ordering is: Stage 3 NTL optimizations run to a fixed point, then the a
 
 The pipelining pass produces a transformed NTL `Object` with additional `Wire`s acting as pipeline-stage registers. Existing infrastructure (`SingleRegisterWrite`, `CheckForUndriven`, the symbol-table invariant pass) is reused unchanged.
 
+### 3.1 — Dependency on the combinational reachability matrix
+
+The auto-pipeliner consumes the per-widget combinational reachability matrix specified in `combinational-reachability-and-loop-detection.md`. Specifically:
+
+- **`i_to_o`** identifies feedthrough paths through a widget; these are candidate cuts for inserting pipeline registers at the widget boundary.
+- **`i_to_d`** and **`q_to_o`** identify combinational paths that cross sub-widget boundaries; these are candidate cuts for inter-widget retiming.
+- **`q_to_d`** identifies combinational paths between sibling sub-widgets; these are precisely the edges where Carloni latency-insensitive relay stations (per `stream-bus-architecture.md` Phase 2's `RCStreamRelay`) can be inserted without breaking same-cycle protocol assumptions. The Carloni LID theorem [14] guarantees correctness of relay-station insertion *only* on LID-compliant edges; the matrix is the input that identifies which edges qualify.
+
+**Sequencing decision:** the reachability work in `combinational-reachability-and-loop-detection.md` Phases 1-3 must land before any auto-pipelining phase begins. Otherwise the auto-pipeliner has to re-derive matrix-equivalent information, the two analyses drift apart, or there is a costly refactor when the matrix lands. This decision is recorded normatively here (as the first auto-pipelining sequencing constraint) and in CLAUDE.md §1's strategic-design-documents subsection.
+
+**Auto-pipelining is a matrix-mutating pass.** When the auto-pipeliner inserts a register on an edge, that edge's `i_to_o` (or analogous) entry transitions from `true` to `false` — the path is no longer combinational. The post-pipelining `Descriptor` must carry a recomputed matrix. This is the pattern documented in `combinational-reachability-and-loop-detection.md` §9 ("Matrix maintenance across IR passes") and applies here directly. The recomputation is incremental — only widgets that gained inserted registers need their matrices updated.
+
+**Matrix correctness is a precondition for soundness.** The auto-pipeliner's cut selection presumes the matrix correctly identifies every combinational path. If the matrix is unsound (a true combinational path is marked as registered), the auto-pipeliner could insert a cut that violates a same-cycle assumption. This is why the matrix work has its own rigorous validation contract per `combinational-reachability-and-loop-detection.md` §10 — soundness flows downstream into auto-pipelining.
+
 ---
 
 ## 4 — Prior Art
@@ -104,9 +118,11 @@ For RHDL, full HLS is out of scope. The kernel function model intentionally does
 
 Restrict to *pure* kernels: `#[kernel] fn f(input: I) -> O`, no `D`/`Q`, no internal state. The kernel is mathematically a function `I → O`, and the compiler is free to insert any latency it needs.
 
+**Reachability-matrix consumption:** Phase 1 reads the per-widget `i_to_o` sub-matrix to identify candidate cut points. Pure-combinational kernels have empty `i_to_d`, `q_to_o`, and `q_to_d` matrices (no sub-widgets), so only `i_to_o` matters here. The cut algorithm augments the matrix with NTL-level delay annotations and runs min-cut against the target period.
+
 Scope:
 - New `#[kernel(pipeline(target_freq_mhz = N))]` (or `target_period_ns`, or `stages = K`) attribute parsed by `rhdl-macro-core/src/kernel.rs`.
-- New NTL pass `auto_pipeline` that runs after Stage-3 optimization. Reads the timing model, identifies cuts, inserts pipeline-register `Wire`s.
+- New NTL pass `auto_pipeline` that runs after Stage-3 optimization. Reads the timing model and the `i_to_o` matrix, identifies cuts, inserts pipeline-register `Wire`s, and recomputes the matrix on the transformed widget per `combinational-reachability-and-loop-detection.md` §9.
 - New circuit-level wrapper (`PipelinedFunc<K, L>` or similar) that exposes the pipelined kernel as a `Synchronous` circuit with explicit latency `L`.
 - Functional-equivalence testbench in `rhdl-fpga` that runs the original `K` and the pipelined wrapper side-by-side.
 
@@ -119,19 +135,24 @@ Deliverables:
 
 Allow kernels with state: `(o, d) = kernel(cr, i, q)`. Now the kernel has feedback paths (the `D`/`Q` register loop), which introduces hazards.
 
+**Reachability-matrix consumption:** Phase 2 reads all four sub-matrices. `i_to_o` and `q_to_o` identify the live output paths the pipeliner must preserve at the cycle boundary; `i_to_d` and `q_to_d` identify the feedback edges the hazard analysis classifies. The `q_to_d` matrix in particular surfaces the precise edges where Carloni `RCStreamRelay` insertion is sound — making the relay-station mechanism from `stream-bus-architecture.md` Phase 2 the canonical pipelining primitive at every LID-compliant boundary.
+
 Sub-features:
-- Hazard analysis on the NTL graph: classify each feedback edge as RAW-hazardous (write-then-read with insufficient latency), WAW-hazardous, etc.
+- Hazard analysis on the NTL graph guided by the matrix: classify each feedback edge identified in `q_to_d` as RAW-hazardous (write-then-read with insufficient latency), WAW-hazardous, etc.
 - Two strategies offered to the user:
   - **Bypass logic:** insert forwarding paths that resolve hazards without stalling. Lower latency, more area.
   - **Stalling handshake:** emit a `ready/valid` interface and stall the pipeline on hazard. More area-efficient for rare-hazard cases.
+- For LID-compliant `RCStream` boundaries, prefer Carloni relay-station insertion (which is sound by the LID theorem) over hand-rolled bypass logic.
 - Accumulator and counter-style kernels are the canonical hard case; the recurrence has zero slack.
-- For recurrences that cannot be pipelined (true scalar feedback dependency), the compiler reports an error pointing at the offending edge in the RHIF source.
+- For recurrences that cannot be pipelined (true scalar feedback dependency), the compiler reports an error pointing at the offending edge in the RHIF source — using the matrix's source-span metadata to identify the kernel statement.
 
 ### Phase 3 — Loop pipelining and II analysis (target: +12 months)
 
+**Reachability-matrix consumption:** Phase 3 builds directly on the composition-level cycle detector from `combinational-reachability-and-loop-detection.md` §5. Recurrence cycles in loop iterations are exactly the structure the cycle detector finds; the iteration-interval bound is determined by the longest cycle's delay. Phase 3 is therefore unblocked by the cycle-detection work landing — without it, Phase 3 has to invent its own cycle analysis.
+
 - Detect `for i in 0..N { ... }` patterns where the loop body is independent across iterations (or has tractable cross-iteration dependency).
 - Schedule iterations into a pipeline with II = 1 where possible.
-- For loops with carried dependency, use the recurrence-bounded II.
+- For loops with carried dependency, use the recurrence-bounded II as identified by the cycle detector.
 - This brings RHDL into HLS-equivalent territory for a specific, well-defined subset of kernels.
 
 ---
@@ -143,6 +164,8 @@ Given an NTL `Object` representing a pure combinational kernel with delay model 
 ### Step 1 — Build the timing DAG
 
 Construct a directed acyclic graph from NTL where vertices are operations producing `Wire`s and edges are dependencies. Annotate each vertex `v` with delay `d(v)` from the existing estimator.
+
+The skeleton of this DAG is precisely the per-widget reachability matrix from `combinational-reachability-and-loop-detection.md`: every entry in `i_to_o` corresponds to a path that must be representable in the timing DAG. The auto-pipeliner reads the matrix to bound the search space (only paths the matrix marks combinational need delay analysis); the timing DAG augments the matrix with delay annotations on each vertex.
 
 ### Step 2 — Compute arrival times
 
@@ -273,6 +296,8 @@ For external timing calibration: optionally feed the emitted Verilog through Yos
 
 **LLM-driven refactoring fallback.** When pure pipelining can't meet a target (e.g. a deep enum match), the timing-budget violation is best addressed by the LLM agent suggesting an algorithmic restructuring of the kernel — splitting a wide combinational block into a small state machine, for example. This is a separate workflow but worth flagging here as the natural escalation path.
 
+**Sequencing risk: matrix work must land first.** Per §3.1, all three auto-pipelining phases consume the per-widget reachability matrix from `combinational-reachability-and-loop-detection.md`. If auto-pipelining starts before that work lands, the auto-pipeliner has to re-derive matrix-equivalent information ad-hoc within each phase — leading to either (a) two analyses that drift apart (correctness risk), or (b) a costly refactor when the matrix lands (engineering cost). Mitigation: make matrix-Phase-1 a hard prerequisite for auto-pipelining-Phase-1; matrix-Phase-3 (composition-level cycle detection) a hard prerequisite for auto-pipelining-Phase-3 (loop pipelining). Tracked in CLAUDE.md §1's strategic-design-documents subsection.
+
 ---
 
 ## 10 — References
@@ -303,18 +328,23 @@ For external timing calibration: optionally feed the emitted Verilog through Yos
 
 [13] Wolf, Clifford. *Yosys Open Synthesis Suite.* The `retime` pass at `passes/sat/retime.cc` implements Leiserson-Saxe retiming. https://yosyshq.net/yosys/
 
+[14] Carloni, L.P., McMillan, K.L., Sangiovanni-Vincentelli, A.L. "Theory of Latency-Insensitive Design." *IEEE Transactions on Computer-Aided Design of Integrated Circuits and Systems*, 20(9), 2001. — The Carloni LID theorem proves that relay-station insertion on LID-compliant edges preserves correctness. The basis for `RCStreamRelay` in `stream-bus-architecture.md` Phase 2 and the soundness argument for inter-widget pipelining in this plan's §3.1.
+
+[15] `combinational-reachability-and-loop-detection.md` — in-tree design plan. The per-widget reachability matrix this plan consumes; the composition-level cycle detector this plan's Phase 3 builds on.
+
 ---
 
 ## 11 — Next Concrete Steps
 
 In order:
 
-1. **Survey the existing timing estimator's interface** in `rhdl-core/src/ntl/` and `rhdl-core/src/compiler/stage3.rs`. Determine whether arrival-time computation is reusable or needs refactoring into a separate analysis module.
-2. **Prototype the greedy cut algorithm** on a hand-built NTL graph for a simple combinational kernel (e.g. an 8-bit adder tree).
-3. **Add the `pipeline(...)` attribute parsing** to `rhdl-macro-core/src/kernel.rs` as a no-op pass-through first, to land the syntactic surface independently of the algorithm.
-4. **Build the pipelined-wrapper code generation** alongside the existing kernel-to-circuit lowering. Verify functional equivalence on a non-pipelined test (latency = 0) before adding any registers.
-5. **Wire in the auto-pipeliner pass** as a Stage-3 NTL pass that runs only when a kernel carries the `pipeline` attribute.
-6. **Land the meta-test** that randomly generates kernels and asserts (functional equivalence, timing budget) under random target frequencies.
+1. **Land the reachability-matrix work first** (per `combinational-reachability-and-loop-detection.md` Phase 1, task #74 in the queue). Without the per-widget matrix exposed on `Descriptor`, every step below has to re-derive the same data ad-hoc. This is the hard prerequisite called out in §3.1 and §9 ("Sequencing risk").
+2. **Survey the existing timing estimator's interface** in `rhdl-core/src/ntl/` and `rhdl-core/src/compiler/stage3.rs`. Determine whether arrival-time computation is reusable or needs refactoring into a separate analysis module.
+3. **Prototype the greedy cut algorithm** on a hand-built NTL graph for a simple combinational kernel (e.g. an 8-bit adder tree). Use the matrix's `i_to_o` to bound the search space.
+4. **Add the `pipeline(...)` attribute parsing** to `rhdl-macro-core/src/kernel.rs` as a no-op pass-through first, to land the syntactic surface independently of the algorithm.
+5. **Build the pipelined-wrapper code generation** alongside the existing kernel-to-circuit lowering. Verify functional equivalence on a non-pipelined test (latency = 0) before adding any registers.
+6. **Wire in the auto-pipeliner pass** as a Stage-3 NTL pass that runs only when a kernel carries the `pipeline` attribute. Ensure the pass recomputes the widget's reachability matrix on its output (per §3.1's "matrix-mutating pass" decision).
+7. **Land the meta-test** that randomly generates kernels and asserts (functional equivalence, timing budget) under random target frequencies.
 7. **Calibrate the delay model** against Yosys-reported critical paths on a corpus of representative widgets.
 
 Each step is independently shippable and independently testable per `CLAUDE.md`'s contract. Phase 1 is complete when (1)–(7) are in main and a non-trivial example demonstrates a measurable Fmax improvement.
