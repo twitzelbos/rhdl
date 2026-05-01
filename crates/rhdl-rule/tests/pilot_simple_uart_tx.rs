@@ -83,8 +83,8 @@ rule_kernel! {
         fn load(ctx: &mut RuleCtx<Self>, i: UartTxIn) {
             guard!(*ctx.bit_counter == bits::<4>(0));
             guard!(i.send);
-            set!(ctx.bit_counter, bits::<4>(1));
-            set!(ctx.data_reg, i.data);
+            ctx.bit_counter = bits::<4>(1);
+            ctx.data_reg = i.data;
         }
 
         /// Mid-frame: advance to the next bit.
@@ -93,7 +93,7 @@ rule_kernel! {
             let _ = i;
             guard!(*ctx.bit_counter >= bits::<4>(1));
             guard!(*ctx.bit_counter < bits::<4>(10));
-            set!(ctx.bit_counter, *ctx.bit_counter + bits::<4>(1));
+            ctx.bit_counter = *ctx.bit_counter + bits::<4>(1);
         }
 
         /// Stop bit complete → return to idle.
@@ -101,7 +101,7 @@ rule_kernel! {
         fn finish(ctx: &mut RuleCtx<Self>, i: UartTxIn) {
             let _ = i;
             guard!(*ctx.bit_counter == bits::<4>(10));
-            set!(ctx.bit_counter, bits::<4>(0));
+            ctx.bit_counter = bits::<4>(0);
         }
 
         /// `tx` line:

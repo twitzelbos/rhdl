@@ -66,7 +66,7 @@ impl AttrFormCounter {
     #[rule(priority = 0)]
     fn clear_rule(ctx: &mut RuleCtx<Self>, i: CounterCmd) {
         guard!(i.clear);
-        set!(ctx.count, bits::<8>(0));
+        ctx.count = bits::<8>(0);
     }
 
     /// Increment.  Priority 1 — suppressed by `clear_rule` when
@@ -75,7 +75,7 @@ impl AttrFormCounter {
     #[rule(priority = 1)]
     fn increment_rule(ctx: &mut RuleCtx<Self>, i: CounterCmd) {
         guard!(i.enable);
-        set!(ctx.count, *ctx.count + bits::<8>(1));
+        ctx.count = *ctx.count + bits::<8>(1);
     }
 
     #[output]
@@ -98,13 +98,13 @@ rule_kernel! {
         #[rule(priority = 0)]
         fn clear_rule(ctx: &mut RuleCtx<Self>, i: CounterCmd) {
             guard!(i.clear);
-            set!(ctx.count, bits::<8>(0));
+            ctx.count = bits::<8>(0);
         }
 
         #[rule(priority = 1)]
         fn increment_rule(ctx: &mut RuleCtx<Self>, i: CounterCmd) {
             guard!(i.enable);
-            set!(ctx.count, *ctx.count + bits::<8>(1));
+            ctx.count = *ctx.count + bits::<8>(1);
         }
 
         #[output]

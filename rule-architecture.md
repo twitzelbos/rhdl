@@ -110,13 +110,44 @@ impl CounterAndFlag {
 
 The `RuleCtx<Self>` is a generated type that exposes each `Reg<T>` field as a typed slot supporting `*ctx.field` (read) and `set!(ctx.field, value)` (write). Reads are tracked statically (any `*ctx.field` or method call on `ctx.field` adds to the rule's read-set); writes are syntactically marked by `set!`.
 
-### 4.2 Macro vocabulary
+### 4.2 Rule-body vocabulary
 
-- `guard!(expr)` — append a guard. The rule fires only if every guard's expression evaluates to true. Multiple `guard!` calls in a rule body are conjoined.
-- `set!(ctx.field, value)` — schedule a write to a register. Multiple `set!` calls in a rule body all fire atomically when the rule fires.
-- `*ctx.field` — read a register (sugar for the register's `Deref::deref`). The macro layer tracks this as a read-set entry.
+Inside a `#[rule]` method body the macro recognises three constructs:
 
-The proposal originally used `write!` for the write macro; that name is taken in stable Rust (`std::fmt::write!`). I propose `set!` as the alternative — short, evocative, no clash. (Considered alternatives: `assign!`, `update!`, `commit!`. `set!` is shortest and matches register/field-update vocabulary.)
+- **`guard!(expr)`** — append a guard. The rule fires only if every guard's expression evaluates to true. Multiple `guard!` calls in a rule body are conjoined.
+- **`ctx.field = value;`** (canonical) — schedule a write to a register. Read as: "at the next clock edge, this register takes `value`." Despite the surface syntax, the assignment is **non-blocking** by construction: every `ctx.field = …;` in a rule body commits atomically at the cycle boundary, after every other rule's writes have been computed against the same pre-firing snapshot. Multiple direct assignments in one rule body all fire together when the rule fires.
+- **`set!(ctx.field, value)`** (legacy) — the macro spelling that predated direct assignment. Identical semantics; kept for backward compatibility. New code should prefer the direct-assignment form.
+- **`*ctx.field`** — read a register (sugar for `Deref::deref`). The macro tracks this as a read-set entry.
+
+Any other statements in a rule body — typically `let` bindings — are preserved as a **per-rule preamble**: they execute once per cycle and are in scope for every action expression in the same rule. This means a rule can compute intermediate values once and reference them in multiple writes:
+
+```rust
+#[rule]
+fn step(ctx: &mut RuleCtx<Self>, i: PreambleFifoIn<N>) {
+    // Preamble: shared computation visible to all actions.
+    let full       = (*ctx.write_address + bits::<N>(1)) == i.read_address;
+    let will_write = i.write_enable && !full;
+
+    // Three action assignments referencing the preamble.
+    ctx.write_address         = if will_write { *ctx.write_address + bits::<N>(1) } else { *ctx.write_address };
+    ctx.overflow              = *ctx.overflow || (i.write_enable && full);
+    ctx.write_address_delayed = *ctx.write_address;
+}
+```
+
+Without the preamble, the user would have to inline `(*ctx.write_address + bits::<N>(1)) == i.read_address` in three places (the legacy limitation called out in `pilot_fifo_write_logic.rs` Move-1 retrospective).
+
+#### Why `=` and not `<=`
+
+BSV's non-blocking register write is spelled `<=` (and BSV's `=` is reserved for combinational `let`). RHDL uses `=` for register writes inside rule bodies because:
+
+- `<=` in Rust is the comparison operator. Overloading it inside a macro to mean "non-blocking write" would surprise readers — they'd see what looks like a Boolean comparison and have to know it's actually a hardware action.
+- The atomicity is guaranteed by the **scope** the assignment appears in (a `#[rule]` method body), not by the **operator**. Inside a rule body every `=` is non-blocking by definition; outside, it's a normal Rust assignment.
+- The `RuleCtx<Self>` phantom type around `ctx` makes it impossible to *actually* mutate anything at runtime — the field accessors are inert markers; the macro is the only thing giving them meaning. Readers who recognize the phantom-type pattern see immediately that `ctx.field = value` is metadata, not mutation.
+
+For BSV users, the mental translation is **`reg <= value;` (BSV) ⇄ `ctx.reg = value;` (RHDL)** with the operator change explained in the BSV→RHDL porting guide (§17.4 play 3). Both have the same semantics: non-blocking, atomic, fires when the rule fires.
+
+The `set!` macro stays available for users who prefer the explicit-keyword spelling; it produces byte-identical hardware.
 
 ### 4.3 Annotations
 

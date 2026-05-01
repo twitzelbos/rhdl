@@ -105,12 +105,24 @@ struct Rule {
     input_type: Option<Type>,
     /// All `guard!(...)` expressions, in source order.
     guards: Vec<Expr>,
-    /// All `set!(ctx.field, value)` actions, in source order.
+    /// All scheduled writes, in source order.  Each entry came from
+    /// either a `set!(ctx.field, value)` macro call or a
+    /// `ctx.field = value;` direct-assignment statement (both forms
+    /// have identical semantics; the macro is the legacy spelling
+    /// kept for backward compatibility).
     actions: Vec<Action>,
-    /// Every register field read by this rule (in guards and in
-    /// action values).  Used to build the conflict matrix per
-    /// `rule-architecture.md` §6.
+    /// Every register field read by this rule (in guards, in action
+    /// values, and in the preamble).  Used to build the conflict
+    /// matrix per `rule-architecture.md` §6.
     read_set: std::collections::BTreeSet<String>,
+    /// Statements from the rule body that are not guards and not
+    /// writes — typically `let` bindings that compute intermediate
+    /// values used by multiple action expressions.  Hoisted into
+    /// the lowered kernel inside a per-rule block scope so that all
+    /// of the rule's actions see the same precomputed values.
+    /// `*ctx.field` reads inside these statements have already been
+    /// rewritten to `q.field`.
+    preamble: Vec<syn::Stmt>,
     /// Explicit `#[rule(priority = N)]` annotation, if present.
     /// Lower N = higher priority (fires first).  None = source-order.
     priority: Option<u32>,
@@ -551,10 +563,19 @@ fn lower_rule_kernel(
 
     // For each register field, emit a chain of let-rebindings:
     //   let _next_<field> = q.<field>;
-    //   let _next_<field> = if _fire_<rule> { value } else { _next_<field> };
+    //   <per-rule preamble + value pre-computation block>
+    //   let _next_<field> = if _fire_<rule> { _rule_<rule>_w<i> } else { _next_<field> };
     // The priority chain ensures that for any field, at most one
     // `_fire_<rule>` is true among rules that write the field —
     // so last-write-wins still produces the correct result.
+    //
+    // The per-rule preamble block is the new piece: any `let`
+    // bindings the user wrote in the rule body live here, in scope
+    // for every action expression.  This means multiple `set!`s (or
+    // direct `ctx.field = expr;` assignments) can share intermediate
+    // values without duplicating computation.  When a rule has no
+    // preamble and exactly one action, the lowering collapses to
+    // the original simpler form.
     let mut next_decls: Vec<TokenStream> = Vec::new();
     for field in &field_names {
         let next_ident = format_ident!("_next_{field}");
@@ -564,12 +585,66 @@ fn lower_rule_kernel(
     let _ = &d_ident;
     for rule in &rules_sorted {
         let fire_ident = format_ident!("_fire_{}", rule.name);
-        for action in &rule.actions {
-            let field = &action.field;
-            let value = &action.value;
+        if rule.actions.is_empty() {
+            continue; // guards-only rule has no next-state effect
+        }
+
+        // Per-rule pre-computation.  We emit a single block that
+        // (a) runs the preamble once — `let` bindings inside the
+        // block are in scope for every action value computed below,
+        // and (b) destructures into per-action variables via tuple
+        // pattern.  The user's intermediate computations are
+        // therefore evaluated once per cycle, not once per action.
+        let preamble = &rule.preamble;
+        let action_value_idents: Vec<Ident> = (0..rule.actions.len())
+            .map(|i| format_ident!("_rule_{}_w{}", rule.name, i))
+            .collect();
+        let action_values: Vec<&Expr> = rule.actions.iter().map(|a| &a.value).collect();
+
+        if rule.actions.len() == 1 && rule.preamble.is_empty() {
+            // Fast-path: no preamble, one action — fold the value
+            // expression directly into the conditional update.
+            let field = &rule.actions[0].field;
+            let value = &rule.actions[0].value;
             let next_ident = format_ident!("_next_{field}");
             next_decls.push(quote! {
                 let #next_ident = if #fire_ident { #value } else { #next_ident };
+            });
+            continue;
+        }
+
+        if rule.actions.len() == 1 {
+            // Single action with preamble: emit one let with the
+            // preamble inside, no tuple destructure.
+            let v_ident = &action_value_idents[0];
+            let value = action_values[0];
+            next_decls.push(quote! {
+                let #v_ident = {
+                    #(#preamble)*
+                    #value
+                };
+            });
+        } else {
+            // Multi-action: tuple destructure with the preamble
+            // bound once at the top of the shared block.  Trailing
+            // commas keep the tuple pattern correct for the
+            // (uncommon) two-action case.
+            next_decls.push(quote! {
+                let ( #(#action_value_idents,)* ) = {
+                    #(#preamble)*
+                    ( #(#action_values,)* )
+                };
+            });
+        }
+
+        // Conditional updates: one `let _next_<field> = if _fire_<rule>
+        // { _rule_<rule>_w<i> } else { _next_<field> };` per action.
+        for (i, action) in rule.actions.iter().enumerate() {
+            let field = &action.field;
+            let next_ident = format_ident!("_next_{field}");
+            let v_ident = &action_value_idents[i];
+            next_decls.push(quote! {
+                let #next_ident = if #fire_ident { #v_ident } else { #next_ident };
             });
         }
     }
@@ -844,6 +919,14 @@ fn parse_rule(method: &ImplItemFn) -> syn::Result<Rule> {
         return Err(err);
     }
 
+    // After the walker runs, `body.stmts` contains the surviving
+    // statements: the rule's preamble — let bindings and helper
+    // expressions that the macro hoists into a per-rule block scope
+    // so all of the rule's actions can share them.  `*ctx.field`
+    // reads inside those statements have already been rewritten to
+    // `q.field` by the walker.
+    let preamble = body.stmts;
+
     let RuleAnnotations {
         priority,
         conflict_free_with,
@@ -857,6 +940,7 @@ fn parse_rule(method: &ImplItemFn) -> syn::Result<Rule> {
         guards: walker.guards,
         actions: walker.actions,
         read_set: walker.read_set,
+        preamble,
         priority,
         conflict_free_with,
         mutually_exclusive_with,
@@ -1016,11 +1100,22 @@ struct RuleBodyWalker {
 
 impl VisitMut for RuleBodyWalker {
     fn visit_block_mut(&mut self, block: &mut Block) {
-        // Filter out statements that are guard!()/set!() macro
-        // invocations (we extract them); leave everything else.
+        // Walk every statement in source order.  Three statement
+        // shapes get extracted (and dropped from the kept body):
+        //
+        // 1. `guard!(expr);` and `guard!(expr)` macro invocations.
+        // 2. `set!(ctx.field, expr);` and `set!(ctx.field, expr)`.
+        // 3. `ctx.field = expr;` direct assignments — equivalent
+        //    to the `set!` macro, with no ceremony.
+        //
+        // Everything else (let bindings, helper expressions, etc.)
+        // is visited to rewrite `*ctx.field` reads and KEPT.  The
+        // kept statements become the rule's preamble — hoisted
+        // into a per-rule block scope where all action expressions
+        // can see the precomputed values.
         let mut keep: Vec<syn::Stmt> = Vec::with_capacity(block.stmts.len());
         for mut stmt in std::mem::take(&mut block.stmts) {
-            // Look for `mac;` and `mac` statement-level macros.
+            // Macro statements: guard!/set! extraction.
             let extracted = match &stmt {
                 syn::Stmt::Macro(stmt_macro) => self.try_handle_macro(&stmt_macro.mac),
                 syn::Stmt::Expr(Expr::Macro(em), _semi) => self.try_handle_macro(&em.mac),
@@ -1028,6 +1123,12 @@ impl VisitMut for RuleBodyWalker {
             };
             if extracted.is_some() {
                 continue; // statement was a guard!() / set!() — drop from body.
+            }
+            // Direct-assignment shape: `ctx.field = value;` or
+            // `ctx.field = value` (statement form).  Both lower to
+            // an `Action` exactly like `set!` does.
+            if self.try_extract_direct_assignment(&stmt) {
+                continue;
             }
             // Otherwise visit children to rewrite `*ctx.field` reads.
             self.visit_stmt_mut(&mut stmt);
@@ -1054,6 +1155,40 @@ impl VisitMut for RuleBodyWalker {
 }
 
 impl RuleBodyWalker {
+    /// If `stmt` is `ctx.field = value;` (or the semicolon-less
+    /// expression statement form), extract it as an [`Action`] and
+    /// return `true`.  Otherwise leave the statement alone and
+    /// return `false`.
+    ///
+    /// The LHS must be exactly `ctx.field` (no nested fields, no
+    /// indexing).  The RHS may be any expression; `*ctx.field`
+    /// reads inside it are rewritten to `q.field` and tracked in
+    /// the rule's read-set.
+    ///
+    /// This is the syntactic alternative to `set!(ctx.field,
+    /// value)`; the two forms produce identical lowered hardware.
+    fn try_extract_direct_assignment(&mut self, stmt: &syn::Stmt) -> bool {
+        // Match both `ctx.field = expr;` (Stmt::Expr with semicolon)
+        // and the rare `ctx.field = expr` (no semicolon, terminal
+        // expression of a block) — the second is unusual but valid
+        // Rust syntax.
+        let assign = match stmt {
+            syn::Stmt::Expr(Expr::Assign(a), _) => a,
+            _ => return false,
+        };
+        // LHS must be `ctx.field`.
+        let field = match ctx_field_lhs(&assign.left) {
+            Some(f) => f,
+            None => return false,
+        };
+        // Clone the RHS, rewrite `*ctx.<f>` reads, track them.
+        let mut value = (*assign.right).clone();
+        let reads = rewrite_ctx_reads_in_expr(&mut value);
+        self.read_set.extend(reads);
+        self.actions.push(Action { field, value });
+        true
+    }
+
     /// If `mac` is `guard!(expr)` or `set!(ctx.field, value)`, push
     /// the appropriate entry into our state and return a unit-typed
     /// expression to take its place in the AST (rules' macro
@@ -1114,6 +1249,28 @@ impl Parse for SetMacroArgs {
         let _comma: syn::Token![,] = input.parse()?;
         let value: Expr = input.parse()?;
         Ok(Self { field, value })
+    }
+}
+
+/// If the expression is `ctx.field` (no deref, no indexing,
+/// no further field access), return the field's identifier.
+/// Used to recognise the LHS of a `ctx.field = value;` direct-
+/// assignment statement.
+fn ctx_field_lhs(expr: &Expr) -> Option<Ident> {
+    let field = match expr {
+        Expr::Field(f) => f,
+        _ => return None,
+    };
+    let path = match &*field.base {
+        Expr::Path(p) => &p.path,
+        _ => return None,
+    };
+    if !path.is_ident("ctx") {
+        return None;
+    }
+    match &field.member {
+        syn::Member::Named(name) => Some(name.clone()),
+        _ => None,
     }
 }
 
