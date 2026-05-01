@@ -31,6 +31,47 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-01 — `rhdl-rule`: DFF sub-field / method access in rule bodies (`ctx.<field>.<inner>`)
+
+**Paths:**
+
+- `crates/rhdl-rule-core/src/lib.rs` — new `try_rewrite_ctx_subwidget_read` helper recognises three sub-field-access patterns on `ctx`: `Expr::Field` (sub-field access), `Expr::MethodCall` (method call on the field), `Expr::Index` (index into the field).  All three rewrite the `ctx` prefix to `q`.  `RuleBodyWalker::visit_expr_mut` and `rewrite_ctx_reads_in_expr` both call the new helper.
+- `crates/rhdl-rule/tests/subwidget_read.rs` (new, 4 tests) — pins down what the new walker enables: method calls on DFF-stored values (`ctx.flags.any()`), indexing into DFF-stored arrays (`ctx.table[idx]`), combined patterns (`*ctx` deref AND `ctx.x.method()` in the same rule body), and iverilog round-trip on the rule-kernel-generated Verilog with the new patterns.
+- `crates/rhdl-rule/src/lib.rs` — module docs spell out the new "DFF sub-field / method access" capability and clarify what's still TODO (full sub-widget composition).
+
+**Why this, why now:** PR #45 documented that the actual blocker for the Alto task system was sub-widget access via `ctx`, and listed it as a follow-up.  This is the first slice of that follow-up — the **read-side** of sub-field access — limited to DFF-stored values.
+
+The walker change is small (~80 LOC of new helper + integration) and produces no regressions.  Existing rule kernels keep their behaviour; the new patterns are additive.
+
+**Design decisions:**
+
+- **Three syntactic patterns recognised**: `ctx.X.Y` (field access), `ctx.X.method(...)` (method call), `ctx.X[idx]` (index).  Each rewrites only the `ctx` prefix, leaving the trailing access verbatim.  The Rust type system decides whether the result type-checks.
+
+- **Same syntactic rewrite for sub-widget output reads.**  A rule body that writes `ctx.subwidget.out_field` lowers correctly to `q.subwidget.out_field` — the read side works.  But the lowering's auto-hold path (`let _next_<field> = q.<field>;` for every field that no rule writes) emits type-incorrect code for sub-widget fields, where `q.<field>` (Out struct) and `d.<field>` (In struct) differ.  Until the auto-hold issue is fixed, full sub-widget composition still doesn't work — the new walker rewrite is correct but downstream code generation isn't.
+
+- **Read-set tracking unchanged at the field-name level.**  `ctx.X.Y` adds `X` to the read-set, not `X.Y`.  This keeps the conflict matrix coarse: any access to a DFF/sub-widget counts as a read of the whole thing.  Refining to per-sub-field tracking would let the conflict matrix be more precise (e.g. `ctx.regs.cells[0]` and `ctx.regs.cells[1]` could be parallel), but that's a Phase 2 consideration.
+
+- **Recurse into the rewritten expression**: `ctx.regs[*ctx.idx]` is rewritten in two passes.  The outer rewrite produces `q.regs[*ctx.idx]`, then the walker recurses into the rewritten expression and the DFF-read pattern handles the inner `*ctx.idx`.  Tested by the `index_into_dff_array_via_ctx` test.
+
+**Validation:**
+
+- **4 new sub-field-access regression tests pass** in `rhdl-rule` (3 functional + 1 iverilog round-trip).
+- **All 75 pre-existing `rhdl-rule` tests still pass** — no regressions.
+- **All 40 `rhdl-alto` tests still pass** — no regressions to the AltoTaskSystem rule kernel that exercises the existing patterns.
+- `cargo check -p rhdl-rule -p rhdl-alto` clean.
+
+**What this PR does NOT close:**
+
+- **Full sub-widget composition** in rule kernels.  The walker-rewrite half works; the auto-hold-of-unwritten-fields half doesn't (type error on sub-widget `Out` ≠ `In`).  Fixing requires struct-type introspection (function-like form has it; attribute form doesn't) plus a different lowering for sub-widget fields.  Worth ~200 LOC + a clear marker mechanism for the attribute form.  Tracked.
+- **Driving sub-widget inputs** from a rule body.  Same root cause; needs the same fix.
+
+**Follow-ups:**
+
+- **Sub-widget composition with auto-hold fix.**  Mark sub-widget fields explicitly (perhaps via `#[subwidget]` on the field, visible to the function-like form), or detect via the field's type at parse time.  Then emit `let _next_<field> = ::core::default::Default::default();` instead of `let _next_<field> = q.<field>;` for sub-widget fields.
+- **Per-sub-field conflict tracking** — let the conflict matrix recognise that `ctx.regs.cells[0]` and `ctx.regs.cells[1]` don't conflict.  Useful for the Alto regfile case where multiple rules read different addresses.
+
+---
+
 ## 2026-05-01 — `rhdl-rule`: cross-kernel calls in rule bodies (regression suite + correction to PR #44)
 
 **Paths:**

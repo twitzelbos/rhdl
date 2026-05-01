@@ -1238,9 +1238,25 @@ impl VisitMut for RuleBodyWalker {
                 return;
             }
         }
+        // DFF read: `*ctx.field` → `q.field`.
         if let Some((rewritten, field)) = try_rewrite_ctx_read_with_field(expr) {
             self.read_set.insert(field);
             *expr = rewritten;
+            return;
+        }
+        // Sub-widget read (also catches sub-field/method/index access on
+        // DFF-stored values): `ctx.X.<rest>` → `q.X.<rest>`.  See
+        // [`try_rewrite_ctx_subwidget_read`] for the full discussion.
+        if let Some((rewritten, field)) = try_rewrite_ctx_subwidget_read(expr) {
+            self.read_set.insert(field);
+            *expr = rewritten;
+            // Recurse into the rewritten expression so any nested
+            // ctx accesses inside the args / index / inner field
+            // get rewritten too.  (E.g. `ctx.regs[*ctx.idx]` —
+            // outer rewrite gives `q.regs[*ctx.idx]`; we then need
+            // to walk the rewritten expr to handle the inner
+            // `*ctx.idx` DFF read.)
+            visit_mut::visit_expr_mut(self, expr);
             return;
         }
         visit_mut::visit_expr_mut(self, expr);
@@ -1369,6 +1385,12 @@ fn ctx_field_lhs(expr: &Expr) -> Option<Ident> {
 
 /// If the expression is `*ctx.field`, rewrite to `q.field` and
 /// return the rewritten expression plus the field name read.
+///
+/// This is the **DFF read** pattern: a leading `*` deref tells the
+/// walker that `ctx.field` is the DFF's stored value (read out of
+/// the q struct).  See [`try_rewrite_ctx_subwidget_read`] for the
+/// sister **sub-widget read** pattern (`ctx.subwidget.<inner>`,
+/// no deref) added in PR #45's follow-up.
 fn try_rewrite_ctx_read_with_field(expr: &Expr) -> Option<(Expr, String)> {
     if let Expr::Unary(syn::ExprUnary {
         op: syn::UnOp::Deref(_),
@@ -1393,8 +1415,108 @@ fn try_rewrite_ctx_read_with_field(expr: &Expr) -> Option<(Expr, String)> {
     None
 }
 
-/// Rewrite all `*ctx.field` reads in `expr`.  Returns the set of
-/// fields that were read.
+/// If `expr` is `ctx.field.<...rest>` (no leading `*`, with at
+/// least one nested access on `ctx.field`), rewrite the `ctx`
+/// prefix to `q` and return the rewritten expression plus the
+/// outermost field name.
+///
+/// This is the **sub-widget read** pattern.  It covers two related
+/// cases that share the same syntactic form:
+///
+/// - **Sub-widget output reads**: `ctx.regfile.rdata` →
+///   `q.regfile.rdata`, where `regfile` is a sub-widget and `rdata`
+///   is one of its `Out` struct's fields.
+/// - **Sub-field / method access on DFF-stored values**:
+///   `ctx.flags.bit(3)` → `q.flags.bit(3)`, where `flags` is a
+///   `dff::DFF<Bits<8>>` and `.bit(3)` is a method on `Bits<8>`.
+///
+/// Both cases lower correctly because the auto-derived `Q` struct
+/// exposes DFF-stored values as their inner type AND sub-widget
+/// outputs as the sub-widget's `Out` struct — both of which have
+/// the field/method shape the rewrite expects.
+///
+/// The walker can't statically distinguish DFF-vs-sub-widget at
+/// proc-macro time without struct-type introspection (which only
+/// the function-like form has, not the attribute form), so the
+/// rewrite is uniform: `ctx.X.Y...` → `q.X.Y...`.  The Rust type
+/// system then decides whether the rewritten expression is sound.
+///
+/// Returns the rewritten expression and the outermost field name
+/// (`field` in `ctx.field.inner`) so the rule's read-set tracks
+/// the outer access.  Sub-field/method accesses past the first hop
+/// don't add extra read-set entries — a read of `ctx.regfile.rdata`
+/// counts as a read of `regfile` for conflict-matrix purposes.
+fn try_rewrite_ctx_subwidget_read(expr: &Expr) -> Option<(Expr, String)> {
+    // Walk up the field-access chain to find the bottom (closest
+    // to `ctx`).  Pattern: `ctx.<outer_field>.<inner_field>...` or
+    // `ctx.<outer_field>.method(...)` etc.  We accept anything
+    // shaped like `Expr::Field(ctx, outer_field).<rest>` where the
+    // base of the outermost `.` is `ctx.<outer_field>`.
+    //
+    // Concretely, we recognise an expression that contains a sub-
+    // expression of the form `ctx.<outer_field>` somewhere inside
+    // a containing field-access, method-call, or index.  Rather
+    // than walking the chain by hand, we look at just the
+    // outermost layer: `Expr::Field(base, _)` where base is also
+    // a Field on ctx, OR `Expr::MethodCall(receiver, ...)` where
+    // receiver is a Field on ctx, OR `Expr::Index(base, _)` where
+    // base is a Field on ctx.  Each rewrites to swap `ctx` for `q`.
+    //
+    // We don't recurse the walker into the rewritten expression
+    // (the visitor handles that for nested expressions); this
+    // function only handles a single rewrite per call.
+
+    // Helper: given an expression that might be `ctx.<field>`,
+    // return the field name and a fresh `q.<field>` to substitute.
+    fn ctx_field_to_q_field(e: &Expr) -> Option<(Expr, String)> {
+        if let Expr::Field(syn::ExprField { base, member, .. }) = e {
+            if let Expr::Path(syn::ExprPath { path, .. }) = &**base {
+                if path.is_ident("ctx") {
+                    if let syn::Member::Named(field) = member {
+                        let name = field.to_string();
+                        return Some((syn::parse_quote! { q.#field }, name));
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    match expr {
+        // ctx.outer.inner   →  q.outer.inner
+        Expr::Field(syn::ExprField { base, member, .. }) => {
+            if let Some((q_base, name)) = ctx_field_to_q_field(base) {
+                let m = member.clone();
+                return Some((syn::parse_quote! { #q_base.#m }, name));
+            }
+            None
+        }
+        // ctx.outer.method(...)   →  q.outer.method(...)
+        Expr::MethodCall(syn::ExprMethodCall {
+            receiver, method, args, turbofish, ..
+        }) => {
+            if let Some((q_recv, name)) = ctx_field_to_q_field(receiver) {
+                let args = args.clone();
+                let turbofish = turbofish.clone();
+                return Some((syn::parse_quote! { #q_recv.#method #turbofish ( #args ) }, name));
+            }
+            None
+        }
+        // ctx.outer[idx]   →  q.outer[idx]
+        Expr::Index(syn::ExprIndex { expr: base, index, .. }) => {
+            if let Some((q_base, name)) = ctx_field_to_q_field(base) {
+                let idx = (**index).clone();
+                return Some((syn::parse_quote! { #q_base[#idx] }, name));
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+/// Rewrite all `*ctx.field` reads AND `ctx.X.<rest>` sub-widget /
+/// sub-field reads in `expr`.  Returns the set of fields that
+/// were read.
 fn rewrite_ctx_reads_in_expr(expr: &mut Expr) -> std::collections::BTreeSet<String> {
     struct Rewriter {
         reads: std::collections::BTreeSet<String>,
@@ -1404,6 +1526,12 @@ fn rewrite_ctx_reads_in_expr(expr: &mut Expr) -> std::collections::BTreeSet<Stri
             if let Some((replacement, field)) = try_rewrite_ctx_read_with_field(expr) {
                 self.reads.insert(field);
                 *expr = replacement;
+                return;
+            }
+            if let Some((replacement, field)) = try_rewrite_ctx_subwidget_read(expr) {
+                self.reads.insert(field);
+                *expr = replacement;
+                visit_mut::visit_expr_mut(self, expr);
                 return;
             }
             visit_mut::visit_expr_mut(self, expr);
