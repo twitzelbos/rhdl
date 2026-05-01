@@ -292,7 +292,7 @@ We commit to Levels 1 and 2. We sketch Levels 3–5 as research targets.
 | Phase | Deliverable | Effort | Dependencies | Status |
 |---|---|---|---|---|
 | 1 | Prose RHIF specification: `doc/rhif-spec/` directory + per-opcode pages + invariants + lowering relations | ~3 weeks | nothing | **Shipped 2026-04-30** ([`doc/rhif-spec/`](./doc/rhif-spec/)) |
-| 2 | Property-based VM testing: random-program generators + per-property tests + widget-corpus shadowing | ~4 weeks | Phase 1 | not yet started |
+| 2 | Property-based VM testing: random-program generators + per-property tests + widget-corpus shadowing | ~4 weeks | Phase 1 | **Shipped 2026-04-30** ([`crates/rhdl-core/src/rhif/well_formedness.rs`](./crates/rhdl-core/src/rhif/well_formedness.rs), [`crates/rhdl-core/src/rhif/property_tests.rs`](./crates/rhdl-core/src/rhif/property_tests.rs), [`crates/rhdl-fpga/src/widget_*.rs`](./crates/rhdl-fpga/src/)).  CI integration + extended random program coverage are Phase 2 follow-ups |
 | 3 (research) | PLT Redex / K Framework operational semantics | ~2 months | Phase 1 | sketched |
 | 4 (research) | Coq mechanization with soundness theorems | ~6 months | Phase 3 | sketched |
 | 5 (research) | Verified extraction | ~2 years | Phase 4 | sketched |

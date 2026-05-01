@@ -5,5 +5,7 @@ pub mod vm;
 pub use object::Object;
 pub mod display_rhif;
 pub mod remap;
+pub mod property_tests;
 pub mod runtime_ops;
 pub mod visit;
+pub mod well_formedness;
