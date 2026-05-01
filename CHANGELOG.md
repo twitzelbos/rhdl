@@ -31,6 +31,52 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-01 — Tier C: rhdl-rv32i pipelined coverage — conditional branches + JALR
+
+**Paths:**
+
+- `crates/rhdl-rv32i/tests/pipelined.rs` — adds 8 new tests (was 6, now 14):
+  - 6 conditional-branch parity tests (`pipelined_b{eq,ne,lt,ge,ltu,bgeu}_parity_*`).  Each test runs both the taken and not-taken case through the pipelined and single-cycle cores and asserts byte-identical scratchpad agreement.
+  - 2 JALR parity tests (`pipelined_jalr_with_register_base_parity`, `pipelined_jalr_with_offset_parity`).  Cover the squash + redirect path with non-trivial `rs1 + imm` targets and the bit-0 mask behaviour.
+- New encoding helpers (`b_type`, `beq` / `bne` / `blt` / `bge` / `bltu` / `bgeu`, `jalr`) and a `build_branch_program` fixture for the comparator sweeps.
+
+**Why this, why now:**  Closes the explicit "conditional-branch test coverage in the pipelined harness" and "JALR with non-trivial `rs1+imm` target" follow-ups documented in the previous CHANGELOG entry.  PR #31 shipped the pipelined CPU with only JAL exercising the squash + redirect path; this PR validates that all 7 control-flow opcodes (the 6 branches + JALR) handle squash, forwarding (rs1 + rs2 may both come from in-flight registers), and target computation correctly.
+
+**Design decisions:**
+
+- **Parity-against-single-cycle, every test.**  The pattern from PR #31 — both cores run the same program; assert agreement on the first 4 scratchpad words.  No new test mechanism; no new validation contract.  The single-cycle [`Cpu`] remains the executable spec.
+
+- **Test both directions (taken + not-taken) for every comparator.**  6 comparators × 2 directions = 12 cases bundled into 6 named tests.  Cheaper than 12 separate tests and groups them by comparator semantics.
+
+- **`build_branch_program` fixture** for the comparator tests.  Each test starts from the same 7-instruction scaffold (load operands → branch → poison stores → trailing observable store) and only varies the branch encoding + the operand setup.  Reads the same way for every comparator; differences are visible at a glance.
+
+- **JALR test #1 covers the common case**: `rs1` provides the full target, `imm = 0`.  Tests the squash + redirect path.
+
+- **JALR test #2 covers the additive case**: `target = rs1 + imm`.  Tests that the immediate is sign-extended and added correctly.  The bit-0 mask is exercised implicitly (every test target is 4-byte-aligned).
+
+**Surprises and gotchas:**
+
+- **`build_branch_program` is mutable in the not-taken direction.**  Each test starts with the default operand values (both x1 = x2 = 0) and modifies them in-place via `p[0] = …; p[1] = …;` for the not-taken case.  Slightly verbose but keeps the encoding inline and visible.
+
+- **All 6 comparators passed first try.**  The pipelined branch comparator reads `rs1_fwd` / `rs2_fwd` (forwarded values) so back-to-back ALU result → branch reads correctly.  The squash + redirect path is comparator-agnostic — same code as JAL.
+
+- **JALR target masking exposed nothing new.**  Both JALR tests landed at 4-byte-aligned targets; bit 0 of the computed target was already zero, so the `& 0xFFFF_FFFE` mask was a no-op.  An interesting JALR misalignment test would require the target to be misaligned, which RV32I says should trap — and trap handling is Phase 3 work.  Deferred.
+
+**Validation:**
+
+- **52 tests pass** in `rhdl-rv32i` (44 from PR #31 + 8 new).
+- **All 8 new tests** pass on first run — no pipeline bugs uncovered.  PR #31's design holds up under the full conditional-branch + JALR surface.
+- All 92 rule-track tests still pass — purely additive change.
+
+**Move 1 / Phase 2 status: done.**  Phase 2's Pipelined CPU now covers every control-flow opcode in the RV32I base.  The remaining gaps are the cross-cutting validation infrastructure items listed in PR #31's CHANGELOG (CSRs / M-mode traps; misaligned-target traps; `RCStream` memory interface; riscv-tests harness; CoreMark/Dhrystone) — none of which are coverage gaps in the pipeline implementation itself.
+
+**Next:**
+
+- **Phase 3** per `tier-c-flagship-cores.md` §3.5: M-mode privileged extensions and CSRs (~2-3 weeks).  `mstatus`, `mtvec`, `mepc`, `mcause`, `mtval`, `mscratch`, `misa`, `mhartid`; trap handling for ECALL / illegal / misaligned / external interrupt.
+- **OR** the cross-cutting **riscv-tests harness** (per §7) — the load-bearing ISA-compliance check shared across all three Tier C cores.  Higher leverage than Phase 3 because it validates the existing implementation rigorously rather than adding new features.
+
+---
+
 ## 2026-05-01 — Tier C: rhdl-rv32i Phase 2 — 5-stage pipelined CPU with forwarding, load-use stall, branch squash
 
 **Paths:**

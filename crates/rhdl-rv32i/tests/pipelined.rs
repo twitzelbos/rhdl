@@ -99,6 +99,34 @@ fn jal(rd: u32, imm: i32) -> u32 {
         | 0x6F
 }
 
+fn jalr(rd: u32, rs1: u32, imm: i32) -> u32 {
+    i(imm, rs1, 0, rd, 0x67)
+}
+
+fn b(imm: i32, rs2: u32, rs1: u32, funct3: u32) -> u32 {
+    let imm_u = (imm as u32) & 0x1FFF;
+    let bit12 = (imm_u >> 12) & 1;
+    let bit11 = (imm_u >> 11) & 1;
+    let bits_10_5 = (imm_u >> 5) & 0x3F;
+    let bits_4_1 = (imm_u >> 1) & 0xF;
+    (bit12 << 31)
+        | bits_10_5 << 25
+        | (rs2 & 0x1F) << 20
+        | (rs1 & 0x1F) << 15
+        | (funct3 & 0x7) << 12
+        | bits_4_1 << 8
+        | bit11 << 7
+        | 0x63
+}
+
+// One helper per branch op (shows the funct3 encoding inline).
+fn beq(rs1: u32, rs2: u32, imm: i32) -> u32 { b(imm, rs2, rs1, 0) }
+fn bne(rs1: u32, rs2: u32, imm: i32) -> u32 { b(imm, rs2, rs1, 1) }
+fn blt(rs1: u32, rs2: u32, imm: i32) -> u32 { b(imm, rs2, rs1, 4) }
+fn bge(rs1: u32, rs2: u32, imm: i32) -> u32 { b(imm, rs2, rs1, 5) }
+fn bltu(rs1: u32, rs2: u32, imm: i32) -> u32 { b(imm, rs2, rs1, 6) }
+fn bgeu(rs1: u32, rs2: u32, imm: i32) -> u32 { b(imm, rs2, rs1, 7) }
+
 // ---- Program-driver harnesses ------------------------------------
 
 /// Closed-loop run harness — drives the program memory based on
@@ -344,4 +372,177 @@ fn pipelined_iverilog_round_trip() -> Result<(), RHDLError> {
     let tm = test_bench.rtl(&uut, &Default::default())?;
     tm.run_iverilog()?;
     Ok(())
+}
+
+// ---- Conditional-branch parity sweeps ----------------------------
+//
+// Each test is a small program that:
+//   1. Loads two values into registers.
+//   2. Executes the branch under test (forward 12 bytes — past two
+//      "poison" stores that should NOT execute on the taken path).
+//   3. After both poison stores there is a SW that observes the
+//      "taken" outcome.
+//
+// If the branch is taken, mem[0] = 0xCAFE.
+// If the branch is NOT taken, the first poison store fires
+//   (mem[0] = 0xDEAD), then the second (mem[0] = 0xBEEF), then the
+//   trailing SW also fires (mem[0] = 0xCAFE).  So mem[0] ends at
+//   0xCAFE either way for the "should be taken" tests; we
+//   distinguish by also checking mem[4] (the first poison) — it
+//   stays 0 if the branch was actually taken.
+//
+// For each comparator we test both directions: a "branch taken"
+// program AND a "branch NOT taken" program.
+
+fn build_branch_program(branch_instr: u32) -> Vec<u32> {
+    vec![
+        addi(1, 0, 0),         // 0x00: x1 = 0     (branch operand A)
+        addi(2, 0, 0),         // 0x04: x2 = 0     (branch operand B; tests rewrite these)
+        branch_instr,          // 0x08: BR x1, x2, +12
+        addi(7, 0, 0xDA),      // 0x0C: x7 = 0xDA      (poison; should NOT execute on taken)
+        sw(7, 0, 4),           // 0x10: mem[1] = 0xDA  (poison)
+        addi(8, 0, 0x222),     // 0x14: x8 = 0x222
+        sw(8, 0, 0),           // 0x18: mem[0] = 0x222
+    ]
+}
+
+/// Parity check helper: run the same program through both cores,
+/// assert agreement on a few scratchpad words.
+fn assert_parity(program: &[u32], cycles_single: usize, cycles_pipelined: usize) {
+    let single = run_single(program, cycles_single);
+    let pipelined = run_pipelined(program, cycles_pipelined);
+    for i in 0..4 {
+        assert_eq!(
+            pipelined[i], single[i],
+            "scratchpad word {i} differs: single={} pipelined={}",
+            single[i], pipelined[i],
+        );
+    }
+}
+
+#[test]
+fn pipelined_beq_parity_taken_and_not_taken() {
+    // x1 = x2 = 0 → BEQ taken.
+    assert_parity(&build_branch_program(beq(1, 2, 16)), 16, 28);
+    // x1 = 0, x2 = 1 → BEQ not taken.
+    let mut p = build_branch_program(beq(1, 2, 16));
+    p[1] = addi(2, 0, 1);
+    assert_parity(&p, 16, 28);
+}
+
+#[test]
+fn pipelined_bne_parity_taken_and_not_taken() {
+    // x1 = 0, x2 = 1 → BNE taken.
+    let mut p = build_branch_program(bne(1, 2, 16));
+    p[1] = addi(2, 0, 1);
+    assert_parity(&p, 16, 28);
+    // x1 = x2 = 0 → BNE not taken.
+    assert_parity(&build_branch_program(bne(1, 2, 16)), 16, 28);
+}
+
+#[test]
+fn pipelined_blt_parity_signed_compare() {
+    // x1 = -5, x2 = 1  → BLT taken (signed).
+    let mut p = build_branch_program(blt(1, 2, 16));
+    p[0] = addi(1, 0, -5);
+    p[1] = addi(2, 0, 1);
+    assert_parity(&p, 16, 28);
+    // x1 = 5, x2 = 1 → BLT not taken.
+    let mut p = build_branch_program(blt(1, 2, 16));
+    p[0] = addi(1, 0, 5);
+    p[1] = addi(2, 0, 1);
+    assert_parity(&p, 16, 28);
+}
+
+#[test]
+fn pipelined_bge_parity_signed_compare() {
+    // x1 = 5, x2 = 1 → BGE taken.
+    let mut p = build_branch_program(bge(1, 2, 16));
+    p[0] = addi(1, 0, 5);
+    p[1] = addi(2, 0, 1);
+    assert_parity(&p, 16, 28);
+    // x1 = -5, x2 = 1 → BGE not taken.
+    let mut p = build_branch_program(bge(1, 2, 16));
+    p[0] = addi(1, 0, -5);
+    p[1] = addi(2, 0, 1);
+    assert_parity(&p, 16, 28);
+}
+
+#[test]
+fn pipelined_bltu_parity_unsigned_compare() {
+    // x1 = 0xFFFF_FFFF (huge unsigned), x2 = 0  → BLTU NOT taken.
+    let mut p = build_branch_program(bltu(1, 2, 16));
+    p[0] = addi(1, 0, -1); // sign-extends to 0xFFFF_FFFF
+    p[1] = addi(2, 0, 0);
+    assert_parity(&p, 16, 28);
+    // x1 = 0, x2 = 0xFFFF_FFFF → BLTU taken.
+    let mut p = build_branch_program(bltu(1, 2, 16));
+    p[0] = addi(1, 0, 0);
+    p[1] = addi(2, 0, -1);
+    assert_parity(&p, 16, 28);
+}
+
+#[test]
+fn pipelined_bgeu_parity_unsigned_compare() {
+    // x1 = 0xFFFF_FFFF, x2 = 0 → BGEU taken.
+    let mut p = build_branch_program(bgeu(1, 2, 16));
+    p[0] = addi(1, 0, -1);
+    p[1] = addi(2, 0, 0);
+    assert_parity(&p, 16, 28);
+    // x1 = 0, x2 = 0xFFFF_FFFF → BGEU not taken.
+    let mut p = build_branch_program(bgeu(1, 2, 16));
+    p[0] = addi(1, 0, 0);
+    p[1] = addi(2, 0, -1);
+    assert_parity(&p, 16, 28);
+}
+
+// ---- JALR with non-trivial target --------------------------------
+
+#[test]
+fn pipelined_jalr_with_register_base_parity() {
+    // 0x00:  addi x5, x0, 0x18  ; x5 = 0x18  (target base for JALR)
+    // 0x04:  jalr x6, x5, 0     ; PC ← (x5 + 0) & ~1 = 0x18; x6 ← 0x08
+    // 0x08:  addi x7, x0, 0xAA  ; SHOULD NOT EXECUTE (squashed)
+    // 0x0C:  sw   x7, 0(x0)     ; SHOULD NOT EXECUTE (squashed)
+    // 0x10:  addi x8, x0, 0xBB  ; SHOULD NOT EXECUTE (skipped)
+    // 0x14:  addi x9, x0, 0xCC  ; SHOULD NOT EXECUTE (skipped)
+    // 0x18:  addi x10, x0, 0x42 ; x10 = 0x42  (lands here)
+    // 0x1C:  sw   x10, 0(x0)    ; mem[0] = 0x42
+    let program = vec![
+        addi(5, 0, 0x18),
+        jalr(6, 5, 0),
+        addi(7, 0, 0xAA),
+        sw(7, 0, 0),
+        addi(8, 0, 0xBB),
+        addi(9, 0, 0xCC),
+        addi(10, 0, 0x42),
+        sw(10, 0, 0),
+    ];
+    assert_parity(&program, 20, 36);
+}
+
+#[test]
+fn pipelined_jalr_with_offset_parity() {
+    // Test the imm sign-extension and bit-0-mask path of JALR.
+    // 0x00: addi x5, x0, 0x10   ; x5 = 0x10
+    // 0x04: jalr x6, x5, 0xC    ; PC ← (0x10 + 0xC) & ~1 = 0x1C
+    // 0x08: sw   x0, 0(x0)      ; SQUASHED
+    // 0x0C: sw   x0, 0(x0)      ; SKIPPED
+    // 0x10: sw   x0, 0(x0)      ; SKIPPED
+    // 0x14: sw   x0, 0(x0)      ; SKIPPED
+    // 0x18: sw   x0, 0(x0)      ; SKIPPED
+    // 0x1C: addi x10, x0, 0x99  ; x10 = 0x99 (lands here)
+    // 0x20: sw   x10, 0(x0)     ; mem[0] = 0x99
+    let program = vec![
+        addi(5, 0, 0x10),
+        jalr(6, 5, 0xC),
+        sw(0, 0, 0),
+        sw(0, 0, 0),
+        sw(0, 0, 0),
+        sw(0, 0, 0),
+        sw(0, 0, 0),
+        addi(10, 0, 0x99),
+        sw(10, 0, 0),
+    ];
+    assert_parity(&program, 20, 36);
 }
