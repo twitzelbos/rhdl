@@ -571,6 +571,18 @@ The recommended pattern for FSM-shaped widgets with multiple concurrent rules: u
 
 Bluespec remains the closest comparison and the foundational reference.
 
+### 17.4 Capturing BSV users — strategic plays in priority order
+
+Bluespec is alive but stuck. The compiler open-sourced in 2020 (a decade after the moment had passed); the company pivoted to RISC-V IP and consulting; the truly active community is 200–500 people globally — small in headcount but disproportionately influential (senior architecture researchers at MIT/CMU/Cornell/IBM, the people writing textbooks and running graduate courses, defense-contractor architects, formal-methods-curious hardware engineers who picked BSV *specifically* because rules were worth learning a strange language for). Capturing 30–50% of them over 2–3 years is realistic and translates into outsized academic mindshare, conference papers using RHDL, course materials propagating to thousands of students per cohort, and the production validation that "the rules abstraction works under load."
+
+The plays, in priority order:
+
+**1. Ship `rhdl-rule` with semantics at least as strong as BSV's.** Guarded atomic rules with implicit conditions, the conflict matrix, maximal-parallel-firing schedules, all the annotation hints (`urgent_before`, `mutually_exclusive`, `conflict_free`), and methods with implicit conditions when called. Phases 1–3 of this document cover most of the surface; the implicit-condition piece on method calls (deferred per §17.1's v1 non-goal of cross-module methods) is the gap that has to close before BSV-fan engagement starts. Until it does, BSV users will see the comparison table, find "no" under "Methods (modular rules)", and disengage.
+
+**2. Beat BSV on rule-scheduler diagnostics.** This is the wedge. Every BSV user has been frustrated by an opaque scheduling error — BSV tells them a conflict-free schedule doesn't exist but is bad at explaining *why*, because the conflict propagated transitively through a dozen rule-pair conflicts. RHDL with miette must do better: when scheduling fails, emit a diagnostic that visualizes the conflict graph, names the specific resource(s) two rules contend over, and suggests the right annotation (`urgent_before`, `mutually_exclusive`, `conflict_free`) at the right call site. §12 (Error handling and diagnostics) already commits to this direction; the bar for BSV-fan capture is "noticeable within five minutes of a BSV user trying RHDL."
+
+**3. Publish a "BSV → RHDL" porting guide as a chapter in the RHDL book.** Side-by-side syntax. Every BSV idiom (interfaces, modules, methods with implicit conditions, `mkReg`, `mkFIFOF`, `mkConnection`, rule-with-guard, `urgent_before`, `mutually_exclusive`, `conflict_free`) gets a translation. A worked example porting a non-trivial BSV design — a small RISC-V pipeline or a cache controller — is the most credible artifact the project can produce. The chapter lives at `doc/book/src/migration/from-bsv.md`, referenced from `doc/book/src/SUMMARY.md`. **This chapter is a Phase 1 deliverable** of `rhdl-rule` per §16: the moment Phase 1 lands in main, the porting guide must be in the book.
+
 ---
 
 ## 18 — Risks and open questions
