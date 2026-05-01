@@ -1,0 +1,18 @@
+[package]
+name = "rhdl-alto"
+version = "0.0.1"
+edition = "2024"
+license = "MIT"
+description = "Xerox Alto in RHDL — Tier C flagship core #2 — microcoded heterogeneous compute (16 priority-ordered hardware tasks)."
+homepage = "https://rhdl.org"
+repository = "https://github.com/samitbasu/rhdl"
+keywords = ["fpga", "hdl", "hardware", "alto", "xerox"]
+
+[dependencies]
+rhdl = { path = "../rhdl" }
+rhdl-bits = { path = "../rhdl-bits" }
+rhdl-fpga = { path = "../rhdl-fpga" }
+rhdl-rule = { path = "../rhdl-rule" }
+
+[dev-dependencies]
+expect-test = "1.5.1"
