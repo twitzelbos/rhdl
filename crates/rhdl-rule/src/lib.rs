@@ -62,32 +62,27 @@
 //!   pure `function`."  See `tests/cross_kernel_call.rs` for
 //!   worked examples.
 //!
+//! - **Sub-widget composition (auto-hold for read-only sub-widgets)** —
+//!   a `rule_kernel` struct can compose a sub-widget as a struct
+//!   field; rules can read its outputs via `ctx.<sub>.<field>`.
+//!   The auto-hold path drives the sub-widget's input to a
+//!   stable zero (`<D as Digital>::dont_care().<field>`) when no
+//!   rule writes it.  The function-like form auto-classifies
+//!   fields by inspecting their type tokens (`dff::DFF<T>` and
+//!   `Reg<T>` → DFF; everything else → sub-widget).  The attribute
+//!   form takes an explicit list:
+//!   `#[rule_kernel_attr(subwidgets = "field1, field2")]`.
+//!
 //! # What rule bodies can NOT contain (yet)
 //!
-//! - **Full sub-widget composition** — composing a sub-widget as
-//!   a struct field of the rule kernel breaks the "auto-hold of
-//!   unwritten fields" path: the next-decls emit
-//!   `let _next_<field> = q.<field>;` for every field that no
-//!   rule writes, but `q.<field>` is the sub-widget's `Out`
-//!   struct while `d.<field>` is its `In` struct — the two have
-//!   different types and the assignment fails to type-check.
-//!   The walker rewrite (`ctx.X.Y` → `q.X.Y`) lowers the *read*
-//!   half of sub-widget access correctly; the missing piece is
-//!   the auto-hold strategy when the field is a sub-widget.
-//!   Fixing that needs struct-type introspection (which the
-//!   function-like form has but the attribute form doesn't) and
-//!   a different lowering for sub-widget vs DFF auto-holds.
-//!   Workaround: keep the rule kernel pure-DFF, and compose with
-//!   sub-widgets at the parent layer via a regular `Synchronous`
-//!   widget.  See `tests/subwidget_access_known_failing.rs` for
-//!   the documented limitation and `crates/rhdl-alto/src/
-//!   task_system.rs` for the real-world workaround pattern.
-//!
-//! - **Driving sub-widget inputs from a rule body** — same root
-//!   cause as the above; needs the per-field type classification
-//!   to know whether `ctx.field = expr` writes a DFF (existing
-//!   path) or drives a sub-widget input (would need a different
-//!   action lowering).
+//! - **Driving sub-widget inputs from a rule body** — `ctx.field
+//!   = SubIn { ... }` doesn't work for sub-widget fields today.
+//!   The sub-widget receives its auto-hold input
+//!   (`<D as Digital>::dont_care().<field>`) every cycle, which
+//!   is fine for observation patterns but doesn't let a rule
+//!   drive the sub-widget per-cycle.  Use composition at the
+//!   parent layer for now (drive the sub-widget externally).
+//!   Tracked as a follow-up.
 //!
 //! # Example
 //!
@@ -174,8 +169,8 @@ pub fn rule_kernel(input: TokenStream) -> TokenStream {
 /// }
 /// ```
 #[proc_macro_attribute]
-pub fn rule_kernel_attr(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    match rhdl_rule_core::expand_rule_kernel_attr(item.into()) {
+pub fn rule_kernel_attr(attr: TokenStream, item: TokenStream) -> TokenStream {
+    match rhdl_rule_core::expand_rule_kernel_attr_with_args(attr.into(), item.into()) {
         Ok(output) => output.into(),
         Err(err) => err.to_compile_error().into(),
     }
