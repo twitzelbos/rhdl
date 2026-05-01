@@ -47,9 +47,10 @@
 
 use crate::alu::alu;
 use crate::cpu::{branch_taken, load_format};
+use crate::csr::{CsrFile, In as CsrIn};
 use crate::decoder::decode;
 use crate::hazard::{detect_load_use_stall, forward_select, writes_back};
-use crate::isa::{AluSrc, MemOp, Opcode, WritebackSrc};
+use crate::isa::{AluSrc, CsrOp, MemOp, Opcode, SystemOp, WritebackSrc};
 use crate::pipeline::{ExMem, ForwardSrc, IdEx, IfId, MemWb};
 use crate::reg_file::{In as RegIn, RegFile};
 use rhdl::prelude::*;
@@ -99,6 +100,8 @@ pub struct PipelinedCpu {
     mem_wb: dff::DFF<MemWb>,
     /// Architectural register file (32×32 bits).
     rf: RegFile,
+    /// M-mode CSR file (Phase 3 pipelined support).
+    csrs: CsrFile,
 }
 
 impl Default for PipelinedCpu {
@@ -110,6 +113,7 @@ impl Default for PipelinedCpu {
             ex_mem: dff::DFF::new(ExMem::default()),
             mem_wb: dff::DFF::new(MemWb::default()),
             rf: RegFile::default(),
+            csrs: CsrFile::default(),
         }
     }
 }
@@ -170,11 +174,11 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         WritebackSrc::Alu     => q.ex_mem.alu_result,
         WritebackSrc::Mem     => mem_value,
         WritebackSrc::PcPlus4 => q.ex_mem.pc_plus_4,
-        // Phase 3 CSR support not yet wired into the pipelined
-        // core; for now any Csr writeback is reported as zero.
-        // The single-cycle CPU is the reference implementation
-        // for CSR semantics; pipelined-CSR support is a follow-up.
-        WritebackSrc::Csr     => bits::<32>(0),
+        // For CSR instructions, the Execute stage stashed the
+        // pre-modify CSR value in `alu_result` so the writeback
+        // path for `rd ← old_csr` is the same shape as for
+        // ordinary ALU ops.
+        WritebackSrc::Csr     => q.ex_mem.alu_result,
     };
     let next_mem_wb_en: bool = q.ex_mem.valid
         && q.ex_mem.writeback_src != WritebackSrc::None
@@ -184,6 +188,12 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         rd: q.ex_mem.rd,
         writeback_value: next_mem_wb_writeback,
         writeback_en: next_mem_wb_en,
+        // CSR write info propagates verbatim from EX/MEM.  The
+        // Writeback stage drives the CSR file's write port from
+        // these fields; only commits when csr_writes && valid.
+        csr_addr: q.ex_mem.csr_addr,
+        csr_new_value: q.ex_mem.csr_new_value,
+        csr_writes: q.ex_mem.csr_writes,
         valid: q.ex_mem.valid,
     };
 
@@ -237,6 +247,56 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
 
     let pc_plus_4_ex: Bits<32> = q.id_ex.pc + bits::<32>(4);
 
+    // CSR access in Execute stage: the read port is driven this
+    // cycle by `d.csrs.raddr = q.id_ex.csr_addr` (below); the
+    // pre-modify value comes back via `q.csrs.rdata`.  Compute
+    // the new value here and forward it to MEM/WB for commit.
+    //
+    // For CSR-read-into-rd (writeback_src == Csr), `alu_result`
+    // is repurposed to carry the pre-modify CSR value through the
+    // pipeline.  This works because the same EX/MEM slot can't
+    // hold both an ALU result and a CSR result (writeback_src
+    // distinguishes), and the Memory stage re-reads writeback_src
+    // to mux into MEM/WB.
+    let csr_rdata: Bits<32> = q.csrs.rdata;
+    let csr_uimm: Bits<32> = q.id_ex.rs1.resize();
+    let csr_src: Bits<32> = match q.id_ex.csr_op {
+        CsrOp::ReadWriteImm => csr_uimm,
+        CsrOp::ReadSetImm   => csr_uimm,
+        CsrOp::ReadClearImm => csr_uimm,
+        _                   => rs1_fwd,
+    };
+    let csr_new_value: Bits<32> = match q.id_ex.csr_op {
+        CsrOp::ReadWrite     => csr_src,
+        CsrOp::ReadWriteImm  => csr_src,
+        CsrOp::ReadSet       => csr_rdata | csr_src,
+        CsrOp::ReadSetImm    => csr_rdata | csr_src,
+        CsrOp::ReadClear     => csr_rdata & !csr_src,
+        CsrOp::ReadClearImm  => csr_rdata & !csr_src,
+        CsrOp::None          => csr_rdata,
+    };
+    let csr_writes_ex: bool = match q.id_ex.csr_op {
+        CsrOp::None         => false,
+        CsrOp::ReadWrite    => true,
+        CsrOp::ReadWriteImm => true,
+        CsrOp::ReadSet      => q.id_ex.rs1 != bits::<5>(0),
+        CsrOp::ReadSetImm   => q.id_ex.rs1 != bits::<5>(0),
+        CsrOp::ReadClear    => q.id_ex.rs1 != bits::<5>(0),
+        CsrOp::ReadClearImm => q.id_ex.rs1 != bits::<5>(0),
+    };
+
+    // Trap detection: ECALL or EBREAK in Execute.  Squashes
+    // IF/ID, ID/EX, and EX/MEM-next; redirects PC to mtvec;
+    // signals the CSR file's trap port to commit mepc/mcause.
+    let take_ecall: bool  = q.id_ex.valid && q.id_ex.system_op == SystemOp::Ecall;
+    let take_ebreak: bool = q.id_ex.valid && q.id_ex.system_op == SystemOp::Ebreak;
+    let take_trap: bool   = take_ecall || take_ebreak;
+    let trap_cause: Bits<32> = if take_ecall {
+        bits::<32>(11)  // M-mode environment call
+    } else {
+        bits::<32>(3)   // Breakpoint
+    };
+
     // Branch / jump resolution.
     let branch_t: bool = branch_taken(q.id_ex.branch_op, rs1_fwd, rs2_fwd);
     let take_branch: bool = q.id_ex.valid && q.id_ex.opcode == Opcode::Branch && branch_t;
@@ -248,8 +308,12 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let take_jal: bool  = q.id_ex.valid && q.id_ex.opcode == Opcode::Jal;
     let take_jalr: bool = q.id_ex.valid && q.id_ex.is_jalr;
 
-    let redirect: bool = take_branch || take_jal || take_jalr;
-    let redirect_target: Bits<32> = if take_jalr {
+    // Redirect = branch / jump / trap.  Trap target is mtvec;
+    // branch / jump targets are computed above.
+    let redirect: bool = take_branch || take_jal || take_jalr || take_trap;
+    let redirect_target: Bits<32> = if take_trap {
+        q.csrs.mtvec
+    } else if take_jalr {
         jalr_target
     } else if take_jal {
         jal_target
@@ -257,16 +321,36 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         branch_target
     };
 
-    let next_ex_mem = ExMem {
+    // Pick alu_result for EX/MEM: for CSR-into-rd, carry the
+    // pre-modify CSR value (the Memory stage's mux over
+    // writeback_src steers it correctly).
+    let ex_mem_alu_result: Bits<32> = if q.id_ex.writeback_src == WritebackSrc::Csr {
+        csr_rdata
+    } else {
+        alu_result
+    };
+
+    // On a trap, the in-flight EX/MEM slot becomes a bubble — the
+    // trap squashes the trapping instruction's writeback and any
+    // memory side-effect.
+    let next_ex_mem_real = ExMem {
         rd: q.id_ex.rd,
-        alu_result,
+        alu_result: ex_mem_alu_result,
         rs2_val: rs2_fwd,
         mem_op: q.id_ex.mem_op,
         writeback_src: q.id_ex.writeback_src,
         mem_write: q.id_ex.valid && q.id_ex.mem_write,
         mem_read: q.id_ex.valid && q.id_ex.mem_read,
         pc_plus_4: pc_plus_4_ex,
+        csr_addr: q.id_ex.csr_addr,
+        csr_new_value,
+        csr_writes: csr_writes_ex,
         valid: q.id_ex.valid,
+    };
+    let next_ex_mem: ExMem = if take_trap {
+        ExMem::default()
+    } else {
+        next_ex_mem_real
     };
 
     // ---- Decode stage (D) -------------------------------------------
@@ -331,6 +415,9 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         is_jalr: dec.is_jalr,
         rs1_val: id_rs1_val,
         rs2_val: id_rs2_val,
+        csr_op: dec.csr_op,
+        csr_addr: dec.csr_addr,
+        system_op: dec.system_op,
         valid: q.if_id.valid,
     };
     let bubble: IdEx = IdEx::default(); // valid = false → behaves as NOP
@@ -384,6 +471,25 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         wen: mem_wb_writes,
     };
 
+    // ---- Drive the CSR file's input port ----------------------------
+    //
+    // Read port: driven by Execute's csr_addr (so q.csrs.rdata
+    // reflects the in-Execute CSR instruction's pre-modify value).
+    // Write port: driven by MEM/WB's csr fields (commits the
+    // CSRRW/CSRRS/CSRRC's new value).
+    // Trap port: driven by Execute's trap signals (ECALL / EBREAK
+    // → captures mepc / mcause / mtval atomically).
+    d.csrs = CsrIn {
+        raddr: q.id_ex.csr_addr,
+        waddr: q.mem_wb.csr_addr,
+        wdata: q.mem_wb.csr_new_value,
+        wen: q.mem_wb.valid && q.mem_wb.csr_writes,
+        trap_en: take_trap,
+        trap_pc: q.id_ex.pc,
+        trap_cause,
+        trap_val: bits::<32>(0),  // v0.6 doesn't compute mtval
+    };
+
     // ---- Commit pipeline registers ----------------------------------
     d.pc = next_pc;
     d.if_id = next_if_id;
@@ -399,6 +505,9 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         d.id_ex = IdEx::default();
         d.ex_mem = ExMem::default();
         d.mem_wb = MemWb::default();
+        // Drive the CSR file to a quiescent input during reset
+        // (the CSR file's own reset clears its registers).
+        d.csrs = CsrIn::default();
         o.pc = bits::<32>(0);
         o.mem_write = false;
         o.mem_read = false;
