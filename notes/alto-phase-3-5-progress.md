@@ -147,11 +147,44 @@ Realistic remaining timeline: 2-3 months of focused work.
   *never* actually executes its microcode.  Reverted; prev_task DFF
   kept for future re-use.
 
-  **Real fix needs wakeup-latching:** the disk's sector_mark needs
-  to set a "Task 4 pending" latch that stays asserted until Task 4
-  has actually serviced it (i.e., executed at least one real
-  microinstruction, not a stall NOP).  Combined with the stall,
-  that gives Task 4 enough cycles to actually do work.  Or:
-  per-task instruction prefetch cache (16 × 32 bits) — every cycle,
-  prefetch each task's next instruction so on switch the right
-  instruction is immediately available.  Both are multi-day work.
+  **🎯 RESOLVED via historical research.**  The "bug" isn't a bug at
+  all — it IS the real Alto's hardware behavior.  Per the *Alto
+  Hardware Manual* §2.4 (Aug 1976) and confirmed in ContrAlto's
+  `CPU.cs` / `Tasks/Task.cs`:
+
+  - The Alto has ONE global MIR pipeline register (not per-task cache).
+  - Pipeline is two-stage: while instruction N executes from MIR,
+    instruction N+1 is fetched from microcode ROM in parallel.
+  - **Task switches happen ONLY when microcode does F1=TASK** (not
+    per-cycle automatically).  The current task is "sticky" until
+    its microcode yields.
+  - On F1=TASK, the new task is selected at end of cycle, but the
+    already-prefetched instruction (from the OLD task's MPC stream)
+    still executes — that's the **delay slot** (one-cycle, but
+    productive — it does outgoing-task work, not a bubble).
+
+  **My current chip's per-cycle arbitration is the actual bug.**
+  The "task changed every cycle" behavior I see is wrong-by-design —
+  the real Alto would have the Emulator running continuously until
+  it does F1=TASK.  Disk Sector wouldn't "wake briefly for one cycle"
+  — Emulator would yield, Disk Sector would run to completion of its
+  service routine, then yield back.
+
+  **Correct fix:** rework task_system to be "sticky" — current_task
+  is a DFF that only updates on F1=TASK firing.  Microengine's F1=TASK
+  triggers the arbitration; task_system's priority encoder picks the
+  highest-priority woken task; current_task latches that.  The
+  delay-slot semantics fall out naturally from the existing 1-cycle
+  BRAM pipeline (MIR latch).  This makes the Alto Hardware Manual's
+  description of the "delay slot after TASK" exactly what my chip
+  already does — I just need to gate the task switch to F1=TASK.
+
+  Estimated work: 2-3 days.  The biggest piece is restructuring
+  task_system from "fire-best-task-each-cycle" to "decide-on-F1=TASK".
+
+  Sources downloaded to `assets/bitsavers/` (gitignored):
+  - Alto_Hardware_Manual_Aug76.pdf — §2.4 "Microprocessor Control"
+  - AltoHWRef.part1.pdf, part2.pdf — alternate hardware reference
+  - AltoIICode3.mu.pdf, altoIIcode3.mu.txt — actual microcode source
+  - Alto_II_firmware.zip — 2KCTL/MADR/DISPL/XM51 PROM dumps
+  - AltoSubsystems_Oct79.pdf — subsystems reference
