@@ -1062,13 +1062,14 @@ mod tests {
         let final_disk_word_count = trace.last().unwrap().disk_word_count.raw();
         eprintln!("[end_to_end_256_word_dma] disk_word_count = {final_disk_word_count}");
 
-        assert!(final_disk_word_count >= 256,
-            "Disk Word task should fire at least 256 times (one per DMA); got {final_disk_word_count}");
-        // It shouldn't fire dramatically more, either — that would mean
-        // word_strobe didn't stop, suggesting transfer_remaining never
-        // hit 0 (a re-arm bug).
-        assert!(final_disk_word_count <= 280,
-            "Disk Word should stop firing after transfer ends; got {final_disk_word_count} (re-arm bug?)");
+        // E1 tightening: per spec §8.6, transfer_remaining counts down
+        // exactly 256 words then word_strobe stops.  Previous bound
+        // was 256..=280 (24 cycles slack) which would have masked any
+        // re-arm bug for many extra firings.  Tighten to the
+        // pipeline-exact value: 256 DMAs + at most 1 transition cycle.
+        assert!(final_disk_word_count == 256 || final_disk_word_count == 257,
+            "Disk Word task should fire exactly 256 or 257 times \
+             (256 DMAs + ≤1 transition cycle); got {final_disk_word_count}");
 
         // Disk Sector should have fired its setup pass (4 cycles)
         // then sat at addr 4 NOP loop.  Each cycle it doesn't fire

@@ -214,6 +214,12 @@ pub struct Microengine {
     /// L_LOAD fires (with the current ALU's carry-out); read by
     /// F2=AluCarryToNext.
     alu_carry: dff::DFF<bool>,
+    /// SKIP latch (Emulator only, per spec §6.6 / "NOVEL SHIFTS"
+    /// commentary in ContrAlto's Shifter.cs).  Set by F2=LoadDNS (D16,
+    /// not yet implemented); cleared by F2=LoadIr.  Read by ALUF=11
+    /// (BUS+SKIP): when SKIP is set, the ALU adds 1 to BUS instead of
+    /// passing it through, implementing Nova's skip-on-condition.
+    skip: dff::DFF<bool>,
 }
 
 impl SynchronousIO for Microengine {
@@ -319,11 +325,11 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     };
 
     // ---- ALU -------------------------------------------------------
-    // SKIP signal — Phase 1 doesn't have a cross-cycle skip latch;
-    // wire it to the previous cycle's carry-out via L's MSB as a
-    // placeholder (matches the Alto's "skip = previous-ALU-carry"
-    // interpretation for the only Phase-1-relevant case).
-    let skip: bool = (q.l & bits::<16>(0x8000)) != bits::<16>(0);
+    // SKIP signal — proper SKIP latch (replaces the Phase 1 placeholder
+    // that read L's MSB).  Read by ALUF=11 (BUS+SKIP) per spec §3.1.
+    // The latch is cleared by F2=LoadIr per spec §6.6 ("IR← clears
+    // SKIP") and would be set by F2=LoadDNS (D16, not yet implemented).
+    let skip: bool = q.skip;
     let aout: AluOut = alu(mi.aluf, bus, q.t, skip);
 
     // ---- T and L latches ------------------------------------------
@@ -356,9 +362,22 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // post-shift value is the **Shifter Output** per *Alto Hardware
     // Manual* §2.7 + ContrAlto's Task.cs (`Shifter.Output`) — and
     // it's what feeds the R-write path below.
+    //
+    // F2=MAGIC (Emulator-only, F2=9) modifies LSH/RSH to inject T bits
+    // for double-length shifts per spec §6.6 + ContrAlto's Shifter.cs:
+    //   - Left shift:  bit 0  ← T bit 15 (MSB of T)
+    //   - Right shift: bit 15 ← T bit 0  (LSB of T)
+    //   - LCY8: no MAGIC variant (per ContrAlto Shifter)
+    let is_magic: bool = is_emulator && mi.f2 == F2Function::Code9;
     let l_after_f1: Bits<16> = match mi.f1 {
-        F1Function::LeftShift1  => d.l << 1,
-        F1Function::RightShift1 => d.l >> 1,
+        F1Function::LeftShift1  => {
+            let shifted = d.l << 1;
+            if is_magic { shifted | ((q.t >> 15) & bits::<16>(1)) } else { shifted }
+        }
+        F1Function::RightShift1 => {
+            let shifted = d.l >> 1;
+            if is_magic { shifted | ((q.t & bits::<16>(1)) << 15) } else { shifted }
+        }
         F1Function::LeftCycle8  => (d.l << 8) | (d.l >> 8),
         _                       => d.l,
     };
@@ -708,6 +727,12 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     d.ir = if is_emulator_task && is_load_ir { bus } else { q.ir };
     o.ir = q.ir;
 
+    // SKIP latch update per spec §6.6: cleared by IR←.  Set by
+    // F2=LoadDNS (D16; not yet implemented — DNS would compute a
+    // skip-condition based on shifter result + IR[8-9]).  For now,
+    // the only writer is the IR← clear path.
+    d.skip = if is_emulator_task && is_load_ir { false } else { q.skip };
+
     // ---- Outputs ---------------------------------------------------
     o.t          = q.t;
     o.l          = q.l;
@@ -721,6 +746,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         d.mar = bits::<16>(0);
         d.ir = bits::<16>(0);
         d.alu_carry = false;
+        d.skip = false;
         o.mpc = bits::<10>(0);
         o.current_task = bits::<4>(0);
         o.next_mpc = bits::<10>(0);

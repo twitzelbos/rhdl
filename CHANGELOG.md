@@ -31,6 +31,79 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4l: D15 (MAGIC) + D16 partial (SKIP latch) + D2/D3 (memory timing tests) + E1 (tighten DMA assertion)
+
+**Paths:**
+
+- `crates/rhdl-alto/src/microengine.rs` — D15: implemented MAGIC modifier (F2=9 in Emulator).  Modifies LSH (left shift bit 0 ← T's MSB) and RSH (right shift bit 15 ← T's LSB) per spec §6.6 + ContrAlto's `Shifter.cs`.  Used for Nova double-length shifts.
+- `crates/rhdl-alto/src/microengine.rs` — D16 partial: replaced the SKIP placeholder (`skip = q.l & 0x8000`) with a proper `skip: dff::DFF<bool>`.  Cleared by F2=LoadIr per spec §6.6 ("IR← clears SKIP").  Read by ALUF=11 (BUS+SKIP).  The setter (F2=LoadDNS) is the substantial DNS work and remains a follow-up; for now SKIP stays at the post-reset/post-IR-clear false state.
+- `crates/rhdl-alto/tests/microcode_semantics.rs` — added 7 new tests: 5 MAGIC tests (LSH+T-injection on/off, RSH+T-injection on/off, MAGIC inactive in disk task), 2 SKIP latch tests (post-reset state, IR← clear).
+- `crates/rhdl-alto/tests/microcode_semantics.rs` — added 2 §4.4 memory timing tests (well-formed read with intervening cycle, well-formed write with intervening cycle).  Spec §4.4(b) suspend-on-bad-timing remains a follow-up (requires modeling memory-busy state).
+- `crates/rhdl-alto/src/alto_chip.rs` — E1 tightened: `disk_word_count` bound from `>=256 && <=280` to `==256 || ==257` matching spec §8.6 exact-256-DMA semantics.  Old slack would have masked re-arm bugs for many extra firings.
+
+**Why this, why now:** Continuing audit cleanup.  MAGIC is the immediate D15 fix; the SKIP latch removes a long-standing placeholder that only worked by coincidence (`skip = L's MSB`) and lays the groundwork for D16's full DNS implementation.
+
+**Design decisions:**
+
+- **MAGIC is per-task (Emulator only).**  F2=9 in Disk task is RWC (NEXT-modify), not MAGIC.  The disk-task negative test (`magic_inactive_in_disk_task`) verifies LSH in disk task with F2=Code9 produces plain shift, no T injection.
+- **SKIP DFF default = false.**  Post-reset SKIP is false.  Initial behavior is therefore identical to the previous placeholder for the common case.
+- **DNS deferred.**  DNS is a large feature (Nova-style 17-bit rotates with carry; per-IR-bit conditional R-write and SKIP setting; new CARRY DFF).  Setting up the SKIP DFF + IR← clear path now is preparation; the DNS setter will plug into the same DFF.
+
+**Validation:**
+
+- 212 alto tests pass (up from 203 — added 9 new tests for D15 + D16-SKIP + D2/D3).
+- Boot trace metrics unchanged (76 distinct microaddresses); the Emulator's tight loop in 2000 cycles doesn't yet reach Nova SHIFT or memory-MAR/MD-using opcode handlers in significant volume.
+
+**Follow-ups:**
+
+- D16 full DNS implementation (Nova SHIFT instruction emulation: shifter modifier, CARRY DFF, conditional R-write, SKIP setting from shift result).
+- D19 F1=11 INCRECNO (KSEC uses; needs DiabloDisk to track records).
+- D20 KWDX F2 codes 8-12, 14 (currently no-op stubs; need disk-state model).
+- D2/D3 spec §4.4(b) memory-suspend-on-bad-timing (would need memory-busy state in the chip).
+- D4/D5 §4.4(d/e) refresh + MAR-after-MD hazard.
+- E2-E8 remaining weak assertions.
+
+---
+
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4k: D11 + D12 + D13 + D25 (IDISP completeness, ACSOURCE late dispatch, PART task numbering)
+
+**Paths:**
+
+- `crates/rhdl-alto/src/microengine.rs` — D12: completed the IDISP PROM table with the missing IR[0]=1 (complement-of-SH-field) and IR[4-7]=14 branches per spec §6.6 + ContrAlto's `EmulatorTask.cs`.  D13: implemented ACSOURCE late dispatch (the second of ACSOURCE's two roles per spec §6.6) — IR[0]=1 → 3-IR[8-9]; else PROM-equivalent dispatch on IR[3-7] (CYCLE / RAMTRAP / NOPAR / JSRII / CONVERT / SWAT / ROMTRAP cases) plus optional IR[5] OR if IR[1-2] != 3.
+- `crates/rhdl-alto/tests/microcode_semantics.rs` — added 19 new tests: 1 BUSODD negative case (D11), 9 IDISP coverage tests (D12, all branches), 9 ACSOURCE late-dispatch tests (D13, including disk-task negative test).
+- `crates/rhdl-alto/alto-processor-and-microcode-spec.md` — D25: corrected the §5.1/§5.2 task numbering text/table to reflect real Alto II microcode (PART at task 13, KWDX at task 14) instead of the generic AltoHW §2.3 wording (which says "task 15").  Added explanatory note that the implementation follows the real-microcode convention and ContrAlto's `CPU.cs` enum.
+
+**Why this, why now:** Continuing audit cleanup.  Each of these is a real implementation/spec-doc gap that would manifest under realistic microcode — IDISP is the Nova fetch loop's first-level dispatch; ACSOURCE is used by virtually every Nova instruction's emulator handler; PART task numbering was a documented contradiction between the generic HW manual and the as-shipped microcode.
+
+**Design decisions:**
+
+- **D12: PROM equivalent in if-else chain.**  ContrAlto uses an actual lookup PROM for IDISP/ACSOURCE.  Our microengine uses an if-else chain that semantically matches the PROM contents.  Slower in real silicon but correct; can swap for a lookup BRAM later if perf matters.
+
+- **D13: ACSOURCE late dispatch is intricate** — IR[5] is structurally part of IR[3-7] (overlapping bit positions per Alto MSB=0 numbering: IR[5] = our bit 10, IR[3-7] = our bits 12-8 which includes bit 10).  This makes the spec's "OR IR[5]" rule observable only in cases where the IR[3-7] dispatch's bit 0 is clear AND IR[5]=1 AND IR[1-2] != 3.  Test `acsource_ir12_not_3_ors_indirect_bit_into_dispatch` exercises this corner with IR=0x0500.
+
+- **D25: implementation wins; spec-doc was wrong.**  Real Alto II microcode (`altoIIcode3.mu`) places PART at task 13 via the `!17,20,...,PART,KWDX,;` directive.  ContrAlto's enum agrees.  The "task 15 = PART" text in the AltoHW §2.3 footnote describes a generic capability ("the highest-priority task is the parity error task") rather than a specific microcode-binary slot assignment.  Real Alto II shipped with task 15 unused.
+
+**Surprises and gotchas:**
+
+- IR bit numbering is consistently MSB=0 (Alto convention) in spec text but LSB=0 in our code — every dispatch table required careful translation.  Wrote it out in comments next to each implementation to make audit easier.
+
+- ACSOURCE's PROM is 128 entries (7-bit index = `(IR & 0x7f00) >> 8`), but most entries follow the simple "if IR[3-7]=N → dispatch=K" rule.  Our if-else chain captures this with O(11) comparisons; for a real silicon implementation, a lookup BRAM would be the right shape.
+
+**Validation:**
+
+- 203 alto tests pass (up from 182 — added 19 new spec-rule tests).
+- Boot trace metrics unchanged (76 unique microaddresses) — the IDISP/ACSOURCE additions don't unblock more progress in the 2000-cycle window because the Emulator's current loop doesn't yet reach opcode handlers using these dispatches.  Will be measurable progress once the boot trace gets past the early Nova fetch chain.
+
+**Follow-ups:**
+
+- D15 MAGIC bit injection on shifts (T-bit↔R-bit during LSH/RSH) — needed for Nova double-length shift instructions.
+- D16 DNS (Do Nova Shift) + SKIP latch — needed for Nova SHIFT instruction emulation; depends on a SKIP DFF.
+- D19 F1=11 INCRECNO; D20 KWDX F2 codes 8-12, 14 — disk task codes (currently stubbed).
+- D2/D3/D4/D5 §4.4 memory timing rules — spec-correctness requires modeling memory-busy stalls.
+- E-class: tighten weak assertions.
+
+---
+
 ## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4j: 5 spec-correctness bugs from audit (D1, D6, D9, D10, D17) + 5 microcode-placement test fixes (C2-C6)
 
 **Paths:**

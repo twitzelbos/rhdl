@@ -1207,6 +1207,199 @@ fn acsource_ir12_eq_3_does_not_or_indirect_bit() {
         "IR[1-2]=3 suppresses the IR[5] indirect-bit OR");
 }
 
+// =====================================================================
+// §6.6 — SKIP latch (D16 partial: latch + IR← clears it)
+// =====================================================================
+//
+// Per spec §6.6 + ContrAlto's Shifter.cs commentary: SKIP is a one-bit
+// latch in the Emulator.  Set by F2=LoadDNS (not yet implemented);
+// cleared by F2=LoadIr.  Read by ALUF=11 (BUS+SKIP) — when SKIP is
+// set, the ALU adds 1 to BUS (otherwise it passes BUS through),
+// implementing Nova's "skip on condition" semantics.
+
+#[test]
+fn skip_latch_defaults_to_zero_after_reset() {
+    // Use ALUF=BusPlusSkip with BUS=5.  After reset, SKIP=false → ALU
+    // returns BUS = 5.
+    let out = observe_after(vec![
+        InCfg::new(ui(0, AluFunction::BusPlusSkip, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, false, true, 0), 5),
+    ]);
+    assert_eq!(out.l.raw() as u16, 5,
+        "After reset, SKIP=false; ALUF=BusPlusSkip with BUS=5 → 5");
+}
+
+#[test]
+fn ir_load_clears_skip_latch() {
+    // Even if SKIP were somehow set, IR← (F2=LoadIr) clears it.  The
+    // current SKIP setter (LoadDNS) isn't implemented, so this test
+    // primarily verifies the IR← clear path doesn't change the
+    // already-false SKIP — and that ALUF=BusPlusSkip still returns BUS.
+    let out = observe_after(vec![
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
+            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
+            .with_md(0x4000).with_task(0),
+        InCfg::new(ui(0, AluFunction::BusPlusSkip, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, false, true, 0), 7),
+    ]);
+    assert_eq!(out.l.raw() as u16, 7,
+        "After IR← clears SKIP, ALUF=BusPlusSkip with BUS=7 → 7");
+}
+
+// =====================================================================
+// §4.4 — Memory MAR/MD timing rules (D2/D3 coverage)
+// =====================================================================
+//
+// Per spec §4.4(a): "A minimum of one microinstruction must intervene
+// between the initiation of a memory reference [F1=LoadMar] and an
+// `MD←` [F2=StoreMd] or `←MD` [BS=MemoryData]."
+//
+// Per spec §4.4(b): the processor SUSPENDS execution if MD is touched
+// before memory is ready — but our chip doesn't model the suspend
+// (Phase 3.5 simplification).  These tests therefore exercise the
+// well-formed pattern (one-cycle gap) — verifying that microcode
+// respecting the rule sees consistent values.  An ill-formed test
+// (no intervening cycle) would silently get stale data with our
+// model; we don't test that case until the suspend behavior is
+// modeled (Phase 4 follow-up).
+
+#[test]
+fn memory_read_with_intervening_cycle_returns_correct_value() {
+    // Spec §4.4(a) well-formed pattern:
+    //   Cycle 1: F1=LoadMar, BUS=address (drives MAR)
+    //   Cycle 2: NOP (memory in flight)
+    //   Cycle 3: BS=MemoryData → BUS gets MD (memory[address])
+    // observe_after captures BS=MemoryData read into T.
+    let out = observe_after(vec![
+        // Cycle 1: load MAR with address from constant (use index 0).
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::LoadMar, F2Function::Constant, false, false, 0), 0x0080),
+        // Cycle 2: intervening NOP (per spec §4.4(a)).
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Nop, F2Function::Nop, false, false, 0), 0),
+        // Cycle 3: T <- MD = whatever memory holds at 0x0080.
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
+            F1Function::Nop, F2Function::Nop, true, false, 0), 0)
+            .with_md(0xDEAD),
+    ]);
+    // Note: observe helper drives mem_read_data each cycle directly
+    // (synthetic memory), not through a Memory sub-circuit.  So we
+    // verify that BS=MemoryData latches the helper-supplied md value.
+    assert_eq!(out.t.raw() as u16, 0xDEAD,
+        "T <- MD with proper intervening cycle latches the supplied MD");
+}
+
+#[test]
+fn memory_write_with_intervening_cycle_emits_correct_signals() {
+    // Spec §4.4 well-formed write pattern:
+    //   Cycle 1: F1=LoadMar (MAR <- 0x0100)
+    //   Cycle 2: NOP
+    //   Cycle 3: F2=StoreMd, BUS = data → mem_write_en + correct addr/data
+    let out = observe_comb(vec![
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::LoadMar, F2Function::Constant, false, false, 0), 0x0100),
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Nop, F2Function::Nop, false, false, 0), 0),
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Constant, F2Function::StoreMd, false, false, 0), 0xBEEF),
+    ]);
+    assert!(out.mem_write_en,
+        "F2=StoreMd with proper MAR setup must assert mem_write_en");
+    assert_eq!(out.mem_address.raw() as u16, 0x0100,
+        "mem_address must reflect MAR loaded 2 cycles ago");
+    assert_eq!(out.mem_write_data.raw() as u16, 0xBEEF,
+        "mem_write_data must reflect this cycle's BUS");
+}
+
+// =====================================================================
+// §6.6 — F2=MAGIC modifies LSH/RSH for double-length shifts (D15)
+// =====================================================================
+
+#[test]
+fn magic_left_shift_injects_t_msb_into_bit_0() {
+    // Pre-load T=0x8000 (MSB set), L=0x0042.  Then LSH+MAGIC should
+    // produce L' = (0x0042 << 1) | (T MSB → bit 0) = 0x0084 | 1 = 0x0085.
+    let out = observe_after(vec![
+        // T <- 0x8000
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, true, false, 0), 0x8000),
+        // L <- 0x0042
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, false, true, 0), 0x0042),
+        // LSH + MAGIC (F2=Code9)
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::LeftShift1, F2Function::Code9, false, false, 0), 0),
+    ]);
+    assert_eq!(out.l.raw() as u16, 0x0085,
+        "MAGIC LSH: bit 0 = T's MSB = 1; (0x0042<<1) | 1 = 0x0085");
+}
+
+#[test]
+fn magic_left_shift_t_msb_clear_no_injection() {
+    // T=0x0001 (MSB clear).  LSH+MAGIC should produce just (L << 1).
+    let out = observe_after(vec![
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, true, false, 0), 0x0001),
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, false, true, 0), 0x0042),
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::LeftShift1, F2Function::Code9, false, false, 0), 0),
+    ]);
+    assert_eq!(out.l.raw() as u16, 0x0084,
+        "MAGIC LSH with T MSB clear: bit 0 = 0; same as plain LSH");
+}
+
+#[test]
+fn magic_right_shift_injects_t_lsb_into_bit_15() {
+    // T=0x0001 (LSB set), L=0x0080.  RSH+MAGIC: L' = (L>>1) | (T LSB << 15)
+    //   = 0x0040 | 0x8000 = 0x8040.
+    let out = observe_after(vec![
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, true, false, 0), 0x0001),
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, false, true, 0), 0x0080),
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::RightShift1, F2Function::Code9, false, false, 0), 0),
+    ]);
+    assert_eq!(out.l.raw() as u16, 0x8040,
+        "MAGIC RSH: bit 15 = T's LSB = 1; (0x0080>>1) | 0x8000 = 0x8040");
+}
+
+#[test]
+fn magic_lsh_inactive_without_f2_code9() {
+    // No F2=MAGIC → plain LSH, no T injection regardless of T value.
+    let out = observe_after(vec![
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, true, false, 0), 0x8000),
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, false, true, 0), 0x0042),
+        // Plain LSH, no F2=Code9
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::LeftShift1, F2Function::Nop, false, false, 0), 0),
+    ]);
+    assert_eq!(out.l.raw() as u16, 0x0084,
+        "Plain LSH (no MAGIC) produces L<<1 with no T injection");
+}
+
+#[test]
+fn magic_inactive_in_disk_task() {
+    // F2=Code9 is per-task; in disk task, F2=9 is RWC (NEXT-modify, not
+    // MAGIC).  Plain LSH should produce L<<1 with no T injection.
+    let out = observe_after(vec![
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, true, false, 0), 0x8000)
+            .with_task(4),
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, false, true, 0), 0x0042)
+            .with_task(4),
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::LeftShift1, F2Function::Code9, false, false, 0), 0)
+            .with_task(4),
+    ]);
+    assert_eq!(out.l.raw() as u16, 0x0084,
+        "MAGIC is Emulator-only; in disk task, F2=Code9 is RWC, no T injection");
+}
+
 #[test]
 fn acsource_inactive_in_disk_task() {
     // F2=Code14 (=ACSOURCE in Emulator) is per-task; in disk task
