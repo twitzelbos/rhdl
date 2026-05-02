@@ -196,7 +196,13 @@ pub enum F2Function {
     /// the Alto Hardware Manual §5 + ContrAlto's `EmulatorTask.cs`,
     /// this is F2=12 in Emulator.
     LoadIr,
-    Reserved13,
+    /// `IDISP` — Instruction Dispatch.  ORs IR[7:0] into NEXT[7:0] so
+    /// the engine jumps to an opcode-specific handler based on the
+    /// current Nova instruction in IR.  Emulator task (0) only.  This
+    /// is the centerpiece of the Nova-emulator inner loop: after
+    /// FETCH + LoadIr, IDISP routes execution to the right per-opcode
+    /// microcode handler.
+    IDispatch,
     Reserved14,
     Reserved15,
 }
@@ -386,7 +392,7 @@ fn f2_function_index(f: F2Function) -> u8 {
         F2Function::Reserved10 => 10,
         F2Function::Reserved11 => 11,
         F2Function::LoadIr => 12,
-        F2Function::Reserved13 => 13,
+        F2Function::IDispatch => 13,
         F2Function::Reserved14 => 14,
         F2Function::Reserved15 => 15,
     }
@@ -406,7 +412,7 @@ fn f2_function_from_index(i: u8) -> F2Function {
         10 => F2Function::Reserved10,
         11 => F2Function::Reserved11,
         12 => F2Function::LoadIr,
-        13 => F2Function::Reserved13,
+        13 => F2Function::IDispatch,
         14 => F2Function::Reserved14,
         _ => F2Function::Reserved15,
     }

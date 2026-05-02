@@ -253,6 +253,17 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         _                     => next_addr,
     };
     next_addr = (next_addr_or_bus & bits::<10>(0x3FE)) | bit0;
+    // F2=IDispatch (Emulator only): OR IR[7:0] into the low 8 bits of
+    // NEXT.  This is the Nova-emulator instruction-dispatch path —
+    // routes execution to the per-opcode microcode handler keyed by
+    // the IR.  Real Alto IDISP also factors in the AC source ROM;
+    // Phase 3.5 simplification: just OR IR[7:0] directly.
+    let is_emulator_for_idisp: bool = i.current_task == bits::<4>(0);
+    let is_idisp: bool = mi.f2 == F2Function::IDispatch;
+    if is_emulator_for_idisp && is_idisp {
+        let ir_low: Bits<10> = (q.ir & bits::<16>(0xFF)).resize();
+        next_addr = next_addr | ir_low;
+    }
     o.next_mpc = next_addr;
 
     // ---- DMA detection (Disk Word task) --------------------------
@@ -439,7 +450,7 @@ fn f2_from_index(i: Bits<4>) -> F2Function {
     else if i == bits::<4>(10) { F2Function::Reserved10 }
     else if i == bits::<4>(11) { F2Function::Reserved11 }
     else if i == bits::<4>(12) { F2Function::LoadIr }
-    else if i == bits::<4>(13) { F2Function::Reserved13 }
+    else if i == bits::<4>(13) { F2Function::IDispatch }
     else if i == bits::<4>(14) { F2Function::Reserved14 }
     else                       { F2Function::Reserved15 }
 }

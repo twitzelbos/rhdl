@@ -865,6 +865,76 @@ mod tests {
             "Disk Word task (14) should fire after disk arms the transfer");
     }
 
+    /// IDispatch under Emulator: stage IR=0xCAFE then run F2=IDispatch
+    /// with NEXT=0x100; expect next_mpc = 0x100 | 0xFE = 0x1FE.
+    #[test]
+    fn f2_idispatch_routes_via_ir_low_byte() {
+        // addr 0: F1=Constant idx=0=0x0100, F2=LoadMar → MAR ← 0x0100.
+        let mi0 = Microinstruction {
+            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
+            f1: F1Function::Constant, f2: F2Function::LoadMar,
+            t_load: false, l_load: false, next: bits::<10>(1),
+        };
+        // addr 1: filler, BRAM read settle.
+        let mi1 = Microinstruction {
+            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
+            f1: F1Function::Nop, f2: F2Function::Nop,
+            t_load: false, l_load: false, next: bits::<10>(2),
+        };
+        // addr 2: F2=LoadIr → IR ← MD = 0xCAFE.
+        let mi2 = Microinstruction {
+            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
+            f1: F1Function::Nop, f2: F2Function::LoadIr,
+            t_load: false, l_load: false, next: bits::<10>(3),
+        };
+        // addr 3: F2=IDispatch with NEXT=0x100.
+        // Expected next_mpc = 0x100 | (IR[7:0]=0xFE) = 0x1FE.
+        // Microcode at 0x1FE will be a NOP loop.
+        let mi3 = Microinstruction {
+            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
+            f1: F1Function::Nop, f2: F2Function::IDispatch,
+            t_load: false, l_load: false, next: bits::<10>(0x100),
+        };
+        // addr 0x1FE: NOP loop, mark via T register.
+        let mi_target = Microinstruction {
+            rsel: bits::<5>(0),
+            aluf: AluFunction::BusPlusOne,  // BUS+1 = 1; latch to L
+            bs: BusSource::ReadR,
+            f1: F1Function::Nop, f2: F2Function::Nop,
+            t_load: false, l_load: true,
+            next: bits::<10>(0x1FE),
+        };
+        let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
+        microcode[0] = mi0.pack();
+        microcode[1] = mi1.pack();
+        microcode[2] = mi2.pack();
+        microcode[3] = mi3.pack();
+        microcode[0x1FE] = mi_target.pack();
+
+        let mut constants = [0u16; crate::constant_rom::NUM_CONSTANTS];
+        constants[0] = 0x0100;  // MAR target
+        let memory_initial = vec![(bits::<16>(0x0100), bits::<16>(0xCAFE))];
+
+        let uut = AltoChip::with_microcode_constants_and_memory(
+            &microcode, &constants, memory_initial,
+        );
+        let trace = run(uut, 16);
+
+        // After enough cycles for the chain to settle:
+        //   reset → addr 0 (MAR ← 0x100) → addr 1 (filler) →
+        //   addr 2 (IR ← MD = 0xCAFE) → addr 3 (IDispatch) →
+        //   addr 0x1FE (NOP+L_LOAD).
+        // L should latch 1 (BUS+1 with BUS=0).
+        let final_l = trace.last().unwrap().l.raw();
+        assert_eq!(final_l, 1,
+            "L should latch 1 from the addr-0x1FE BUS+1 ALU op, proving \
+             IDispatch routed MPC to 0x1FE = 0x100 | (IR[7:0]=0xFE)");
+        // And confirm IR was loaded correctly.
+        let final_ir = trace.last().unwrap().ir.raw();
+        assert_eq!(final_ir, 0xCAFE,
+            "IR should hold 0xCAFE from the LoadIr step");
+    }
+
     /// Per-task IR load: under Emulator (task 0), F2=LoadIr loads
     /// IR ← MD (memory data).  Stage memory[0x100] = 0xCAFE, do
     /// MAR ← 0x100, wait, then F2=LoadIr; verify IR == 0xCAFE.
