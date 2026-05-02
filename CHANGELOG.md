@@ -31,6 +31,45 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-01 — `rhdl-rule`: sub-widget input drive — regression suite + docs correction
+
+**Paths:**
+
+- `crates/rhdl-rule/tests/subwidget_drive.rs` (new, 5 tests) — pins down that rules can drive sub-widget inputs via `ctx.<sub_widget> = SubIn { ... }`.  Covers: single-rule drive, multi-rule arbitration on a shared sub-widget, the canonical Alto regfile-style drive-raddr-then-read-rdata pattern (same cycle), and iverilog round-trip on both basic and Alto-pattern cases.
+- `crates/rhdl-rule/src/lib.rs` — module docs corrected: sub-widget input drive works (was previously listed under "what rule bodies can NOT contain"); the genuine remaining gap is partial input writes (drive a single field of the In struct) and implicit `when`-clauses on sub-widget methods.
+
+**Why this, why now:** PR #47 documented "sub-widget input drive" as the next remaining follow-up — implying real implementation work was needed.  When asked to think about whether the convenience sugar was already enough, I built a minimal repro to test the assumption — and discovered that sub-widget drive **already works as a side effect of PR #47's auto-hold fix**.  No additional walker or lowering changes needed.
+
+**Why it falls out for free:**
+
+1. The walker treats `ctx.<field> = expr` as a direct-assignment action regardless of field kind (it's field-name-based, not field-kind-based).
+2. The action lowers through the same `_next_<field>` shadowing chain DFF actions use.
+3. For sub-widget fields, PR #47's auto-hold default is `<D as Digital>::dont_care().<field>` — type-pinned via field projection, equivalent to `Default::default()` for typical In structs.
+4. Both branches of the rule's if-else (the action's value vs the auto-hold default) have the same type (the sub-widget's `In` struct), so Rust accepts the conditional assignment.
+5. Multi-rule arbitration uses the existing priority chain.
+6. Same-cycle drive-then-read works because sub-widgets are combinational from `d.<sub>` (input) to `q.<sub>` (output) within a cycle — the canonical "drive raddr → read rdata" pattern.
+
+**The PR-#47 follow-up reframed:**
+
+The original PR #47 listed "driving sub-widget inputs from a rule body" as a real follow-up requiring "a different action lowering."  That assessment was wrong — drive works as-is.  The genuine remaining gaps are:
+
+- **Partial input writes** — `ctx.fifo.write_en = true` (one field of the In) requires per-input-field action tracking.  Workaround: write the whole In struct.
+- **Implicit `when`-clauses** — BSV's "rule blocks if a called method's `when` predicate is false."  Workaround: explicit `guard!()` with the readiness predicate.
+- **Method-based interfaces** — multiple methods per widget (BSV-style `enq` / `deq` / `count`).  This is Phase 3 of the BSV-parity plan and a real architectural lift.
+
+**Validation:**
+
+- **5 new sub-widget-drive regression tests pass** in `rhdl-rule` (3 functional + 2 iverilog round-trip).
+- All 84 pre-existing `rhdl-rule` tests still pass.
+- All 40 `rhdl-alto` tests still pass.
+- `cargo check -p rhdl-rule -p rhdl-alto` clean.
+
+**Why a regression PR rather than a silent CHANGELOG edit (again):**
+
+Per CLAUDE.md §15 (reporting status honestly): when a previous CHANGELOG mis-scoped a follow-up, the right move is a public correction with regression tests, not a quiet edit.  This is the second such correction in `rhdl-rule` (PR #45 was the first — for cross-kernel calls).  Pattern: when I think rule-kernel needs a feature added, I should first write the minimal repro and check whether the feature is genuinely missing, before scoping engineering work.
+
+---
+
 ## 2026-05-01 — `rhdl-rule`: full sub-widget composition (auto-hold fix)
 
 **Paths:**
