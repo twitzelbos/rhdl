@@ -68,6 +68,7 @@ pub mod diablo_disk;
 pub mod disk_controller;
 pub mod isa;
 pub mod memory;
+pub mod microcode_loader;
 pub mod microcycle;
 pub mod microengine;
 pub mod regfile;
