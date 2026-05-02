@@ -13,9 +13,7 @@
 //! is responsible for committing the result to its DFFs.
 
 use crate::alu::{alu, AluOut};
-use crate::isa::{
-    AluFunction, BusSource, F1Function, F2Function, Microinstruction,
-};
+use crate::isa::{BusSource, F1Function, F2Function, Microinstruction};
 use rhdl::prelude::*;
 
 /// Result of one microcycle's combinational evaluation.
