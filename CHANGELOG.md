@@ -31,6 +31,44 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-01 — Tier C #2 Alto Phase 3.5 Step 4b: per-task reset MPCs (chip-level via task_started)
+
+**Paths:**
+
+- `crates/rhdl-alto/src/alto_chip.rs` — added `task_started: dff::DFF<Bits<16>>` field (16-bit bitmap, one bit per task).  Chip kernel uses `task_mpc[K] if task K has started, else K` for the engine's MPC lookup; sets `task_started` bit for `current_task` each cycle so subsequent runs use the accumulated MPC.  Added the new field to all four AltoChip constructors.
+- `crates/rhdl-alto/src/task_system.rs` — kept the `Default` derive on `AltoTaskSystem` (reverted the manual `Default` impl) so the per-task DFFs reset to `[0; 16]` in both Rust sim and Verilog (which avoids a Rust-sim-vs-Verilog initial-state divergence that the manual init would have introduced).  Documented the reason in the field doc comment.
+
+**Why this, why now:** Per *Alto Hardware Manual* §2 "Initialization" and ContrAlto's `Task.cs` `Reset()` method, each task K resets to MPC = K.  Without per-task reset MPCs, when the chip first switches from Emulator (task 0) to Disk Sector (task 4), Disk Sector would execute from MPC=0 — which is the universal init instruction (a jump to 0x152 in real microcode), not KSEC's setup code at MPC=4.  Boot semantics fail because KSEC never gets to its actual setup.
+
+**Design decisions:**
+
+- **Chip-level `task_started` bitmap, not per-task DFF reset value.**  The natural fix is to construct each `dff::DFF<Bits<10>>` per-task with `dff::DFF::new(K)` so it resets to K.  Tried it; the iverilog round-trip test fails because the dff's `init()` returns `Self::S::dont_care()` (initial Rust sim state captures dont_care, displayed as 0), but the synthesized Verilog has `initial begin o = K` (so Verilog reports K at time 0).  The mismatch is at the very first sample, before any reset cycle.  This is a `dff::DFF` upstream issue (dont_care init vs Verilog initial begin) — workable around at the chip level by tracking "has task K started" and substituting K for `task_mpc[K]` until then.  Rust sim and Verilog agree because both DFFs start at 0 (default) and the chip's substitution logic is identical in both paths.
+
+- **`task_started` is sticky-set, never cleared.**  Once set, it stays set for the life of the chip.  Reset clears it back to 0, at which point the per-task reset MPCs apply again.  Matches real Alto's behaviour where reset re-applies the per-task reset MPCs.
+
+- **`task_started` is set for `current_task` every cycle, not just on task-switch.**  Even within a single sticky-task run (when current_task doesn't change), the bit is set every cycle.  Idempotent — harmless re-OR-ing of the same bit.  Simpler than gating on "first cycle of this task's run."
+
+- **Reverted `AltoTaskSystem` manual Default impl** (intermediate from this PR).  The right place to express per-task reset MPCs is at the *chip composition layer*, not the *task arbiter widget*.  The widget is a generic 16-task arbiter; per-Alto reset MPCs are an Alto-CPU-spec property that belongs in the chip kernel.  This separation also keeps `AltoTaskSystem`'s tests simple and its iverilog round-trip clean.
+
+**Surprises and gotchas:**
+
+- **`dff::DFF::new(initial)` produces a Rust-sim-vs-Verilog initial-state mismatch.**  Setting a non-default initial value via `dff::DFF::new` correctly synthesizes `initial begin o = init` in Verilog but doesn't initialise the Rust sim's `state.current` (which stays at `dont_care()`).  The first sample captured at time 0 differs.  Workaround: use `dff::DFF::default()` and apply the initial value via combinational logic at the consuming site.  Alternative future fix: `dff::DFF::init()` could return `Self::S { current: self.reset, ... }` instead of `dont_care()`.
+
+- **Boot trace baseline went from 8 → 9 distinct addresses visited.**  Disk Sector now visits MPC=4 (its reset) as a new address.  The other 8 addresses (Emulator's tight boot loop) are unchanged.
+
+**Validation:**
+
+- 42/42 alto tests pass (`cargo test -p rhdl-alto`).
+- `boot_trace_baseline_metrics`: distinct microaddresses 8 → 9 (Disk Sector now reaches MPC=4); fire counts unchanged.
+- `boot_trace_decode_diagnostic`: Disk Sector at MPC=4 is filtered (microcode is a self-loop NOP at this address — instruction == MPC).  Future Phase 3.5 steps will get Disk Sector advancing through real KSEC microcode.
+
+**Follow-ups:**
+
+- Disk Sector at MPC=4 hits a self-loop NOP in the real microcode (filtered by the diagnostic).  Need to verify that Disk Sector eventually reaches its real setup code and exercises the KSEC F1 codes (LoadKCOMM, LoadKADR, LoadKDATA, INCRECNO, CLRSTAT, STROBE) — pending per-task F1=8-15 dispatch.
+- `dff::DFF::init()` returning `dont_care()` instead of `self.reset` is an upstream issue worth opening a focused PR for in `rhdl-fpga` once the Alto core is more complete.
+
+---
+
 ## 2026-05-01 — Tier C #2 Alto Phase 3.5 Step 4a: F1/F2 binary encoding aligned with real Alto
 
 **Paths:**

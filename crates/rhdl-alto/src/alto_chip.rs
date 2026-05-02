@@ -143,6 +143,15 @@ pub struct AltoChip {
     /// no longer the source of `current_task` (kept for trace
     /// observability + per-task fire counters).
     current_task: rhdl_fpga::core::dff::DFF<Bits<4>>,
+    /// Per-task "has started" bitmap (16 bits, one per task).  Bit K
+    /// is set the first time task K runs.  Per *Alto Hardware Manual*
+    /// §2 "Initialization" + ContrAlto's `Task.cs` `Reset()`: each
+    /// task K resets to MPC = K.  Until task K has run, the chip
+    /// substitutes K for `task_mpc[K]` in the engine's MPC lookup,
+    /// matching the real Alto's per-task reset MPC convention without
+    /// requiring a custom reset value in the per-task DFF (which would
+    /// diverge between Rust sim init and Verilog `initial begin`).
+    task_started: rhdl_fpga::core::dff::DFF<Bits<16>>,
 }
 
 impl Default for AltoChip {
@@ -156,6 +165,7 @@ impl Default for AltoChip {
             disk: DiabloDisk::default(),
             engine: Microengine::default(),
             current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
+            task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
         }
     }
 }
@@ -174,6 +184,7 @@ impl AltoChip {
             disk: DiabloDisk::default(),
             engine: Microengine::default(),
             current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
+            task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
         }
     }
 
@@ -192,6 +203,7 @@ impl AltoChip {
             disk: DiabloDisk::default(),
             engine: Microengine::default(),
             current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
+            task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
         }
     }
 
@@ -211,6 +223,7 @@ impl AltoChip {
             disk: DiabloDisk::default(),
             engine: Microengine::default(),
             current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
+            task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
         }
     }
 }
@@ -232,8 +245,20 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     // holds.  task_system's `last_task` is now used only for trace
     // observability + per-task fire counters.
     let current_task: Bits<4> = q.current_task;
-    // Look up that task's MPC.
-    let current_mpc: Bits<10> = q.tasks.task_mpc[current_task];
+    // Look up that task's MPC.  Per *Alto Hardware Manual* §2
+    // "Initialization" + ContrAlto's `Task.cs` Reset(): each task K
+    // resets to MPC = K.  q.tasks.task_mpc DFFs default to all zeros
+    // (a constraint of the synthesizable DFF reset value matching
+    // the Verilog `initial begin` for the per-task array), so we
+    // substitute K for task_mpc[K] until task K has run at least once.
+    // The task_started bitmap tracks which tasks have run.
+    let task_bit: Bits<16> = bits::<16>(1) << current_task.resize::<5>();
+    let task_has_started: bool = (q.task_started & task_bit) != bits::<16>(0);
+    let current_mpc: Bits<10> = if task_has_started {
+        q.tasks.task_mpc[current_task]
+    } else {
+        current_task.resize::<10>()
+    };
 
     // Microcode RAM has 1-cycle BRAM latency.  q.urom.instruction is
     // the instruction at the address presented last cycle.
@@ -336,6 +361,10 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     // Latch winning_task into current_task only when engine.task_yield
     // (F1=TASK).  Otherwise hold (sticky).
     d.current_task = if q.engine.task_yield { winning_task } else { current_task };
+    // Mark current_task as "started" — the next time it's selected by
+    // arbitration, the chip will read its accumulated task_mpc rather
+    // than the per-task reset MPC = K.
+    d.task_started = q.task_started | task_bit;
 
     // Outputs
     o.mpc              = current_mpc;
@@ -815,6 +844,7 @@ mod tests {
             disk: DiabloDisk::with_sector(&sector),
             engine: Microengine::default(),
             current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
+            task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
         };
 
         // Wakeup pattern: Task 4 (Disk Sector) always woken so its

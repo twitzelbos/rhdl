@@ -90,8 +90,14 @@ pub struct AltoOut {
 /// order** — highest task # = highest priority.
 #[derive(Clone, Debug, Default, Synchronous, SynchronousDQ)]
 pub struct AltoTaskSystem {
-    /// Per-task MPC (16 × 10 bits).  Slots for unused tasks just
-    /// hold zero forever.
+    /// Per-task MPC (16 × 10 bits).  Defaults to all zeros at the
+    /// widget level; per-task reset MPCs (= task number per Alto
+    /// Hardware Manual §2 "Initialization") are applied at the
+    /// `AltoChip` composition layer via the chip kernel reading
+    /// `current_task` and rewriting the MPC of any task that hasn't
+    /// run yet to its task number.  This keeps the widget's Verilog
+    /// reset behavior aligned with the Rust simulator (DFF resets to
+    /// `[0; 16]` in both, same as the synthesizable default).
     pub task_mpc: dff::DFF<[Bits<10>; 16]>,
     /// Last task that fired.
     pub last_task: dff::DFF<Bits<4>>,
