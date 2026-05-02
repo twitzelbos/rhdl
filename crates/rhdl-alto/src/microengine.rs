@@ -175,14 +175,16 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     o.current_task = i.current_task;
 
     // ---- BUS source -------------------------------------------------
-    // BS = ReadR       → drive bus from R[rsel].
-    // BS = MemoryData  → drive bus from memory[MAR] (1-cycle BRAM-delivered).
+    // BS = ReadR              → drive bus from R[rsel].
+    // BS = MemoryData         → drive bus from memory[MAR] (1-cycle BRAM-delivered).
+    // BS = InstructionRegister → drive bus from IR (Nova-emulator dispatch).
     // Other BS sources drive zero in Phase 3.5.
     let r_read: Bits<16> = q.regs.rdata;
     let bus_from_bs: Bits<16> = match mi.bs {
-        BusSource::ReadR       => r_read,
-        BusSource::MemoryData  => i.mem_read_data,
-        _                      => bits::<16>(0),
+        BusSource::ReadR              => r_read,
+        BusSource::MemoryData         => i.mem_read_data,
+        BusSource::InstructionRegister => q.ir,
+        _                             => bits::<16>(0),
     };
     // F1 = Constant overrides BUS with the constant-ROM lookup the
     // owner provided for this cycle's instruction.  Index = (RSEL << 3) | BS.

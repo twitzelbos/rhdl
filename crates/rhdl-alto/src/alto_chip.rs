@@ -1070,6 +1070,48 @@ mod tests {
             visited);
     }
 
+    /// Diagnostic: dump the (mpc, decoded microinstruction) for each
+    /// unique address visited during a real-microcode trace.  Helps
+    /// identify which F1/F2 codes the boot path is hitting that aren't
+    /// yet implemented (gated to Reserved → no-op).  Run via:
+    ///
+    ///   cargo test -p rhdl-alto boot_trace_decode_diagnostic -- --nocapture --include-ignored
+    ///
+    /// Marked #[ignore] because it's a manual investigation aid, not
+    /// a regression check.
+    #[test]
+    #[ignore]
+    fn boot_trace_decode_diagnostic() {
+        use crate::microcode_loader;
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("assets").join("rom");
+        if !dir.join("U55").exists() || !dir.join("C0").exists() {
+            eprintln!("[diagnostic] skipping — assets absent");
+            return;
+        }
+        let microcode = microcode_loader::load_alto_ii_microcode_from_dir(&dir).unwrap();
+        let constants = microcode_loader::load_alto_ii_constant_rom_from_dir(&dir).unwrap();
+        let uut = AltoChip::with_microcode_and_constants(&microcode, &constants);
+        let trace = run(uut, 1000);
+
+        // Collect unique (mpc, instruction) pairs in visit order.
+        let mut seen: std::collections::BTreeMap<u128, (u128, u128)> =
+            std::collections::BTreeMap::new();
+        for t in &trace {
+            seen.entry(t.mpc.raw())
+                .or_insert((t.instruction.raw(), t.current_task.raw()));
+        }
+
+        eprintln!("[boot_trace_decode_diagnostic] {} unique microaddresses visited:", seen.len());
+        for (mpc, &(instr, task)) in seen.iter() {
+            let mi = Microinstruction::unpack(instr as u32);
+            eprintln!("  mpc=0x{mpc:03x} task={task:2} instr=0x{instr:08x}");
+            eprintln!("    rsel={} aluf={:?} bs={:?} f1={:?} f2={:?} t_load={} l_load={} next=0x{:03x}",
+                mi.rsel.raw(), mi.aluf, mi.bs, mi.f1, mi.f2,
+                mi.t_load, mi.l_load, mi.next.raw());
+        }
+    }
+
     /// Phase 3.5 baseline metric: how far does real Alto microcode
     /// get with the current (incomplete) per-task F1/F2 implementation?
     /// Runs 2000 cycles of real microcode + Constant ROM + Emulator
