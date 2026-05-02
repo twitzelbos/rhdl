@@ -56,6 +56,10 @@ pub struct CtrlOut {
     pub kdata_word: Bits<16>,
     pub kcom_op: Bits<3>,
     pub kstat_ready: bool,
+    /// Asserted when KCOM bit 15 is set (the "start transfer" bit
+    /// in the Phase-3.5 simplified KCOM encoding).  Routed to
+    /// DiabloDisk.transfer_request to arm a 256-word transfer.
+    pub transfer_request: bool,
 }
 
 /// Register addresses (Phase-3 subset; will expand as more disk
@@ -152,6 +156,11 @@ pub fn disk_controller_kernel(cr: ClockReset, i: CtrlIn, q: Q) -> (CtrlOut, D) {
     o.kdata_word    = q.kdata;
     o.kcom_op       = (q.kcom & bits::<16>(0x7)).resize();
     o.kstat_ready   = (q.kstat & bits::<16>(1)) != bits::<16>(0);
+    // Phase-3.5 simplification: KCOM bit 15 = "start transfer".
+    // Real Alto uses different KCOM encoding (cylinder/head/sector
+    // bits + a few control flags); we'll re-align when boot trace
+    // requires it.
+    o.transfer_request = (q.kcom & bits::<16>(0x8000)) != bits::<16>(0);
 
     if cr.reset.any() {
         d.kstat = bits::<16>(0);
@@ -167,6 +176,7 @@ pub fn disk_controller_kernel(cr: ClockReset, i: CtrlIn, q: Q) -> (CtrlOut, D) {
         o.kdata_word   = bits::<16>(0);
         o.kcom_op      = bits::<3>(0);
         o.kstat_ready  = false;
+        o.transfer_request = false;
     }
 
     (o, d)

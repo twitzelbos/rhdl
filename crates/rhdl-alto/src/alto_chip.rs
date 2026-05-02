@@ -238,9 +238,16 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     let next_mpc: Bits<10> = q.engine.next_mpc;
     d.urom = UromIn { mpc: next_mpc.resize() };
 
-    // Disk: not yet driven by microengine (Phase 3.5 next adds the
-    // per-word DMA path).  Drive with default (idle) inputs.
-    d.disk = DiskIn::default();
+    // Disk: per-word DMA inputs (word_addr / write_data / read_en /
+    // write_en) not yet driven by microengine — Phase 3.5 next adds
+    // the per-word DMA path through Disk Word task.  But the
+    // transfer_request signal IS wired up: when Disk Sector microcode
+    // writes KCOM with bit 15 set, the controller asserts
+    // transfer_request (q-registered), which arms the disk's 256-word
+    // transfer countdown so word_strobe starts firing.
+    let mut disk_in = DiskIn::default();
+    disk_in.transfer_request = q.disk_ctrl.transfer_request;
+    d.disk = disk_in;
     // Disk controller: driven by microengine's per-task disk_ctrl
     // outputs.  When the Disk Sector task asserts F1=DiskCtrlWrite,
     // the engine emits write_en + write_data targeting register

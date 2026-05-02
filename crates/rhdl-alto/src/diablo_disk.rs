@@ -75,6 +75,13 @@ pub struct DiskIn {
     /// Read enable — when true, the addressed word is presented on
     /// `read_data` (combinationally for this Phase-3 simulation).
     pub read_en: bool,
+    /// Transfer-start request from the disk controller.  When asserted
+    /// (typically when the Disk Sector microcode writes KCOM with the
+    /// "start transfer" bit set), the disk arms a 256-word transfer
+    /// by setting `transfer_remaining`.  This makes `word_strobe`
+    /// fire for the next 256 cycles, waking the Disk Word task per
+    /// word for DMA.
+    pub transfer_request: bool,
 }
 
 /// Outputs from the Diablo 31 widget.
@@ -167,11 +174,12 @@ pub fn diablo_disk_kernel(cr: ClockReset, i: DiskIn, q: Q) -> (DiskOut, D) {
     }
     d.sector_buffer = next_buffer;
 
-    // Transfer countdown: Phase-3 stub.  When transfer_remaining > 0,
-    // decrement each cycle.  The Disk Sector task's command would
-    // start a transfer by writing this register via the controller;
-    // for now it just decrements when active.
-    d.transfer_remaining = if q.transfer_remaining == bits::<10>(0) {
+    // Transfer countdown.  When `transfer_request` is asserted,
+    // arm a fresh 256-word transfer (overrides the countdown).
+    // Otherwise: decrement when active, hold at zero when idle.
+    d.transfer_remaining = if i.transfer_request {
+        bits::<10>(256)
+    } else if q.transfer_remaining == bits::<10>(0) {
         bits::<10>(0)
     } else {
         q.transfer_remaining - bits::<10>(1)
