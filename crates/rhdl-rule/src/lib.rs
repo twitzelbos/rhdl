@@ -62,27 +62,33 @@
 //!   pure `function`."  See `tests/cross_kernel_call.rs` for
 //!   worked examples.
 //!
-//! - **Sub-widget composition (auto-hold for read-only sub-widgets)** —
-//!   a `rule_kernel` struct can compose a sub-widget as a struct
-//!   field; rules can read its outputs via `ctx.<sub>.<field>`.
-//!   The auto-hold path drives the sub-widget's input to a
-//!   stable zero (`<D as Digital>::dont_care().<field>`) when no
-//!   rule writes it.  The function-like form auto-classifies
-//!   fields by inspecting their type tokens (`dff::DFF<T>` and
-//!   `Reg<T>` → DFF; everything else → sub-widget).  The attribute
-//!   form takes an explicit list:
-//!   `#[rule_kernel_attr(subwidgets = "field1, field2")]`.
+//! - **Sub-widget composition (read AND write)** — a `rule_kernel`
+//!   struct can compose a sub-widget as a struct field; rules can
+//!   read its outputs via `ctx.<sub>.<field>` AND drive its inputs
+//!   via `ctx.<sub> = SubIn { ... }`.  Same-cycle drive-then-read
+//!   works because sub-widgets are combinational from `d.<sub>` to
+//!   `q.<sub>` within a cycle (the canonical "drive raddr → read
+//!   rdata" pattern).  Multiple rules driving the same sub-widget
+//!   compete via the existing priority chain.  See
+//!   `tests/subwidget_drive.rs` for worked examples.
+//!
+//!   Field classification: the function-like form auto-classifies
+//!   by inspecting type tokens (`dff::DFF<T>` and `Reg<T>` → DFF;
+//!   everything else → sub-widget).  The attribute form takes an
+//!   explicit list: `#[rule_kernel_attr(subwidgets = "field1, field2")]`.
 //!
 //! # What rule bodies can NOT contain (yet)
 //!
-//! - **Driving sub-widget inputs from a rule body** — `ctx.field
-//!   = SubIn { ... }` doesn't work for sub-widget fields today.
-//!   The sub-widget receives its auto-hold input
-//!   (`<D as Digital>::dont_care().<field>`) every cycle, which
-//!   is fine for observation patterns but doesn't let a rule
-//!   drive the sub-widget per-cycle.  Use composition at the
-//!   parent layer for now (drive the sub-widget externally).
+//! - **Partial sub-widget input writes** — `ctx.fifo.write_en =
+//!   true` (driving a single field of the In struct) is not
+//!   supported.  Workaround: write the whole In struct
+//!   (`ctx.fifo = FifoIn { write_en: true, ...other_defaults }`).
 //!   Tracked as a follow-up.
+//!
+//! - **Implicit `when`-clauses on sub-widget methods** — BSV's
+//!   "rule blocks if a called method's `when` predicate is false"
+//!   is not yet supported.  Workaround: explicit `guard!()` with
+//!   the readiness predicate.
 //!
 //! # Example
 //!
