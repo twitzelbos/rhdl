@@ -98,6 +98,14 @@ pub struct DiskOut {
     /// Disk Word task's wakeup.  In Phase-3 sim, asserted whenever
     /// the controller has set `transfer_active`.
     pub word_strobe: bool,
+    /// Current rotational word position (0..255).  Auto-increments
+    /// each cycle while `transfer_remaining > 0`; resets to 0 when
+    /// `transfer_request` is asserted.
+    pub current_word_position: Bits<8>,
+    /// Word at the current rotational position — combinational read of
+    /// `sector_buffer[current_word_position]`.  This is what the
+    /// Disk Word microcode reads to perform per-word DMA into memory.
+    pub current_word_data: Bits<16>,
     /// True if the disk is ready (not seeking, not transferring an
     /// error).  Phase-3 sim: always true.
     pub ready: bool,
@@ -124,6 +132,10 @@ pub struct DiabloDisk {
     /// Disk Sector task's command; cleared after the last word).
     /// Phase-3 sim: tied to a "transfer_words" counter.
     transfer_remaining: dff::DFF<Bits<10>>,
+    /// Current rotational word position within the active sector
+    /// (0..255).  Resets to 0 when `transfer_request` arms a fresh
+    /// transfer; auto-increments per cycle while transfer active.
+    current_word_position: dff::DFF<Bits<8>>,
     /// Active sector buffer (256 words × 16 bits = 4 KB).
     /// In Phase-3, sector boundaries simply wrap this buffer.
     sector_buffer: dff::DFF<[Bits<16>; 256]>,
@@ -137,6 +149,7 @@ impl Default for DiabloDisk {
         Self {
             sector_tick: dff::DFF::new(bits::<10>(0)),
             transfer_remaining: dff::DFF::new(bits::<10>(0)),
+            current_word_position: dff::DFF::new(bits::<8>(0)),
             sector_buffer: dff::DFF::new([bits::<16>(0); 256]),
         }
     }
@@ -185,15 +198,32 @@ pub fn diablo_disk_kernel(cr: ClockReset, i: DiskIn, q: Q) -> (DiskOut, D) {
         q.transfer_remaining - bits::<10>(1)
     };
 
+    // Current rotational word position: reset to 0 when transfer
+    // arms; increment per cycle while transfer active; hold otherwise.
+    d.current_word_position = if i.transfer_request {
+        bits::<8>(0)
+    } else if q.transfer_remaining != bits::<10>(0) {
+        q.current_word_position + bits::<8>(1)
+    } else {
+        q.current_word_position
+    };
+
+    // Expose the current word's data for DMA reads.
+    o.current_word_position = q.current_word_position;
+    o.current_word_data     = q.sector_buffer[q.current_word_position];
+
     o.ready = true;
 
     if cr.reset.any() {
         d.sector_tick = bits::<10>(0);
         d.transfer_remaining = bits::<10>(0);
+        d.current_word_position = bits::<8>(0);
         d.sector_buffer = [bits::<16>(0); 256];
         o.sector_mark = false;
         o.word_strobe = false;
         o.read_data = bits::<16>(0);
+        o.current_word_position = bits::<8>(0);
+        o.current_word_data = bits::<16>(0);
         o.ready = false;
     }
 
