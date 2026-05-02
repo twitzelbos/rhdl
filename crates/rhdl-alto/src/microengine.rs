@@ -39,23 +39,34 @@ use rhdl_fpga::core::dff;
 
 /// Inputs to the microengine.
 ///
-/// Phase 1 takes the microcode as an external combinational input
-/// (the parent harness owns the RAM) so we don't need a `BRAM`
-/// widget yet.  The parent indexes its RAM by `out.mpc` and
-/// returns `instr` next cycle.
+/// Phase 3.5 ownership change: MPC is now owned **externally**
+/// (by task_system in AltoChip composition, or by the test harness).
+/// The microengine receives the current MPC and the corresponding
+/// microinstruction each cycle, and returns the next MPC for the
+/// owner to commit.  This avoids the 1-cycle alignment issue when
+/// composing with a BRAM-backed microcode RAM, and lets the
+/// task arbiter drive different tasks' MPCs into the same engine.
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
 pub struct In {
-    /// 32-bit microinstruction at the address driven on `out.mpc`.
-    /// Combinationally derived by the parent from the microcode RAM.
+    /// Current cycle's microprogram counter — fetched from the owner
+    /// (task_system or test harness).  10 bits in Phase 3.5 (bank 0
+    /// only); will widen to 11 bits when bank switching ships.
+    pub mpc: Bits<10>,
+    /// 32-bit microinstruction at `mpc`.  Owner indexes microcode RAM
+    /// with `mpc` (with appropriate latency handling) and feeds the
+    /// result here.
     pub instr: Bits<32>,
 }
 
 /// Outputs from the microengine.
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
 pub struct Out {
-    /// Current microprogram counter (the address the parent should
-    /// fetch from this cycle).
+    /// Echo of the input MPC for trace.  This is the address whose
+    /// microinstruction was processed this cycle.
     pub mpc: Bits<10>,
+    /// Next MPC the owner should commit (or pass to the next task).
+    /// Computed from the NEXT field plus any F2-driven modifications.
+    pub next_mpc: Bits<10>,
     /// Current T register value (visible for tests / lockstep).
     pub t: Bits<16>,
     /// Current L register value.
@@ -68,16 +79,14 @@ pub struct Out {
 
 /// The Alto microengine widget.
 ///
-/// **Phase 1 simplification**: only Task 0 (the Emulator task in
-/// the full Alto, but here just "the only task") is modelled;
-/// there's no wakeup arbiter and no per-task MPC.  The MPC is a
-/// single 10-bit DFF.  Phase 2 splits MPC across 16 task slots and
-/// adds the priority arbiter.
+/// **Phase 3.5**: the MPC is no longer owned internally — it's an
+/// input.  Internal state remaining: T, L, R-register file.
+/// AltoChip and the standalone microengine tests both supply MPC
+/// externally (task_system's per-task MPCs in AltoChip;
+/// a test-harness u16 in standalone tests).
 #[derive(Clone, Debug, Default, Synchronous, SynchronousDQ)]
 #[rhdl(dq_no_prefix)]
 pub struct Microengine {
-    /// Current microprogram counter (Task 0's MPC for now).
-    mpc: dff::DFF<Bits<10>>,
     /// T register (auxiliary ALU operand).
     t: dff::DFF<Bits<16>>,
     /// L register (latched ALU result).
@@ -107,6 +116,9 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
 
     // Decode the microinstruction.
     let mi: Microinstruction = unpack_kernel(i.instr);
+
+    // Echo the MPC the owner gave us.
+    o.mpc = i.mpc;
 
     // ---- BUS source -------------------------------------------------
     // BS = ReadR  → drive bus from R[rsel].  All other Phase-1 sources
@@ -178,17 +190,15 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         _                     => next_addr,
     };
     next_addr = (next_addr_or_bus & bits::<10>(0x3FE)) | bit0;
-    d.mpc = next_addr;
+    o.next_mpc = next_addr;
 
     // ---- Outputs ---------------------------------------------------
-    o.mpc        = q.mpc;            // current cycle's MPC (parent uses this to index ROM)
     o.t          = q.t;
     o.l          = q.l;
     o.bus        = bus;
     o.alu_result = aout.result;
 
     if cr.reset.any() {
-        d.mpc = bits::<10>(0);
         d.t = bits::<16>(0);
         d.l = bits::<16>(0);
         d.regs = RegIn {
@@ -198,6 +208,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
             wen: false,
         };
         o.mpc = bits::<10>(0);
+        o.next_mpc = bits::<10>(0);
         o.t = bits::<16>(0);
         o.l = bits::<16>(0);
         o.bus = bits::<16>(0);
