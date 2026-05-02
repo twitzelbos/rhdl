@@ -316,6 +316,55 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         let ir_low: Bits<10> = (q.ir & bits::<16>(0xFF)).resize();
         next_addr = next_addr | ir_low;
     }
+
+    // Per-task F2 NEXT-modify codes for Disk tasks per *Alto Hardware
+    // Manual* §6.0 + spec §8.5.  All apply only when current_task is
+    // a Disk task (4 = Disk Sector, 14 = Disk Word).
+    //
+    //   F2=10B (binary 8) INIT — NEXT or= (37B if WDTASKACT&WDINIT, else 0)
+    //   F2=11B (binary 9) RWC  — NEXT or= (3 write / 2 check / 0 read)
+    //   F2=12B (binary 10) RECNO — NEXT or= MAP(record-number)
+    //                              MAP(0)=0, MAP(1)=2, MAP(2)=3, MAP(3)=1
+    //   F2=13B (binary 11) XFRDAT — NEXT or= (1 if data transfer, else 0)
+    //   F2=14B (binary 12) SWRNRDY — NEXT or= (1 if disk not ready, else 0)
+    //   F2=15B (binary 13) NFER — NEXT or= (0 if fatal error, else 1)
+    //   F2=16B (binary 14) STROBON — NEXT or= (1 if seek strobe still on, else 0)
+    //
+    // Phase-3.5 stub values (no full disk-state model):
+    //   WDTASKACT/WDINIT — false (initial state passed; KSEC's first
+    //                      cycle observes false → no NEXT mod).
+    //   RWC — read (0).  Boot reads sector data; matches.
+    //   RECNO — 0 (header).  Boot starts with header record; matches
+    //                        spec §8.6 KBLK chain.
+    //   XFRDAT — 0 (no transfer in progress on most cycles; only
+    //              meaningful during active DMA which we collapse).
+    //   SWRNRDY — 0 (always ready in our sim).
+    //   NFER — 1 (no errors modeled — set NEXT bit 0 to indicate
+    //          "no fatal error" path).  This is the only stub that
+    //          actually modifies NEXT in steady state.
+    //   STROBON — 0 (instant seek; no in-progress strobe).
+    //
+    // Each F2 NEXT-modify is OR'd into next_addr; multiple can apply
+    // if the dispatch is ambiguous, but the canonical KSEC/KWDX
+    // microcode uses one per cycle.
+    let in_disk_task_for_f2: bool = i.current_task == bits::<4>(4)
+        || i.current_task == bits::<4>(14);
+    if in_disk_task_for_f2 {
+        // INIT, XFRDAT, RWC, RECNO, SWRNRDY, STROBON all stub to 0
+        // (no NEXT modification).  NFER stubs to 1 (always set bit 0).
+        // F2 = IDispatch (binary 13) in Disk task = NFER per spec
+        // §8.5 — distinct from Emulator's IDISP semantics handled
+        // above (the Emulator-vs-Disk dispatch is gated by
+        // current_task, so the two never collide).
+        if mi.f2 == F2Function::IDispatch {
+            next_addr = next_addr | bits::<10>(1);
+        }
+        // Other F2 disk codes: stub 0 → no modification → no-op.
+        // F2=DiskWordTransfer (= INIT in spec §8.5) gets the existing
+        // DMA atomic dispatch in Disk Word task, plus NEXT-modify
+        // semantics fall through to the WDTASKACT&WDINIT case which
+        // is false in steady state.
+    }
     o.next_mpc = next_addr;
 
     // ---- DMA detection (Disk Word task) --------------------------
