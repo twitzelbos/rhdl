@@ -1445,6 +1445,53 @@ mod tests {
         }
     }
 
+    /// Per-cycle MPC chain dump — useful for finding where dispatch
+    /// goes off-rails (e.g. into uninitialized PROM at 0x366/0x389+).
+    /// Run with:
+    ///   cargo test -p rhdl-alto boot_trace_per_cycle_chain -- --nocapture --include-ignored
+    #[test]
+    #[ignore]
+    fn boot_trace_per_cycle_chain() {
+        use crate::{disk_image_loader, microcode_loader};
+        let rom_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("assets").join("rom");
+        let disk_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("assets").join("disk").join("nonprog.dsk");
+        if !rom_dir.join("U55").exists() || !disk_path.exists() {
+            eprintln!("[per_cycle_chain] skipping — assets absent");
+            return;
+        }
+        let microcode = microcode_loader::load_alto_ii_microcode_from_dir(&rom_dir).unwrap();
+        let constants = microcode_loader::load_alto_ii_constant_rom_from_dir(&rom_dir).unwrap();
+        let disk_image = disk_image_loader::load_disk_image_from_file(&disk_path).unwrap();
+        let boot_sector = disk_image.sector(0, 0, 0);
+        let uut = AltoChip::with_microcode_constants_and_boot(
+            &microcode, &constants, &boot_sector.data, &boot_sector.label,
+        );
+        let trace = run(uut, 800);
+
+        eprintln!("[per_cycle_chain] cycle  task  mpc   instr      next_mpc");
+        for (i, t) in trace.iter().enumerate().take(800) {
+            let task = t.current_task.raw();
+            let mpc = t.mpc.raw();
+            let instr = t.instruction.raw();
+            // Mark cycles where dispatch hits unprogrammed PROM.
+            let unprog = instr == 0xfff77bff;
+            let mark = if unprog { " UNPROG" } else { "" };
+            eprintln!(
+                "  {i:4}    {task:2}  0x{mpc:03x}  0x{instr:08x}{mark}",
+            );
+            if unprog && i > 0 {
+                eprintln!("    ^^ entered unprog from prev cycle: \
+                    task={} mpc=0x{:03x} instr=0x{:08x}",
+                    trace[i - 1].current_task.raw(),
+                    trace[i - 1].mpc.raw(),
+                    trace[i - 1].instruction.raw());
+                break;
+            }
+        }
+    }
+
     /// Phase 3.5 baseline metric: how far does real Alto microcode
     /// get with the current (incomplete) per-task F1/F2 implementation?
     /// Runs 2000 cycles of real microcode + Constant ROM + Emulator
