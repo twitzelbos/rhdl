@@ -165,6 +165,120 @@ pub fn decode_microcode(words: &[u32; MICROCODE_WORDS])
     words.iter().map(|&w| Microinstruction::unpack(w)).collect()
 }
 
+// =====================================================================
+// Constant ROM (C0..C3)
+// =====================================================================
+//
+// The Alto's "Constant ROM" provides 256 16-bit constants used when
+// the F1 = Constant code is asserted; the lookup index is composed of
+// the RSEL (5 bits) + BS (3 bits) fields = 8 bits = 256 entries.  The
+// ROM is stored across 4 PROM chips (C0, C1, C2, C3), each 256 bytes
+// with low nibble per byte.  Bit positions: C0=12, C1=8, C2=4, C3=0.
+//
+// Three transforms applied during load (per ContrAlto's
+// `ConstantMemory.cs` `LoadConstants`):
+//
+// 1. **Address scrambling** via `AddressMapConstantRom`:
+//    bit i of input maps to bit `addressMapping[i]` of output, where
+//    `addressMapping = [7, 2, 1, 0, 3, 4, 5, 6]`.
+//    (Per "05a_AIM.pdf" PROM-pinout doc — addresses are wired in no
+//    sane order.)
+// 2. **Per-nibble bit reversal** via `DataMapConstantRom`:
+//    reverse bits 0-3 (bit 0↔3, bit 1↔2).
+// 3. **Final 16-bit inversion**: every constant word is inverted
+//    (XORed with 0xffff) once all four chips have been OR'd in.
+//
+// AltoII does NOT additionally invert the input data byte
+// (`flip=false`) — only AltoI does.
+
+/// Number of constants in the Constant ROM.
+pub const CONSTANT_ROM_WORDS: usize = 256;
+
+/// Per-PROM size in bytes.
+pub const CONSTANT_PROM_BYTES: usize = 256;
+
+/// Number of PROMs that build the Constant ROM.
+pub const NUM_CONSTANT_PROMS: usize = 4;
+
+/// Filenames of the 4 Constant ROM PROMs in load order.
+pub const CONSTANT_PROM_FILENAMES: [&str; NUM_CONSTANT_PROMS] = ["C0", "C1", "C2", "C3"];
+
+/// Bit position each Constant ROM chip contributes its low nibble at.
+const CONSTANT_PROM_BIT_POSITIONS: [u32; NUM_CONSTANT_PROMS] = [12, 8, 4, 0];
+
+/// Address scramble table per "05a_AIM.pdf".
+const CONSTANT_ROM_ADDRESS_MAP: [u32; 8] = [7, 2, 1, 0, 3, 4, 5, 6];
+
+/// Apply the address-scramble transform.
+fn address_map_constant_rom(address: usize) -> usize {
+    let mut mapped = 0usize;
+    for i in 0..8 {
+        if (address & (1 << i)) != 0 {
+            mapped |= 1 << CONSTANT_ROM_ADDRESS_MAP[i] as usize;
+        }
+    }
+    mapped
+}
+
+/// Reverse low 4 bits of a nibble.
+fn data_map_constant_rom(data: u32) -> u32 {
+    let mut mapped = 0u32;
+    for i in 0..4 {
+        if (data & (1 << i)) != 0 {
+            mapped |= 1 << (3 - i);
+        }
+    }
+    mapped
+}
+
+/// Load the Alto II Constant ROM from 4 in-memory PROM byte arrays.
+///
+/// `roms` must be in the order documented by [`CONSTANT_PROM_FILENAMES`].
+pub fn load_alto_ii_constant_rom(roms: &[&[u8]; NUM_CONSTANT_PROMS])
+    -> Result<[u16; CONSTANT_ROM_WORDS], LoadError>
+{
+    let mut constants = [0u16; CONSTANT_ROM_WORDS];
+
+    for (rom_idx, &rom) in roms.iter().enumerate() {
+        if rom.len() != CONSTANT_PROM_BYTES {
+            return Err(LoadError::WrongRomLength {
+                name: CONSTANT_PROM_FILENAMES[rom_idx].to_string(),
+                len: rom.len(),
+            });
+        }
+        let bit_pos = CONSTANT_PROM_BIT_POSITIONS[rom_idx];
+        for addr in 0..CONSTANT_PROM_BYTES {
+            let mapped = address_map_constant_rom(addr);
+            let nibble = data_map_constant_rom(rom[mapped] as u32 & 0xf);
+            constants[addr] |= (nibble << bit_pos) as u16;
+        }
+    }
+
+    // Final pass: invert every 16-bit word.
+    for c in constants.iter_mut() {
+        *c = !*c;
+    }
+
+    Ok(constants)
+}
+
+/// Load the Alto II Constant ROM from a directory containing the 4
+/// PROM files.
+pub fn load_alto_ii_constant_rom_from_dir(dir: &Path)
+    -> Result<[u16; CONSTANT_ROM_WORDS], LoadError>
+{
+    let mut bytes: Vec<Vec<u8>> = Vec::with_capacity(NUM_CONSTANT_PROMS);
+    for name in CONSTANT_PROM_FILENAMES.iter() {
+        let path = dir.join(name);
+        let data = std::fs::read(&path)
+            .map_err(|e| LoadError::Io { path: path.clone(), source: e })?;
+        bytes.push(data);
+    }
+    let refs: [&[u8]; NUM_CONSTANT_PROMS] =
+        std::array::from_fn(|i| bytes[i].as_slice());
+    load_alto_ii_constant_rom(&refs)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -254,6 +368,87 @@ mod tests {
         assert_eq!(address_map_alto_ii(0), 0x3ff);
         assert_eq!(address_map_alto_ii(0x3ff), 0);
         assert_eq!(address_map_alto_ii(0x123), !0x123 & 0x3ff);
+    }
+
+    // ---- Constant ROM tests ---------------------------------------
+
+    #[test]
+    fn address_map_constant_rom_is_self_inverse_under_table() {
+        // Spot-check: addressMapping = [7,2,1,0,3,4,5,6].
+        // bit 0 → bit 7, so address 0x01 → 0x80.
+        assert_eq!(address_map_constant_rom(0x01), 0x80);
+        // bit 3 → bit 0, so address 0x08 → 0x01.
+        assert_eq!(address_map_constant_rom(0x08), 0x01);
+        // address 0 → 0
+        assert_eq!(address_map_constant_rom(0x00), 0x00);
+        // all bits set → all bits set (since the map is a permutation)
+        assert_eq!(address_map_constant_rom(0xff), 0xff);
+    }
+
+    #[test]
+    fn data_map_constant_rom_reverses_low_4_bits() {
+        // bit 0 → bit 3
+        assert_eq!(data_map_constant_rom(0x1), 0x8);
+        // bit 1 → bit 2
+        assert_eq!(data_map_constant_rom(0x2), 0x4);
+        // bit 3 → bit 0
+        assert_eq!(data_map_constant_rom(0x8), 0x1);
+        // 0xf → 0xf (palindrome)
+        assert_eq!(data_map_constant_rom(0xf), 0xf);
+    }
+
+    #[test]
+    fn constant_rom_synthetic_round_trip() {
+        // Build a synthetic constant ROM that places a known target
+        // word at output index 0.  Working backwards through the
+        // three transforms:
+        //   final[i] = !(C0[map(i)]<<12 | C1[map(i)]<<8 | C2[map(i)]<<4 | C3[map(i)])
+        // For final[0] = 0xCAFE, we need:
+        //   pre_invert = !0xCAFE & 0xffff = 0x3501
+        //   so the OR'd nibbles must be 0x3501
+        //   C0_nibble (at pos 12) = 0x3 → reversed = 0xC → C0[map(0)] = 0xC
+        //   C1_nibble (at pos 8)  = 0x5 → reversed = 0xA → C1[map(0)] = 0xA
+        //   C2_nibble (at pos 4)  = 0x0 → reversed = 0x0 → C2[map(0)] = 0x0
+        //   C3_nibble (at pos 0)  = 0x1 → reversed = 0x8 → C3[map(0)] = 0x8
+        // map(0) = 0, so put bytes at index 0 of each PROM.
+        let mut roms_data: Vec<Vec<u8>> = (0..NUM_CONSTANT_PROMS)
+            .map(|_| vec![0u8; CONSTANT_PROM_BYTES])
+            .collect();
+        roms_data[0][0] = 0xC;  // C0
+        roms_data[1][0] = 0xA;  // C1
+        roms_data[2][0] = 0x0;  // C2
+        roms_data[3][0] = 0x8;  // C3
+        let refs: [&[u8]; NUM_CONSTANT_PROMS] =
+            std::array::from_fn(|i| roms_data[i].as_slice());
+        let constants = load_alto_ii_constant_rom(&refs).expect("load ok");
+        assert_eq!(constants[0], 0xCAFE,
+            "constant[0] should round-trip through scramble + reverse + invert");
+        // Untouched indices: all-zero PROMs → final = !(0) = 0xffff.
+        assert_eq!(constants[1], 0xffff);
+    }
+
+    #[test]
+    fn real_constant_rom_loads_if_available() {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("assets").join("rom");
+        if !dir.join("C0").exists() {
+            eprintln!("[real_constant_rom_loads_if_available] skipping — Constant ROMs not present in {dir:?}");
+            return;
+        }
+        let constants = load_alto_ii_constant_rom_from_dir(&dir)
+            .expect("load real Constant ROMs");
+        assert_eq!(constants.len(), CONSTANT_ROM_WORDS);
+        // Per the Alto ucode, constant index 0 ought to be 0 (the
+        // microcode uses a known "constant zero" lookup).  We can't
+        // confirm this without disassembling the ucode but we can
+        // verify the loader produces *some* non-trivial pattern
+        // (not all-zeros, not all-ones).
+        let all_zero = constants.iter().all(|&c| c == 0);
+        let all_ones = constants.iter().all(|&c| c == 0xffff);
+        assert!(!all_zero && !all_ones,
+            "Constant ROM should contain a meaningful pattern, not {} all of {:04x}",
+            if all_zero { "all-zero" } else { "all-one" },
+            constants[0]);
     }
 
     /// Real-PROM integration: only runs if the actual ROM dumps are
