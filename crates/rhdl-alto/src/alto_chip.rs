@@ -707,4 +707,61 @@ mod tests {
             "boot trace should visit at least 2 distinct microaddresses; visited {:?}",
             visited);
     }
+
+    /// Phase 3.5 baseline metric: how far does real Alto microcode
+    /// get with the current (incomplete) per-task F1/F2 implementation?
+    /// Runs 2000 cycles of real microcode + Constant ROM + Emulator
+    /// always woken, and reports:
+    ///   - how many distinct microaddresses were visited
+    ///   - which task ran most often
+    ///   - whether the disk's sector_mark fired (signal that disk
+    ///     timing is plumbed)
+    ///
+    /// This is a baseline test — its assertions are intentionally loose
+    /// since standard microcode behaviour is unspecified before per-task
+    /// dispatch fully ships.  Future commits should see the visited-count
+    /// grow as more per-task codes are implemented; the test serves as
+    /// a regression baseline.
+    #[test]
+    fn boot_trace_baseline_metrics() {
+        use crate::microcode_loader;
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("assets").join("rom");
+        if !dir.join("U55").exists() || !dir.join("C0").exists() {
+            eprintln!("[boot_trace_baseline_metrics] skipping — assets absent");
+            return;
+        }
+        let microcode = microcode_loader::load_alto_ii_microcode_from_dir(&dir).unwrap();
+        let constants = microcode_loader::load_alto_ii_constant_rom_from_dir(&dir).unwrap();
+        let uut = AltoChip::with_microcode_and_constants(&microcode, &constants);
+        let trace = run(uut, 2000);
+
+        // Distinct microaddresses visited.
+        let mut visited: std::collections::HashSet<u128> = std::collections::HashSet::new();
+        for t in &trace {
+            visited.insert(t.mpc.raw());
+        }
+
+        // Per-task firing counts (current_task).
+        let mut task_counts = [0u32; 16];
+        for t in &trace {
+            let task = t.current_task.raw() as usize;
+            if task < 16 { task_counts[task] += 1; }
+        }
+
+        // Sector_mark count.
+        let sector_marks: u32 = trace.iter().filter(|t| t.disk_sector_mark).count() as u32;
+
+        eprintln!("[boot_trace_baseline_metrics] 2000-cycle trace:");
+        eprintln!("  distinct microaddresses visited: {}", visited.len());
+        eprintln!("  task firing counts: {task_counts:?}");
+        eprintln!("  disk sector_mark fired: {sector_marks} times");
+
+        // Baseline assertions (intentionally loose):
+        // - at least 1 distinct microaddress (the engine ran at all)
+        // - sector_mark fires once per 256 cycles → ~7 marks in 2000 cycles
+        assert!(visited.len() >= 1, "engine should have run at least one microinstruction");
+        assert!(sector_marks >= 5,
+            "disk sector_mark should fire ~7 times in 2000 cycles; saw {sector_marks}");
+    }
 }
