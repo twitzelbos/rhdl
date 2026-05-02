@@ -31,9 +31,10 @@
 use rhdl::prelude::*;
 use rhdl_fpga::core::dff;
 
-use crate::constant_rom::{ConstantIn, ConstantOut, ConstantRom};
-use crate::microcode_rom::{MicrocodeRom, UromIn, UromOut};
-use crate::microengine::{In as MicroIn, Microengine, Out as MicroOut};
+use crate::constant_rom::{ConstantIn, ConstantRom};
+use crate::memory::{MemIn, Memory};
+use crate::microcode_rom::{MicrocodeRom, UromIn};
+use crate::microengine::{In as MicroIn, Microengine};
 
 /// Inputs to the AltoChip top-level.
 ///
@@ -66,10 +67,11 @@ pub struct ChipOut {
     pub instruction: Bits<32>,
 }
 
-/// The Alto chip — composition of microengine + microcode RAM + constant ROM.
+/// The Alto chip — composition of microengine + microcode RAM +
+/// constant ROM + 64KW main memory.
 ///
-/// Construct with [`AltoChip::with_microcode`] to load microcode and
-/// constant images, or [`AltoChip::default`] for all-zero ROMs.
+/// Construct with [`AltoChip::with_microcode_and_constants`] for the
+/// normal boot path, or [`AltoChip::default`] for all-zero ROMs/memory.
 #[derive(Clone, Debug, Synchronous, SynchronousDQ)]
 #[rhdl(dq_no_prefix)]
 pub struct AltoChip {
@@ -81,6 +83,9 @@ pub struct AltoChip {
     /// 256-entry constant ROM — read combinationally each cycle by
     /// the microengine via `F1=Constant`.
     crom: ConstantRom,
+    /// 64KW main memory — driven by the microengine's MAR (1-cycle
+    /// BRAM read latency; matches real Alto MOS DRAM timing).
+    mem: Memory,
     /// Universal-task microengine.
     engine: Microengine,
 }
@@ -91,6 +96,7 @@ impl Default for AltoChip {
             mpc: dff::DFF::new(bits::<10>(0)),
             urom: MicrocodeRom::default(),
             crom: ConstantRom::default(),
+            mem: Memory::default(),
             engine: Microengine::default(),
         }
     }
@@ -98,19 +104,20 @@ impl Default for AltoChip {
 
 impl AltoChip {
     /// Construct an AltoChip with the supplied microcode image but
-    /// an empty constant ROM.  Useful for tests that don't depend on
-    /// constants.
+    /// empty constant ROM and memory.  Useful for tests that don't
+    /// depend on constants or memory state.
     pub fn with_microcode(microcode_words: &[u32; crate::microcode_rom::MICROCODE_WORDS]) -> Self {
         Self {
             mpc: dff::DFF::new(bits::<10>(0)),
             urom: MicrocodeRom::with_words(microcode_words),
             crom: ConstantRom::default(),
+            mem: Memory::default(),
             engine: Microengine::default(),
         }
     }
 
-    /// Construct an AltoChip with both microcode and constant ROMs
-    /// loaded.  This is the normal Phase 3.5 boot constructor.
+    /// Construct an AltoChip with microcode and constant ROMs loaded
+    /// and an empty memory.
     pub fn with_microcode_and_constants(
         microcode_words: &[u32; crate::microcode_rom::MICROCODE_WORDS],
         constants: &[u16; crate::constant_rom::NUM_CONSTANTS],
@@ -119,6 +126,26 @@ impl AltoChip {
             mpc: dff::DFF::new(bits::<10>(0)),
             urom: MicrocodeRom::with_words(microcode_words),
             crom: ConstantRom::with_constants(constants),
+            mem: Memory::default(),
+            engine: Microengine::default(),
+        }
+    }
+
+    /// Construct an AltoChip with all three of microcode, constants,
+    /// and memory preloaded.  The `memory_initial` iterator supplies
+    /// `(address, value)` pairs.  This is the natural shape for
+    /// staging a boot block at memory[1..257] for testing the
+    /// Nova-emulator path without needing the full disk DMA chain.
+    pub fn with_microcode_constants_and_memory(
+        microcode_words: &[u32; crate::microcode_rom::MICROCODE_WORDS],
+        constants: &[u16; crate::constant_rom::NUM_CONSTANTS],
+        memory_initial: impl IntoIterator<Item = (Bits<16>, Bits<16>)>,
+    ) -> Self {
+        Self {
+            mpc: dff::DFF::new(bits::<10>(0)),
+            urom: MicrocodeRom::with_words(microcode_words),
+            crom: ConstantRom::with_constants(constants),
+            mem: Memory::new(memory_initial),
             engine: Microengine::default(),
         }
     }
@@ -158,10 +185,24 @@ pub fn alto_chip_kernel(_cr: ClockReset, _i: ChipIn, q: Q) -> (ChipOut, D) {
     d.crom = ConstantIn { index: const_idx };
     let const_value: Bits<16> = q.crom.value;
 
+    // Memory: feed engine the data read at the address presented
+    // last cycle (BRAM 1-cycle latency).  Drive memory with the
+    // engine's current MAR and (when WriteMd is asserted) the BUS
+    // value.  The engine's mem_write_en / mem_write_data are
+    // registered outputs from the previous evaluation; that's fine
+    // because the engine's contract is "the cycle after F2=WriteMd
+    // is asserted, the write commits."
+    let mem_data_for_engine: Bits<16> = q.mem.read_data;
     d.engine = MicroIn {
         mpc: q.mpc,
         instr: instr_this_cycle,
         constant_value: const_value,
+        mem_read_data: mem_data_for_engine,
+    };
+    d.mem = MemIn {
+        address: q.engine.mem_address,
+        write_data: q.engine.mem_write_data,
+        write_en: q.engine.mem_write_en,
     };
 
     // Drive next cycle's instruction fetch from microengine's computed
@@ -322,6 +363,111 @@ mod tests {
         let trace = run(uut, 8);
         assert_eq!(trace.last().unwrap().l.raw(), 0xCAFE,
             "L should latch the constant at index (RSEL<<3)|BS = 10");
+    }
+
+    /// Memory read end-to-end through AltoChip: preload memory, use
+    /// F1=Constant to load the address into BUS, F2=LoadMar to load
+    /// MAR ← BUS, then BS=MemoryData with L_LOAD to capture the
+    /// memory value into L.
+    #[test]
+    fn memory_read_via_mar_then_md_to_l() {
+        // addr 0: F1=Constant (idx 0 = 0x0080) + F2=LoadMar → MAR ← 0x0080
+        //         next = 1.
+        let mi0 = Microinstruction {
+            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
+            f1: F1Function::Constant, f2: F2Function::LoadMar,
+            t_load: false, l_load: false, next: bits::<10>(1),
+        };
+        // addr 1: filler — wait one cycle for BRAM read to land.
+        let mi1 = Microinstruction {
+            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
+            f1: F1Function::Nop, f2: F2Function::Nop,
+            t_load: false, l_load: false, next: bits::<10>(2),
+        };
+        // addr 2: BS=MemoryData + L_LOAD → L ← memory[MAR] (= 0x0080's value)
+        //         loop here.
+        let mi2 = Microinstruction {
+            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::MemoryData,
+            f1: F1Function::Nop, f2: F2Function::Nop,
+            t_load: false, l_load: true, next: bits::<10>(2),
+        };
+        let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
+        microcode[0] = mi0.pack();
+        microcode[1] = mi1.pack();
+        microcode[2] = mi2.pack();
+
+        // Constant ROM: index 0 = 0x0080 (the memory address to load).
+        let mut constants = [0u16; crate::constant_rom::NUM_CONSTANTS];
+        constants[0] = 0x0080;
+
+        // Memory: preload memory[0x0080] = 0xC0DE.
+        let memory_initial = vec![(bits::<16>(0x0080), bits::<16>(0xC0DE))];
+
+        let uut = AltoChip::with_microcode_constants_and_memory(
+            &microcode, &constants, memory_initial,
+        );
+        let trace = run(uut, 16);
+
+        // Eventually L should hold 0xC0DE (the memory value at 0x0080).
+        let final_l = trace.last().unwrap().l.raw();
+        assert_eq!(final_l, 0xC0DE,
+            "L should latch the memory value at 0x0080 after MAR + MD→ sequence");
+    }
+
+    /// Memory write end-to-end through AltoChip: use F1=Constant to
+    /// load address, F2=LoadMar.  Then F1=Constant to load value,
+    /// F2=WriteMd to write to memory[MAR].  Finally read back via
+    /// BS=MemoryData and verify L holds the written value.
+    #[test]
+    fn memory_write_then_read_round_trip() {
+        // addr 0: F1=Constant idx 0 = 0x0100 (target addr) + F2=LoadMar
+        let mi0 = Microinstruction {
+            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
+            f1: F1Function::Constant, f2: F2Function::LoadMar,
+            t_load: false, l_load: false, next: bits::<10>(1),
+        };
+        // addr 1: F1=Constant idx 1 = 0xBEEF + F2=WriteMd → memory[0x0100] ← 0xBEEF
+        //         (RSEL=0, BS=1 → constant index = 1)
+        let mi1 = Microinstruction {
+            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::LoadR, // BS=1
+            f1: F1Function::Constant, f2: F2Function::WriteMd,
+            t_load: false, l_load: false, next: bits::<10>(2),
+        };
+        // addr 2: filler (BRAM write commit + read latency)
+        let mi2 = Microinstruction {
+            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
+            f1: F1Function::Nop, f2: F2Function::Nop,
+            t_load: false, l_load: false, next: bits::<10>(3),
+        };
+        // addr 3: another filler
+        let mi3 = Microinstruction {
+            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
+            f1: F1Function::Nop, f2: F2Function::Nop,
+            t_load: false, l_load: false, next: bits::<10>(4),
+        };
+        // addr 4: BS=MemoryData + L_LOAD → L ← memory[MAR] (= 0xBEEF).  Loop.
+        let mi4 = Microinstruction {
+            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::MemoryData,
+            f1: F1Function::Nop, f2: F2Function::Nop,
+            t_load: false, l_load: true, next: bits::<10>(4),
+        };
+        let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
+        microcode[0] = mi0.pack();
+        microcode[1] = mi1.pack();
+        microcode[2] = mi2.pack();
+        microcode[3] = mi3.pack();
+        microcode[4] = mi4.pack();
+
+        let mut constants = [0u16; crate::constant_rom::NUM_CONSTANTS];
+        constants[0] = 0x0100;
+        constants[1] = 0xBEEF;
+
+        let uut = AltoChip::with_microcode_and_constants(&microcode, &constants);
+        let trace = run(uut, 24);
+
+        let final_l = trace.last().unwrap().l.raw();
+        assert_eq!(final_l, 0xBEEF,
+            "after write-then-read sequence, L should hold the written 0xBEEF");
     }
 
     /// Verify the AltoChip composition emits clean Verilog and the

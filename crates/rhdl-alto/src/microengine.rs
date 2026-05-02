@@ -62,6 +62,10 @@ pub struct In {
     /// here combinationally.  When `F1 = Constant`, the engine drives
     /// BUS from this value instead of the BS-selected source.
     pub constant_value: Bits<16>,
+    /// Memory data read from `memory[MAR]` (1-cycle BRAM latency
+    /// from the address presented last cycle).  Drives BUS when
+    /// `BS = MemoryData`.
+    pub mem_read_data: Bits<16>,
 }
 
 /// Outputs from the microengine.
@@ -81,6 +85,14 @@ pub struct Out {
     pub bus: Bits<16>,
     /// Current ALU result (for trace / lockstep).
     pub alu_result: Bits<16>,
+    /// Memory address to drive into the memory subsystem this cycle.
+    /// Equals the engine's MAR (which gets updated next cycle if
+    /// F2 = LoadMar is asserted).
+    pub mem_address: Bits<16>,
+    /// Memory write enable — asserted when F2 = WriteMd.
+    pub mem_write_en: bool,
+    /// Memory write data — equals BUS when `mem_write_en`.
+    pub mem_write_data: Bits<16>,
 }
 
 /// The Alto microengine widget.
@@ -99,6 +111,9 @@ pub struct Microengine {
     l: dff::DFF<Bits<16>>,
     /// R-register file.
     regs: RegFile,
+    /// Memory Address Register — holds the current memory address
+    /// for read/write ops.  Updated by F2 = LoadMar.
+    mar: dff::DFF<Bits<16>>,
 }
 
 impl SynchronousIO for Microengine {
@@ -127,12 +142,14 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     o.mpc = i.mpc;
 
     // ---- BUS source -------------------------------------------------
-    // BS = ReadR  → drive bus from R[rsel].  All other Phase-1 sources
-    // drive zero (memory data, mouse, IR are deferred to later phases).
+    // BS = ReadR       → drive bus from R[rsel].
+    // BS = MemoryData  → drive bus from memory[MAR] (1-cycle BRAM-delivered).
+    // Other BS sources drive zero in Phase 3.5.
     let r_read: Bits<16> = q.regs.rdata;
     let bus_from_bs: Bits<16> = match mi.bs {
-        BusSource::ReadR => r_read,
-        _                => bits::<16>(0),
+        BusSource::ReadR       => r_read,
+        BusSource::MemoryData  => i.mem_read_data,
+        _                      => bits::<16>(0),
     };
     // F1 = Constant overrides BUS with the constant-ROM lookup the
     // owner provided for this cycle's instruction.  Index = (RSEL << 3) | BS.
@@ -205,6 +222,15 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     next_addr = (next_addr_or_bus & bits::<10>(0x3FE)) | bit0;
     o.next_mpc = next_addr;
 
+    // ---- Memory bus -----------------------------------------------
+    // F2 = LoadMar → MAR ← BUS (commit at edge).
+    // F2 = WriteMd → emit a memory write at q.mar with BUS as data.
+    // BS = MemoryData reads memory[MAR] (1-cycle delay on BRAM).
+    d.mar = if mi.f2 == F2Function::LoadMar { bus } else { q.mar };
+    o.mem_address    = q.mar;
+    o.mem_write_en   = mi.f2 == F2Function::WriteMd;
+    o.mem_write_data = bus;
+
     // ---- Outputs ---------------------------------------------------
     o.t          = q.t;
     o.l          = q.l;
@@ -220,12 +246,16 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
             wdata: bits::<16>(0),
             wen: false,
         };
+        d.mar = bits::<16>(0);
         o.mpc = bits::<10>(0);
         o.next_mpc = bits::<10>(0);
         o.t = bits::<16>(0);
         o.l = bits::<16>(0);
         o.bus = bits::<16>(0);
         o.alu_result = bits::<16>(0);
+        o.mem_address = bits::<16>(0);
+        o.mem_write_en = false;
+        o.mem_write_data = bits::<16>(0);
     }
     (o, d)
 }
@@ -316,8 +346,8 @@ fn f2_from_index(i: Bits<4>) -> F2Function {
     else if i == bits::<4>(3)  { F2Function::ShiftEqZero }
     else if i == bits::<4>(4)  { F2Function::BusToNext }
     else if i == bits::<4>(5)  { F2Function::AluCarryToNext }
-    else if i == bits::<4>(6)  { F2Function::LoadMFromMemoryData }
-    else if i == bits::<4>(7)  { F2Function::Reserved7 }
+    else if i == bits::<4>(6)  { F2Function::LoadMar }
+    else if i == bits::<4>(7)  { F2Function::WriteMd }
     else if i == bits::<4>(8)  { F2Function::Reserved8 }
     else if i == bits::<4>(9)  { F2Function::Reserved9 }
     else if i == bits::<4>(10) { F2Function::Reserved10 }

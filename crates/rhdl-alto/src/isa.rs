@@ -159,10 +159,15 @@ pub enum F2Function {
     BusToNext,
     /// `ALUCY` — modify NEXT's bit 0 with the ALU carry-out.
     AluCarryToNext,
-    /// `MD` — load M from memory data (Phase 3 work).
-    LoadMFromMemoryData,
-    /// Reserved / task-specific.  Treated as NOP in Phase 1.
-    Reserved7,
+    /// `MAR← BUS` — load Memory Address Register from BUS.  In real
+    /// Alto this is an MRT-task-only F2 code; in Phase 3.5 we treat
+    /// it as universal until per-task F1/F2 dispatch is added.  See
+    /// `microengine.rs` for the timing (MAR updates at edge; the
+    /// write/read using new MAR happens NEXT cycle).
+    LoadMar,
+    /// `MD← BUS` — write BUS to memory[MAR] this cycle.  Same task-
+    /// gating caveat as `LoadMar`.
+    WriteMd,
     Reserved8,
     Reserved9,
     Reserved10,
@@ -351,8 +356,8 @@ fn f2_function_index(f: F2Function) -> u8 {
         F2Function::ShiftEqZero => 3,
         F2Function::BusToNext => 4,
         F2Function::AluCarryToNext => 5,
-        F2Function::LoadMFromMemoryData => 6,
-        F2Function::Reserved7 => 7,
+        F2Function::LoadMar => 6,
+        F2Function::WriteMd => 7,
         F2Function::Reserved8 => 8,
         F2Function::Reserved9 => 9,
         F2Function::Reserved10 => 10,
@@ -371,8 +376,8 @@ fn f2_function_from_index(i: u8) -> F2Function {
         3 => F2Function::ShiftEqZero,
         4 => F2Function::BusToNext,
         5 => F2Function::AluCarryToNext,
-        6 => F2Function::LoadMFromMemoryData,
-        7 => F2Function::Reserved7,
+        6 => F2Function::LoadMar,
+        7 => F2Function::WriteMd,
         8 => F2Function::Reserved8,
         9 => F2Function::Reserved9,
         10 => F2Function::Reserved10,

@@ -58,6 +58,7 @@ fn run(program: Vec<u32>, cycles: usize) -> Vec<Out> {
                 mpc: bits::<10>(mpc_to_drive),
                 instr: bits::<32>(instr as u128),
                 constant_value: bits::<16>(0),
+                mem_read_data: bits::<16>(0),
             }))
         },
         100,
@@ -111,6 +112,7 @@ fn microengine_iverilog_round_trip() -> Result<(), RHDLError> {
         mpc: bits::<10>(0),
         instr: bits::<32>(prog[0] as u128),
         constant_value: bits::<16>(0),
+        mem_read_data: bits::<16>(0),
     }).collect();
     let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
     let test_bench = uut.run(stream).collect::<SynchronousTestBench<_, _>>();
