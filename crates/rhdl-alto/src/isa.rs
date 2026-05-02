@@ -103,108 +103,163 @@ pub enum BusSource {
     InstructionRegister,
 }
 
-/// F1 function — auxiliary control (4-bit F1 field).  Most F1
-/// values are task-specific; for Phase 1 we model only the universal
-/// ones.
+/// F1 function — auxiliary control (4-bit F1 field).
+///
+/// Binary encoding matches the real Alto per ContrAlto's
+/// `MicroInstruction.cs` `SpecialFunction1` enum and `EmulatorF1` /
+/// `DiskF1` per-task enums:
+///
+/// | Bin | Universal (all tasks) | Emulator (task 0) | Disk Sector/Word (4, 14) |
+/// |----:|-----------------------|-------------------|--------------------------|
+/// | 0   | NOP                   |                   |                           |
+/// | 1   | LoadMar (MAR← BUS)    |                   |                           |
+/// | 2   | TaskYield (TASK)      |                   |                           |
+/// | 3   | Block                 |                   |                           |
+/// | 4   | LeftShift1 (LLSH1)    |                   |                           |
+/// | 5   | RightShift1 (LRSH1)   |                   |                           |
+/// | 6   | LeftCycle8 (LLCY8)    |                   |                           |
+/// | 7   | Constant              |                   |                           |
+/// | 8   | (per-task)            | SWMODE            | (undefined)               |
+/// | 9   | (per-task)            | WRTRAM            | STROBE                    |
+/// | 10  | (per-task)            | RDRAM             | LoadKSTAT                 |
+/// | 11  | (per-task)            | LoadRMR           | INCRECNO                  |
+/// | 12  | (per-task)            | (unused)          | CLRSTAT                   |
+/// | 13  | (per-task)            | LoadESRB          | LoadKCOMM                 |
+/// | 14  | (per-task)            | RSNF              | LoadKADR                  |
+/// | 15  | (per-task)            | STARTF            | LoadKDATA                 |
+///
+/// Per-task variants are named after the **Disk-task** semantics
+/// (LoadKCOMM/LoadKADR/LoadKDATA) since those are the ones our chip
+/// actively implements; in Emulator context the same enum variant
+/// represents a different operation (LoadESRB/RSNF/STARTF) that the
+/// engine dispatches via the current_task gating.  Phase 3.5
+/// implements Disk task semantics; Emulator per-task codes remain
+/// gated no-ops until the boot path requires them.
 #[derive(PartialEq, Eq, Debug, Digital, Clone, Copy, Default)]
 pub enum F1Function {
-    /// `NOP`.
+    /// `NOP` — F1 = 0.
     #[default]
     Nop,
-    /// `LLSH1` — L ← L << 1 (logical left-shift).
-    LeftShift1,
-    /// `LRSH1` — L ← L >> 1 (logical right-shift).
-    RightShift1,
-    /// `LLCY8` — L ← rotate-left-by-8 of L.
-    LeftCycle8,
-    /// `CONSTANT` — bus driven from the constant ROM (the BS field
-    /// becomes a constant-ROM index; the actual constant is looked
-    /// up by the rsel field in tandem with this F1 in real hardware).
-    /// Phase 1 models the simple "drive zero" semantics.
-    Constant,
-    /// `TASK` — task-yield: the running task signals it's done and
-    /// the arbiter picks the next-highest-priority woken task on
-    /// the next cycle.  Phase 1 has no arbiter; this is a no-op.
+    /// `MAR← BUS` — F1 = 1, universal.  Load Memory Address Register
+    /// from BUS this cycle; memory read/write at the new MAR happens
+    /// NEXT cycle (1-cycle BRAM latency).
+    LoadMar,
+    /// `TASK` — F1 = 2, universal.  Task yield: arbiter latches the
+    /// highest-priority woken task into current_task at next edge.
     TaskYield,
-    /// `BLOCK` — block this task; clear its wakeup signal.  Same
-    /// as TASK for Phase 1 (no arbiter).
+    /// `BLOCK` — F1 = 3, universal.  Block this task (clear its
+    /// wakeup signal).
     Block,
-    /// Reserved / task-specific F1 codes.  Treated as NOP in Phase 1.
-    Reserved7,
-    Reserved8,
-    Reserved9,
-    Reserved10,
-    Reserved11,
-    /// `KCWA← BUS` — write BUS to KCWA register (the DMA memory
-    /// destination address).  Disk Sector task (4) only; gated no-op
-    /// in any other task.
+    /// `LLSH1` — F1 = 4, universal.  L ← L << 1.
+    LeftShift1,
+    /// `LRSH1` — F1 = 5, universal.  L ← L >> 1.
+    RightShift1,
+    /// `LLCY8` — F1 = 6, universal.  L ← rotate-left-by-8 of L.
+    LeftCycle8,
+    /// `CONSTANT` — F1 = 7, universal.  BUS driven from constant ROM
+    /// indexed by `(rsel << 3) | bs` (8-bit index).
+    Constant,
+    /// F1 = 8 — per-task.  Emulator: SWMODE.  Disk: undefined.
+    /// Currently no-op pending Emulator implementation.
+    EmuSwMode,
+    /// F1 = 9 — per-task.  Emulator: WRTRAM.  Disk: STROBE (start
+    /// disk-word strobe sequence).  Currently no-op.
+    Code9,
+    /// F1 = 10 — per-task.  Emulator: RDRAM.  Disk: LoadKSTAT.
+    /// Currently no-op.
+    Code10,
+    /// F1 = 11 — per-task.  Emulator: LoadRMR.  Disk: INCRECNO.
+    /// Currently no-op.
+    Code11,
+    /// F1 = 12 — per-task.  Emulator: (unused).  Disk: CLRSTAT.
+    /// Phase-3.5 simplification: also serves as our "WriteKcwa" for
+    /// the simulated DMA path (KCWA← BUS, sets the DMA memory
+    /// destination address).
     WriteKcwa,
-    /// `KCOMM← BUS` — write BUS to KCOM register.  Disk Sector task
-    /// (4) only; gated no-op in any other task.  Per the Alto
-    /// Hardware Manual §6 + ContrAlto's `DiskSectorTask.cs`.
+    /// F1 = 13 — per-task.  Emulator: LoadESRB.  Disk: LoadKCOMM
+    /// (KCOM← BUS, write disk command register).  Disk Sector task
+    /// (4) only — gated no-op in any other task.
     WriteKcomm,
-    /// `KADR← BUS` — write BUS to KADR register.  Disk Sector task
-    /// (4) only.  KADR encodes the cylinder/head/sector for the next
-    /// sector access (per `disk_controller::REG_KADR` field decode).
+    /// F1 = 14 — per-task.  Emulator: RSNF.  Disk: LoadKADR (KADR←
+    /// BUS, write disk address register: cylinder/head/sector).
+    /// Disk Sector task (4) only.
     WriteKadr,
-    /// `KDATA← BUS` — write BUS to KDATA register.  Disk Sector task
-    /// (4) only.  Used by the disk-task microcode to stage the next
-    /// word for the on-disk write path.
+    /// F1 = 15 — per-task.  Emulator: STARTF (start I/O — the F1
+    /// code the boot microcode uses to trigger the boot disk read).
+    /// Disk: LoadKDATA (KDATA← BUS).  Currently dispatch is gated by
+    /// task; Emulator's STARTF is no-op pending per-device wiring.
     WriteKdata,
 }
 
-/// F2 function — second auxiliary control (4-bit F2 field).  Like
-/// F1, most F2 codes are task-specific; Phase 1 models the universal
-/// ones.
+/// F2 function — second auxiliary control (4-bit F2 field).
+///
+/// Binary encoding matches the real Alto per ContrAlto's
+/// `MicroInstruction.cs` `SpecialFunction2` and per-task enums:
+///
+/// | Bin | Universal             | Emulator (task 0) | Disk (4, 14)              |
+/// |----:|-----------------------|-------------------|--------------------------|
+/// | 0   | None                  |                   |                           |
+/// | 1   | BusEq0                |                   |                           |
+/// | 2   | ShLt0                 |                   |                           |
+/// | 3   | ShEq0                 |                   |                           |
+/// | 4   | BusToNext (Bus)       |                   |                           |
+/// | 5   | AluCarryToNext (ALUCY)|                   |                           |
+/// | 6   | StoreMD (MD← BUS)     |                   |                           |
+/// | 7   | Constant (mirror F1=7)|                   |                           |
+/// | 8   | (per-task)            | BUSODD            | DiskInit (INIT)           |
+/// | 9   | (per-task)            | MAGIC             | RWC                       |
+/// | 10  | (per-task)            | LoadDNS           | RECNO                     |
+/// | 11  | (per-task)            | ACDEST            | XFRDAT                    |
+/// | 12  | (per-task)            | LoadIR            | SWRNRDY                   |
+/// | 13  | (per-task)            | IDISP             | NFER                      |
+/// | 14  | (per-task)            | ACSOURCE          | STROBON                   |
+/// | 15  | (per-task)            | (unused)          | (unused)                  |
 #[derive(PartialEq, Eq, Debug, Digital, Clone, Copy, Default)]
 pub enum F2Function {
-    /// `NOP`.
+    /// `NOP` — F2 = 0.
     #[default]
     Nop,
-    /// `BUSEQ0` — modify NEXT's bit 0 if `BUS == 0` (skip-on-zero).
+    /// `BUSEQ0` — F2 = 1.  Modify NEXT's bit 0 if BUS == 0.
     BusEqZero,
-    /// `SHLT0` — modify NEXT's bit 0 if shifted-L's MSB is 0.
+    /// `SHLT0` — F2 = 2.  Modify NEXT's bit 0 if shifted-L's MSB == 0.
     ShiftLessThanZero,
-    /// `SHEQ0` — modify NEXT's bit 0 if shifted-L is zero.
+    /// `SHEQ0` — F2 = 3.  Modify NEXT's bit 0 if shifted-L == 0.
     ShiftEqZero,
-    /// `BUS` — modify NEXT's low bits with bits of BUS (computed-go-to).
+    /// `BUS` — F2 = 4.  OR low bits of BUS into NEXT (computed-go-to).
     BusToNext,
-    /// `ALUCY` — modify NEXT's bit 0 with the ALU carry-out.
+    /// `ALUCY` — F2 = 5.  Modify NEXT's bit 0 with ALU carry-out.
     AluCarryToNext,
-    /// `MAR← BUS` — load Memory Address Register from BUS.  In real
-    /// Alto this is an MRT-task-only F2 code; in Phase 3.5 we treat
-    /// it as universal until per-task F1/F2 dispatch is added.  See
-    /// `microengine.rs` for the timing (MAR updates at edge; the
-    /// write/read using new MAR happens NEXT cycle).
-    LoadMar,
-    /// `MD← BUS` — write BUS to memory[MAR] this cycle.  Same task-
-    /// gating caveat as `LoadMar`.
-    WriteMd,
-    /// `DiskWordTransfer` — atomic per-word DMA when `current_task == 14`
-    /// (Disk Word).  Writes disk's current_word_data to memory[KCWA]
-    /// and increments KCWA.  In any other task: no-op.
-    ///
-    /// Phase-3.5 simplification: real Alto does this over multiple
-    /// cycles via STROBE/KFER/STROBE2 codes.  Collapsed to one cycle
-    /// here to avoid implementing the full disk-controller word-FSM.
+    /// `MD← BUS` — F2 = 6, universal.  Write BUS to memory[MAR]
+    /// this cycle.
+    StoreMd,
+    /// `CONSTANT` — F2 = 7, universal.  BUS driven from constant ROM,
+    /// same path as F1 = Constant.  Either F1 = 7 or F2 = 7 triggers
+    /// the constant-ROM lookup in real Alto.
+    Constant,
+    /// F2 = 8 — per-task.  Emulator: BUSODD.  Disk: DiskInit (INIT).
+    /// Phase-3.5 reuse: in Disk Word task (14), this is the atomic
+    /// per-word DMA trigger (memory[KCWA] ← disk_word_data; KCWA++).
+    /// Real Alto uses the multi-cycle STROBE/KFER protocol; collapsed
+    /// to one cycle here.
     DiskWordTransfer,
-    Reserved9,
-    Reserved10,
-    Reserved11,
-    /// `IR ← MD` — Instruction Register loaded from Memory Data.
-    /// Emulator task (0) only; gated no-op in any other task.  Per
-    /// the Alto Hardware Manual §5 + ContrAlto's `EmulatorTask.cs`,
-    /// this is F2=12 in Emulator.
+    /// F2 = 9 — per-task.  Emulator: MAGIC.  Disk: RWC.  No-op.
+    Code9,
+    /// F2 = 10 — per-task.  Emulator: LoadDNS.  Disk: RECNO.  No-op.
+    Code10,
+    /// F2 = 11 — per-task.  Emulator: ACDEST.  Disk: XFRDAT.  No-op.
+    Code11,
+    /// F2 = 12 — per-task.  Emulator: LoadIR (IR ← MD).  Disk: SWRNRDY.
+    /// Phase-3.5 implements Emulator semantics; Disk semantics no-op.
     LoadIr,
-    /// `IDISP` — Instruction Dispatch.  ORs IR[7:0] into NEXT[7:0] so
-    /// the engine jumps to an opcode-specific handler based on the
-    /// current Nova instruction in IR.  Emulator task (0) only.  This
-    /// is the centerpiece of the Nova-emulator inner loop: after
-    /// FETCH + LoadIr, IDISP routes execution to the right per-opcode
-    /// microcode handler.
+    /// F2 = 13 — per-task.  Emulator: IDISP (Instruction Dispatch —
+    /// OR IR[7:0] into NEXT[7:0]).  Disk: NFER.  Phase-3.5 implements
+    /// Emulator semantics.
     IDispatch,
-    Reserved14,
-    Reserved15,
+    /// F2 = 14 — per-task.  Emulator: ACSOURCE.  Disk: STROBON.  No-op.
+    Code14,
+    /// F2 = 15 — per-task.  Both Emulator and Disk use this slot
+    /// differently or leave unused.  No-op.
+    Code15,
 }
 
 /// Decoded microinstruction.  The pure-Rust representation we use
@@ -339,17 +394,17 @@ fn bus_source_from_index(i: u8) -> BusSource {
 fn f1_function_index(f: F1Function) -> u8 {
     match f {
         F1Function::Nop => 0,
-        F1Function::LeftShift1 => 1,
-        F1Function::RightShift1 => 2,
-        F1Function::LeftCycle8 => 3,
-        F1Function::Constant => 4,
-        F1Function::TaskYield => 5,
-        F1Function::Block => 6,
-        F1Function::Reserved7 => 7,
-        F1Function::Reserved8 => 8,
-        F1Function::Reserved9 => 9,
-        F1Function::Reserved10 => 10,
-        F1Function::Reserved11 => 11,
+        F1Function::LoadMar => 1,
+        F1Function::TaskYield => 2,
+        F1Function::Block => 3,
+        F1Function::LeftShift1 => 4,
+        F1Function::RightShift1 => 5,
+        F1Function::LeftCycle8 => 6,
+        F1Function::Constant => 7,
+        F1Function::EmuSwMode => 8,
+        F1Function::Code9 => 9,
+        F1Function::Code10 => 10,
+        F1Function::Code11 => 11,
         F1Function::WriteKcwa => 12,
         F1Function::WriteKcomm => 13,
         F1Function::WriteKadr => 14,
@@ -359,17 +414,17 @@ fn f1_function_index(f: F1Function) -> u8 {
 fn f1_function_from_index(i: u8) -> F1Function {
     match i & 0xF {
         0 => F1Function::Nop,
-        1 => F1Function::LeftShift1,
-        2 => F1Function::RightShift1,
-        3 => F1Function::LeftCycle8,
-        4 => F1Function::Constant,
-        5 => F1Function::TaskYield,
-        6 => F1Function::Block,
-        7 => F1Function::Reserved7,
-        8 => F1Function::Reserved8,
-        9 => F1Function::Reserved9,
-        10 => F1Function::Reserved10,
-        11 => F1Function::Reserved11,
+        1 => F1Function::LoadMar,
+        2 => F1Function::TaskYield,
+        3 => F1Function::Block,
+        4 => F1Function::LeftShift1,
+        5 => F1Function::RightShift1,
+        6 => F1Function::LeftCycle8,
+        7 => F1Function::Constant,
+        8 => F1Function::EmuSwMode,
+        9 => F1Function::Code9,
+        10 => F1Function::Code10,
+        11 => F1Function::Code11,
         12 => F1Function::WriteKcwa,
         13 => F1Function::WriteKcomm,
         14 => F1Function::WriteKadr,
@@ -385,16 +440,16 @@ fn f2_function_index(f: F2Function) -> u8 {
         F2Function::ShiftEqZero => 3,
         F2Function::BusToNext => 4,
         F2Function::AluCarryToNext => 5,
-        F2Function::LoadMar => 6,
-        F2Function::WriteMd => 7,
+        F2Function::StoreMd => 6,
+        F2Function::Constant => 7,
         F2Function::DiskWordTransfer => 8,
-        F2Function::Reserved9 => 9,
-        F2Function::Reserved10 => 10,
-        F2Function::Reserved11 => 11,
+        F2Function::Code9 => 9,
+        F2Function::Code10 => 10,
+        F2Function::Code11 => 11,
         F2Function::LoadIr => 12,
         F2Function::IDispatch => 13,
-        F2Function::Reserved14 => 14,
-        F2Function::Reserved15 => 15,
+        F2Function::Code14 => 14,
+        F2Function::Code15 => 15,
     }
 }
 fn f2_function_from_index(i: u8) -> F2Function {
@@ -405,15 +460,15 @@ fn f2_function_from_index(i: u8) -> F2Function {
         3 => F2Function::ShiftEqZero,
         4 => F2Function::BusToNext,
         5 => F2Function::AluCarryToNext,
-        6 => F2Function::LoadMar,
-        7 => F2Function::WriteMd,
+        6 => F2Function::StoreMd,
+        7 => F2Function::Constant,
         8 => F2Function::DiskWordTransfer,
-        9 => F2Function::Reserved9,
-        10 => F2Function::Reserved10,
-        11 => F2Function::Reserved11,
+        9 => F2Function::Code9,
+        10 => F2Function::Code10,
+        11 => F2Function::Code11,
         12 => F2Function::LoadIr,
         13 => F2Function::IDispatch,
-        14 => F2Function::Reserved14,
-        _ => F2Function::Reserved15,
+        14 => F2Function::Code14,
+        _ => F2Function::Code15,
     }
 }

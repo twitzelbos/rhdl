@@ -514,7 +514,7 @@ mod tests {
         //         next = 1.
         let mi0 = Microinstruction {
             rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::Constant, f2: F2Function::LoadMar,
+            f1: F1Function::LoadMar, f2: F2Function::Constant,
             t_load: false, l_load: false, next: bits::<10>(1),
         };
         // addr 1: filler — wait one cycle for BRAM read to land.
@@ -562,14 +562,15 @@ mod tests {
         // addr 0: F1=Constant idx 0 = 0x0100 (target addr) + F2=LoadMar
         let mi0 = Microinstruction {
             rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::Constant, f2: F2Function::LoadMar,
+            f1: F1Function::LoadMar, f2: F2Function::Constant,
             t_load: false, l_load: false, next: bits::<10>(1),
         };
-        // addr 1: F1=Constant idx 1 = 0xBEEF + F2=WriteMd → memory[0x0100] ← 0xBEEF
-        //         (RSEL=0, BS=1 → constant index = 1)
+        // addr 1: F1=Constant idx 1 = 0xBEEF + F2=StoreMd → memory[0x0100] ← 0xBEEF
+        //         (RSEL=0, BS=1 → constant index = 1).  F1=Constant sets
+        //         BUS from constant ROM; F2=StoreMd writes BUS to memory.
         let mi1 = Microinstruction {
             rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::LoadR, // BS=1
-            f1: F1Function::Constant, f2: F2Function::WriteMd,
+            f1: F1Function::Constant, f2: F2Function::StoreMd,
             t_load: false, l_load: false, next: bits::<10>(2),
         };
         // addr 2: filler (BRAM write commit + read latency)
@@ -983,7 +984,7 @@ mod tests {
         // addr 0: F1=Constant idx=0=0x0100, F2=LoadMar → MAR ← 0x0100.
         let mi0 = Microinstruction {
             rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::Constant, f2: F2Function::LoadMar,
+            f1: F1Function::LoadMar, f2: F2Function::Constant,
             t_load: false, l_load: false, next: bits::<10>(1),
         };
         // addr 1: filler, BRAM read settle.
@@ -1054,7 +1055,7 @@ mod tests {
         // addr 0: F1=Constant idx 0 = 0x0100, F2=LoadMar → MAR ← 0x0100
         let mi0 = Microinstruction {
             rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::Constant, f2: F2Function::LoadMar,
+            f1: F1Function::LoadMar, f2: F2Function::Constant,
             t_load: false, l_load: false, next: bits::<10>(1),
         };
         // addr 1: filler, give BRAM read time to land
@@ -1303,22 +1304,20 @@ mod tests {
             "disk sector_mark should fire ~7 times in 2000 cycles; saw {sector_marks}");
 
         // Per Alto Hardware Manual §2.4, task switches happen ONLY when
-        // microcode issues F1=TaskYield.  The real Emulator's early
-        // boot path may stay in Task 0 indefinitely if it doesn't reach
-        // a TaskYield (e.g. when stuck in a tight loop because some
-        // F1/F2 codes are unimplemented and noped).  The Disk Sector
-        // task firing count is therefore loose at this baseline — it
-        // will grow as more per-task F1/F2 codes are implemented and
-        // the boot path advances past its first TaskYield.
-        //
-        // Emulator should still be the default-running task — it runs
-        // (at minimum) every cycle until the first TaskYield, plus the
-        // bulk of cycles when it is the priority winner.
+        // microcode issues F1=TaskYield.  The Emulator's boot loop
+        // includes a TaskYield (at MPC=0x153 in the real microcode), so
+        // the chip can hand control to Disk Sector each time
+        // sector_mark fires.  Therefore Disk Sector firings should
+        // match the sector_mark count one-for-one.
         let disk_sector_firings = task_counts[4];
         let emulator_firings = task_counts[0];
         eprintln!("  Emulator (task 0) firings: {emulator_firings}");
         eprintln!("  Disk Sector (task 4) firings: {disk_sector_firings}");
         assert!(emulator_firings > 1500,
             "Emulator should be the default-running task; saw {emulator_firings} firings");
+        assert!(disk_sector_firings >= sector_marks,
+            "Disk Sector firings ({disk_sector_firings}) should match \
+             sector_mark count ({sector_marks}) — Emulator's TaskYield \
+             at MPC=0x153 hands off control");
     }
 }

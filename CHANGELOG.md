@@ -31,6 +31,52 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-01 — Tier C #2 Alto Phase 3.5 Step 4a: F1/F2 binary encoding aligned with real Alto
+
+**Paths:**
+
+- `crates/rhdl-alto/src/isa.rs` — F1Function and F2Function variants renumbered to match real Alto / ContrAlto's `MicroInstruction.cs` `SpecialFunction1` and `SpecialFunction2` enums.  Added `F1Function::LoadMar` (binary 1, universal).  Added `F2Function::StoreMd` (binary 6, universal) and `F2Function::Constant` (binary 7, universal — constant ROM lookup, mirror of F1=Constant).  Removed `F2Function::LoadMar` and `F2Function::WriteMd` (their semantics moved to F1=LoadMar and F2=StoreMd respectively).  Renamed `F1Function::Reserved8/9/10/11` → `EmuSwMode/Code9/Code10/Code11`, and `F2Function::Reserved9/10/11/14/15` → `Code9/Code10/Code11/Code14/Code15`.  Per-task variant naming uses Disk-task semantic names (LoadKCOMM/LoadKADR/LoadKDATA — already named WriteKcomm/WriteKadr/WriteKdata in our code, kept) since those are the codes Phase 3.5 actively implements.
+- `crates/rhdl-alto/src/microengine.rs` — moved `LoadMar` dispatch from F2 to F1.  Added `F2=Constant` → constant ROM lookup (same path as `F1=Constant`).  Renamed `WriteMd` → `StoreMd` in dispatch.  Updated `f1_from_index`/`f2_from_index` to the corrected mapping.
+- `crates/rhdl-alto/src/alto_chip.rs` — five test-microcode sites updated: `f1: F1Function::Constant, f2: F2Function::LoadMar` → `f1: F1Function::LoadMar, f2: F2Function::Constant` (functionally equivalent — F2=Constant is a real Alto code that triggers the same constant-ROM path as F1=Constant).  One site updated to `f1: F1Function::Constant, f2: F2Function::StoreMd` (which works because F1=Constant sets BUS while F2=StoreMd writes BUS to memory — orthogonal codes).  `boot_trace_baseline_metrics` re-adds the "Disk Sector firings ≥ sector_marks" assertion that I had to relax in Step 3 — under correct encoding the assertion holds (7 firings = 7 sector_marks).
+
+**Why this, why now:** Phase 3 and the early Phase 3.5 work used a different binary encoding for F1 and F2 than the real Alto's.  Our encoding was internally consistent (pack/unpack symmetric, hand-written test microcode used enum names not binary values, so tests passed), but **loading real Alto microcode silently produced wrong instructions**.  Specifically: real Alto F1=1 is `LoadMAR` but we mapped binary 1 to `LeftShift1`; real F1=7 is `Constant` but we mapped binary 7 to `Reserved7` and noped it.  The boot trace's tight 8-instruction loop included an `F1=Constant` (silently noped) and an `F1=TaskYield` (binary 2, which we mapped to `RightShift1` and treated as a shift — never asserted task_yield), so the Emulator's TaskYield never fired and Disk Sector never won arbitration.  Step 3's sticky-`current_task` fix was necessary but not sufficient; this encoding fix is the second half.
+
+The bug surfaced when re-running the boot trace diagnostic after the Step 3 architectural fix: we still saw zero Disk Sector firings despite the priority arbiter being correct.  Decoding instruction `0x00724154` at MPC=0x153 with the correct encoding revealed `f1=TaskYield` (binary 2) — the Emulator's idle loop *does* yield, we just weren't recognizing the yield.
+
+This fits the §0 pattern exactly: an internally-consistent simplification ("our F1/F2 encoding") that worked against synthetic tests but produced silently wrong behaviour against the real artifact (real Alto microcode).  Validation against the actual artifact — running real PROMs through the chip — is the only thing that surfaces this class of bug.
+
+**Design decisions:**
+
+- **Encoding-fix only — variant names mostly preserved.**  Since hand-written test microcode references enum variants by name (`F1Function::Constant`), changing the binary index doesn't break those tests as long as the chip dispatches on the variant.  Tests pass unchanged for the universal F1/F2 codes (NOP, shifts, Constant, TaskYield, Block, BusEqZero, etc.).  Only the moved `LoadMar` (F2 → F1) and the renamed `WriteMd` → `StoreMd` required test edits.
+
+- **`F2=Constant` (binary 7) treated as identical to `F1=Constant`.**  Per ContrAlto's `MicroInstruction.cs`, both `SpecialFunction1.Constant = 7` and `SpecialFunction2.Constant = 7` trigger the constant-ROM lookup.  This lets a single instruction do both `BUS ← constant` and a F1-coded operation (e.g., `LoadMar` from F1).  Implemented as `mi.f1 == Constant || mi.f2 == Constant` in the BUS computation.
+
+- **Per-task F1 codes 8-15 named after Disk-task semantics.**  Same binary code means different things in different tasks (e.g., F1=13 is `LoadESRB` in Emulator but `LoadKCOMM` in Disk Sector).  We picked the Disk-task name for the variant since Phase 3.5 actively implements Disk semantics; Emulator per-task codes (SWMODE, STARTF, etc.) are still no-ops pending boot-path requirement.  Future per-task dispatch will check `current_task` to decide which semantics to apply for the same enum variant.
+
+- **`F1Function::EmuSwMode` is a placeholder name.**  Binary 8 is SWMODE in Emulator; the variant carries the Emulator name even though it'll be dispatched per-task.  Rename if it becomes confusing once Disk task adds its own F1=8 semantics (currently Disk leaves F1=8 undefined).
+
+**Surprises and gotchas:**
+
+- **The boot trace baseline went from "0 Disk Sector firings" to "exactly 7 Disk Sector firings" with no other changes.**  7 sector_marks in 2000 cycles → 7 Disk Sector firings.  This is the strongest possible validation that the chip is now correctly running the real microcode's task-yield/arbitration cycle.
+
+- **Hand-written test microcode survived unchanged because tests use enum names, not binary values.**  All 42 alto tests passed without any test-side changes for the universal codes — a clean indication that the abstraction (typed enum → binary) has the right shape for evolving the encoding without breaking client code.  The 5 sites that *did* need editing were only because `LoadMar` moved from F2 to F1 (a structural change, not just a renumber).
+
+- **`F1=Constant + F2=LoadMar` doesn't work in real Alto (and now doesn't compile in our chip).**  The combination "load constant onto BUS, then MAR ← BUS" requires F1=LoadMar (so BUS goes to MAR) AND F2=Constant (so BUS comes from constant ROM).  This is the real Alto idiom — `MAR← CONSTANT` is a single-instruction action achievable only via the F2=Constant trick.  Test microcode updated accordingly.
+
+**Validation:**
+
+- 42/42 alto tests pass (`cargo test -p rhdl-alto`).
+- `boot_trace_baseline_metrics`: 1993 Emulator firings + 7 Disk Sector firings (one per sector_mark) — both assertions pass.
+- `boot_trace_decode_diagnostic`: now correctly identifies F1=LoadMar at MPC=0x000, F1=Constant at 0x130/0x14e, F1=TaskYield at 0x153 (was Reserved/wrong/wrong before).
+
+**Follow-ups:**
+
+- Per-task F1=8-15 / F2=8-15 dispatch.  Many real-Alto codes (Emulator: SWMODE, STARTF; Disk: STROBE, LoadKSTAT, INCRECNO, CLRSTAT) are still no-ops.  As the boot path advances past its initial Emulator loop into KSEC's setup code, more codes will need real semantics.
+- Per-task BS=3/4 sources (`ReadSLocation`/`LoadSLocation` for Emulator, `ReadKSTAT`/`ReadKDATA` for Disk).  Currently TaskSpec3/TaskSpec4 are noped.
+- Per-task reset MPCs.  Per ContrAlto's `Task.cs` Reset(), `_mpc = (ushort)_taskType` — task K resets to MPC=K.  Our current behaviour (all task MPCs default to 0) is wrong but only matters for tasks that don't immediately get their MPC set by Emulator's TaskYield → arbitration → first instruction.
+
+---
+
 ## 2026-05-01 — Tier C #2 Alto Phase 3.5 Step 3: sticky `current_task` + arbitration on F1=TaskYield
 
 **Paths:**

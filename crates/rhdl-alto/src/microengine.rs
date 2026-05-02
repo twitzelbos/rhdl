@@ -192,9 +192,13 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         BusSource::InstructionRegister => q.ir,
         _                             => bits::<16>(0),
     };
-    // F1 = Constant overrides BUS with the constant-ROM lookup the
-    // owner provided for this cycle's instruction.  Index = (RSEL << 3) | BS.
-    let bus: Bits<16> = if mi.f1 == F1Function::Constant {
+    // F1 = Constant OR F2 = Constant overrides BUS with the constant-ROM
+    // lookup the owner provided for this cycle's instruction.  Index =
+    // (RSEL << 3) | BS.  Per ContrAlto's MicroInstruction.cs, both
+    // F1 = 7 (SpecialFunction1.Constant) and F2 = 7
+    // (SpecialFunction2.Constant) trigger the constant-ROM lookup.
+    let bus: Bits<16> = if mi.f1 == F1Function::Constant
+        || mi.f2 == F2Function::Constant {
         i.constant_value
     } else {
         bus_from_bs
@@ -282,13 +286,14 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let is_dma: bool = is_disk_word_task && (mi.f2 == F2Function::DiskWordTransfer);
 
     // ---- Memory bus -----------------------------------------------
-    // F2 = LoadMar → MAR ← BUS (commit at edge).
-    // F2 = WriteMd → emit a memory write at q.mar with BUS as data.
-    // DMA      → emit a memory write at i.kcwa with i.disk_word_data.
+    // F1 = LoadMar (universal, F1 = 1) → MAR ← BUS (commit at edge).
+    // F2 = StoreMd (universal, F2 = 6) → emit a memory write at q.mar
+    //                                     with BUS as data.
+    // DMA → emit a memory write at i.kcwa with i.disk_word_data.
     // BS = MemoryData reads memory[MAR] (1-cycle delay on BRAM).
-    d.mar = if mi.f2 == F2Function::LoadMar { bus } else { q.mar };
+    d.mar = if mi.f1 == F1Function::LoadMar { bus } else { q.mar };
     o.mem_address    = if is_dma { i.kcwa } else { q.mar };
-    o.mem_write_en   = is_dma || (mi.f2 == F2Function::WriteMd);
+    o.mem_write_en   = is_dma || (mi.f2 == F2Function::StoreMd);
     o.mem_write_data = if is_dma { i.disk_word_data } else { bus };
 
     // ---- Per-task disk-controller register writes ---------------
@@ -428,17 +433,17 @@ fn bs_from_index(i: Bits<3>) -> BusSource {
 #[kernel]
 fn f1_from_index(i: Bits<4>) -> F1Function {
     if      i == bits::<4>(0)  { F1Function::Nop }
-    else if i == bits::<4>(1)  { F1Function::LeftShift1 }
-    else if i == bits::<4>(2)  { F1Function::RightShift1 }
-    else if i == bits::<4>(3)  { F1Function::LeftCycle8 }
-    else if i == bits::<4>(4)  { F1Function::Constant }
-    else if i == bits::<4>(5)  { F1Function::TaskYield }
-    else if i == bits::<4>(6)  { F1Function::Block }
-    else if i == bits::<4>(7)  { F1Function::Reserved7 }
-    else if i == bits::<4>(8)  { F1Function::Reserved8 }
-    else if i == bits::<4>(9)  { F1Function::Reserved9 }
-    else if i == bits::<4>(10) { F1Function::Reserved10 }
-    else if i == bits::<4>(11) { F1Function::Reserved11 }
+    else if i == bits::<4>(1)  { F1Function::LoadMar }
+    else if i == bits::<4>(2)  { F1Function::TaskYield }
+    else if i == bits::<4>(3)  { F1Function::Block }
+    else if i == bits::<4>(4)  { F1Function::LeftShift1 }
+    else if i == bits::<4>(5)  { F1Function::RightShift1 }
+    else if i == bits::<4>(6)  { F1Function::LeftCycle8 }
+    else if i == bits::<4>(7)  { F1Function::Constant }
+    else if i == bits::<4>(8)  { F1Function::EmuSwMode }
+    else if i == bits::<4>(9)  { F1Function::Code9 }
+    else if i == bits::<4>(10) { F1Function::Code10 }
+    else if i == bits::<4>(11) { F1Function::Code11 }
     else if i == bits::<4>(12) { F1Function::WriteKcwa }
     else if i == bits::<4>(13) { F1Function::WriteKcomm }
     else if i == bits::<4>(14) { F1Function::WriteKadr }
@@ -453,16 +458,16 @@ fn f2_from_index(i: Bits<4>) -> F2Function {
     else if i == bits::<4>(3)  { F2Function::ShiftEqZero }
     else if i == bits::<4>(4)  { F2Function::BusToNext }
     else if i == bits::<4>(5)  { F2Function::AluCarryToNext }
-    else if i == bits::<4>(6)  { F2Function::LoadMar }
-    else if i == bits::<4>(7)  { F2Function::WriteMd }
+    else if i == bits::<4>(6)  { F2Function::StoreMd }
+    else if i == bits::<4>(7)  { F2Function::Constant }
     else if i == bits::<4>(8)  { F2Function::DiskWordTransfer }
-    else if i == bits::<4>(9)  { F2Function::Reserved9 }
-    else if i == bits::<4>(10) { F2Function::Reserved10 }
-    else if i == bits::<4>(11) { F2Function::Reserved11 }
+    else if i == bits::<4>(9)  { F2Function::Code9 }
+    else if i == bits::<4>(10) { F2Function::Code10 }
+    else if i == bits::<4>(11) { F2Function::Code11 }
     else if i == bits::<4>(12) { F2Function::LoadIr }
     else if i == bits::<4>(13) { F2Function::IDispatch }
-    else if i == bits::<4>(14) { F2Function::Reserved14 }
-    else                       { F2Function::Reserved15 }
+    else if i == bits::<4>(14) { F2Function::Code14 }
+    else                       { F2Function::Code15 }
 }
 
 /// Mark an unused-import suppressor.  `RegOut` is exposed in the
