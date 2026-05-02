@@ -41,6 +41,15 @@ pub struct CtrlIn {
     /// Write enable — when true, `write_data` commits to the
     /// register at `reg_addr`.
     pub write_en: bool,
+    /// CLRSTAT signal per *Alto Hardware Manual* §6 + spec §8.5:
+    /// asserted when current_task is a Disk task and microcode
+    /// issues F1=12 (CLRSTAT).  Clears KSTAT to 0 (and any error
+    /// latches once we model them).  Per ContrAlto's
+    /// `DiskController.cs` `ClearStatus()`: "Causes all error
+    /// latches in disk controller hardware to reset, clears
+    /// KSTAT[13]".  Phase-3.5 simplification: clear the entire
+    /// KSTAT word (we don't yet model individual error bits).
+    pub clr_stat: bool,
 }
 
 /// Outputs from the disk controller (reads to microcode tasks).
@@ -111,7 +120,10 @@ pub fn disk_controller_kernel(cr: ClockReset, i: CtrlIn, q: Q) -> (CtrlOut, D) {
     let mut d = D::dont_care();
     let mut o = CtrlOut::dont_care();
 
-    // Default: hold every register.
+    // Default: hold every register.  CLRSTAT (per spec §8.5) clears
+    // KSTAT to 0 — applied as combinational override below the
+    // write-port logic (so a same-cycle KSTAT write-then-clear is
+    // resolved as clear).
     d.kstat = q.kstat;
     d.kdata = q.kdata;
     d.kcom  = q.kcom;
@@ -142,6 +154,17 @@ pub fn disk_controller_kernel(cr: ClockReset, i: CtrlIn, q: Q) -> (CtrlOut, D) {
         } else if i.reg_addr == kcwd_a {
             d.kcwd = i.write_data;
         }
+    }
+
+    // CLRSTAT (per spec §8.5 + ContrAlto's `DiskController.cs`
+    // ClearStatus()): clear KSTAT to 0.  Applied AFTER the write
+    // port so a same-cycle KSTAT-write + CLRSTAT resolves as
+    // cleared (matches real Alto: the F1=12 dispatch in microengine
+    // requires current_task is a Disk task, and the F1=12 KCWA
+    // write path is gated by `is_disk_sector_task`, so they're not
+    // mutually exclusive but the CLRSTAT semantic wins for KSTAT).
+    if i.clr_stat {
+        d.kstat = bits::<16>(0);
     }
 
     // Read port — combinational mux on `reg_addr`.

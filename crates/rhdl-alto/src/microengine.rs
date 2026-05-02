@@ -141,6 +141,12 @@ pub struct Out {
     /// device widgets (e.g. DiabloDisk) snoop this in conjunction
     /// with `current_task` to decide whether to drop their wakeup.
     pub block_task: bool,
+    /// True when current_task is a Disk task (4 or 14) AND
+    /// F1=12 (CLRSTAT per spec §3.3 + §8.5).  Routed to the
+    /// disk_controller to clear KSTAT (and any error latches once
+    /// implemented).  KSEC at MPC=0x37c uses this as its first
+    /// instruction.
+    pub disk_clr_stat: bool,
     /// Instruction Register — current Nova instruction (Emulator task).
     pub ir: Bits<16>,
 }
@@ -367,6 +373,19 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // widgets (e.g. DiabloDisk) can snoop it together with
     // current_task to deassert their own wakeup signals.
     o.block_task           = mi.f1 == F1Function::Block;
+    // F1=CLRSTAT (per-task, F1=12 in Disk Sector / Disk Word per
+    // spec §3.3 + §8.5): "Causes all error latches in disk controller
+    // hardware to reset, clears KSTAT[13]" (per ContrAlto's
+    // DiskController.cs ClearStatus()).  Surfaced as `disk_clr_stat`
+    // for the chip to route to disk_ctrl.  Note: F1=WriteKcwa is the
+    // same binary code (12) — it serves both meanings for now: real
+    // Alto microcode triggers CLRSTAT, the legacy DMA test microcode
+    // triggers KCWA write.  The two semantics are not mutually
+    // exclusive (clear KSTAT + write KCWA both happen in this
+    // simplification).
+    o.disk_clr_stat = (i.current_task == bits::<4>(4)
+        || i.current_task == bits::<4>(14))
+        && (mi.f1 == F1Function::WriteKcwa);
 
     // ---- Per-task IR load (Emulator) ------------------------------
     // F2 = LoadIr + current_task == 0 (Emulator) → IR ← MD
@@ -410,6 +429,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         o.disk_word_consumed = false;
         o.task_yield = false;
         o.block_task = false;
+        o.disk_clr_stat = false;
         o.ir = bits::<16>(0);
     }
     (o, d)

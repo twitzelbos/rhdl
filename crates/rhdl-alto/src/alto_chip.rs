@@ -357,6 +357,9 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
         reg_addr: q.engine.disk_ctrl_addr,
         write_data: q.engine.disk_ctrl_write_data,
         write_en: q.engine.disk_ctrl_write_en,
+        // CLRSTAT (per spec §8.5): wired from engine's per-task
+        // F1=12 (CLRSTAT) dispatch.  Q-registered (1-cycle lag).
+        clr_stat: q.engine.disk_clr_stat,
     };
 
     // Compose the effective wakeup vector: user-supplied bits OR'd

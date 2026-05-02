@@ -31,6 +31,43 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4e: per-task BS=3/4, F1=10 (LoadKSTAT), F1=12 (CLRSTAT) (per spec §3.2/§3.3/§8.5)
+
+**Paths:**
+
+- `crates/rhdl-alto/src/disk_controller.rs` — exposed full 16-bit `kstat_word` (in addition to existing `kstat_ready: bool`).  Added `clr_stat: bool` input on `CtrlIn`; the kernel clears KSTAT to 0 when asserted (per spec §8.5 + ContrAlto's `DiskController.cs` `ClearStatus()`).
+- `crates/rhdl-alto/src/microengine.rs` — added `kstat: Bits<16>` and `kdata: Bits<16>` to `In` struct.  `bus_from_bs` dispatches BS=TaskSpec3 to `i.kstat` and BS=TaskSpec4 to `i.kdata` when `current_task` is a Disk task (4 or 14).  Added per-task disk-controller write paths: F1=10 (Code10) → REG_KSTAT (LoadKSTAT semantics).  Added `disk_clr_stat: bool` output: asserted when `current_task` is a Disk task and `mi.f1 == WriteKcwa` (binary 12 — real spec name CLRSTAT).
+- `crates/rhdl-alto/src/alto_chip.rs` — wired `q.disk_ctrl.kstat_word` / `kdata_word` to `d.engine.kstat/kdata`; wired `q.engine.disk_clr_stat` to `d.disk_ctrl.clr_stat`.
+- `crates/rhdl-alto/tests/disk_controller.rs` — 14 test sites updated for new `clr_stat: false` field on `CtrlIn`.
+- `crates/rhdl-alto/tests/microengine.rs` — 2 test sites updated for new `kstat: bits::<16>(0)` and `kdata: bits::<16>(0)` fields on `In`.
+
+**Why this, why now:** With the per-task URom alignment fix (Step 4d), KSEC executes its real microcode at MPC=4 → 0x37c chain.  The boot trace decoder shows KSEC at MPC=0x37c uses F1=WriteKcwa (binary 12, real Alto spec §8.5: CLRSTAT); at MPC=0x37d it uses BS=TaskSpec4 (real spec: ReadKDATA); at 0x388 BS=TaskSpec3 (ReadKSTAT); at 0x38a F1=Code10 (LoadKSTAT).  Without per-task semantics, all of these were no-ops or wrong, so KSEC's branch decisions on KSTAT/KDATA reads were based on stale 0 values.
+
+This commit lands the spec-required per-task dispatch surface for all four codes, putting the chip in a position where future disk-protocol implementation (read/write per-word with real STROBE/STROBON timing) will produce meaningful values that KSEC's microcode actually reads.
+
+**Design decisions:**
+
+- **F1=12 (WriteKcwa) is dual-named for Phase 3.5 simplification.**  Spec §3.3 + §8.5 says F1=12 in Disk task is CLRSTAT.  Our pre-existing `WriteKcwa` (Phase 3.5 internal name) is at the same binary slot.  Rather than renaming + breaking the legacy DMA test, this commit ALSO clears KSTAT when F1=12 fires in a Disk task — additive on top of the existing KCWA-write path.  Future commit will rename `WriteKcwa` → `ClrStat` once the legacy DMA test migrates to a non-microcode-driven KCWA setup mechanism.
+
+- **BS=TaskSpec3/4 default to 0 outside Disk tasks.**  In Emulator (task 0), BS=3 is `ReadSLocation` (S-register read) and BS=4 is `LoadSLocation` per spec §3.2 footnote.  Not yet implemented (S-registers are a Phase 5 feature per spec §13).  Returns 0 for now, which is at minimum harmless for boot semantics.
+
+- **F1=10 is recognized as Code10 enum variant.**  Could rename to `LoadKstat` for clarity, but the variant index (binary 10) is what matters for the dispatch.  Renaming is a follow-up.
+
+**Validation:**
+
+- 105/105 alto tests pass (`cargo test -p rhdl-alto`).
+- `boot_trace_baseline_metrics`: 35 distinct microaddresses, 2 sector_mark events — unchanged from Step 4d.  KSEC writes KSTAT via F1=10 + clears via F1=12, but its branch decisions based on BS=KSTAT/KDATA reads still see 0 (no real disk-read protocol yet).  The behavioral change will appear once the disk-word-DMA STROBE/STROBON protocol lands and starts writing meaningful values.
+
+**Follow-ups:**
+
+- F1=11 (INCRECNO) — increment disk record number.  Needs DiabloDisk to track records.
+- F1=9 (STROBE) — start sector strobe (arms transfer).  Needs decoupling from existing KCOM-bit-15 trigger.
+- F1=15 (STARTF) for Emulator — used by SIO instruction to dispatch I/O commands.  Not on critical boot path.
+- Real disk-word-DMA protocol (multi-cycle STROBE/STROBON/NFER per spec §8.5) — the path that actually feeds meaningful values into KDATA for KSEC to read.  This is the next architectural unblock for boot progress beyond the current 35-address ceiling.
+- Rename `F1Function::WriteKcwa` → `ClrStat` once the legacy DMA test migrates.
+
+---
+
 ## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4d: per-task URom MPC stream alignment (per spec §5.4)
 
 **Paths:**
