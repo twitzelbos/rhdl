@@ -73,31 +73,26 @@ fn disk_sector_mark_drives_disk_sector_task() {
         .collect();
     assert_eq!(mark_cycles, vec![255, 511, 767], "exactly 3 sector marks");
 
-    // Translate the disk trace into wakeup inputs:
-    // - sector_mark → wakeup bit 1 (Disk Sector)
-    // - word_strobe → wakeup bit 2 (Disk Word)
+    // Translate the disk trace into wakeup inputs (ContrAlto convention):
+    // - sector_mark → wakeup bit 4 (Disk Sector, task 4)
+    // - word_strobe → wakeup bit 14 (Disk Word, task 14)
     let arbiter_inputs: Vec<AltoIn> = disk_trace.iter().map(|o| {
         let mut wake: u128 = 0;
-        if o.sector_mark  { wake |= 0x0002; }
-        if o.word_strobe  { wake |= 0x0004; }
+        if o.sector_mark  { wake |= 0x0010; }  // task 4
+        if o.word_strobe  { wake |= 0x4000; }  // task 14
         input_from_wakeups(wake)
     }).collect();
 
-    // Run the task arbiter with that wakeup stream.
     let arbiter = AltoTaskSystem::default();
     let arbiter_trace = run_arbiter(arbiter, arbiter_inputs);
 
     let final_state = arbiter_trace.last().unwrap();
-    // The Disk Sector task should have fired exactly 3 times.
     assert_eq!(final_state.disk_sector_count.raw(), 3,
         "disk_sector_count should match the 3 sector_mark pulses");
-    // No word_strobe in this idle run → word counter stays at 0.
     assert_eq!(final_state.disk_word_count.raw(), 0,
         "no transfer started → no word strobes → word counter idle");
-    // last_task is sticky at the last firing (Task 1, observed in
-    // the cycle following each sector_mark pulse).
-    assert_eq!(final_state.last_task.raw(), 1,
-        "last_task remembers the most recent disk-sector firing");
+    assert_eq!(final_state.last_task.raw(), 4,
+        "last_task remembers the most recent disk-sector firing (task 4)");
 }
 
 #[test]
@@ -109,7 +104,7 @@ fn synthetic_word_strobe_drives_disk_word_task() {
     // a word_strobe stream directly: 5 cycles asserted, then idle.
     let arbiter_inputs: Vec<AltoIn> = (0..10).map(|cycle| {
         if cycle < 5 {
-            input_from_wakeups(0x0004) // bit 2 = Disk Word
+            input_from_wakeups(0x4000) // bit 14 = Disk Word (ContrAlto convention)
         } else {
             input_from_wakeups(0x0000)
         }
@@ -119,22 +114,18 @@ fn synthetic_word_strobe_drives_disk_word_task() {
     let arbiter_trace = run_arbiter(arbiter, arbiter_inputs);
 
     let final_state = arbiter_trace.last().unwrap();
-    // 5 cycles of word-strobe wakeup → counter at 5.
     assert_eq!(final_state.disk_word_count.raw(), 5);
-    // No sector wakeups → sector counter at 0.
     assert_eq!(final_state.disk_sector_count.raw(), 0);
 }
 
 #[test]
 fn disk_word_outranks_emulator_under_pressure() {
-    // Simulate the Alto's typical scenario: Emulator (Task 0) wants
-    // to run every cycle (always woken), but the disk transfer is
-    // active (Task 2 woken every cycle for several cycles).  The
-    // Disk Word task should starve the Emulator until the transfer
-    // completes.
+    // Emulator (Task 0) always woken, Disk Word (Task 14) woken for
+    // 5 cycles during transfer.  Disk Word starves Emulator while
+    // transfer active.
     let arbiter_inputs: Vec<AltoIn> = (0..10).map(|cycle| {
-        let mut wake: u128 = 0x0001; // emulator always woken
-        if cycle < 5 { wake |= 0x0004; } // disk word during transfer
+        let mut wake: u128 = 0x0001; // emulator always woken (bit 0)
+        if cycle < 5 { wake |= 0x4000; } // disk word during transfer (bit 14)
         input_from_wakeups(wake)
     }).collect();
 
@@ -142,12 +133,12 @@ fn disk_word_outranks_emulator_under_pressure() {
     let arbiter_trace = run_arbiter(arbiter, arbiter_inputs);
 
     // Output is observed one cycle after the firing (last_task is a DFF).
-    // Cycles 0..4 fire Disk Word → trace[1..=5].last_task == 2.
+    // Cycles 0..4 fire Disk Word (task 14) → trace[1..=5].last_task == 14.
     for cyc in 1..=5 {
-        assert_eq!(arbiter_trace[cyc].last_task.raw(), 2,
+        assert_eq!(arbiter_trace[cyc].last_task.raw(), 14,
             "cycle {cyc} (out): Disk Word should win over Emulator");
     }
-    // Cycles 5..9 fire Emulator → trace[6..=9].last_task == 0.
+    // Cycles 5..9 fire Emulator (task 0) → trace[6..=9].last_task == 0.
     for cyc in 6..=9 {
         assert_eq!(arbiter_trace[cyc].last_task.raw(), 0,
             "cycle {cyc} (out): Emulator runs once Disk Word releases");
@@ -155,6 +146,5 @@ fn disk_word_outranks_emulator_under_pressure() {
 
     let final_state = arbiter_trace.last().unwrap();
     assert_eq!(final_state.disk_word_count.raw(), 5);
-    // Task 0 fired 5 times; its next_mpc was 100 each cycle, so MPC = 100.
     assert_eq!(final_state.task_mpc[0].raw(), 100);
 }
