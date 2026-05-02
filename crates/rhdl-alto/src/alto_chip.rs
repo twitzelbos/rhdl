@@ -75,6 +75,13 @@ pub struct ChipOut {
     /// Effective wakeup vector this cycle (user-supplied OR'd with
     /// disk-derived wakeups).
     pub wakeups: Bits<16>,
+    /// Disk-controller register read-data this cycle (the value at
+    /// the address presented one cycle ago).  Combinational from
+    /// disk_ctrl's q output.
+    pub disk_ctrl_read_data: Bits<16>,
+    /// Engine's per-task disk-controller write-enable this cycle.
+    /// Test surface: confirms the per-task gating works.
+    pub disk_ctrl_write_en: bool,
 }
 
 /// The Alto chip — composition of microengine + microcode RAM +
@@ -271,9 +278,11 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     o.bus              = q.engine.bus;
     o.alu_result       = q.engine.alu_result;
     o.instruction      = instr_this_cycle;
-    o.disk_sector_mark = disk_sector_mark;
-    o.disk_word_strobe = disk_word_strobe;
-    o.wakeups          = effective_wakeups;
+    o.disk_sector_mark    = disk_sector_mark;
+    o.disk_word_strobe    = disk_word_strobe;
+    o.wakeups             = effective_wakeups;
+    o.disk_ctrl_read_data = q.disk_ctrl.read_data;
+    o.disk_ctrl_write_en  = q.engine.disk_ctrl_write_en;
 
     (o, d)
 }
@@ -554,6 +563,55 @@ mod tests {
         let final_task = trace.last().unwrap().current_task.raw();
         assert_eq!(final_task, 4,
             "with both task 0 and task 4 woken, task 4 (Disk Sector) wins");
+    }
+
+    /// Per-task gating: under Disk Sector (Task 4), F1=DiskCtrlWrite
+    /// asserts disk_ctrl_write_en; under Emulator (Task 0), the
+    /// same instruction is a no-op.
+    #[test]
+    fn f1_disk_ctrl_write_only_active_under_disk_sector_task() {
+        // Microcode at addr 0: F1=DiskCtrlWrite, RSEL=0, BS=ReadR.
+        // (Both bus value and reg-index are 0; we only care about
+        // the write_en signal.)
+        let mi0 = Microinstruction {
+            rsel: bits::<5>(0),
+            aluf: AluFunction::Bus, bs: BusSource::ReadR,
+            f1: F1Function::DiskCtrlWrite, f2: F2Function::Nop,
+            t_load: false, l_load: false, next: bits::<10>(0),
+        };
+        let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
+        microcode[0] = mi0.pack();
+        let constants = [0u16; crate::constant_rom::NUM_CONSTANTS];
+
+        // ---- Test A: Disk Sector task (4) firing → write_en asserted
+        let uut_a = AltoChip::with_microcode_and_constants(&microcode, &constants);
+        let inputs_a: Vec<ChipIn> = (0..16).map(|_| ChipIn {
+            wakeups: bits::<16>(0x0010),  // wake Task 4 only
+        }).collect();
+        let stream_a = inputs_a.into_iter().with_reset(2).clock_pos_edge(100);
+        let trace_a: Vec<ChipOut> = uut_a.run(stream_a)
+            .synchronous_sample()
+            .filter(|s| !s.input.0.reset.any())
+            .map(|s| s.output)
+            .collect();
+        let write_active_a = trace_a.iter().any(|t| t.disk_ctrl_write_en);
+        assert!(write_active_a,
+            "Under Disk Sector task, F1=DiskCtrlWrite should assert write_en");
+
+        // ---- Test B: Emulator task (0) firing → write_en NEVER asserted
+        let uut_b = AltoChip::with_microcode_and_constants(&microcode, &constants);
+        let inputs_b: Vec<ChipIn> = (0..16).map(|_| ChipIn {
+            wakeups: bits::<16>(0x0001),  // wake Task 0 only
+        }).collect();
+        let stream_b = inputs_b.into_iter().with_reset(2).clock_pos_edge(100);
+        let trace_b: Vec<ChipOut> = uut_b.run(stream_b)
+            .synchronous_sample()
+            .filter(|s| !s.input.0.reset.any())
+            .map(|s| s.output)
+            .collect();
+        let write_active_b = trace_b.iter().any(|t| t.disk_ctrl_write_en);
+        assert!(!write_active_b,
+            "Under Emulator task, F1=DiskCtrlWrite is a no-op (gated)");
     }
 
     /// End-to-end disk → wakeup → arbiter → engine path: the disk
