@@ -1094,18 +1094,20 @@ mod tests {
         let uut = AltoChip::with_microcode_and_constants(&microcode, &constants);
         let trace = run(uut, 1000);
 
-        // Collect unique (mpc, instruction) pairs in visit order.
-        let mut seen: std::collections::BTreeMap<u128, (u128, u128)> =
+        // Collect unique (task, mpc) → instr pairs.  Both Task 0 and
+        // Task 4 visit MPC=0 (shared starting point); keying by
+        // (task, mpc) shows each task's distinct path.
+        let mut seen: std::collections::BTreeMap<(u128, u128), u128> =
             std::collections::BTreeMap::new();
         for t in &trace {
-            seen.entry(t.mpc.raw())
-                .or_insert((t.instruction.raw(), t.current_task.raw()));
+            seen.entry((t.current_task.raw(), t.mpc.raw()))
+                .or_insert(t.instruction.raw());
         }
 
-        eprintln!("[boot_trace_decode_diagnostic] {} unique microaddresses visited:", seen.len());
-        for (mpc, &(instr, task)) in seen.iter() {
+        eprintln!("[boot_trace_decode_diagnostic] {} unique (task, mpc) pairs visited:", seen.len());
+        for ((task, mpc), &instr) in seen.iter() {
             let mi = Microinstruction::unpack(instr as u32);
-            eprintln!("  mpc=0x{mpc:03x} task={task:2} instr=0x{instr:08x}");
+            eprintln!("  task={task:2} mpc=0x{mpc:03x} instr=0x{instr:08x}");
             eprintln!("    rsel={} aluf={:?} bs={:?} f1={:?} f2={:?} t_load={} l_load={} next=0x{:03x}",
                 mi.rsel.raw(), mi.aluf, mi.bs, mi.f1, mi.f2,
                 mi.t_load, mi.l_load, mi.next.raw());

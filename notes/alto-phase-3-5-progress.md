@@ -128,3 +128,18 @@ Realistic remaining timeline: 2-3 months of focused work.
   in F1/F2 ranges 8-15.  When per-task dispatch ships, re-align the
   code numbers to match `Contralto/CPU/MicroInstruction.cs` so real
   microcode interprets correctly.
+- **🐛 Task-switch microcode-fetch pipeline bug** (uncovered by the
+  per-task diagnostic): when arbitration switches from Task A to
+  Task B between cycle T-1 and cycle T, the urom output at cycle T
+  reflects Task A's MPC (the address presented at T-1), not Task B's.
+  So Task B at its MPC actually executes Task A's microinstruction.
+  Symptom: `boot_trace_decode_diagnostic` shows Task 4 at MPC=0
+  reading `instr=0x0017054e` instead of the actual `prog[0]=0x2811c552`.
+  Doesn't break the existing tests (DMA test runs almost entirely
+  in Task 14 — no switching).  But blocks real-microcode boot
+  progress because Task 4's first execution at MPC=0 doesn't run
+  the disk-task setup.  Fix options: (a) per-task instruction
+  pre-fetch cache (16 × 32 bits); (b) stall-on-task-switch (insert
+  no-op cycle); (c) restructure arbitration to be combinational so
+  the urom fetch can happen with the right task's MPC each cycle.
+  Substantial multi-day work.
