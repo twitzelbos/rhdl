@@ -623,6 +623,73 @@ mod tests {
             "Under Emulator task, F1=WriteKadr is a no-op (gated)");
     }
 
+    /// End-to-end disk-arm chain: under Disk Sector task, microcode
+    /// loads R[1] with 0x8000 (the "start transfer" KCOM bit), then
+    /// writes KCOM ← R[1].  This should:
+    ///   1. Commit KCOM = 0x8000 in disk_ctrl.
+    ///   2. disk_ctrl asserts transfer_request (KCOM[15] is set).
+    ///   3. Disk arms a 256-word transfer (transfer_remaining ← 256).
+    ///   4. word_strobe fires per cycle.
+    ///   5. wakeup bit 14 OR'd in.
+    ///   6. Disk Word task (14) fires.
+    ///
+    /// Verifies the full controller→disk→arbiter chain end-to-end.
+    #[test]
+    fn kcom_write_arms_disk_and_fires_disk_word_task() {
+        // addr 0: F1=Constant idx 0 = 0x8000, BS=LoadR, RSEL=1, ALUF=Bus
+        //         → R[1] ← 0x8000.  NEXT=1.
+        let mi0 = Microinstruction {
+            rsel: bits::<5>(1),
+            aluf: AluFunction::Bus,
+            bs:   BusSource::LoadR,
+            f1:   F1Function::Constant,
+            f2:   F2Function::Nop,
+            t_load: false, l_load: false,
+            next: bits::<10>(1),
+        };
+        // addr 1: BS=ReadR (RSEL=1 → BUS = R[1] = 0x8000), F1=WriteKcomm
+        //         → KCOM ← 0x8000.  Loop.
+        let mi1 = Microinstruction {
+            rsel: bits::<5>(1),
+            aluf: AluFunction::Bus,
+            bs:   BusSource::ReadR,
+            f1:   F1Function::WriteKcomm,
+            f2:   F2Function::Nop,
+            t_load: false, l_load: false,
+            next: bits::<10>(1),
+        };
+        let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
+        microcode[0] = mi0.pack();
+        microcode[1] = mi1.pack();
+        let mut constants = [0u16; crate::constant_rom::NUM_CONSTANTS];
+        // F1=Constant in mi0 has RSEL=1, BS=LoadR(=1), so the constant
+        // index = (1 << 3) | 1 = 9.  Put 0x8000 there.
+        constants[9] = 0x8000;
+
+        let uut = AltoChip::with_microcode_and_constants(&microcode, &constants);
+        // Wake Disk Sector (task 4) only.
+        let inputs: Vec<ChipIn> = (0..40).map(|_| ChipIn {
+            wakeups: bits::<16>(0x0010),
+        }).collect();
+        let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
+        let trace: Vec<ChipOut> = uut.run(stream)
+            .synchronous_sample()
+            .filter(|s| !s.input.0.reset.any())
+            .map(|s| s.output)
+            .collect();
+
+        // Within 40 cycles, the chain should have completed:
+        // KCOM written → transfer_request → disk armed → word_strobe fires.
+        let any_word_strobe = trace.iter().any(|t| t.disk_word_strobe);
+        assert!(any_word_strobe,
+            "word_strobe should fire after Disk Sector microcode writes KCOM = 0x8000");
+
+        // And: the Disk Word task (14) should have fired.
+        let any_task_14 = trace.iter().any(|t| t.current_task.raw() == 14);
+        assert!(any_task_14,
+            "Disk Word task (14) should fire after disk arms the transfer");
+    }
+
     /// Per-task IR load: under Emulator (task 0), F2=LoadIr loads
     /// IR ← MD (memory data).  Stage memory[0x100] = 0xCAFE, do
     /// MAR ← 0x100, wait, then F2=LoadIr; verify IR == 0xCAFE.
