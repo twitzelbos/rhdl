@@ -17,12 +17,15 @@ later PRs.
 
 ---
 
-## Status — Phases 1 + 2 (microengine + 16-task arbiter)
+## Status — Phases 1 + 2 + 3 (foundation through disk subsystem)
 
-This is the **first PR** in the Alto core series, shipping
-**Phase 1** (universal microengine) **and Phase 2** (the 16-task
-priority arbiter as an [`rhdl-rule`] kernel — the canonical
-showcase for the rule pattern).
+Phase 1 (universal microengine) and Phase 2 (16-task arbiter as
+an [`rhdl-rule`] kernel) shipped earlier.  This PR adds **Phase 3
+foundations**: the simulated Diablo 31 disk drive widget, the
+disk-controller register file, a 256-word memory subsystem stub,
+and the **first per-task body specialization** — Disk Sector and
+Disk Word task bodies diverge from the generic shape to bump
+dedicated counters.
 
 ### What's in Phase 1
 
@@ -83,13 +86,47 @@ arbiter works**, in 16 lines of Rust per task.
 
 [`rhdl-rule`]: ../rhdl-rule/
 
-### What's deferred (per `tier-c-flagship-cores.md` §5.5)
+### What's in Phase 3 — disk subsystem foundation + first body divergence
+
+- [`diablo_disk`](src/diablo_disk.rs) — simulated Diablo 31 fixed
+  disk: 2 heads × 203 cylinders × 12 sectors × 256 words/sector
+  (~2.4 MB total).  Provides `sector_mark` (rotational tick once
+  per sector) and `word_strobe` (DMA word ready) outputs that
+  drive the disk-task wakeups; sector-buffer read/write port for
+  per-word DMA.
+- [`disk_controller`](src/disk_controller.rs) — KSTAT / KDATA /
+  KCOM / KADR / KCWA / KCWD register file, with field-decoded
+  KADR (cylinder / head / sector) routed to the disk drive.
+- [`memory`](src/memory.rs) — 256-word main-memory stub
+  (Phase-3.5 will parameterize and back with `SyncBRAM`).
+- [`task_system`](src/task_system.rs) — Task 1 (Disk Sector) and
+  Task 2 (Disk Word) bodies now diverge from the generic shape.
+  Both bump dedicated `disk_sector_count` / `disk_word_count`
+  registers in addition to the generic per-task work.  This is
+  the first PR where rule bodies specialize per task.
+
+### What's deferred to Phase 3.5 (per `tier-c-flagship-cores.md` §5.5)
+
+The published Phase 3 plan calls for "boot the original Alto disk
+image far enough to get to the operating system loader."  That
+requires three additional pieces this PR does **not** include:
+
+1. **Real Alto microcode** loaded into the microengine ROM
+   (sourced from the PARC archive / Bitsavers).
+2. **Original Alto disk image** loaded into `DiabloDisk`
+   (sourced from CHM / Bitsavers).
+3. **End-to-end DMA** between `Memory` and `DiabloDisk` driven by
+   the Disk Sector / Disk Word task bodies via the controller.
+
+The Phase-3 widgets here are the foundation for that work; Phase 3.5
+will source the binary assets and wire the DMA path.
 
 | Phase | What lands | Status |
 |-------|------------|--------|
-| 1     | Microengine skeleton + ALU + regfile + microinstr (this PR) | ✅ |
-| 2     | **16-task wakeup arbiter as `rhdl-rule` kernel (this PR)** | ✅ |
-| 3     | Disk Sector + Disk Word tasks; boot disk image to OS loader; specialise per-task bodies | ⏳ |
+| 1     | Microengine skeleton + ALU + regfile + microinstr | ✅ |
+| 2     | 16-task wakeup arbiter as `rhdl-rule` kernel | ✅ |
+| 3     | **Disk subsystem widgets + first per-task body divergence (this PR)** | ✅ |
+| 3.5   | Real Alto microcode + disk image + end-to-end DMA → OS loader boot | ⏳ |
 | 4     | Display Word/Horizontal/Vertical tasks; render 606×808 framebuffer | ⏳ |
 | 5     | Mouse + Cursor + Keyboard tasks | ⏳ |
 | 6     | Ethernet task (optional v1) | ⏳ |
@@ -144,15 +181,19 @@ BUS+T+1, BUS+SKIP (carry-skip), BUS·T (alternate AND), BUS&¬T
 
 ## Testing
 
-**40 tests pass** in Phases 1+2:
+**63 tests pass** across Phases 1, 2, and 3:
 
 | File | Tests | Coverage |
 |------|-------|----------|
 | `tests/alu.rs` | 20 | every ALUF code + carry-out + reserved codes + iverilog round-trip |
 | `tests/regfile.rs` | 4 | write-then-read, R0-is-writable, independent slots, iverilog round-trip |
 | `tests/microengine.rs` | 6 | T-load, L-load, two-step program, F1 left-shift looping, F2 branch-on-zero, iverilog round-trip |
-| `tests/task_system.rs` | 10 | per-task wakeup, priority arbitration (Task 15 > 0, Disk Word > Disk Sector, all-16-woken), wakeup gating, per-task MPC isolation, **iverilog round-trip on the rhdl-rule-generated Verilog** |
-| **Total** | **40** | |
+| `tests/task_system.rs` | 14 | per-task wakeup, priority arbitration, wakeup gating, per-task MPC isolation, **Phase-3: per-task body divergence — disk counters increment only on the matching task**, iverilog round-trip |
+| `tests/diablo_disk.rs` | 8 | sector_mark cadence + word-buffer round-trip + transfer-active gating + reset semantics + iverilog round-trip |
+| `tests/disk_controller.rs` | 4 | per-register write/read round-trip + KADR field decode + iverilog round-trip |
+| `tests/memory.rs` | 4 | write/read round-trip + per-address independence + read-en gating + iverilog round-trip |
+| `tests/disk_dma_integration.rs` | 3 | **DiabloDisk → AltoTaskSystem composition: 3 sector marks → 3 Disk-Sector firings; Disk Word starves Emulator under priority pressure** |
+| **Total** | **63** | |
 
 ```sh
 cargo test -p rhdl-alto
@@ -195,12 +236,19 @@ crates/rhdl-alto/
 │   ├── regfile.rs              ← R-register file widget
 │   ├── microcycle.rs           ← shared per-cycle execution kernel
 │   ├── microengine.rs          ← 2-stage MIF/MIE single-task pipeline
-│   └── task_system.rs          ← 16-task arbiter as rhdl-rule kernel ★
+│   ├── task_system.rs          ← 16-task arbiter as rhdl-rule kernel ★
+│   ├── diablo_disk.rs          ← simulated Diablo 31 disk drive (Phase 3)
+│   ├── disk_controller.rs      ← KSTAT/KDATA/KCOM/KADR/KCWA/KCWD register file (Phase 3)
+│   └── memory.rs               ← 256-word main-memory stub (Phase 3)
 └── tests/
     ├── alu.rs                  ← 20 ALU tests
     ├── regfile.rs              ← 4 regfile tests
     ├── microengine.rs          ← 6 microengine tests
-    └── task_system.rs          ← 10 task-system tests (incl. iverilog round-trip)
+    ├── task_system.rs          ← 14 task-system tests (incl. Phase-3 specialization)
+    ├── diablo_disk.rs          ← 8 disk-drive tests
+    ├── disk_controller.rs      ← 4 disk-controller tests
+    ├── memory.rs               ← 4 memory tests
+    └── disk_dma_integration.rs ← 3 composition tests (disk → arbiter)
 ```
 
 ★ The 16-task arbiter is the canonical [`rhdl-rule`] use case —

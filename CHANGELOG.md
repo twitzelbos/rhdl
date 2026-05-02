@@ -31,6 +31,78 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-01 — Tier C #2 Alto Phase 3: disk subsystem foundation + first per-task body divergence
+
+**Paths:**
+
+- `crates/rhdl-alto/src/diablo_disk.rs` (new) — simulated Diablo 31 disk-drive widget.  Models the rotational tick (`sector_mark` once per 256 word-cycles), an active 256-word sector buffer, the per-word read/write port, and the transfer-active counter.  Disk geometry constants (`WORDS_PER_SECTOR`, `SECTORS_PER_TRACK`, `CYLINDERS`, `HEADS`) match the real Diablo 31 (~2.4 MB total).
+- `crates/rhdl-alto/src/disk_controller.rs` (new) — KSTAT/KDATA/KCOM/KADR/KCWA/KCWD register file with field-decoded KADR (cylinder bits[15:8], head bit[7], sector bits[3:0]) routed out for direct disk-drive consumption.
+- `crates/rhdl-alto/src/memory.rs` (new) — 256-word main-memory subsystem stub.  Single read port + single write port; combinational read.
+- `crates/rhdl-alto/src/task_system.rs` — Task 1 (Disk Sector) and Task 2 (Disk Word) bodies now diverge from the generic shape: each bumps a dedicated `disk_sector_count` / `disk_word_count` counter in addition to the per-task MPC management.  Counters surfaced in `AltoOut` for observability.
+- `crates/rhdl-alto/src/lib.rs` — module declarations for the three new submodules.
+- `crates/rhdl-alto/tests/diablo_disk.rs` (new, 8 tests).
+- `crates/rhdl-alto/tests/disk_controller.rs` (new, 4 tests).
+- `crates/rhdl-alto/tests/memory.rs` (new, 4 tests).
+- `crates/rhdl-alto/tests/task_system.rs` — 4 new tests pin the per-task body divergence: counter-only-fires-on-matching-task, counter-stays-at-zero-when-other-tasks-fire, both-disk-tasks-woken-priority-arbitration.
+- `crates/rhdl-alto/tests/disk_dma_integration.rs` (new, 3 tests) — composition demo: drive `DiabloDisk` standalone, capture its `sector_mark` / `word_strobe` outputs, translate into wakeups, feed into `AltoTaskSystem`, verify the right disk task fires the right number of times.
+- `crates/rhdl-alto/README.md` — Phase-3 status table updated.
+
+**Why this, why now:** Phases 1 and 2 of the Alto core landed earlier (PR #44).  Per `tier-c-flagship-cores.md` §5.5 the Phase 3 deliverable is the disk subsystem — Disk Sector + Disk Word tasks plus a simulated Diablo 31 — with the ambitious milestone of booting the original Alto disk image to the OS loader.  This PR ships the **foundation** for that work and re-scopes the boot-to-OS-loader work into **Phase 3.5**.  See "Honest scope decision" below.
+
+**Design decisions:**
+
+- **Per-task body divergence as the headline Phase-3 demo.**  The 16-task arbiter has had identical bodies through Phases 1 and 2 — the only thing that varies per task is the wakeup bit and the priority constant.  Phase 3 is the first time bodies actually diverge: Task 1 also bumps `disk_sector_count`; Task 2 also bumps `disk_word_count`.  This is the smallest credible demonstration that rhdl-rule supports per-rule body specialization, which is the path to fully-specialized BSV-style task implementations in later phases.
+
+- **Disk-task counters as the divergence vehicle.**  Two new DFF fields (`disk_sector_count`, `disk_word_count`) are touched only by their respective rules.  The other 14 rules don't write them, so auto-hold (PR #43) keeps them at their previous values.  This is the cleanest test-visible signal that the rule body diverged: either the counter advanced (the matching task fired) or it didn't (some other task fired or no task fired).
+
+- **256-word memory + 256-word disk sector buffer.**  Original plan was 2 KW for memory (still smaller than the real Alto's 64 KW for BRAM feasibility) and the disk geometry's natural 256-word-per-sector buffer.  The 2 KW DFF array was rejected after iverilog testbench compilation failed on the resulting 2048-element register declaration ("input buffer overflow, can't enlarge buffer because scanner uses REJECT").  Reduced memory to 256 words for Phase 3; Phase 3.5 will swap the DFF array for `rhdl_fpga::core::ram::SyncBRAM` which has proper iverilog-compatible memory emission.
+
+- **Combinational read for both memory and disk buffer.**  Real Alto memory has multi-cycle DRAM timing; real Diablo disk reads are even more latency-bound.  Phase 3 collapses both to combinational reads to keep the test surface tractable and the cycle count predictable.  Phase 3.5 reintroduces realistic latency.
+
+- **Disk-controller register file is purely a register array.**  No FSM, no command sequencing, no actual interaction with `DiabloDisk` — just a 6-register memory-mapped block with field decode for KADR.  This matches the real Alto's controller, which is little more than a register array; the *behaviour* (when to start a transfer, when to stop) is entirely in the disk-task microcode.
+
+- **Cross-widget composition deferred to integration tests, not embedded in `AltoTaskSystem`.**  The integration test (`tests/disk_dma_integration.rs`) drives `DiabloDisk` standalone, then feeds its `sector_mark` / `word_strobe` outputs into `AltoTaskSystem` as wakeups.  This deliberately keeps the task system widget self-contained — it doesn't have a `DiabloDisk` field, so its descriptor and HDL emission stay simple.  Phase 3.5 will introduce a top-level `AltoChip` widget that embeds all four (microengine + task system + disk + controller + memory).
+
+**Honest scope decision — what this PR does NOT do:**
+
+The published Phase 3 plan (`tier-c-flagship-cores.md` §5.5) calls for "boot the original Alto disk image far enough to get to the operating system loader."  This PR does **not** boot anything.  Three pieces are missing for that to be possible:
+
+1. **Real Alto microcode.**  Need to source the original PARC microcode binary (~1024 microinstructions) and write a microcode loader.  Bitsavers has the `.mb` files but parsing them and producing the right `Microinstruction` round-trips is its own deliverable.
+2. **Real Alto disk image.**  Need to source the original boot disk image (a `.dsk` file from CHM or Bitsavers) and write a backing-store loader for `DiabloDisk`.
+3. **End-to-end DMA path.**  The Disk Sector / Disk Word task bodies need to actually drive the controller's KCOM/KADR/KCWA registers and the disk's word_addr port; the controller needs to wire those over to the disk; and the memory needs to be the destination.  All three sub-widgets exist in this PR; the wiring is Phase 3.5.
+
+CLAUDE.md's "STOP" rule (the rule about never shipping a sliver as if it satisfied the full ask) requires this be called out **explicitly** in the PR rather than buried in the CHANGELOG.  The Phase-3 ambitious milestone is sliced into Phase 3 (foundation, this PR) and Phase 3.5 (binary asset sourcing + wiring).  This is a planned, transparent split — not a stealth scope reduction.
+
+**Surprises and gotchas:**
+
+- **Rust's auto-Default doesn't extend past 32-element arrays.**  `[Bits<16>; 256]` and `[Bits<16>; 2048]` need manual `impl Default` blocks that explicitly construct the DFF via `dff::DFF::new([bits::<16>(0); N])`.  This is mentioned in `notes/kernel-language-constraints-modbus.md` but it's worth re-flagging: any widget with an array DFF larger than 32 needs a manual Default impl.
+
+- **iverilog testbench compilation chokes on multi-thousand-element register arrays.**  `[Bits<16>; 2048]` produced "input buffer overflow, can't enlarge buffer because scanner uses REJECT" during testbench compile.  Workaround for now: use smaller arrays (256 was fine) or use `SyncBRAM` (which emits a proper Verilog memory).  The 256-word disk sector buffer compiled cleanly, so the practical ceiling is somewhere between 256 and 2048 elements.
+
+- **`run_fn`-based test helpers were buggy for off-by-one observation timing**, in a way that the iterator-based `with_reset(N).clock_pos_edge(P).synchronous_sample()` pattern just sidesteps.  Three test files originally used `run_fn`; rewriting them to the iterator pattern fixed every flaky timing assertion AND made the tests shorter.  Lesson: prefer the iterator pattern for synchronous widgets unless the test genuinely needs closed-loop input-from-output computation.
+
+- **`any_running` is sticky once any task has fired.**  The rule body sets `ctx.any_running = true` on firing; auto-hold keeps the previous value when no rule fires.  So `any_running` becomes a "has any task ever fired" latch rather than a "is a task firing this cycle" flag.  This is the *correct* semantics under rhdl-rule's auto-hold, but it required adjusting the integration test's assertion (the test originally expected `any_running` to drop to false in idle trailing cycles).  Documented in the integration test comments.
+
+- **Output-of-DFF observation lags by one cycle.**  Standard rhdl synchronous-circuit timing: `last_task` reflects the firing from one cycle earlier.  The integration test (`disk_word_outranks_emulator_under_pressure`) compensates by indexing `arbiter_trace[1..=5]` for the firings of cycles 0..4.  This is cycle-accurate Alto behaviour, not a bug, but worth remembering when writing integration tests.
+
+**Validation:**
+
+- 63 tests pass across 7 test files (alu 20, regfile 4, microengine 6, task_system 14, diablo_disk 8, disk_controller 4, memory 4, disk_dma_integration 3).
+- iverilog round-trip on every new widget (DiabloDisk, DiskController, Memory, AltoTaskSystem with new fields).
+- Composition test confirms `DiabloDisk` → `AltoTaskSystem` wiring fires the right disk task at every sector boundary.
+- `cargo check -p rhdl-alto` clean; no warnings introduced.
+
+**Follow-ups (Phase 3.5):**
+
+- Source PARC microcode binary; parse `.mb` format; load into microengine ROM.
+- Source CHM / Bitsavers `.dsk` boot image; load into `DiabloDisk` backing store.
+- Wire disk-controller registers between Disk Sector task body and `DiabloDisk` (sub-widget composition + drive).
+- Replace 256-word DFF arrays with `SyncBRAM` for both memory and disk sector buffer; parameterize sizes.
+- Add the `AltoChip` top-level widget that embeds microengine + task system + disk + controller + memory.
+- Lockstep against ContrAlto on a synthetic boot trace.
+
+---
+
 ## 2026-05-01 — `rhdl-rule`: sub-widget input drive — regression suite + docs correction
 
 **Paths:**
