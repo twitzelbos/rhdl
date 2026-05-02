@@ -5,7 +5,14 @@ branch, single PR per the user's "complete this phase, don't ship a
 v1, don't defer" constraint.  PR opens only when **Nova PC = 0o345**
 is reached with cycle-equivalent ContrAlto trace.
 
-## Status (18 commits in, 103 tests pass)
+## Status (30 commits in, 108 tests pass)
+
+🎯 **Architectural milestone reached: end-to-end 256-word DMA works
+through real microengine cycles.**  Hand-written Disk Sector
+microcode arms a transfer; Disk Word task body does 256 atomic
+per-word DMAs; transfer ends cleanly.  Verified via task fire
+counts: `disk_word_count = 257` (256 DMAs + 1 transition cycle),
+`disk_sector_count = 142` (post-DMA NOP loop).
 
 ### ✅ Done
 
