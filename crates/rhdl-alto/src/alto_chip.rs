@@ -88,6 +88,15 @@ pub struct ChipOut {
     pub disk_sector_count: Bits<16>,
     /// Disk Word task fire counter (from task_system).
     pub disk_word_count: Bits<16>,
+    /// Memory write address this cycle (engine's mem_address output,
+    /// q-registered).  Combined with mem_write_observed_data and
+    /// mem_write_observed_en lets tests reconstruct the engine's
+    /// memory-write trace cycle-by-cycle.
+    pub mem_write_observed_addr: Bits<16>,
+    /// Memory write data this cycle.
+    pub mem_write_observed_data: Bits<16>,
+    /// Memory write enable this cycle.
+    pub mem_write_observed_en: bool,
 }
 
 /// The Alto chip — composition of microengine + microcode RAM +
@@ -302,6 +311,9 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     o.ir                  = q.engine.ir;
     o.disk_sector_count   = q.tasks.disk_sector_count;
     o.disk_word_count     = q.tasks.disk_word_count;
+    o.mem_write_observed_addr = q.engine.mem_address;
+    o.mem_write_observed_data = q.engine.mem_write_data;
+    o.mem_write_observed_en   = q.engine.mem_write_en;
 
     (o, d)
 }
@@ -756,6 +768,34 @@ mod tests {
         eprintln!("[end_to_end_256_word_dma] disk_sector_count = {final_disk_sector_count}");
         assert!(final_disk_sector_count >= 4,
             "Disk Sector should fire at least 4 times (setup); got {final_disk_sector_count}");
+
+        // ---- Verify memory contents via observed-write trace --------
+        // Reconstruct the engine's memory-write trace from ChipOut and
+        // verify the right WORDS landed at the right addresses.
+        // Expected: 256 writes of (addr, data) = (0x200+i, 0xA000+i)
+        // for i in 0..256.
+        let mut writes: Vec<(u128, u128)> = Vec::new();
+        for t in &trace {
+            if t.mem_write_observed_en {
+                writes.push((t.mem_write_observed_addr.raw(),
+                             t.mem_write_observed_data.raw()));
+            }
+        }
+        eprintln!("[end_to_end_256_word_dma] observed {} memory writes", writes.len());
+        // 256 DMAs expected; pipeline-delay can produce one extra
+        // firing as the wakeup chain settles.  Accept 256 or 257.
+        assert!(writes.len() == 256 || writes.len() == 257,
+            "Expected 256 or 257 memory writes (256 DMAs + maybe 1 transition); got {}",
+            writes.len());
+        // Verify the first 256 writes: addr 0x200..0x300, data 0xA000..0xA0FF.
+        for (i, &(addr, data)) in writes.iter().take(256).enumerate() {
+            let expected_addr = 0x200u128 + (i as u128);
+            let expected_data = 0xA000u128 + (i as u128);
+            assert_eq!(addr, expected_addr,
+                "Write {i}: addr = {addr:#06x}, expected {expected_addr:#06x}");
+            assert_eq!(data, expected_data,
+                "Write {i}: data = {data:#06x}, expected {expected_data:#06x}");
+        }
     }
 
     /// End-to-end disk-arm chain: under Disk Sector task, microcode
