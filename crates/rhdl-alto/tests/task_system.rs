@@ -152,6 +152,65 @@ fn per_task_mpcs_are_independent() {
     }
 }
 
+// ---- Phase-3 specialization: per-task body divergence ------------
+//
+// In Phases 1 and 2 every task body was identical (bump MPC, record
+// last_task, set any_running).  Phase 3 specializes Task 1 (Disk
+// Sector) and Task 2 (Disk Word) to also bump dedicated counters —
+// the first time the task bodies diverge.  These tests verify that
+// (a) the counters increment when the matching task fires,
+// (b) the counters do NOT increment when other tasks fire, and
+// (c) the counters survive priority arbitration correctly.
+
+#[test]
+fn disk_sector_count_only_advances_when_task_1_fires() {
+    let uut = AltoTaskSystem::default();
+    let trace = run(uut, input(0x0002), 5);
+    let final_state = trace.last().unwrap();
+    assert_eq!(final_state.last_task.raw(), 1, "Disk Sector ran");
+    // Counter advanced once per cycle.
+    assert!(final_state.disk_sector_count.raw() > 0, "sector counter advanced");
+    assert_eq!(final_state.disk_word_count.raw(), 0,
+        "word counter must NOT advance when only Task 1 fires");
+}
+
+#[test]
+fn disk_word_count_only_advances_when_task_2_fires() {
+    let uut = AltoTaskSystem::default();
+    let trace = run(uut, input(0x0004), 5);
+    let final_state = trace.last().unwrap();
+    assert_eq!(final_state.last_task.raw(), 2, "Disk Word ran");
+    assert!(final_state.disk_word_count.raw() > 0, "word counter advanced");
+    assert_eq!(final_state.disk_sector_count.raw(), 0,
+        "sector counter must NOT advance when only Task 2 fires");
+}
+
+#[test]
+fn other_tasks_do_not_touch_disk_counters() {
+    // Wake Task 5 (Display Word) — neither disk counter should move.
+    let uut = AltoTaskSystem::default();
+    let trace = run(uut, input(0x0020), 5);
+    let final_state = trace.last().unwrap();
+    assert_eq!(final_state.last_task.raw(), 5);
+    assert_eq!(final_state.disk_sector_count.raw(), 0,
+        "Task 5 firing must not touch disk_sector_count");
+    assert_eq!(final_state.disk_word_count.raw(), 0,
+        "Task 5 firing must not touch disk_word_count");
+}
+
+#[test]
+fn disk_word_priority_wins_when_both_disk_tasks_woken() {
+    // Both Disk Word (Task 2) and Disk Sector (Task 1) requested.
+    // Task 2 wins every cycle → only word counter advances.
+    let uut = AltoTaskSystem::default();
+    let trace = run(uut, input(0x0006), 5);
+    let final_state = trace.last().unwrap();
+    assert_eq!(final_state.last_task.raw(), 2, "Disk Word wins");
+    assert!(final_state.disk_word_count.raw() > 0, "word counter advanced");
+    assert_eq!(final_state.disk_sector_count.raw(), 0,
+        "sector counter starves under Disk Word priority");
+}
+
 // ---- iverilog round-trip — proves the rhdl-rule lowering is real
 // hardware, not just a Rust-only simulation.
 

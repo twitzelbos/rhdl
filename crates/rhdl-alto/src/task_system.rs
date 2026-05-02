@@ -89,6 +89,12 @@ pub struct AltoOut {
     /// True iff at least one wakeup bit is set this cycle and a
     /// rule will (or did) fire.  When false, the engine is idle.
     pub any_running: bool,
+    /// Number of times Task 1 (Disk Sector) has fired since reset.
+    /// Phase-3 specialization marker — proves the task body diverged.
+    pub disk_sector_count: Bits<16>,
+    /// Number of times Task 2 (Disk Word) has fired since reset.
+    /// Phase-3 specialization marker — proves the task body diverged.
+    pub disk_word_count: Bits<16>,
 }
 
 /// The Alto task system: 16 priority-ordered hardware tasks
@@ -110,6 +116,12 @@ pub struct AltoTaskSystem {
     /// Latched "any task fired last cycle" — true when at least one
     /// of the 16 rules fired.  Used for observability + tests.
     pub any_running: dff::DFF<bool>,
+    /// Phase-3: Disk Sector task fire counter.  Only Task 1's body
+    /// updates this — proves the rule body diverged from the others.
+    pub disk_sector_count: dff::DFF<Bits<16>>,
+    /// Phase-3: Disk Word task fire counter.  Only Task 2's body
+    /// updates this — proves the rule body diverged from the others.
+    pub disk_word_count: dff::DFF<Bits<16>>,
 }
 
 #[rule_kernel_attr]
@@ -271,6 +283,12 @@ impl AltoTaskSystem {
     }
 
     // ---- Task 2 — Disk Word -----------------------------------------
+    //
+    // Phase-3 specialization: in addition to bumping the per-task MPC,
+    // this rule increments `disk_word_count`.  Every Disk Word fire
+    // corresponds to one word transferred between memory and the disk
+    // sector buffer (DMA per word).  In Phase 3.5 this body will also
+    // drive the Memory + DiabloDisk sub-widgets directly.
     #[rule(priority = 13)]
     fn task_2_disk_word(ctx: &mut RuleCtx<Self>, i: AltoIn) {
         guard!((i.wakeups & bits::<16>(0x0004)) != bits::<16>(0));
@@ -280,9 +298,17 @@ impl AltoTaskSystem {
         ctx.task_mpc = new_mpcs;
         ctx.last_task = task;
         ctx.any_running = true;
+        // Phase-3 divergence: bump the word-transfer counter.
+        ctx.disk_word_count = *ctx.disk_word_count + bits::<16>(1);
     }
 
     // ---- Task 1 — Disk Sector ---------------------------------------
+    //
+    // Phase-3 specialization: in addition to bumping the per-task MPC,
+    // this rule increments `disk_sector_count`.  Every Disk Sector
+    // fire corresponds to one sector boundary on the spinning disk
+    // (the rotational tick).  In Phase 3.5 this body will also program
+    // the DiskController KADR / KCOM registers and arm a transfer.
     #[rule(priority = 14)]
     fn task_1_disk_sector(ctx: &mut RuleCtx<Self>, i: AltoIn) {
         guard!((i.wakeups & bits::<16>(0x0002)) != bits::<16>(0));
@@ -292,6 +318,8 @@ impl AltoTaskSystem {
         ctx.task_mpc = new_mpcs;
         ctx.last_task = task;
         ctx.any_running = true;
+        // Phase-3 divergence: bump the sector-boundary counter.
+        ctx.disk_sector_count = *ctx.disk_sector_count + bits::<16>(1);
     }
 
     // ---- Task 0 — Emulator (lowest priority — runs by default) ------
@@ -323,6 +351,8 @@ impl AltoTaskSystem {
             task_mpc: *self_q.task_mpc,
             last_task: *self_q.last_task,
             any_running: *self_q.any_running,
+            disk_sector_count: *self_q.disk_sector_count,
+            disk_word_count: *self_q.disk_word_count,
         }
     }
 }
