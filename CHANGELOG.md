@@ -31,6 +31,62 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4j: 5 spec-correctness bugs from audit (D1, D6, D9, D10, D17) + 5 microcode-placement test fixes (C2-C6)
+
+**Paths:**
+
+- `crates/rhdl-alto/src/microengine.rs` — five spec-correctness bugs fixed:
+  - **D1**: T-LOAD with asterisked ALUFs (2 BusOrT, 5 BusPlusOne, 6 BusMinusOne, 10 BusPlusTPlusOne, 12 BusAndTAlt) now loads T from ALU output instead of BUS, per spec §3.1 footnote.  This is what makes `T← BUS OR T` and other accumulator patterns work.
+  - **D6**: `BusSource::None` (BS=2) now reads as 0xFFFF (-1) per spec §3.2 wired-AND default.  Was returning 0.  `Mouse` (BS=6, not implemented) returns 0.  TaskSpec3/4 in non-disk tasks remain 0 (S-register access stub; not yet implemented).
+  - **D9**: `F2=ALUCY` now uses sticky-from-last-L-load carry per spec §3.4 footnote.  Added `alu_carry: dff::DFF<bool>` to the Microengine struct; latched from current ALU's carry whenever L_LOAD fires; read by AluCarryToNext.  Was using current cycle's carry directly.
+  - **D10**: `F2=SH<0` (ShiftLessThanZero) inversion fixed: now sets NEXT bit 0 when L's MSB is SET (negative).  Was inverted (set when MSB clear).  Microcode using SH<0 was branching the opposite way.
+  - **D17**: `IR←` (F2=LoadIr in Emulator) now (a) latches IR from BUS instead of bypassing to MD, and (b) merges BUS bits 15,10,9,8 into NEXT bits 3,2,1,0 per spec §6.6 + ContrAlto's EmulatorTask.cs.  This is the FIRST-LEVEL Nova instruction dispatch — without the merge, the Emulator's fetch loop can't dispatch to opcode handlers.
+- `crates/rhdl-alto/tests/microcode_semantics.rs` — added 9 new tests:
+  - 3 for D1 (T←ALU asterisk: BusOrT, BusPlusOne, plus negative test for non-asterisked BusMinusT)
+  - 1 for D6 (BS=None reads -1)
+  - 1 for D9 (ALUCY uses sticky carry across cycles)
+  - 2 for D10 (SH<0 sets bit when negative; clears when non-negative)
+  - 3 for D17 (IR← merges BUS bit 15; merges bits 10,9,8; merge inactive in disk task)
+- `crates/rhdl-alto/tests/microcode_semantics.rs` — fixed 4 existing tests (`bs_instruction_register_reads_ir`, `acdest_overrides_low_2_rsel_from_ir`, `acsource_overrides_low_2_rsel_from_ir_src`, `f2_loadir_in_emulator`, `f2_idisp_uses_prom_dispatch`, `f2_bus_to_next_ors_low_bus_bits`) that used `BS=ReadR + F2=LoadIr` expecting MD but D17's fix loads from BUS — switched to `BS=MemoryData`, chose IR values clear in bits 15/10/9/8 to keep merge=0 where the test cares about IDISP/BusToNext.
+- `crates/rhdl-alto/src/alto_chip.rs` — fixed 2 chip-level tests broken by D17 (`f2_load_ir_only_active_under_emulator_task`, `f2_idispatch_routes_via_ir_low_byte`) — same pattern: switched LoadIr microcode to `BS=MemoryData`, used `IR=0x4000` instead of `0xCAFE` for IDISP test.
+- `crates/rhdl-alto/src/alto_chip.rs` — fixed 5 chip tests with microcode-placement bugs (C2-C6 from audit): `multi_task_arbitration_picks_higher_priority`, `f1_write_kadr_only_active_under_disk_sector_task`, `kcom_write_arms_disk_and_fires_disk_word_task`, `disk_sector_mark_fires_disk_sector_task`, `f1_strobe_in_disk_sector_arms_transfer`.  Each placed real microcode at MPC=0..N but used wakeups that selected task 4 (whose reset MPC = 4 per spec §2.4).  Tests passed by accidental fall-through from MPC=4 (NOP) to MPC=0 via the chip's per-task-MPC substitution logic.  Now place real microcode at the correct per-task reset MPC.
+
+**Why this, why now:** User asked to fix all bugs found in the test-suite audit.  The 5 implementation bugs (D1, D6, D9, D10, D17) silently corrupted real Alto microcode behavior — Nova accumulator patterns, signed comparisons, sticky carry, wired-AND defaults, and first-level instruction dispatch.  Chip output was still "valid Verilog" but didn't match spec semantics.  These class of bug only surfaces under real microcode (synthetic-PC tests don't exercise the patterns), which is why the test suite missed them.
+
+**Design decisions:**
+
+- **D9 needs new state.**  Sticky carry requires a register that persists across cycles (latched on L-load, read by ALUCY in any future cycle).  Added as `alu_carry: dff::DFF<bool>` per the §3.1 protocol-PHY pattern (CLAUDE.md): each spec-required register gets its own DFF in the Microengine struct.
+
+- **D17 is two changes**: (a) IR latches from BUS instead of bypassing to MD (matches ContrAlto's `_cpu._ir = _busData`), (b) NEXT-merge per spec §6.6.  Both required because the bypass meant BUS routing was untested for IR← — and any test using `BS=ReadR + LoadIr` worked by accident.  The combined fix forces all such tests to use the spec-correct `BS=MemoryData`.
+
+- **C2-C6 microcode placement**: per spec §2.4 task K resets to MPC=K.  Synthetic-microcode tests must place task K's first instruction at microcode[K], not microcode[0].  The previous tests passed because microcode[K]=0 (NOP NEXT=0) fell through to microcode[0] via the chip's "task hasn't started yet" substitution at `alto_chip.rs:316-320`.  If anyone touches that substitution logic, all 5 break at once.  Now placed at the correct per-task reset MPCs.
+
+**Surprises and gotchas:**
+
+- D17's effect was bigger than expected: 6 existing semantic tests broke because they had `BS=ReadR + F2=LoadIr` with `with_md(...)` — relying on the pre-fix bypass that loaded IR directly from MD.  The fix forced spec-correct usage (BS=MemoryData drives BUS=MD, then LoadIr latches from BUS).  This validates the audit's call-out: tests passing for the wrong reason.
+
+- Some tests had assertions encoding the OLD wrong-spec values (e.g., `IR == 0xCAFE` after a setup that should produce 0).  After fixing the implementation, these assertions still expected the old value because they were never actually testing what they claimed.
+
+- D9 (sticky carry) is a true semantic correctness bug not visible until microcode does multi-cycle ALU sequences with intermediate non-L-loading operations.  All prior single-cycle ALUCY tests passed because current-cycle and last-L-load-cycle coincided.
+
+**Validation:**
+
+- 182 alto tests pass (up from 172 — added 9 new spec-correctness tests + 1 throughput test from earlier; 5 chip tests rewritten with correct per-task placement; 6 semantic tests updated for spec-correct BS usage).
+- No boot trace regression — still visits 76 distinct microaddresses (same as before, the boot trace is not yet bottlenecked by any of the D-bugs in this 2000-cycle window; the impact is on real microcode that uses these patterns more deeply, e.g. Nova accumulator ops in the OS loader).
+
+**Follow-ups:**
+
+- D11/D12 IDISP PROM table coverage: only 1 of 7 branches tested; add tests for `IR[1-2]=0`, `=1`, `IR[4-7]=0`, `=1`, `=6`, fallthrough, and the `IR[0]=1` complement-of-SH branch (which is also missing from the implementation).
+- D13 ACSOURCE second role (NEXT-modify dispatch table) not implemented; only RSEL-override tested.
+- D15 MAGIC bit injection on shifts (T-bit↔R-bit during LSH/RSH).
+- D16 DNS (Do Nova Shift) + SKIP latch.
+- D19 F1=11 INCRECNO; D20 KWDX F2 codes 8-12, 14 (currently stubbed).
+- D2/D3/D4/D5 §4.4 memory timing rules (MAR/MD intervening cycle, refresh, etc.).
+- D25 PART task numbering divergence (impl=13, spec §5.2=15).  Decision needed: match spec or match ContrAlto convention.
+- E-class: tighten weak assertions (`disk_word_count <= 280` to exact value, `disk_sector_firings >= sector_events` to a tighter range, etc.).
+
+---
+
 ## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4i: 1-cycle/microinstruction pipeline (spec §2.3)
 
 **Paths:**

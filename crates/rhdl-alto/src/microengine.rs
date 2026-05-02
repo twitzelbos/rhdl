@@ -208,6 +208,12 @@ pub struct Microengine {
     /// being executed by the Emulator task.  Updated by F2 = LoadIr
     /// in Emulator (task 0); other tasks don't touch it.
     ir: dff::DFF<Bits<16>>,
+    /// Sticky-from-last-L-load ALU carry, per spec §3.4 footnote:
+    /// "the carry [used by F2=ALUCY] is that produced by the ALU
+    /// function which last loaded the L register."  Updated whenever
+    /// L_LOAD fires (with the current ALU's carry-out); read by
+    /// F2=AluCarryToNext.
+    alu_carry: dff::DFF<bool>,
 }
 
 impl SynchronousIO for Microengine {
@@ -283,13 +289,22 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // (S-register access — not yet implemented; returns 0).
     let is_disk_task: bool = i.current_task == bits::<4>(4)
         || i.current_task == bits::<4>(14);
+    // Bus source dispatch.  Per spec §3.2:
+    //   - BusSource::None (BS=2) reads as -1 (all-ones) because
+    //     no source is asserting and the Alto bus is wired-AND.
+    //   - BusSource::LoadR (BS=1) forces BUS=0 AND triggers R-write.
+    //   - TaskSpec3/4 in disk tasks read KSTAT/KDATA; in Emulator
+    //     they're S-register access (not yet implemented; stub 0).
+    //   - Mouse (BS=6) is not implemented; stub 0.
     let bus_from_bs: Bits<16> = match mi.bs {
         BusSource::ReadR              => r_read,
-        BusSource::MemoryData         => i.mem_read_data,
-        BusSource::InstructionRegister => q.ir,
+        BusSource::LoadR              => bits::<16>(0),
+        BusSource::None               => bits::<16>(0xFFFF),
         BusSource::TaskSpec3 => if is_disk_task { i.kstat } else { bits::<16>(0) },
         BusSource::TaskSpec4 => if is_disk_task { i.kdata } else { bits::<16>(0) },
-        _                             => bits::<16>(0),
+        BusSource::MemoryData         => i.mem_read_data,
+        BusSource::Mouse              => bits::<16>(0),
+        BusSource::InstructionRegister => q.ir,
     };
     // F1 = Constant OR F2 = Constant overrides BUS with the constant-ROM
     // lookup the owner provided for this cycle's instruction.  Index =
@@ -312,12 +327,28 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let aout: AluOut = alu(mi.aluf, bus, q.t, skip);
 
     // ---- T and L latches ------------------------------------------
-    // T_LOAD: T ← BUS (the manual: T-load "loads T from the bus
-    // BEFORE the ALU computation".  For Phase 1 we treat it as
-    // post-ALU; the only difference is the ALU sees the OLD T this
-    // cycle either way.  To be revisited in Phase 2 with the spec.)
-    d.t = if mi.t_load { bus } else { q.t };
+    // T_LOAD: T ← BUS or ALU output, per spec §3.1 footnote: "If T is
+    // loaded during an instruction which specifies [an asterisked ALU
+    // function], it will be loaded from the ALU output rather than from
+    // the bus."  Asterisked ALUFs are 2 (BusOrT), 5 (BusPlusOne),
+    // 6 (BusMinusOne), 10 (BusPlusTPlusOne), 12 (BusAndTAlt).
+    //
+    // This is what makes accumulator patterns like `T← BUS OR T` work:
+    // BUS drives the operand; ALU computes BUS|T; T_LOAD is set; T
+    // receives the OR result, not just BUS.
+    let aluf_t_loads_alu: bool =
+           mi.aluf == AluFunction::BusOrT
+        || mi.aluf == AluFunction::BusPlusOne
+        || mi.aluf == AluFunction::BusMinusOne
+        || mi.aluf == AluFunction::BusPlusTPlusOne
+        || mi.aluf == AluFunction::BusAndTAlt;
+    let t_source: Bits<16> = if aluf_t_loads_alu { aout.result } else { bus };
+    d.t = if mi.t_load { t_source } else { q.t };
     d.l = if mi.l_load { aout.result } else { q.l };
+    // Sticky carry: latch this ALU's carry only when L is loaded.
+    // F2=AluCarryToNext (ALUCY) reads this register, NOT the current
+    // ALU's carry, per spec §3.4 footnote.
+    d.alu_carry = if mi.l_load { aout.carry } else { q.alu_carry };
 
     // ---- L shifts (F1) --------------------------------------------
     // F1 = LeftShift1 / RightShift1 / LeftCycle8 modify L AFTER the
@@ -367,9 +398,14 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let mut bit0: Bits<10> = next_addr & bits::<10>(0x1);
     bit0 = match mi.f2 {
         F2Function::BusEqZero          => if bus == bits::<16>(0)             { bit0 | bits::<10>(0x1) } else { bit0 },
-        F2Function::ShiftLessThanZero  => if (l_after_f1 & bits::<16>(0x8000)) == bits::<16>(0) { bit0 | bits::<10>(0x1) } else { bit0 },
+        // Spec §3.4: SH<0 sets NEXT bit 0 if Shifter Output is negative
+        // (MSB SET).  Previous code had this inverted (== 0 instead of != 0),
+        // making the engine branch the wrong way on signed comparisons.
+        F2Function::ShiftLessThanZero  => if (l_after_f1 & bits::<16>(0x8000)) != bits::<16>(0) { bit0 | bits::<10>(0x1) } else { bit0 },
         F2Function::ShiftEqZero        => if l_after_f1 == bits::<16>(0)      { bit0 | bits::<10>(0x1) } else { bit0 },
-        F2Function::AluCarryToNext     => if aout.carry                       { bit0 | bits::<10>(0x1) } else { bit0 },
+        // ALUCY uses the STICKY carry from the last cycle that loaded L,
+        // NOT this cycle's carry.  Per spec §3.4 footnote.
+        F2Function::AluCarryToNext     => if q.alu_carry                      { bit0 | bits::<10>(0x1) } else { bit0 },
         _                              => bit0,
     };
     let next_addr_or_bus: Bits<10> = match mi.f2 {
@@ -462,6 +498,21 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         // DMA atomic dispatch in Disk Word task, plus NEXT-modify
         // semantics fall through to the WDTASKACT&WDINIT case which
         // is false in steady state.
+    }
+
+    // F2=LoadIr (Emulator only, F2=12 binary, real spec name IR←):
+    // per spec §6.6 + ContrAlto's EmulatorTask.cs, IR← merges BUS bits
+    // 0,5,6,7 (Alto MSB=0 numbering) into NEXT.  In our LSB=0
+    // encoding: BUS bit 15 → NEXT bit 3, BUS bits 10,9,8 → NEXT bits
+    // 2,1,0.  This is the FIRST-LEVEL Nova instruction dispatch — the
+    // jump table the emulator's fetch loop uses to land on the right
+    // opcode handler.  WITHOUT this merge, IR← effectively does
+    // nothing for dispatch and the Nova fetch loop stalls on the
+    // wrong handler.
+    if is_emulator_for_idisp && mi.f2 == F2Function::LoadIr {
+        let merge_hi: Bits<10> = ((bus & bits::<16>(0x8000)) >> 12).resize();
+        let merge_lo: Bits<10> = ((bus & bits::<16>(0x0700)) >>  8).resize();
+        next_addr = next_addr | merge_hi | merge_lo;
     }
 
     // F2=BUSODD (Emulator-only, F2=10B/binary 8 per spec §6.6):
@@ -580,12 +631,14 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         && (mi.f1 == F1Function::WriteKcwa);
 
     // ---- Per-task IR load (Emulator) ------------------------------
-    // F2 = LoadIr + current_task == 0 (Emulator) → IR ← MD
-    // (memory data delivered from previous cycle's MAR).  In any
-    // other task, this F2 code is a no-op.
+    // F2 = LoadIr + current_task == 0 (Emulator) → IR ← BUS.  Per
+    // spec §6.6 + ContrAlto's EmulatorTask.cs (`_cpu._ir = _busData`),
+    // IR loads from the BUS (the typical microcode is `IR← MD` which
+    // sets BS=MemoryData driving BUS = MD).  In any other task, this
+    // F2 code is a no-op.
     let is_emulator_task: bool = i.current_task == bits::<4>(0);
     let is_load_ir: bool = mi.f2 == F2Function::LoadIr;
-    d.ir = if is_emulator_task && is_load_ir { i.mem_read_data } else { q.ir };
+    d.ir = if is_emulator_task && is_load_ir { bus } else { q.ir };
     o.ir = q.ir;
 
     // ---- Outputs ---------------------------------------------------
@@ -600,6 +653,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         d.regs = [bits::<16>(0); 32];
         d.mar = bits::<16>(0);
         d.ir = bits::<16>(0);
+        d.alu_carry = false;
         o.mpc = bits::<10>(0);
         o.current_task = bits::<4>(0);
         o.next_mpc = bits::<10>(0);

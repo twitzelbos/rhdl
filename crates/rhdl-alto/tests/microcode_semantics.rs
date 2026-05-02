@@ -358,14 +358,17 @@ fn bs_taskspec_returns_zero_in_emulator() {
 
 #[test]
 fn bs_instruction_register_reads_ir() {
+    // Per spec §6.6: IR← latches BUS (typically driven from MD via
+    // BS=MemoryData).  Use IR=0x0DAD instead of 0xDEAD so the IR← NEXT
+    // merge (D17) is 0 (bits 15,10,9,8 all clear: 0x0DAD & 0x8700 = 0).
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
             F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
-            .with_md(0xDEAD).with_task(0),
+            .with_md(0x0DAD).with_task(0),
         InCfg::new(ui(0, AluFunction::Bus, BusSource::InstructionRegister,
             F1Function::Nop, F2Function::Nop, true, false, 0), 0).with_task(0),
     ]);
-    assert_eq!(out.t.raw() as u16, 0xDEAD);
+    assert_eq!(out.t.raw() as u16, 0x0DAD);
 }
 
 // =====================================================================
@@ -596,8 +599,10 @@ fn f2_bus_eq_zero_no_change_when_bus_nonzero() {
 
 #[test]
 fn f2_bus_to_next_ors_low_bus_bits() {
+    // BS=MemoryData drives BUS=MD; LoadIr latches IR=BUS per spec §6.6.
+    // 0x0007 has bits 15,10,9,8 all clear so D17's IR← NEXT-merge is 0.
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
             F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
             .with_md(0x0007).with_task(0),
         InCfg::new(ui(0, AluFunction::Bus, BusSource::InstructionRegister,
@@ -654,8 +659,11 @@ fn f2_busodd_in_emulator_ors_bus_lsb() {
 
 #[test]
 fn f2_loadir_in_emulator() {
+    // Per spec §6.6: IR← latches BUS (typically driven from MD via
+    // BS=MemoryData).  Earlier impl bypassed BUS and read MD directly;
+    // that's now fixed (D17), so BS must drive MD onto BUS.
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
             F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
             .with_md(0xCAFE).with_task(0),
     ]);
@@ -675,10 +683,14 @@ fn f2_loadir_inactive_in_disk_task() {
 
 #[test]
 fn f2_idisp_uses_prom_dispatch() {
+    // Use IR=0x4000 (still IR[1-2]=2 → dispatch=5) instead of 0xCAFE
+    // so the LoadIr cycle's BUS bits don't trigger the D17 IR← NEXT
+    // merge (which would dispatch the LoadIr cycle to a non-zero
+    // address).  BS=MemoryData drives BUS = MD.
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
             F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
-            .with_md(0xCAFE).with_task(0),
+            .with_md(0x4000).with_task(0),
         InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
             F1Function::Nop, F2Function::IDispatch, false, false, 0x100), 0).with_task(0),
     ]);
@@ -753,9 +765,10 @@ fn store_md_writes_at_mar_with_bus() {
 fn acdest_overrides_low_2_rsel_from_ir() {
     // IR = 0x1000 → bits 12-11 = 0b10 = 2.  ACDEST: low 2 bits = 2 XOR 3 = 1.
     // Pre-load R[1] = 0xABCD; then ACDEST with rsel=0 reads R[(0&~3)|1] = R[1].
+    // 0x1000 has bits 15,10,9,8 all clear so D17's IR← NEXT-merge is 0.
     let out = observe_after(vec![
-        // Cycle 0: load IR.
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+        // Cycle 0: load IR.  BS=MemoryData drives BUS = MD per spec §6.6.
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
             F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
             .with_md(0x1000).with_task(0),
         // Cycle 1: prep L = 0xABCD.
@@ -774,8 +787,9 @@ fn acdest_overrides_low_2_rsel_from_ir() {
 #[test]
 fn acsource_overrides_low_2_rsel_from_ir_src() {
     // IR = 0x2000 → bits 14-13 = 0b01 = 1.  ACSOURCE: 1 XOR 3 = 2.
+    // 0x2000 has bits 15,10,9,8 all clear so D17's IR← NEXT-merge is 0.
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
             F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
             .with_md(0x2000).with_task(0),
         InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
@@ -830,4 +844,168 @@ fn no_l_load_keeps_l() {
             F1Function::Constant, F2Function::Nop, false, false, 0), 0xFFFF),
     ]);
     assert_eq!(out.l.raw() as u16, 0x1111);
+}
+
+// =====================================================================
+// §3.1 — T←ALU asterisk semantics (the canonical accumulator pattern)
+// =====================================================================
+//
+// Per spec §3.1 footnote: "If T is loaded during an instruction which
+// specifies [an asterisked ALU function], it will be loaded from the
+// ALU output rather than from the bus."  Asterisked ALUFs: 2 (BusOrT),
+// 5 (BusPlusOne), 6 (BusMinusOne), 10 (BusPlusTPlusOne), 12 (BusAndTAlt).
+
+#[test]
+fn t_load_with_bus_or_t_loads_alu_result_not_bus() {
+    // Pre-load T = 0x00FF.  Then `T← BUS OR T` with BUS = 0xFF00 must
+    // load T from the ALU output (BUS|T = 0xFFFF), NOT from BUS (0xFF00).
+    let out = observe_after(vec![
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, true, false, 0), 0x00FF),
+        InCfg::new(ui(0, AluFunction::BusOrT, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, true, false, 0), 0xFF00),
+    ]);
+    assert_eq!(out.t.raw() as u16, 0xFFFF,
+        "T← BUS OR T must load T from ALU output (BUS|T = 0xFFFF), \
+         not from BUS (0xFF00).  This is the canonical accumulator \
+         pattern per spec §3.1 footnote.");
+}
+
+#[test]
+fn t_load_with_bus_plus_one_loads_alu_result() {
+    let out = observe_after(vec![
+        InCfg::new(ui(0, AluFunction::BusPlusOne, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, true, false, 0), 0x4242),
+    ]);
+    assert_eq!(out.t.raw() as u16, 0x4243,
+        "T← BUS+1 must load T from ALU output (0x4243), not BUS (0x4242)");
+}
+
+#[test]
+fn t_load_with_non_asterisked_aluf_loads_bus() {
+    // ALUF=0 (Bus) is NOT asterisked; T← 0x1234 with this loads BUS.
+    // (ALU result = BUS = 0x1234, so result coincidentally matches.)
+    // Use ALUF=8 (BusMinusT) which IS NOT asterisked: T preloaded to
+    // 0x10, BUS=0x100, ALU=BUS-T=0xF0; T should load from BUS=0x100.
+    let out = observe_after(vec![
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, true, false, 0), 0x10),
+        InCfg::new(ui(0, AluFunction::BusMinusT, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, true, false, 0), 0x100),
+    ]);
+    assert_eq!(out.t.raw() as u16, 0x100,
+        "T← with non-asterisked ALUF (BusMinusT) loads from BUS, \
+         not ALU result.  BUS=0x100, T should be 0x100 not ALU=0xF0.");
+}
+
+// =====================================================================
+// §3.2 — BusSource::None reads as -1 (wired-AND default)
+// =====================================================================
+
+#[test]
+fn bs_none_reads_as_minus_one() {
+    // Per spec §3.2: "Nothing — bus reads as -1 (all-ones, no source
+    // asserting)" because the Alto bus is wired-AND.
+    let out = observe_after(vec![
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::None,
+            F1Function::Nop, F2Function::Nop, true, false, 0), 0).with_task(0),
+    ]);
+    assert_eq!(out.t.raw() as u16, 0xFFFF,
+        "BS=None must read as 0xFFFF (-1), the wired-AND default per spec §3.2");
+}
+
+// =====================================================================
+// §3.4 — F2=ALUCY uses sticky-from-last-L-load carry
+// =====================================================================
+
+#[test]
+fn alucy_uses_sticky_carry_from_last_l_load() {
+    // Spec §3.4 footnote: "the carry [used by F2=ALUCY] is that
+    // produced by the ALU function which last loaded the L register."
+    // Cycle 1: BUS=0xFFFF, ALU=BUS+1, L_LOAD=true → L = 0x0000, CARRY = 1.
+    //   The sticky_carry register latches 1.
+    // Cycle 2: BUS=1, ALU=BUS, L_LOAD=false (so sticky carry stays 1).
+    //   F2=ALUCY should set NEXT bit 0 because LAST-L-LOAD's carry was 1,
+    //   even though THIS cycle's ALU=BUS does not produce a carry.
+    let out = observe_comb(vec![
+        // Cycle 1: BUS+1 with BUS=0xFFFF carries; L latches 0; sticky carry = 1.
+        InCfg::new(ui(0, AluFunction::BusPlusOne, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, false, true, 0), 0xFFFF),
+        // Cycle 2: BUS=0, ALU=BUS, no carry, but ALUCY uses sticky carry.
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Constant, F2Function::AluCarryToNext, false, false, 0x100), 0),
+    ]);
+    assert_eq!(out.next_mpc.raw() as u16, 0x101,
+        "F2=ALUCY must use the carry from the LAST cycle that loaded L, \
+         not this cycle's carry.  Spec §3.4 footnote.");
+}
+
+// =====================================================================
+// §3.4 — F2=SH<0 sign convention (was inverted; D10 fix)
+// =====================================================================
+
+#[test]
+fn shift_lt_zero_sets_bit_when_l_negative() {
+    // Pre-load L = 0x8000 (MSB set, negative).  F2=ShiftLessThanZero
+    // should SET NEXT bit 0 because Shifter Output is negative.
+    let out = observe_comb(vec![
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, false, true, 0), 0x8000),
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Nop, F2Function::ShiftLessThanZero, false, false, 0x100), 0),
+    ]);
+    assert_eq!(out.next_mpc.raw() as u16, 0x101,
+        "SH<0 must set NEXT bit 0 when L's MSB is set (negative)");
+}
+
+#[test]
+fn shift_lt_zero_clears_bit_when_l_non_negative() {
+    let out = observe_comb(vec![
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, false, true, 0), 0x7FFF),
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Nop, F2Function::ShiftLessThanZero, false, false, 0x100), 0),
+    ]);
+    assert_eq!(out.next_mpc.raw() as u16, 0x100,
+        "SH<0 must NOT set NEXT bit 0 when L's MSB is clear (non-negative)");
+}
+
+// =====================================================================
+// §6.6 — IR← merges BUS bits 0,5,6,7 into NEXT[3..0] (D17)
+// =====================================================================
+
+#[test]
+fn ir_load_merges_bus_bit_15_into_next_bit_3() {
+    // BUS bit 15 (= Alto IR[0]) → NEXT bit 3.  Set ONLY bit 15.
+    let out = observe_comb(vec![
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
+            F1Function::Nop, F2Function::LoadIr, false, false, 0x100), 0)
+            .with_md(0x8000).with_task(0),
+    ]);
+    assert_eq!(out.next_mpc.raw() as u16, 0x108,
+        "IR← merges BUS bit 15 into NEXT bit 3 per spec §6.6");
+}
+
+#[test]
+fn ir_load_merges_bus_bits_8_9_10_into_next_bits_0_1_2() {
+    // BUS bits 10..8 (= Alto IR[5..7]) → NEXT bits 2..0.  Set 0x0700.
+    let out = observe_comb(vec![
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
+            F1Function::Nop, F2Function::LoadIr, false, false, 0x100), 0)
+            .with_md(0x0700).with_task(0),
+    ]);
+    assert_eq!(out.next_mpc.raw() as u16, 0x107,
+        "IR← merges BUS bits 10,9,8 into NEXT bits 2,1,0 per spec §6.6");
+}
+
+#[test]
+fn ir_load_merge_inactive_in_disk_task() {
+    // F2=LoadIr is Emulator-only; in disk task, no merge happens.
+    let out = observe_comb(vec![
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
+            F1Function::Nop, F2Function::LoadIr, false, false, 0x100), 0)
+            .with_md(0x8700).with_task(4),
+    ]);
+    assert_eq!(out.next_mpc.raw() as u16, 0x100,
+        "IR← merge is Emulator-only; disk task should leave NEXT alone");
 }

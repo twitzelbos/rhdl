@@ -816,19 +816,25 @@ mod tests {
     /// out.current_task reflects the firing task.
     #[test]
     fn multi_task_arbitration_picks_higher_priority() {
-        // Microcode at addr 0: F1=TaskYield → engine asserts task_yield;
-        // chip latches priority-encoder winner into current_task.
-        // Per Alto Hardware Manual §2.4, task switches happen ONLY on
-        // F1=TASK; the test microcode must therefore issue it explicitly
-        // for arbitration to occur.
-        let mi0 = Microinstruction {
+        // Per spec §2.4: task K resets to MPC=K.  Place an explicit
+        // NOP-loop at MPC=4 so task 4 stays on its own microcode after
+        // arbitration, instead of relying on the chip's per-task-MPC
+        // substitution to fall through into task 0's microcode at MPC=0.
+        let mi_yield = Microinstruction {
             rsel: bits::<5>(0),
             aluf: AluFunction::Bus, bs: BusSource::ReadR,
             f1: F1Function::TaskYield, f2: F2Function::Nop,
             t_load: false, l_load: false, next: bits::<10>(0),
         };
+        let mi_task4_loop = Microinstruction {
+            rsel: bits::<5>(0),
+            aluf: AluFunction::Bus, bs: BusSource::ReadR,
+            f1: F1Function::Nop, f2: F2Function::Nop,
+            t_load: false, l_load: false, next: bits::<10>(4),
+        };
         let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
-        microcode[0] = mi0.pack();
+        microcode[0] = mi_yield.pack();      // task 0 reset MPC: yield
+        microcode[4] = mi_task4_loop.pack(); // task 4 reset MPC: NOP loop
         let constants = [0u16; crate::constant_rom::NUM_CONSTANTS];
         let uut = AltoChip::with_microcode_and_constants(&microcode, &constants);
         // Wake both Task 0 (bit 0) and Task 4 (bit 4 = 0x0010).
@@ -853,27 +859,32 @@ mod tests {
     /// same instruction is a no-op.
     #[test]
     fn f1_write_kadr_only_active_under_disk_sector_task() {
-        // Microcode at addr 0: F1=TaskYield (so the chip arbitrates and
-        // switches to the highest-priority woken task; without this,
-        // current_task stays at the DFF default of 0 forever per Alto
-        // Hardware Manual §2.4 sticky-task semantics).
-        // Microcode at addr 1: F1=WriteKadr, RSEL=0, BS=ReadR.
-        // (BUS = R[0] = 0; we care only about the write_en signal.)
-        let mi0 = Microinstruction {
+        // Per spec §2.4: task K resets to MPC=K.  Two scenarios share
+        // the same microcode but with different wakeups:
+        //   - Test A wakes task 4 (Disk Sector); chip starts on
+        //     Emulator (current_task DFF default).  mc[0]=TaskYield
+        //     yields → arbiter picks task 4 → mc[4]=WriteKadr fires
+        //     under task 4 → write_en asserts.
+        //   - Test B wakes task 0 (Emulator); mc[0]=TaskYield yields
+        //     → arbiter picks task 0 (only one woken) → mc[1]=WriteKadr
+        //     fires under Emulator (F1=14 = ESRB no-op stub) →
+        //     write_en stays low.
+        let mi_yield = Microinstruction {
             rsel: bits::<5>(0),
             aluf: AluFunction::Bus, bs: BusSource::ReadR,
             f1: F1Function::TaskYield, f2: F2Function::Nop,
             t_load: false, l_load: false, next: bits::<10>(1),
         };
-        let mi1 = Microinstruction {
+        let mi_writekadr = Microinstruction {
             rsel: bits::<5>(0),
             aluf: AluFunction::Bus, bs: BusSource::ReadR,
             f1: F1Function::WriteKadr, f2: F2Function::Nop,
             t_load: false, l_load: false, next: bits::<10>(1),
         };
         let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
-        microcode[0] = mi0.pack();
-        microcode[1] = mi1.pack();
+        microcode[0] = mi_yield.pack();      // Emulator's reset MPC: yield
+        microcode[1] = mi_writekadr.pack();  // Emulator's post-yield path
+        microcode[4] = mi_writekadr.pack();  // Disk Sector's reset MPC
         let constants = [0u16; crate::constant_rom::NUM_CONSTANTS];
 
         // ---- Test A: Disk Sector task (4) firing → write_en asserted
@@ -1111,57 +1122,70 @@ mod tests {
     /// Verifies the full controller→disk→arbiter chain end-to-end.
     #[test]
     fn kcom_write_arms_disk_and_fires_disk_word_task() {
-        // addr 0: F1=TaskYield → switch to Disk Sector (the only woken
-        //         task in this test) per Alto Hardware Manual §2.4.
-        let mi0 = Microinstruction {
+        // Per spec §2.4: task K resets to MPC=K.  Place Disk Sector's
+        // setup chain at MPC=4..7 (its reset MPC = 4) and Disk Word's
+        // loop at MPC=14 (its reset MPC = 14).  Emulator (current_task
+        // DFF default) must yield first; place TaskYield at MPC=0.
+        // addr 0: TaskYield so Emulator yields, arbiter picks task 4.
+        let mi_emu_yield = Microinstruction {
             rsel: bits::<5>(0),
             aluf: AluFunction::Bus,
             bs:   BusSource::ReadR,
             f1:   F1Function::TaskYield,
             f2:   F2Function::Nop,
             t_load: false, l_load: false,
-            next: bits::<10>(1),
+            next: bits::<10>(0),
         };
-        // addr 1: F1=Constant idx 9 = 0x8000, BS=LoadR, RSEL=1, ALUF=Bus
-        //         → R[1] ← 0x8000.  NEXT=2.
-        // L_LOAD=true so L gets the constant; R loads from L (Shifter
-        // Output) per spec §2.7 + ContrAlto's Task.cs.
-        let mi1 = Microinstruction {
+        // addr 4: F1=Constant idx 9 = 0x8000, BS=LoadR, RSEL=1, ALUF=Bus
+        //         → R[1] ← 0x8000.  Loads via L (per spec §2.7).
+        let mi_load = Microinstruction {
             rsel: bits::<5>(1),
             aluf: AluFunction::Bus,
             bs:   BusSource::LoadR,
             f1:   F1Function::Constant,
             f2:   F2Function::Nop,
             t_load: false, l_load: true,
-            next: bits::<10>(2),
+            next: bits::<10>(5),
         };
-        // addr 2: BS=ReadR (RSEL=1 → BUS = R[1] = 0x8000), F1=WriteKcomm
-        //         → KCOM ← 0x8000.
-        let mi2 = Microinstruction {
+        // addr 5: BS=ReadR (RSEL=1 → BUS = R[1] = 0x8000), F1=WriteKcomm
+        //         → KCOM ← 0x8000.  Arms transfer.
+        let mi_kcom = Microinstruction {
             rsel: bits::<5>(1),
             aluf: AluFunction::Bus,
             bs:   BusSource::ReadR,
             f1:   F1Function::WriteKcomm,
             f2:   F2Function::Nop,
             t_load: false, l_load: false,
-            next: bits::<10>(3),
+            next: bits::<10>(6),
         };
-        // addr 3: F1=TaskYield → release Disk Sector so Disk Word
+        // addr 6: F1=TaskYield → release Disk Sector so Disk Word
         //         (Task 14) can win arbitration when word_strobe pulses.
-        let mi3 = Microinstruction {
+        let mi_yield = Microinstruction {
             rsel: bits::<5>(0),
             aluf: AluFunction::Bus,
             bs:   BusSource::ReadR,
             f1:   F1Function::TaskYield,
             f2:   F2Function::Nop,
             t_load: false, l_load: false,
-            next: bits::<10>(3),
+            next: bits::<10>(6),
+        };
+        // addr 14: Disk Word's reset MPC.  TaskYield + DiskWordTransfer
+        //         (atomic per-cycle DMA in task 14).
+        let mi_dw = Microinstruction {
+            rsel: bits::<5>(0),
+            aluf: AluFunction::Bus,
+            bs:   BusSource::ReadR,
+            f1:   F1Function::TaskYield,
+            f2:   F2Function::DiskWordTransfer,
+            t_load: false, l_load: false,
+            next: bits::<10>(14),
         };
         let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
-        microcode[0] = mi0.pack();
-        microcode[1] = mi1.pack();
-        microcode[2] = mi2.pack();
-        microcode[3] = mi3.pack();
+        microcode[0]  = mi_emu_yield.pack();
+        microcode[4]  = mi_load.pack();
+        microcode[5]  = mi_kcom.pack();
+        microcode[6]  = mi_yield.pack();
+        microcode[14] = mi_dw.pack();
         let mut constants = [0u16; crate::constant_rom::NUM_CONSTANTS];
         // F1=Constant in mi0 has RSEL=1, BS=LoadR(=1), so the constant
         // index = (1 << 3) | 1 = 9.  Put 0x8000 there.
@@ -1191,10 +1215,17 @@ mod tests {
             "Disk Word task (14) should fire after disk arms the transfer");
     }
 
-    /// IDispatch under Emulator: stage IR=0xCAFE then run F2=IDispatch
+    /// IDispatch under Emulator: stage IR=0x4000 then run F2=IDispatch
     /// with NEXT=0x100.  Per spec §6.6 IDISP PROM:
-    ///   IR=0xCAFE → ir_1_2 = (0xCAFE >> 13) & 3 = 2 → dispatch_value = 5.
+    ///   IR=0x4000 → ir_1_2 = (0x4000 >> 13) & 3 = 2 → dispatch_value = 5.
     /// So next_mpc = 0x100 | 5 = 0x105.
+    ///
+    /// IR=0x4000 chosen instead of 0xCAFE because IR← (= F2=LoadIr in
+    /// Emulator) merges BUS bits 15,10,9,8 into NEXT[3..0] per spec §6.6
+    /// (D17 fix).  0x4000 has those bits clear, so the merge is 0 — the
+    /// LoadIr cycle's NEXT (=3) is preserved, then mi3 (IDispatch)
+    /// fires.  0xCAFE would have set merge bits and dispatched mi2's
+    /// follow-on to the wrong address, bypassing the IDispatch test.
     #[test]
     fn f2_idispatch_routes_via_ir_low_byte() {
         // addr 0: F1=LoadMar + F2=Constant idx=0=0x0100 → MAR ← 0x0100.
@@ -1209,15 +1240,20 @@ mod tests {
             f1: F1Function::Nop, f2: F2Function::Nop,
             t_load: false, l_load: false, next: bits::<10>(2),
         };
-        // addr 2: F2=LoadIr → IR ← MD = 0xCAFE.
+        // addr 2: F2=LoadIr → IR ← MD = 0xCAFE.  Per spec §6.6 + ContrAlto
+        // EmulatorTask.cs, IR loads from the BUS — so BS must be
+        // MemoryData to drive BUS = MD.  (Previous test used BS=ReadR
+        // which only "worked" because of an implementation bypass that
+        // loaded IR directly from i.mem_read_data; that bypass was
+        // removed when D17 added the spec'd NEXT-merge semantics.)
         let mi2 = Microinstruction {
-            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
+            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::MemoryData,
             f1: F1Function::Nop, f2: F2Function::LoadIr,
             t_load: false, l_load: false, next: bits::<10>(3),
         };
-        // addr 3: F2=IDispatch with NEXT=0x100.  IR=0xCAFE.
-        // Per spec §6.6 IDISP PROM: IR[1-2] = (0xCAFE >> 13) & 3 =
-        // (0x6) & 3 = 2 → dispatch_value = 5.
+        // addr 3: F2=IDispatch with NEXT=0x100.  IR=0x4000.
+        // Per spec §6.6 IDISP PROM: IR[1-2] = (0x4000 >> 13) & 3 =
+        // (0x2) & 3 = 2 → dispatch_value = 5.
         // next_mpc = 0x100 | 5 = 0x105.  Handler at 0x105.
         let mi3 = Microinstruction {
             rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
@@ -1242,7 +1278,7 @@ mod tests {
 
         let mut constants = [0u16; crate::constant_rom::NUM_CONSTANTS];
         constants[0] = 0x0100;  // MAR target
-        let memory_initial = vec![(bits::<16>(0x0100), bits::<16>(0xCAFE))];
+        let memory_initial = vec![(bits::<16>(0x0100), bits::<16>(0x4000))];
 
         let uut = AltoChip::with_microcode_constants_and_memory(
             &microcode, &constants, memory_initial,
@@ -1256,8 +1292,8 @@ mod tests {
              spec §6.6 IDISP PROM routed MPC to 0x105 = 0x100 | 5 \
              (IR[1-2]=2 → dispatch=5)");
         let final_ir = trace.last().unwrap().ir.raw();
-        assert_eq!(final_ir, 0xCAFE,
-            "IR should hold 0xCAFE from the LoadIr step");
+        assert_eq!(final_ir, 0x4000,
+            "IR should hold 0x4000 from the LoadIr step");
     }
 
     /// Per-task IR load: under Emulator (task 0), F2=LoadIr loads
@@ -1277,10 +1313,10 @@ mod tests {
             f1: F1Function::Nop, f2: F2Function::Nop,
             t_load: false, l_load: false, next: bits::<10>(2),
         };
-        // addr 2: F2=LoadIr  → IR ← MD (which is memory[MAR] = 0xCAFE)
-        //         loop here.
+        // addr 2: F2=LoadIr  → IR ← BUS = MD (memory[MAR] = 0xCAFE).
+        // Spec §6.6: IR← latches BUS, so BS=MemoryData drives BUS=MD.
         let mi2 = Microinstruction {
-            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
+            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::MemoryData,
             f1: F1Function::Nop, f2: F2Function::LoadIr,
             t_load: false, l_load: false, next: bits::<10>(2),
         };
@@ -1306,19 +1342,26 @@ mod tests {
     /// run, the Disk Sector task (Task 4) fires at least once.
     #[test]
     fn disk_sector_mark_fires_disk_sector_task() {
-        // Microcode at addr 0: F1=TaskYield loop.  Per Alto Hardware
-        // Manual §2.4 sticky-task semantics, task switches happen ONLY
-        // on F1=TaskYield; the Emulator's idle loop yields every cycle
-        // so the priority arbiter can hand control to Task 4 the moment
-        // sector_mark sets wakeup bit 4.
-        let mi0 = Microinstruction {
+        // Per spec §2.4: task K resets to MPC=K.  Place an Emulator
+        // TaskYield-loop at MPC=0 (so Emulator yields every cycle and
+        // the arbiter can switch to Task 4 the moment sector_mark sets
+        // wakeup bit 4) AND a Task 4 NOP-loop at MPC=4 (so Task 4
+        // stays on its own microcode, not falling through to Emulator's).
+        let mi_emu_yield = Microinstruction {
             rsel: bits::<5>(0),
             aluf: AluFunction::Bus, bs: BusSource::ReadR,
             f1: F1Function::TaskYield, f2: F2Function::Nop,
             t_load: false, l_load: false, next: bits::<10>(0),
         };
+        let mi_task4_loop = Microinstruction {
+            rsel: bits::<5>(0),
+            aluf: AluFunction::Bus, bs: BusSource::ReadR,
+            f1: F1Function::Nop, f2: F2Function::Nop,
+            t_load: false, l_load: false, next: bits::<10>(4),
+        };
         let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
-        microcode[0] = mi0.pack();
+        microcode[0] = mi_emu_yield.pack();
+        microcode[4] = mi_task4_loop.pack();
         let constants = [0u16; crate::constant_rom::NUM_CONSTANTS];
         let uut = AltoChip::with_microcode_and_constants(&microcode, &constants);
         // Wake Task 0 (Emulator) only via input; disk's sector_mark
@@ -1353,34 +1396,38 @@ mod tests {
     /// the legacy KCOM-bit-15 simplification path).
     #[test]
     fn f1_strobe_in_disk_sector_arms_transfer() {
-        // mi0: F1=TaskYield (switch to Disk Sector, the only woken task).
-        let mi0 = Microinstruction {
+        // Per spec §2.4: task K resets to MPC=K.  Place STROBE at
+        // MPC=4 (Task 4's reset MPC) directly; no Emulator bootstrap
+        // needed since wakeups=0x0010 selects only Task 4 once
+        // current_task hits 4.  But current_task is initially 0, so
+        // we still need a TaskYield at MPC=0 to escape the Emulator.
+        // (NOTE: even though wakeups bypass task 0, sticky-task
+        // semantics keep current_task=0 until task_yield fires.)
+        let mi_emu_yield = Microinstruction {
             rsel: bits::<5>(0),
             aluf: AluFunction::Bus, bs: BusSource::ReadR,
             f1: F1Function::TaskYield, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(1),
+            t_load: false, l_load: false, next: bits::<10>(0),
         };
-        // mi1: F1=STROBE (Code9, per spec §8.5).  Arms transfer.
-        // Other fields are NOP-ish; the chip latches engine.disk_strobe
-        // (q-registered, 1-cycle lag) and ORs into disk.transfer_request.
-        let mi1 = Microinstruction {
+        // mi_strobe: F1=STROBE (Code9, per spec §8.5).  Arms transfer.
+        let mi_strobe = Microinstruction {
             rsel: bits::<5>(0),
             aluf: AluFunction::Bus, bs: BusSource::ReadR,
             f1: F1Function::Code9, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(2),
+            t_load: false, l_load: false, next: bits::<10>(5),
         };
-        // mi2: F1=TaskYield loop (release Disk Sector so Disk Word
-        // can win arbitration when word_strobe fires).
-        let mi2 = Microinstruction {
+        // mi_idle: Task 4 idle loop with TaskYield, so word_strobe
+        // can switch arbitration to Task 14.
+        let mi_idle = Microinstruction {
             rsel: bits::<5>(0),
             aluf: AluFunction::Bus, bs: BusSource::ReadR,
             f1: F1Function::TaskYield, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(2),
+            t_load: false, l_load: false, next: bits::<10>(5),
         };
         let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
-        microcode[0] = mi0.pack();
-        microcode[1] = mi1.pack();
-        microcode[2] = mi2.pack();
+        microcode[0] = mi_emu_yield.pack();
+        microcode[4] = mi_strobe.pack();   // Task 4 reset MPC: STROBE
+        microcode[5] = mi_idle.pack();     // Task 4 idle loop
         let constants = [0u16; crate::constant_rom::NUM_CONSTANTS];
 
         let uut = AltoChip::with_microcode_and_constants(&microcode, &constants);
