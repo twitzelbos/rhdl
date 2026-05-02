@@ -5,7 +5,7 @@ branch, single PR per the user's "complete this phase, don't ship a
 v1, don't defer" constraint.  PR opens only when **Nova PC = 0o345**
 is reached with cycle-equivalent ContrAlto trace.
 
-## Status (10 commits in)
+## Status (12 commits in, 100 tests pass)
 
 ### ✅ Done
 
@@ -35,16 +35,20 @@ is reached with cycle-equivalent ContrAlto trace.
 9. **ContrAlto2 (.NET 8 fork) clone + build verified** at
    `crates/rhdl-alto/assets/contralto/Contralto2/`.  `dotnet build`
    produces a working `ContraltoLib.dll`.
+10. **Task system renumbered to ContrAlto convention**:
+    0/4/7/8/9/10/11/12/13/14 (10 real tasks; slots 1, 2, 3, 5, 6, 15
+    have no rule).  Real Alto microcode wakes specific task numbers,
+    so this had to be fixed before task_system is wired into AltoChip.
+    16 task_system tests + 3 disk_dma_integration tests all pass.
 
 ### ⏳ Remaining for Phase 3.5
 
 | Step | Description | Est |
 |------|-------------|-----|
-| Per-task F1/F2 dispatch | Add `current_task: Bits<4>` to microengine.In; per-task code dispatch (most importantly: gate MAR← / MD← to MRT (task 8 in real Alto), KSTROBE / KCOM / KADR← to Disk Sector (task 4), MTEMP to Display Word (task 9), IRLoad / SWMODE / FETCH to Emulator (task 0)) | 1-2w |
+| `AltoChip` task system integration | Add `current_task: Bits<4>` input to microengine; replace AltoChip's single-mpc DFF with task_system as sub-widget; route current_task's MPC into engine, engine.next_mpc back into task_system.next_mpc_per_task[current_task] | 2-3d |
+| Per-task F1/F2 dispatch | Per-task code dispatch in microengine: gate MAR← / MD← to MRT (task 8), KSTROBE / KCOM / KADR← to Disk Sector (task 4), MTEMP to Display Word (task 9), IRLoad / SWMODE / FETCH to Emulator (task 0) | 1-2w |
 | Disk widget rewrite | Rotation timing (3.3ms = many thousands of microcycles per sector); serial word transfer; sector header/label/data structure (the disk-sector microcode reads these word-by-word as the disk rotates) | 3-5d |
 | Disk controller | Real KCOM/KSTAT bit semantics + KADR field decode + transfer state machine | 2-3d |
-| Task system task numbering | Renumber to ContrAlto convention: 0/4/7/8/9/10/11/12/13/14 (current scheme is sequential 0-15 which doesn't match) | 1d |
-| `AltoChip` task system integration | Wire `AltoTaskSystem` as sub-widget, replace single-MPC DFF with per-task MPC ownership in task_system | 2-3d |
 | Per-task body real DMA | Disk Sector / Disk Word task bodies actually drive controller registers + memory | 1w |
 | Boot trace | Run with real microcode + disk; identify Nova PC = 0o345 checkpoint | 2-8w (long tail debugging) |
 | ContrAlto2 CSV trace patch | ~50 lines in `ContraltoLib/CPU/CPU.cs` ExecuteNext / ClockInternal: dump cycle, currentTask, mpc, ir, t, l, m, all R+S regs, lastMemAddr, lastMemData per cycle.  Plus `[DebuggerFunction("trace start"/"trace stop")]` in `ControlCommands.cs`. | 1-2d |
@@ -68,9 +72,8 @@ Realistic remaining timeline: 2-3 months of focused work.
 
 ## Open architectural questions (resolve when relevant)
 
-- **Task numbering**: my `task_system.rs` uses 0-15 sequentially; real
-  Alto + ContrAlto use 0/4/7/8/9/10/11/12/13/14.  Renumber before
-  wiring task_system into AltoChip.
+- ~~**Task numbering**~~: ✅ resolved in commit eb2261e7 — renumbered
+  to ContrAlto convention.
 - **Per-task F1/F2 dispatch shape**: pure-table lookup vs match-on-task
   vs new sub-widget per task.  Probably match-on-task is simplest; the
   per-task code semantics are documented well enough in
@@ -79,3 +82,8 @@ Realistic remaining timeline: 2-3 months of focused work.
   collapsed to 1-cycle via SyncBRAM.  May or may not matter for boot
   correctness — the microcode doesn't care about absolute cycle counts,
   but ContrAlto-lockstep does.  Resolve when lockstep starts diverging.
+- **MAR← / MD← code numbers**: my F2 = 6 / 7 may not match real Alto's
+  encoding.  Real Alto MRT memory codes are at task-specific positions
+  in F1/F2 ranges 8-15.  When per-task dispatch ships, re-align the
+  code numbers to match `Contralto/CPU/MicroInstruction.cs` so real
+  microcode interprets correctly.
