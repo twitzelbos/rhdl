@@ -324,6 +324,25 @@ mod tests {
             "L should latch the constant at index (RSEL<<3)|BS = 10");
     }
 
+    /// Verify the AltoChip composition emits clean Verilog and the
+    /// round-trip through iverilog matches the Rust simulator.  Uses
+    /// .skip(2) for the BRAM X-state (microcode_rom is uninitialised
+    /// at addresses outside the small preloaded range).
+    #[test]
+    fn alto_chip_iverilog_round_trip() -> Result<(), RHDLError> {
+        // Tiny microcode at addr 0: NOP loop.
+        let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
+        microcode[0] = ui(0, AluFunction::Bus, BusSource::ReadR, false, false, 0);
+        let constants = [0u16; crate::constant_rom::NUM_CONSTANTS];
+        let uut = AltoChip::with_microcode_and_constants(&microcode, &constants);
+        let inputs: Vec<ChipIn> = (0..8).map(|_| ChipIn::default()).collect();
+        let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
+        let test_bench = uut.run(stream).collect::<SynchronousTestBench<_, _>>();
+        let tm = test_bench.rtl(&uut, &TestBenchOptions::default().skip(2))?;
+        tm.run_iverilog()?;
+        Ok(())
+    }
+
     /// Real-microcode integration: load the actual Alto II microcode
     /// AND constant ROM, run a few cycles.  Verifies the
     /// loader → ROM → engine path works end-to-end without crashing.
