@@ -63,6 +63,7 @@
 //! pull in an Alto microengine.  The two locations would have produced
 //! byte-identical hardware either way; this is a packaging decision.
 
+pub mod alto_chip;
 pub mod alu;
 pub mod constant_rom;
 pub mod diablo_disk;
