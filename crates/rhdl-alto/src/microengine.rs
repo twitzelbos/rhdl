@@ -246,14 +246,27 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     o.mem_write_en   = mi.f2 == F2Function::WriteMd;
     o.mem_write_data = bus;
 
-    // ---- Per-task disk-controller register write -----------------
-    // F1 = DiskCtrlWrite + current_task == 4 (Disk Sector) → write
-    // BUS to controller register at index RSEL[2:0].  In any other
-    // task, this F1 code is a no-op (gated).
+    // ---- Per-task disk-controller register writes ---------------
+    // Three F1 codes route BUS into specific disk-controller registers,
+    // gated to current_task == 4 (Disk Sector):
+    //   F1 = WriteKcomm → disk_ctrl_addr = REG_KCOM (2)
+    //   F1 = WriteKadr  → disk_ctrl_addr = REG_KADR (3)
+    //   F1 = WriteKdata → disk_ctrl_addr = REG_KDATA (1)
+    // In any other task, these F1 codes are no-ops (gated).
     let is_disk_sector_task: bool = i.current_task == bits::<4>(4);
-    let is_disk_ctrl_write: bool = mi.f1 == F1Function::DiskCtrlWrite;
-    o.disk_ctrl_addr       = mi.rsel.resize();
-    o.disk_ctrl_write_en   = is_disk_sector_task && is_disk_ctrl_write;
+    let is_kcomm: bool = mi.f1 == F1Function::WriteKcomm;
+    let is_kadr:  bool = mi.f1 == F1Function::WriteKadr;
+    let is_kdata: bool = mi.f1 == F1Function::WriteKdata;
+    o.disk_ctrl_addr = if is_kcomm {
+        bits::<3>(2)  // REG_KCOM
+    } else if is_kadr {
+        bits::<3>(3)  // REG_KADR
+    } else if is_kdata {
+        bits::<3>(1)  // REG_KDATA
+    } else {
+        bits::<3>(0)  // any value; write_en will be false
+    };
+    o.disk_ctrl_write_en   = is_disk_sector_task && (is_kcomm || is_kadr || is_kdata);
     o.disk_ctrl_write_data = bus;
 
     // ---- Outputs ---------------------------------------------------
@@ -362,9 +375,9 @@ fn f1_from_index(i: Bits<4>) -> F1Function {
     else if i == bits::<4>(10) { F1Function::Reserved10 }
     else if i == bits::<4>(11) { F1Function::Reserved11 }
     else if i == bits::<4>(12) { F1Function::Reserved12 }
-    else if i == bits::<4>(13) { F1Function::Reserved13 }
-    else if i == bits::<4>(14) { F1Function::DiskCtrlWrite }
-    else                       { F1Function::Reserved15 }
+    else if i == bits::<4>(13) { F1Function::WriteKcomm }
+    else if i == bits::<4>(14) { F1Function::WriteKadr }
+    else                       { F1Function::WriteKdata }
 }
 
 #[kernel]

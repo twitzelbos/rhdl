@@ -136,16 +136,18 @@ pub enum F1Function {
     Reserved10,
     Reserved11,
     Reserved12,
-    Reserved13,
-    /// Phase 3.5 placeholder: when `current_task == 4` (Disk Sector),
-    /// writes BUS to disk controller register `RSEL[2:0]`.  In other
-    /// tasks: no-op.  Real Alto uses different F1 codes for individual
-    /// disk registers (F1=10 LOAD KADR, F1=15 LOAD KCOMM, etc.); this
-    /// is a Phase-3.5 simplification that lets one F1 code program
-    /// any of the 6 controller registers based on RSEL.  Re-align to
-    /// real Alto codes when boot trace requires it.
-    DiskCtrlWrite,
-    Reserved15,
+    /// `KCOMM← BUS` — write BUS to KCOM register.  Disk Sector task
+    /// (4) only; gated no-op in any other task.  Per the Alto
+    /// Hardware Manual §6 + ContrAlto's `DiskSectorTask.cs`.
+    WriteKcomm,
+    /// `KADR← BUS` — write BUS to KADR register.  Disk Sector task
+    /// (4) only.  KADR encodes the cylinder/head/sector for the next
+    /// sector access (per `disk_controller::REG_KADR` field decode).
+    WriteKadr,
+    /// `KDATA← BUS` — write BUS to KDATA register.  Disk Sector task
+    /// (4) only.  Used by the disk-task microcode to stage the next
+    /// word for the on-disk write path.
+    WriteKdata,
 }
 
 /// F2 function — second auxiliary control (4-bit F2 field).  Like
@@ -329,9 +331,9 @@ fn f1_function_index(f: F1Function) -> u8 {
         F1Function::Reserved10 => 10,
         F1Function::Reserved11 => 11,
         F1Function::Reserved12 => 12,
-        F1Function::Reserved13 => 13,
-        F1Function::DiskCtrlWrite => 14,
-        F1Function::Reserved15 => 15,
+        F1Function::WriteKcomm => 13,
+        F1Function::WriteKadr => 14,
+        F1Function::WriteKdata => 15,
     }
 }
 fn f1_function_from_index(i: u8) -> F1Function {
@@ -349,9 +351,9 @@ fn f1_function_from_index(i: u8) -> F1Function {
         10 => F1Function::Reserved10,
         11 => F1Function::Reserved11,
         12 => F1Function::Reserved12,
-        13 => F1Function::Reserved13,
-        14 => F1Function::DiskCtrlWrite,
-        _ => F1Function::Reserved15,
+        13 => F1Function::WriteKcomm,
+        14 => F1Function::WriteKadr,
+        _ => F1Function::WriteKdata,
     }
 }
 

@@ -565,18 +565,17 @@ mod tests {
             "with both task 0 and task 4 woken, task 4 (Disk Sector) wins");
     }
 
-    /// Per-task gating: under Disk Sector (Task 4), F1=DiskCtrlWrite
+    /// Per-task gating: under Disk Sector (Task 4), F1=WriteKadr
     /// asserts disk_ctrl_write_en; under Emulator (Task 0), the
     /// same instruction is a no-op.
     #[test]
-    fn f1_disk_ctrl_write_only_active_under_disk_sector_task() {
-        // Microcode at addr 0: F1=DiskCtrlWrite, RSEL=0, BS=ReadR.
-        // (Both bus value and reg-index are 0; we only care about
-        // the write_en signal.)
+    fn f1_write_kadr_only_active_under_disk_sector_task() {
+        // Microcode at addr 0: F1=WriteKadr, RSEL=0, BS=ReadR.
+        // (BUS = R[0] = 0; we care only about the write_en signal.)
         let mi0 = Microinstruction {
             rsel: bits::<5>(0),
             aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::DiskCtrlWrite, f2: F2Function::Nop,
+            f1: F1Function::WriteKadr, f2: F2Function::Nop,
             t_load: false, l_load: false, next: bits::<10>(0),
         };
         let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
@@ -596,7 +595,7 @@ mod tests {
             .collect();
         let write_active_a = trace_a.iter().any(|t| t.disk_ctrl_write_en);
         assert!(write_active_a,
-            "Under Disk Sector task, F1=DiskCtrlWrite should assert write_en");
+            "Under Disk Sector task, F1=WriteKadr should assert write_en");
 
         // ---- Test B: Emulator task (0) firing → write_en NEVER asserted
         let uut_b = AltoChip::with_microcode_and_constants(&microcode, &constants);
@@ -611,7 +610,7 @@ mod tests {
             .collect();
         let write_active_b = trace_b.iter().any(|t| t.disk_ctrl_write_en);
         assert!(!write_active_b,
-            "Under Emulator task, F1=DiskCtrlWrite is a no-op (gated)");
+            "Under Emulator task, F1=WriteKadr is a no-op (gated)");
     }
 
     /// End-to-end disk → wakeup → arbiter → engine path: the disk
