@@ -66,6 +66,10 @@ pub struct In {
     /// from the address presented last cycle).  Drives BUS when
     /// `BS = MemoryData`.
     pub mem_read_data: Bits<16>,
+    /// Which task is running this cycle (0..15).  Reserved for
+    /// per-task F1/F2 dispatch — currently unused by the kernel
+    /// (universal codes only) but plumbed for the next phase.
+    pub current_task: Bits<4>,
 }
 
 /// Outputs from the microengine.
@@ -74,6 +78,8 @@ pub struct Out {
     /// Echo of the input MPC for trace.  This is the address whose
     /// microinstruction was processed this cycle.
     pub mpc: Bits<10>,
+    /// Echo of the input current_task for trace + lockstep.
+    pub current_task: Bits<4>,
     /// Next MPC the owner should commit (or pass to the next task).
     /// Computed from the NEXT field plus any F2-driven modifications.
     pub next_mpc: Bits<10>,
@@ -138,8 +144,9 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // Decode the microinstruction.
     let mi: Microinstruction = unpack_kernel(i.instr);
 
-    // Echo the MPC the owner gave us.
+    // Echo the MPC and current_task the owner gave us.
     o.mpc = i.mpc;
+    o.current_task = i.current_task;
 
     // ---- BUS source -------------------------------------------------
     // BS = ReadR       → drive bus from R[rsel].
@@ -248,6 +255,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         };
         d.mar = bits::<16>(0);
         o.mpc = bits::<10>(0);
+        o.current_task = bits::<4>(0);
         o.next_mpc = bits::<10>(0);
         o.t = bits::<16>(0);
         o.l = bits::<16>(0);

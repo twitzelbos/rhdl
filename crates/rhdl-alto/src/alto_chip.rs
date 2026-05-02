@@ -29,23 +29,22 @@
 //! entry per the Alto Hardware Manual).
 
 use rhdl::prelude::*;
-use rhdl_fpga::core::dff;
 
 use crate::constant_rom::{ConstantIn, ConstantRom};
 use crate::memory::{MemIn, Memory};
 use crate::microcode_rom::{MicrocodeRom, UromIn};
 use crate::microengine::{In as MicroIn, Microengine};
+use crate::task_system::{AltoIn as TaskIn, AltoTaskSystem};
 
 /// Inputs to the AltoChip top-level.
 ///
-/// Phase-3.5 minimum: there are no external inputs in the boot
-/// scenario — disk and other peripherals are sub-widgets, and the
-/// microcode is loaded at construction time.  Future phases will add
-/// keyboard, mouse, etc. via this struct.
+/// Phase 3.5 wakeup vector: bit i = 1 means task i wants to run.
+/// For boot, set bit 0 (Emulator always woken).  Disk widgets will
+/// drive bits 4 (Disk Sector) and 14 (Disk Word) when integrated.
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
 pub struct ChipIn {
-    /// Reserved for future use (keyboard, mouse, ethernet inputs).
-    pub _placeholder: bool,
+    /// 16-bit task wakeup vector.
+    pub wakeups: Bits<16>,
 }
 
 /// Outputs from the AltoChip top-level — observable for trace + tests.
@@ -53,6 +52,8 @@ pub struct ChipIn {
 pub struct ChipOut {
     /// MPC the engine processed this cycle (echoed from microengine.o.mpc).
     pub mpc: Bits<10>,
+    /// Which task is running this cycle (echoed from microengine.o.current_task).
+    pub current_task: Bits<4>,
     /// The next MPC the engine wants to fetch.
     pub next_mpc: Bits<10>,
     /// Current T register.
@@ -68,16 +69,13 @@ pub struct ChipOut {
 }
 
 /// The Alto chip — composition of microengine + microcode RAM +
-/// constant ROM + 64KW main memory.
+/// constant ROM + 64KW main memory + 16-task arbiter.
 ///
 /// Construct with [`AltoChip::with_microcode_and_constants`] for the
 /// normal boot path, or [`AltoChip::default`] for all-zero ROMs/memory.
 #[derive(Clone, Debug, Synchronous, SynchronousDQ)]
 #[rhdl(dq_no_prefix)]
 pub struct AltoChip {
-    /// Current MPC.  AltoChip owns this DFF; microengine reads it via
-    /// input each cycle and returns next_mpc as output.
-    mpc: dff::DFF<Bits<10>>,
     /// 2K-entry microcode RAM (loaded at construction).
     urom: MicrocodeRom,
     /// 256-entry constant ROM — read combinationally each cycle by
@@ -86,6 +84,12 @@ pub struct AltoChip {
     /// 64KW main memory — driven by the microengine's MAR (1-cycle
     /// BRAM read latency; matches real Alto MOS DRAM timing).
     mem: Memory,
+    /// 16-task wakeup arbiter.  Owns the per-task MPCs.  AltoChip
+    /// reads `last_task` (registered, 1 cycle behind arbitration —
+    /// matches the Alto's MIF/MIE pipeline) to know which task's
+    /// MPC drives the engine this cycle, and writes back the engine's
+    /// computed next_mpc to that task's slot.
+    tasks: AltoTaskSystem,
     /// Universal-task microengine.
     engine: Microengine,
 }
@@ -93,10 +97,10 @@ pub struct AltoChip {
 impl Default for AltoChip {
     fn default() -> Self {
         Self {
-            mpc: dff::DFF::new(bits::<10>(0)),
             urom: MicrocodeRom::default(),
             crom: ConstantRom::default(),
             mem: Memory::default(),
+            tasks: AltoTaskSystem::default(),
             engine: Microengine::default(),
         }
     }
@@ -108,10 +112,10 @@ impl AltoChip {
     /// depend on constants or memory state.
     pub fn with_microcode(microcode_words: &[u32; crate::microcode_rom::MICROCODE_WORDS]) -> Self {
         Self {
-            mpc: dff::DFF::new(bits::<10>(0)),
             urom: MicrocodeRom::with_words(microcode_words),
             crom: ConstantRom::default(),
             mem: Memory::default(),
+            tasks: AltoTaskSystem::default(),
             engine: Microengine::default(),
         }
     }
@@ -123,29 +127,26 @@ impl AltoChip {
         constants: &[u16; crate::constant_rom::NUM_CONSTANTS],
     ) -> Self {
         Self {
-            mpc: dff::DFF::new(bits::<10>(0)),
             urom: MicrocodeRom::with_words(microcode_words),
             crom: ConstantRom::with_constants(constants),
             mem: Memory::default(),
+            tasks: AltoTaskSystem::default(),
             engine: Microengine::default(),
         }
     }
 
     /// Construct an AltoChip with all three of microcode, constants,
-    /// and memory preloaded.  The `memory_initial` iterator supplies
-    /// `(address, value)` pairs.  This is the natural shape for
-    /// staging a boot block at memory[1..257] for testing the
-    /// Nova-emulator path without needing the full disk DMA chain.
+    /// and memory preloaded.
     pub fn with_microcode_constants_and_memory(
         microcode_words: &[u32; crate::microcode_rom::MICROCODE_WORDS],
         constants: &[u16; crate::constant_rom::NUM_CONSTANTS],
         memory_initial: impl IntoIterator<Item = (Bits<16>, Bits<16>)>,
     ) -> Self {
         Self {
-            mpc: dff::DFF::new(bits::<10>(0)),
             urom: MicrocodeRom::with_words(microcode_words),
             crom: ConstantRom::with_constants(constants),
             mem: Memory::new(memory_initial),
+            tasks: AltoTaskSystem::default(),
             engine: Microengine::default(),
         }
     }
@@ -158,46 +159,38 @@ impl SynchronousIO for AltoChip {
 }
 
 #[kernel]
-pub fn alto_chip_kernel(_cr: ClockReset, _i: ChipIn, q: Q) -> (ChipOut, D) {
+pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     let mut d = D::dont_care();
     let mut o = ChipOut::dont_care();
 
+    // Determine which task is running this cycle.  The arbiter's
+    // `last_task` is registered (1 cycle behind), which matches the
+    // Alto's MIF/MIE pipeline: arbitration happens at cycle T, the
+    // chosen task's microinstruction executes at cycle T+1.
+    let current_task: Bits<4> = q.tasks.last_task;
+    // Look up that task's MPC.
+    let current_mpc: Bits<10> = q.tasks.task_mpc[current_task];
+
     // Microcode RAM has 1-cycle BRAM latency.  q.urom.instruction is
-    // the instruction at the address presented one cycle ago.  We
-    // present q.mpc (current cycle's MPC) for the next cycle's read.
-    //
-    // Wait — that's a 1-cycle bubble.  Properly: at cycle T we want
-    // the engine to process the instr at mpc(T).  That instr was
-    // fetched by presenting mpc(T) at cycle T-1.  So d.urom.read_addr
-    // at cycle T-1 was mpc(T) = next_mpc(T-1).
-    //
-    // Today we set d.urom.read_addr = next_mpc this cycle, so at
-    // cycle T+1 the BRAM has contents[next_mpc(T)] = contents[mpc(T+1)].
+    // the instruction at the address presented last cycle.
     let instr_this_cycle: Bits<32> = q.urom.instruction;
 
     // Decode RSEL[31:27] and BS[22:20] from the instruction; constant
-    // ROM index = (RSEL << 3) | BS = 8 bits.  Drive the constant ROM
-    // combinationally with this index so the engine sees the looked-up
-    // value the same cycle it processes the instruction.
+    // ROM index = (RSEL << 3) | BS = 8 bits.
     let rsel: Bits<5> = ((instr_this_cycle >> 27) & bits::<32>(0x1F)).resize();
     let bs:   Bits<3> = ((instr_this_cycle >> 20) & bits::<32>(0x07)).resize();
     let const_idx: Bits<8> = (rsel.resize::<8>() << 3) | bs.resize::<8>();
     d.crom = ConstantIn { index: const_idx };
     let const_value: Bits<16> = q.crom.value;
 
-    // Memory: feed engine the data read at the address presented
-    // last cycle (BRAM 1-cycle latency).  Drive memory with the
-    // engine's current MAR and (when WriteMd is asserted) the BUS
-    // value.  The engine's mem_write_en / mem_write_data are
-    // registered outputs from the previous evaluation; that's fine
-    // because the engine's contract is "the cycle after F2=WriteMd
-    // is asserted, the write commits."
+    // Memory bus.
     let mem_data_for_engine: Bits<16> = q.mem.read_data;
     d.engine = MicroIn {
-        mpc: q.mpc,
+        mpc: current_mpc,
         instr: instr_this_cycle,
         constant_value: const_value,
         mem_read_data: mem_data_for_engine,
+        current_task,
     };
     d.mem = MemIn {
         address: q.engine.mem_address,
@@ -205,18 +198,24 @@ pub fn alto_chip_kernel(_cr: ClockReset, _i: ChipIn, q: Q) -> (ChipOut, D) {
         write_en: q.engine.mem_write_en,
     };
 
-    // Drive next cycle's instruction fetch from microengine's computed
-    // next_mpc.  Engine output is combinational from its inputs.
-    // Use q.engine to read the engine's output (registered output of
-    // the previous cycle's evaluation).
+    // Engine outputs next_mpc this cycle.
     let next_mpc: Bits<10> = q.engine.next_mpc;
     d.urom = UromIn { mpc: next_mpc.resize() };
 
-    // Commit MPC: the next-cycle MPC is the engine's computed next_mpc.
-    d.mpc = next_mpc;
+    // Build the next_mpc_per_task array for the arbiter: only the
+    // current task's slot reflects the engine's computed value;
+    // other slots stay at their current MPC (which the arbiter
+    // ignores anyway, since they don't fire this cycle).
+    let mut next_mpcs = q.tasks.task_mpc;
+    next_mpcs[current_task] = next_mpc;
+    d.tasks = TaskIn {
+        wakeups: i.wakeups,
+        next_mpc_per_task: next_mpcs,
+    };
 
     // Outputs
-    o.mpc          = q.mpc;
+    o.mpc          = current_mpc;
+    o.current_task = current_task;
     o.next_mpc     = next_mpc;
     o.t            = q.engine.t;
     o.l            = q.engine.l;
@@ -246,8 +245,13 @@ mod tests {
         }.pack()
     }
 
+    /// Boot input: wake Task 0 (Emulator) only, every cycle.
+    fn boot_in() -> ChipIn {
+        ChipIn { wakeups: bits::<16>(0x0001) }
+    }
+
     fn run(uut: AltoChip, cycles: usize) -> Vec<ChipOut> {
-        let inputs: Vec<ChipIn> = (0..cycles).map(|_| ChipIn::default()).collect();
+        let inputs: Vec<ChipIn> = (0..cycles).map(|_| boot_in()).collect();
         let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
         uut.run(stream)
             .synchronous_sample()
@@ -470,6 +474,36 @@ mod tests {
             "after write-then-read sequence, L should hold the written 0xBEEF");
     }
 
+    /// Multi-task arbitration through the chip: wake Task 0 (Emulator)
+    /// AND Task 4 (Disk Sector) every cycle.  Task 4 has higher priority
+    /// (lower priority-number in the rule), so it fires.  Verify
+    /// out.current_task reflects the firing task.
+    #[test]
+    fn multi_task_arbitration_picks_higher_priority() {
+        // Microcode at addr 0: NOP loop (no L_LOAD; just sit there).
+        // Both tasks share this microcode at addr 0 since they both
+        // start from MPC=0 (reset value).
+        let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
+        microcode[0] = ui(0, AluFunction::Bus, BusSource::ReadR, false, false, 0);
+        let constants = [0u16; crate::constant_rom::NUM_CONSTANTS];
+        let uut = AltoChip::with_microcode_and_constants(&microcode, &constants);
+        // Wake both Task 0 (bit 0) and Task 4 (bit 4 = 0x0010).
+        let inputs: Vec<ChipIn> = (0..16).map(|_| ChipIn {
+            wakeups: bits::<16>(0x0011),
+        }).collect();
+        let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
+        let trace: Vec<ChipOut> = uut.run(stream)
+            .synchronous_sample()
+            .filter(|s| !s.input.0.reset.any())
+            .map(|s| s.output)
+            .collect();
+        // After the initial settling cycles, current_task should be 4
+        // (Disk Sector wins over Emulator on shared wakeup).
+        let final_task = trace.last().unwrap().current_task.raw();
+        assert_eq!(final_task, 4,
+            "with both task 0 and task 4 woken, task 4 (Disk Sector) wins");
+    }
+
     /// Verify the AltoChip composition emits clean Verilog and the
     /// round-trip through iverilog matches the Rust simulator.  Uses
     /// .skip(2) for the BRAM X-state (microcode_rom is uninitialised
@@ -481,7 +515,7 @@ mod tests {
         microcode[0] = ui(0, AluFunction::Bus, BusSource::ReadR, false, false, 0);
         let constants = [0u16; crate::constant_rom::NUM_CONSTANTS];
         let uut = AltoChip::with_microcode_and_constants(&microcode, &constants);
-        let inputs: Vec<ChipIn> = (0..8).map(|_| ChipIn::default()).collect();
+        let inputs: Vec<ChipIn> = (0..8).map(|_| boot_in()).collect();
         let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
         let test_bench = uut.run(stream).collect::<SynchronousTestBench<_, _>>();
         let tm = test_bench.rtl(&uut, &TestBenchOptions::default().skip(2))?;
