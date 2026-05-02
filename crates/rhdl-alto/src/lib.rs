@@ -64,12 +64,14 @@
 //! byte-identical hardware either way; this is a packaging decision.
 
 pub mod alu;
+pub mod constant_rom;
 pub mod diablo_disk;
 pub mod disk_controller;
 pub mod disk_image_loader;
 pub mod isa;
 pub mod memory;
 pub mod microcode_loader;
+pub mod microcode_rom;
 pub mod microcycle;
 pub mod microengine;
 pub mod regfile;
