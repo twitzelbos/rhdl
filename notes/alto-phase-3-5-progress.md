@@ -271,6 +271,76 @@ Path A is the cheaper path to "boot trace shows actual sector DMA + Nova executi
 
 For Phase 3.5's "boot to OS loader" milestone, Path A gives demonstrable progress without needing the full Emulator task body.  Path B is required for Phase 4+ (full Alto fidelity).
 
+## 2026-05-02 (continued, post-Path-B) — boot-button constructor reveals deeper architectural gap
+
+This round added Path B's microengine surface in full:
+
+- Regfile inlined into Microengine (collapsing the Q-register pipeline
+  delay) + ACDEST/ACSOURCE per spec §6.6.
+- F2=BUSODD (Emulator §6.6).
+- F2=IDispatch upgraded from simplified `NEXT |= IR[7:0]` to the
+  spec §6.6 16-way PROM dispatch table.
+- F1=STARTF (Emulator §6.6).
+- New `with_microcode_constants_and_boot` chip constructor that
+  pre-loads memory[1..400B] with disk sector 0 per spec §3.4
+  (Bootstrapping) — simulating the boot button's hardware action.
+- New `boot_trace_with_boot_button` test running real microcode +
+  real disk image + boot-button-equivalent memory pre-load.
+
+**Result:** all 107 alto tests pass, but boot trace metrics still 35
+distinct addresses / 2 sector_mark events.  Why?  The Emulator's
+visited 8-address chain at MPC=0 → 0x152 → 0x153 → 0x154 → 0x130 →
+0x14e → 0x150 → 0x151 → (back to 0x152) is NOT a Nova fetch-execute
+loop — it WRITES R[6] (=1, 2, 3, ...) into memory[MAR=0] each
+iteration, overwriting whatever the boot button pre-loaded.  IR
+loads memory[0] which is whatever R[6] just wrote, so IR cycles
+through 0, 1, 2, ... — never reaching values that IDISP-PROM-
+dispatches to a different microcode address.
+
+### The deeper architectural gap
+
+Our chip loads U52-U75 PROMs containing the **standard ALTOIICODE3
+microcode** (= OS Release 19, the post-boot Emulator + tasks).  Per
+spec §11 (Control RAM and SWMODE), real Alto has:
+
+- **Boot ROM microcode** (always present, runs on power-on).
+- **Standard microcode RAM** (loaded from disk during boot, holds
+  post-boot Emulator + tasks).
+
+The boot ROM does the spec §3.4 dance: clears memory[0], reads
+keyboard, writes KBLK + DCB, SIOs disk to load sector 0.  Once that
+completes, `SWMODE` switches the chip to the RAM-loaded standard
+microcode (= what we have at MPC=0).
+
+Our chip currently has only the standard microcode.  At MPC=0 it
+runs whatever ALTOIICODE3 placed there — which is some intermediate
+setup loop, NOT the boot dance.  Without the boot ROM dance running
+first, the standard microcode at MPC=0 has no useful work to do.
+
+### Three ways to address it
+
+1. **Acquire and load the actual boot ROM microcode.**  Real Alto's
+   boot ROM is a separate small microcode bank (a few hundred
+   instructions).  Bitsavers may have its sources; ContrAlto might
+   embed it.  Estimated work: 1-3 days (sourcing + decoder + chip
+   construction wiring).
+
+2. **Hand-write a boot dance microcode** matching spec §3.4.
+   Manageable scope: ~30-50 microinstructions of hand-assembled
+   microcode that does the dance steps, then SWMODEs.  Estimated
+   work: 1 week.
+
+3. **Bypass the dance entirely**: pre-set Emulator R-registers
+   (PC, AC0..3) to start the Nova bootstrap directly.  This requires
+   modifying the chip to accept initial R-register values + bypass
+   the standard microcode at MPC=0 in favor of jumping directly to
+   the Nova fetch loop entry (NOVEM label, somewhere in our loaded
+   microcode).  Hacky but quick.  Estimated work: 1-2 days.
+
+For Phase 3.5's "boot to OS loader" milestone, option 1 is the
+right answer (real Alto fidelity).  Option 3 would let us see Nova
+execution fastest if we want a milestone-photo for the project.
+
 ## Resumption notes
 
 - Assets (PROMs, .dsk, ContrAlto source) all live under

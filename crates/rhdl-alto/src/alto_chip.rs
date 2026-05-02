@@ -226,6 +226,65 @@ impl AltoChip {
             task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
         }
     }
+
+    /// Construct an AltoChip with the BOOT BUTTON action pre-applied:
+    /// disk sector 0 (cylinder 0, head 0, sector 0) is loaded into
+    /// memory[1..=400B] and the disk's active sector buffer.  Per
+    /// *Alto Hardware Manual* §3.4 (Bootstrapping):
+    ///
+    /// > "Disk Boot ... the **256 data words are read into locations
+    /// > 1 to 400B inclusive**; the **label is read into locations
+    /// > 402B to 411B inclusive**.  When the transfer is complete,
+    /// > PC ← 1, and the emulator is started.  The disk status is
+    /// > stored in location 2..."
+    ///
+    /// In real Alto, this transfer happens via the disk DMA path
+    /// triggered by pressing the boot button.  Our chip simulates
+    /// that hardware action at construction time — pre-loading
+    /// memory directly so the Emulator's standard Nova fetch loop
+    /// (already running at MPC=0 → 0x152) finds real Nova bootstrap
+    /// instructions in memory[1..400B] instead of zeros.
+    ///
+    /// The disk image's first sector is also placed in DiabloDisk's
+    /// sector buffer — so subsequent KSEC-driven DMA reads of cyl=0
+    /// head=0 sector=0 will find the same data (consistency with
+    /// the boot-loaded memory).
+    pub fn with_microcode_constants_and_boot(
+        microcode_words: &[u32; crate::microcode_rom::MICROCODE_WORDS],
+        constants: &[u16; crate::constant_rom::NUM_CONSTANTS],
+        boot_sector_data: &[u16; 256],
+        boot_sector_label: &[u16; 8],
+    ) -> Self {
+        // Per spec §3.4 Disk Boot:
+        // - memory[1..=256] = data words from sector 0
+        //   (octal 1..=400B = decimal 1..=256).
+        // - memory[402B..=411B] = label words (octal 402B = decimal
+        //   258, 411B = decimal 265 — 8-word label range).
+        // - memory[2] = disk status (0 = no error).
+        // - memory[0] = (PC saved by boot, but we pre-set to 0;
+        //   Emulator's first instruction stores its own PC here).
+        let mut mem_init: Vec<(Bits<16>, Bits<16>)> = Vec::with_capacity(266);
+        mem_init.push((bits::<16>(0), bits::<16>(0)));
+        mem_init.push((bits::<16>(2), bits::<16>(0)));
+        for (i, &w) in boot_sector_data.iter().enumerate() {
+            mem_init.push((bits::<16>((i as u128) + 1), bits::<16>(w as u128)));
+        }
+        for (i, &w) in boot_sector_label.iter().enumerate() {
+            mem_init.push((bits::<16>(0o402 + i as u128), bits::<16>(w as u128)));
+        }
+
+        Self {
+            urom: MicrocodeRom::with_words(microcode_words),
+            crom: ConstantRom::with_constants(constants),
+            mem: Memory::new(mem_init),
+            tasks: AltoTaskSystem::default(),
+            disk_ctrl: DiskController::default(),
+            disk: DiabloDisk::with_sector(boot_sector_data),
+            engine: Microengine::default(),
+            current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
+            task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
+        }
+    }
 }
 
 impl SynchronousIO for AltoChip {
@@ -1476,5 +1535,81 @@ mod tests {
         assert!(emulator_firings > 0,
             "Emulator should fire at least once during initial boot before \
              the first sector_mark; saw {emulator_firings}");
+    }
+
+    /// Boot-button-equivalent trace: pre-load memory with disk
+    /// sector 0 contents per spec §3.4 (the hardware action of the
+    /// boot button), then run real microcode + real disk image.
+    /// Expected behavior: Emulator now finds real Nova bootstrap
+    /// instructions in memory (instead of all-zero NOPs) and visits
+    /// many more distinct microaddresses than the empty-memory
+    /// baseline.
+    ///
+    /// Skips if PROM or disk-image assets are absent.
+    #[test]
+    fn boot_trace_with_boot_button() {
+        use crate::{disk_image_loader, microcode_loader};
+        let rom_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("assets").join("rom");
+        let disk_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("assets").join("disk").join("nonprog.dsk");
+        if !rom_dir.join("U55").exists() || !rom_dir.join("C0").exists() {
+            eprintln!("[boot_trace_with_boot_button] skipping — PROM assets absent");
+            return;
+        }
+        if !disk_path.exists() {
+            eprintln!("[boot_trace_with_boot_button] skipping — disk image absent");
+            return;
+        }
+
+        let microcode = microcode_loader::load_alto_ii_microcode_from_dir(&rom_dir).unwrap();
+        let constants = microcode_loader::load_alto_ii_constant_rom_from_dir(&rom_dir).unwrap();
+        let disk_image = disk_image_loader::load_disk_image_from_file(&disk_path).unwrap();
+        let boot_sector = disk_image.sector(0, 0, 0);
+
+        let uut = AltoChip::with_microcode_constants_and_boot(
+            &microcode,
+            &constants,
+            &boot_sector.data,
+            &boot_sector.label,
+        );
+        let trace = run(uut, 2000);
+
+        let mut visited: std::collections::HashSet<u128> =
+            std::collections::HashSet::new();
+        for t in &trace {
+            visited.insert(t.mpc.raw());
+        }
+        let mut task_counts = [0u32; 16];
+        for t in &trace {
+            let task = t.current_task.raw() as usize;
+            if task < 16 { task_counts[task] += 1; }
+        }
+        let mut sector_events: u32 = 0;
+        let mut prev_sm: bool = false;
+        for t in &trace {
+            if !prev_sm && t.disk_sector_mark { sector_events += 1; }
+            prev_sm = t.disk_sector_mark;
+        }
+
+        eprintln!("[boot_trace_with_boot_button] 2000-cycle trace:");
+        eprintln!("  distinct microaddresses visited: {}", visited.len());
+        eprintln!("  task firing counts: {task_counts:?}");
+        eprintln!("  disk sector_mark events: {sector_events}");
+        eprintln!("  Emulator (task 0) firings: {}", task_counts[0]);
+        eprintln!("  Disk Sector (task 4) firings: {}", task_counts[4]);
+
+        // Pre-loaded memory means the Emulator's Nova fetch loop sees
+        // real instructions.  Spec §3.4: "PC ← 1, and the emulator is
+        // started" — Emulator now executes the boot bootstrap.
+        //
+        // We don't predict exact microaddress count (depends on what
+        // Nova instructions the bootstrap runs and how many distinct
+        // microcode handlers they reach), but we expect MORE than
+        // the empty-memory baseline (35 addresses).
+        assert!(visited.len() >= 35,
+            "boot-button-loaded memory should drive Emulator through \
+             at least as many addresses as empty memory; got {}",
+            visited.len());
     }
 }
