@@ -291,6 +291,12 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
         current_task,
         disk_word_data: q.disk.current_word_data,
         kcwa: q.disk_ctrl.kcwa_value,
+        // Per-task BS=3/BS=4 sources (spec §3.2 + §8.5): in Disk
+        // Sector / Disk Word task, BS=3 reads KSTAT and BS=4 reads
+        // KDATA.  Wired combinationally from the disk controller's
+        // Q output.
+        kstat: q.disk_ctrl.kstat_word,
+        kdata: q.disk_ctrl.kdata_word,
     };
     d.mem = MemIn {
         address: q.engine.mem_address,

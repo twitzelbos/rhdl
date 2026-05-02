@@ -54,6 +54,11 @@ pub struct CtrlOut {
     pub kadr_head: bool,
     pub kadr_sector: Bits<4>,
     pub kdata_word: Bits<16>,
+    /// Full 16-bit KSTAT register, exposed for the microengine's
+    /// per-task BS=3 (ReadKSTAT) source per *Alto Hardware Manual*
+    /// §2.1 Bus Sources + spec §3.2 + §8.5.  In Disk Sector / Disk
+    /// Word task, BS=3 reads this onto the bus.
+    pub kstat_word: Bits<16>,
     pub kcom_op: Bits<3>,
     pub kstat_ready: bool,
     /// Asserted when KCOM bit 15 is set (the "start transfer" bit
@@ -166,6 +171,7 @@ pub fn disk_controller_kernel(cr: ClockReset, i: CtrlIn, q: Q) -> (CtrlOut, D) {
     o.kadr_head     = ((q.kadr >> 7) & bits::<16>(1)) != bits::<16>(0);
     o.kadr_sector   = (q.kadr & bits::<16>(0xF)).resize();
     o.kdata_word    = q.kdata;
+    o.kstat_word    = q.kstat;
     o.kcom_op       = (q.kcom & bits::<16>(0x7)).resize();
     o.kstat_ready   = (q.kstat & bits::<16>(1)) != bits::<16>(0);
     // Phase-3.5 simplification: KCOM bit 15 = "start transfer".
@@ -192,6 +198,7 @@ pub fn disk_controller_kernel(cr: ClockReset, i: CtrlIn, q: Q) -> (CtrlOut, D) {
         o.kadr_head    = false;
         o.kadr_sector  = bits::<4>(0);
         o.kdata_word   = bits::<16>(0);
+        o.kstat_word   = bits::<16>(0);
         o.kcom_op      = bits::<3>(0);
         o.kstat_ready  = false;
         o.transfer_request = false;

@@ -41,4 +41,24 @@ fn main() {
             mi.next.raw()
         );
     }
+
+    println!("\n--- KSEC entry chain (MPC=4 jumps here per real microcode) ---");
+    for &mpc in &[
+        0x37cu32, 0x37d, 0x37e, 0x381, 0x382, 0x383, 0x384, 0x385, 0x386, 0x387,
+        0x388, 0x389, 0x38a, 0x368, 0x36a, 0x37a,
+    ] {
+        let raw = microcode[mpc as usize];
+        let mi = Microinstruction::unpack(raw);
+        println!(
+            "MPC={mpc:#05x} ({mpc:o}o) instr=0x{raw:08x} rsel={:>2} aluf={:?} bs={:?} f1={:?} f2={:?} t={} l={} next={:#05x}",
+            mi.rsel.raw(),
+            mi.aluf,
+            mi.bs,
+            mi.f1,
+            mi.f2,
+            mi.t_load,
+            mi.l_load,
+            mi.next.raw()
+        );
+    }
 }

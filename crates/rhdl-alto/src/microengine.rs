@@ -77,6 +77,14 @@ pub struct In {
     /// KCWA register value (combinational from controller's q.kcwa).
     /// The address memory[KCWA] is the destination for per-word DMA.
     pub kcwa: Bits<16>,
+    /// KSTAT register value (16-bit disk status).  Per *Alto Hardware
+    /// Manual* §2.1 + spec §3.2 + §8.5: in Disk Sector / Disk Word
+    /// task, BS=3 reads this onto the bus.
+    pub kstat: Bits<16>,
+    /// KDATA register value (16-bit disk data).  Per *Alto Hardware
+    /// Manual* §2.1 + spec §3.2 + §8.5: in Disk Sector / Disk Word
+    /// task, BS=4 reads this onto the bus.
+    pub kdata: Bits<16>,
 }
 
 /// Outputs from the microengine.
@@ -194,10 +202,19 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // BS = InstructionRegister → drive bus from IR (Nova-emulator dispatch).
     // Other BS sources drive zero in Phase 3.5.
     let r_read: Bits<16> = q.regs.rdata;
+    // Per *Alto Hardware Manual* §2.1 Bus Sources + spec §3.2 + §8.5,
+    // BS=3 and BS=4 are TASK-SPECIFIC.  In Disk Sector (4) and Disk
+    // Word (14) tasks, BS=3 reads KSTAT and BS=4 reads KDATA.  In
+    // Emulator (0), BS=3 is ReadSLocation and BS=4 is LoadSLocation
+    // (S-register access — not yet implemented; returns 0).
+    let is_disk_task: bool = i.current_task == bits::<4>(4)
+        || i.current_task == bits::<4>(14);
     let bus_from_bs: Bits<16> = match mi.bs {
         BusSource::ReadR              => r_read,
         BusSource::MemoryData         => i.mem_read_data,
         BusSource::InstructionRegister => q.ir,
+        BusSource::TaskSpec3 => if is_disk_task { i.kstat } else { bits::<16>(0) },
+        BusSource::TaskSpec4 => if is_disk_task { i.kdata } else { bits::<16>(0) },
         _                             => bits::<16>(0),
     };
     // F1 = Constant OR F2 = Constant overrides BUS with the constant-ROM
