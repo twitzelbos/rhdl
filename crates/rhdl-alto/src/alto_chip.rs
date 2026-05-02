@@ -249,6 +249,7 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     // transfer countdown so word_strobe starts firing.
     let mut disk_in = DiskIn::default();
     disk_in.transfer_request = q.disk_ctrl.transfer_request;
+    disk_in.word_consumed = q.engine.disk_word_consumed;
     d.disk = disk_in;
     // Disk controller: driven by microengine's per-task disk_ctrl
     // outputs.  When the Disk Sector task asserts F1=DiskCtrlWrite,

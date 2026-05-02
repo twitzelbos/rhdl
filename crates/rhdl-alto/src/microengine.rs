@@ -114,6 +114,11 @@ pub struct Out {
     pub disk_ctrl_write_en: bool,
     /// Disk-controller write data — equals BUS when write_en.
     pub disk_ctrl_write_data: Bits<16>,
+    /// True when the engine just consumed the disk's current word
+    /// (F2=DiskWordTransfer in Disk Word task).  Routed to the disk's
+    /// `word_consumed` input so the disk advances its position +
+    /// decrements transfer_remaining only when DMA actually happens.
+    pub disk_word_consumed: bool,
     /// Instruction Register — current Nova instruction (Emulator task).
     pub ir: Bits<16>,
 }
@@ -294,6 +299,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     };
     o.disk_ctrl_write_en   = is_dma || (is_disk_sector_task && (is_kcomm || is_kadr || is_kdata || is_kcwa));
     o.disk_ctrl_write_data = if is_dma { i.kcwa + bits::<16>(1) } else { bus };
+    o.disk_word_consumed   = is_dma;
 
     // ---- Per-task IR load (Emulator) ------------------------------
     // F2 = LoadIr + current_task == 0 (Emulator) → IR ← MD
@@ -334,6 +340,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         o.disk_ctrl_addr = bits::<3>(0);
         o.disk_ctrl_write_en = false;
         o.disk_ctrl_write_data = bits::<16>(0);
+        o.disk_word_consumed = false;
         o.ir = bits::<16>(0);
     }
     (o, d)

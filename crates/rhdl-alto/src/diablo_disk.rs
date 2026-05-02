@@ -82,6 +82,14 @@ pub struct DiskIn {
     /// fire for the next 256 cycles, waking the Disk Word task per
     /// word for DMA.
     pub transfer_request: bool,
+    /// "I just consumed the current word" — asserted by the engine
+    /// when the Disk Word task does an F2=DiskWordTransfer DMA write.
+    /// On consumed, the disk advances `current_word_position` and
+    /// decrements `transfer_remaining`.  Decoupling the position
+    /// advance from raw cycles (and instead coupling it to actual
+    /// DMA) makes the timing match the engine's task-firing cadence,
+    /// not the simulator's clock cadence.
+    pub word_consumed: bool,
 }
 
 /// Outputs from the Diablo 31 widget.
@@ -206,22 +214,23 @@ pub fn diablo_disk_kernel(cr: ClockReset, i: DiskIn, q: Q) -> (DiskOut, D) {
     }
     d.sector_buffer = next_buffer;
 
-    // Transfer countdown.  When `transfer_request` is asserted,
-    // arm a fresh 256-word transfer (overrides the countdown).
-    // Otherwise: decrement when active, hold at zero when idle.
+    // Transfer countdown.  Decoupled from raw cycle count: only
+    // decrements when the engine asserts `word_consumed` (per actual
+    // DMA write).  When `transfer_request` arms, set to 256 (overrides
+    // the countdown).
     d.transfer_remaining = if i.transfer_request {
         bits::<10>(256)
-    } else if q.transfer_remaining == bits::<10>(0) {
-        bits::<10>(0)
-    } else {
+    } else if i.word_consumed && q.transfer_remaining != bits::<10>(0) {
         q.transfer_remaining - bits::<10>(1)
+    } else {
+        q.transfer_remaining
     };
 
-    // Current rotational word position: reset to 0 when transfer
-    // arms; increment per cycle while transfer active; hold otherwise.
+    // Current rotational word position: reset to 0 on transfer arm;
+    // increment on `word_consumed`; hold otherwise.
     d.current_word_position = if i.transfer_request {
         bits::<8>(0)
-    } else if q.transfer_remaining != bits::<10>(0) {
+    } else if i.word_consumed && q.transfer_remaining != bits::<10>(0) {
         q.current_word_position + bits::<8>(1)
     } else {
         q.current_word_position
