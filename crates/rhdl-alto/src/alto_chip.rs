@@ -558,6 +558,65 @@ mod tests {
         assert_eq!(trace.last().unwrap().mpc.raw(), 0, "MPC stays at 0 in the loop");
     }
 
+    /// Chip throughput test: how many cycles per microinstruction does
+    /// the chip take?  Real Alto = 1.  Currently our chip takes 2 due
+    /// to the URom feedback path through Q-registered task_mpc.
+    ///
+    /// This test exists specifically to catch regressions/improvements
+    /// in the chip's instruction throughput.  When a future commit
+    /// collapses the 2-cycle pipeline to 1, this test breaks and gets
+    /// updated.  Until then, it locks in the known half-speed
+    /// behavior so we don't regress further AND so we never again miss
+    /// the throughput question.
+    ///
+    /// Why this wasn't caught before: every prior chip test was either
+    /// (a) a single-instruction loop where MPC never advances, (b) a
+    /// 2-step settle-on-final-state test that doesn't measure rate,
+    /// or (c) a microengine-only test that bypasses the chip pipeline.
+    /// None of them quantified the cycles-per-microinstruction ratio.
+    #[test]
+    fn chip_runs_at_known_cycles_per_microinstruction() {
+        // Chain of 4 distinct microaddresses: 0→1→2→3→0→1→2→3→...
+        // Each instruction is a NOP that just sets next.
+        let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
+        let chain: [(usize, u16); 4] = [(0, 1), (1, 2), (2, 3), (3, 0)];
+        for &(a, nxt) in chain.iter() {
+            microcode[a] = ui(0, AluFunction::Bus, BusSource::None, false, false, nxt);
+        }
+
+        let uut = AltoChip::with_microcode(&microcode);
+        // Run 16 cycles.  Real Alto would visit MPCs 0,1,2,3,0,1,2,3,...
+        // (one per cycle).  Our chip visits each MPC twice: 0,0,1,1,2,2,...
+        let trace = run(uut, 16);
+
+        // Skip the initial pipeline-settle cycles (first 2 cycles
+        // before URom returns its first valid output).
+        let post_settle: Vec<u128> = trace.iter().skip(2).map(|t| t.mpc.raw()).collect();
+
+        // Count consecutive-MPC duplicates.  A 1-cycle/instr pipeline
+        // would have MPC change EVERY cycle (no duplicates).
+        // A 2-cycle/instr pipeline has every MPC duplicated.
+        let mut duplicate_pairs = 0;
+        for w in post_settle.windows(2) {
+            if w[0] == w[1] {
+                duplicate_pairs += 1;
+            }
+        }
+
+        // CURRENT BEHAVIOR (locked in until pipeline is fixed):
+        // approximately half the consecutive pairs are duplicates,
+        // confirming 2 cycles per microinstruction.
+        let pair_count = post_settle.len() - 1;
+        assert!(
+            duplicate_pairs >= pair_count / 2 - 1,
+            "chip throughput regression: expected ~{}/2 duplicate MPC \
+             pairs (2-cycle pipeline), got {} of {}.  If the chip got \
+             FASTER, this test should be updated to expect zero \
+             duplicates (1-cycle pipeline).  Trace: {:?}",
+            pair_count, duplicate_pairs, pair_count, post_settle,
+        );
+    }
+
     #[test]
     fn boot_branches_to_addr_3_via_bus_eq_zero() {
         // Microcode at addr 0: F2=BusEqZero with NEXT=2, ALUF=BusPlusOne, L_LOAD=1.

@@ -31,6 +31,45 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4h+: throughput test + spec violation lock-in
+
+**Paths:**
+
+- `crates/rhdl-alto/src/alto_chip.rs` — added `chip_runs_at_known_cycles_per_microinstruction` test that drives a 4-instruction chain (0→1→2→3→0...) and counts consecutive-MPC duplicates.  Currently asserts ~half the consecutive pairs are duplicates (= 2 cycles per microinstruction).  When a future commit collapses the pipeline to 1 cycle/microinstruction (matching spec §2.3), this test breaks and gets updated to expect zero duplicates.
+
+**Why this, why now:** User asked "why wasn't this caught in tests?" after the Step 4h analysis.  The honest answer: every prior chip-level test was either a single-instruction loop (MPC never advances), a 2-step settle-on-final-state test (doesn't measure rate), or a microengine-only test (bypasses the chip pipeline).  None of them quantified cycles per microinstruction.  Worse, the comment in `boot_with_loop_at_zero` *acknowledged* the pipeline ("BRAM 1-cycle fetch latency + microengine 1-cycle observation lag") — we knew about it, accepted it, but never enforced the spec contract via a test.
+
+**Spec on pipelining — alto-processor-and-microcode-spec.md §2.3:**
+
+> The microengine is a **2-stage pipeline**:
+> - Stage MIF (Microinstruction Fetch): `inst ← microcode_RAM[MPC_of_winning_task]`
+> - Stage MIE (Microinstruction Execute): `bus ← ...; alu_out ← ...; next_mpc ← inst.next | f2_modifier; MPC_of_winning_task ← next_mpc (at edge)`
+
+And spec line 26: *"the microengine executes a 32-bit horizontal microinstruction every 170 ns"*.
+
+The spec is unambiguous: **1 microinstruction per 170-ns cycle**, achieved via overlapped MIF || MIE — classic prefetch where while executing instruction k, the chip fetches k+1 in parallel.  Our chip currently runs MIF and MIE *serially* (cycle k fetches, cycle k+1 executes), violating the spec's throughput contract.
+
+**Design decisions:**
+
+- **Lock in the current behavior with a quantified assertion**, not just a comment.  The throughput test asserts the duplicate-MPC count.  When the pipeline is fixed, the test expectation flips from "expect duplicates" to "expect zero duplicates."  This is the test we should have had from day one.
+- **Don't fix the pipeline in this commit** — the fix is a structural chip refactor (Phase 3.5 Step 4i) that needs its own PR per CLAUDE.md §11.1 ("one feature per PR").
+
+**Lessons learned:**
+
+- For protocol/processor cores, write THROUGHPUT tests (cycles-per-instruction) alongside FUNCTIONAL tests (correct output value).  Spec violations on throughput are silent because output values are still right.
+- A test that "settles on a final state" is insufficient when the spec describes a per-cycle contract.  Need per-cycle-progression tests.
+- Comments that acknowledge a known limitation are not a substitute for a test that enforces the limitation.  "We know about it, just accept it" → no test → silent regression-or-improvement risk.
+
+**Validation:**
+
+- 172 alto tests pass (45 lib unit + 127 integration tests, +1 new throughput test, no regressions).
+
+**Follow-ups:**
+
+- Phase 3.5 Step 4i: collapse the chip's 2-cycle pipeline to 1 cycle per microinstruction per spec §2.3.  Approach: feed engine.next_mpc combinationally to URom in the same cycle (require RHDL combinational sub-circuit output access OR fold URom into the Microengine widget).  Update the throughput test to expect zero duplicates once landed.
+
+---
+
 ## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4h: pipeline-display correction + 2-cycle-per-instruction analysis
 
 **Paths:**
