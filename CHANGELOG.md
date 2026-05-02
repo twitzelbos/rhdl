@@ -31,6 +31,42 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4g: comprehensive microcode semantics test suite + NEXT-mask bugfix
+
+**Paths:**
+
+- `crates/rhdl-alto/tests/microcode_semantics.rs` — NEW.  61 per-spec-rule semantic tests organized by spec section: §2.7 R-register (3 tests), §3.1 ALU (10), §3.2 Bus sources (8), §3.3 F1 universal (8) + per-task Disk (10), §3.4 F2 universal (7) + Emulator (5) + Disk (1), §4.4 memory timing (2), §6.6 ACDEST/ACSOURCE (2), T_LOAD/L_LOAD (4), and constant-ROM gating (1).  Every test isolates exactly one spec rule; failures fingerprint the bug to a specific spec section.
+- `crates/rhdl-alto/src/microengine.rs` — fixed NEXT bit-0 mask bug discovered by the new suite.  Old code: `next_addr = (next_addr_or_bus & 0x3FE) | bit0` — this forcibly cleared bit 0 of NEXT before OR'ing the F2-conditional bit0, which silently dropped the BUS LSB whenever F2=BusToNext sourced an odd-valued bus.  New code: `next_addr = next_addr_or_bus | bit0` — bit0 contributors OR-merge per spec §3.4, never mask.
+
+**Why this, why now:** User directive: "We shouldn't grow it later, we should do COMPREHENSIVE test suite now."  The boot trace had been stalling, and the previous discovery of the R-from-L vs R-from-ALU bug (Step 4f) showed that silent semantic divergences from spec are the dominant failure mode at this phase.  Per-spec-rule isolation tests catch divergences immediately AND fingerprint them to a single line of the spec.
+
+**Design decisions:**
+
+- **One test per spec rule, not per scenario.**  The naming convention `<section>_<rule>_<expected>` (e.g., `f2_bus_to_next_ors_low_bus_bits`) makes the trace from failure → spec line trivial.  Future microcode features add tests by spec section, not by widget composition.
+
+- **`Observation { comb, after }` helper.**  The microengine's outputs split into REGISTERED (`t`, `l`, `ir`, `mar`) and COMBINATIONAL (`next_mpc`, `task_yield`, `block_task`, `startf`, `disk_*`, `mem_*`).  The helper runs `prog + 1 NOP` and exposes BOTH: `comb` is the action's combinational output, `after` is the post-edge registered state.  Each test picks the right view.  Without this split, 22 of the 61 tests would have silently passed for the wrong reason (the NOP cycle's combinational output, which has no F1/F2 effect).
+
+- **OR-merge for NEXT modifications.**  The spec is explicit: F2 modifications OR into NEXT.  The old `(x & 0x3FE) | bit0` pattern was an accidental REPLACE — only safe when F2 is a bit0-conditional code (ShiftEqZero, AluCarryToNext, etc.) AND the microcode NEXT field has bit 0 = 0.  For F2=BusToNext, where the BUS provides bit 0, the mask silently corrupted dispatch.  The fix matches ContrAlto's CPU.cs (`NextAddress |= ...`).
+
+**Surprises and gotchas:**
+
+- The NEXT-mask bug existed since the BusToNext F2 was first wired.  None of the existing iterator-based tests exercised an odd-LSB BusToNext, so the bug had been latent.  This is exactly the value of per-spec-rule isolation testing: a single explicit assertion (`f2_bus_to_next_ors_low_bus_bits` expecting 0x107) caught a class of dispatch corruption that would have manifested as opaque wrong-microaddress jumps in real microcode.
+
+- `run_fn`'s callback receives the output AFTER the previous step's input has been processed.  Observing the action's REGISTERED state needs an additional NOP cycle to propagate past the action's edge, but the action's COMBINATIONAL state is in the *previous* callback invocation.  `Observation` makes both available so each test reads the right view.
+
+**Validation:**
+
+- 61 new tests pass + 110 pre-existing alto tests still pass (171 total, no regressions).
+- Bug-catching demonstrated: the NEXT-mask fix was discovered via a single failing test (`f2_bus_to_next_ors_low_bus_bits`) and validated by the full suite with no other tests breaking.
+
+**Follow-ups:**
+
+- Add coverage for F2=ConstantB (constant-ROM bank B) once that path is wired.
+- Add coverage for F1=11 (INCRECNO), F2=8/9/10/11/12/14 (KWDX disk codes) as those land.
+- Consider extracting the `Observation` helper into a shared test utility module if a second test file needs it.
+
+---
+
 ## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4f: F1=STROBE protocol (per spec §8.5)
 
 **Paths:**

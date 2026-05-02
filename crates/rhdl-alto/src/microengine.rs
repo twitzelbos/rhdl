@@ -376,7 +376,12 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         F2Function::BusToNext => next_addr | (bus.resize() & bits::<10>(0x3FF)),
         _                     => next_addr,
     };
-    next_addr = (next_addr_or_bus & bits::<10>(0x3FE)) | bit0;
+    // OR-merge bit0 (from conditional F2s like ShiftEqZero, AluCarryToNext)
+    // with the dispatch.  Bit 0 of the microcode NEXT field is preserved if
+    // set, and bit 0 from BusToNext (BUS<15>) is preserved.  This matches
+    // the Alto hardware spec §3.4: F2 contributions OR into NEXT, never
+    // mask it.  Masking would silently drop the BUS LSB in BusToNext.
+    next_addr = next_addr_or_bus | bit0;
     // F2=IDispatch (Emulator only, F2=15B = binary 13): the 16-way
     // PROM dispatch per *Alto Hardware Manual* §3.5 + spec §6.6.
     // The actual table from spec §6.6:
