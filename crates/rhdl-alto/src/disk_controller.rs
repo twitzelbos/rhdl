@@ -87,6 +87,12 @@ pub struct DiskController {
     kadr:  dff::DFF<Bits<16>>,
     kcwa:  dff::DFF<Bits<16>>,
     kcwd:  dff::DFF<Bits<16>>,
+    /// Previous-cycle latch of KCOM[15], used to edge-detect the
+    /// "start transfer" bit so transfer_request fires for ONE cycle
+    /// when KCOM[15] transitions 0→1, not continuously while the bit
+    /// stays set.  Otherwise the disk would re-arm every cycle and
+    /// never let the transfer countdown progress.
+    prev_kcom_arm: dff::DFF<bool>,
 }
 
 impl SynchronousIO for DiskController {
@@ -107,6 +113,7 @@ pub fn disk_controller_kernel(cr: ClockReset, i: CtrlIn, q: Q) -> (CtrlOut, D) {
     d.kadr  = q.kadr;
     d.kcwa  = q.kcwa;
     d.kcwd  = q.kcwd;
+    d.prev_kcom_arm = q.prev_kcom_arm;
 
     // Write port — single addressed register per cycle.
     let kstat_a: Bits<3> = bits::<3>(0);
@@ -162,10 +169,14 @@ pub fn disk_controller_kernel(cr: ClockReset, i: CtrlIn, q: Q) -> (CtrlOut, D) {
     o.kcom_op       = (q.kcom & bits::<16>(0x7)).resize();
     o.kstat_ready   = (q.kstat & bits::<16>(1)) != bits::<16>(0);
     // Phase-3.5 simplification: KCOM bit 15 = "start transfer".
-    // Real Alto uses different KCOM encoding (cylinder/head/sector
-    // bits + a few control flags); we'll re-align when boot trace
-    // requires it.
-    o.transfer_request = (q.kcom & bits::<16>(0x8000)) != bits::<16>(0);
+    // Real Alto uses different KCOM encoding; re-align when boot
+    // trace requires it.  Edge-detect: transfer_request fires for
+    // one cycle when KCOM[15] transitions 0→1, not continuously
+    // while it stays set.  q.prev_kcom_arm holds the previous-cycle
+    // value of KCOM[15] for the comparison.
+    let kcom_arm_now: bool = (q.kcom & bits::<16>(0x8000)) != bits::<16>(0);
+    o.transfer_request = kcom_arm_now && !q.prev_kcom_arm;
+    d.prev_kcom_arm = kcom_arm_now;
     o.kcwa_value = q.kcwa;
 
     if cr.reset.any() {
@@ -175,6 +186,7 @@ pub fn disk_controller_kernel(cr: ClockReset, i: CtrlIn, q: Q) -> (CtrlOut, D) {
         d.kadr  = bits::<16>(0);
         d.kcwa  = bits::<16>(0);
         d.kcwd  = bits::<16>(0);
+        d.prev_kcom_arm = false;
         o.read_data    = bits::<16>(0);
         o.kadr_cylinder = bits::<8>(0);
         o.kadr_head    = false;
