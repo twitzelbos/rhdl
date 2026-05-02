@@ -885,17 +885,21 @@ mod tests {
             f1: F1Function::TaskYield, f2: F2Function::Nop,
             t_load: false, l_load: false, next: bits::<10>(1),
         };
+        // Per spec §2.7 + ContrAlto: R loads from Shifter.Output (L
+        // after F1 shift), NOT from ALU result.  To load a constant
+        // into R via F1=Constant + BS=LoadR, we must also set
+        // L_LOAD=true so L latches the constant; then R ← L.
         let mi1 = Microinstruction {
             rsel: bits::<5>(2),
             aluf: AluFunction::Bus, bs: BusSource::LoadR,
             f1: F1Function::Constant, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(2),
+            t_load: false, l_load: true, next: bits::<10>(2),
         };
         let mi2 = Microinstruction {
             rsel: bits::<5>(1),
             aluf: AluFunction::Bus, bs: BusSource::LoadR,
             f1: F1Function::Constant, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(3),
+            t_load: false, l_load: true, next: bits::<10>(3),
         };
         let mi3 = Microinstruction {
             rsel: bits::<5>(2),
@@ -1052,13 +1056,15 @@ mod tests {
         };
         // addr 1: F1=Constant idx 9 = 0x8000, BS=LoadR, RSEL=1, ALUF=Bus
         //         → R[1] ← 0x8000.  NEXT=2.
+        // L_LOAD=true so L gets the constant; R loads from L (Shifter
+        // Output) per spec §2.7 + ContrAlto's Task.cs.
         let mi1 = Microinstruction {
             rsel: bits::<5>(1),
             aluf: AluFunction::Bus,
             bs:   BusSource::LoadR,
             f1:   F1Function::Constant,
             f2:   F2Function::Nop,
-            t_load: false, l_load: false,
+            t_load: false, l_load: true,
             next: bits::<10>(2),
         };
         // addr 2: BS=ReadR (RSEL=1 → BUS = R[1] = 0x8000), F1=WriteKcomm

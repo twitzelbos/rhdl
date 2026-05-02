@@ -319,23 +319,12 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     d.t = if mi.t_load { bus } else { q.t };
     d.l = if mi.l_load { aout.result } else { q.l };
 
-    // ---- R write --------------------------------------------------
-    // Phase 1: R is written when BS = LoadR.  Real Alto uses certain
-    // F1/F2 codes; for the simple subset, BS = LoadR is enough to
-    // express R-load patterns in hand-written test microcode.  Per
-    // spec §6.6, ACDEST/ACSOURCE also affect the WRITE address (same
-    // RSEL, since the regfile has a single addressed port for
-    // both read and write).
-    let r_wen: bool = mi.bs == BusSource::LoadR;
-    let mut next_regs: [Bits<16>; 32] = q.regs;
-    if r_wen {
-        next_regs[effective_rsel] = aout.result;
-    }
-    d.regs = next_regs;
-
     // ---- L shifts (F1) --------------------------------------------
     // F1 = LeftShift1 / RightShift1 / LeftCycle8 modify L AFTER the
-    // L_LOAD step.  Apply on top of the candidate `d.l` above.
+    // L_LOAD step.  Apply on top of the candidate `d.l` above.  The
+    // post-shift value is the **Shifter Output** per *Alto Hardware
+    // Manual* §2.7 + ContrAlto's Task.cs (`Shifter.Output`) — and
+    // it's what feeds the R-write path below.
     let l_after_f1: Bits<16> = match mi.f1 {
         F1Function::LeftShift1  => d.l << 1,
         F1Function::RightShift1 => d.l >> 1,
@@ -343,6 +332,28 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         _                       => d.l,
     };
     d.l = l_after_f1;
+
+    // ---- R write --------------------------------------------------
+    // Per *Alto Hardware Manual* §2.7 + ContrAlto's `Task.cs`:
+    //
+    //   if (_loadR) { _cpu._r[_rSelect] = Shifter.Output; }
+    //
+    // R is loaded from the **Shifter Output** (= L with F1's shift
+    // applied), NOT from the ALU result.  Our pre-fix bug wrote
+    // aout.result instead, which is why microcode like `SAD_ L`
+    // (intended R[5] ← L) was actually doing R[5] ← ALU = 0.  That
+    // broke the boot dance Q-loop because SAD never advanced from 0
+    // → MAR = SAD+T stayed = T → memory read/write degenerate →
+    // IR stayed at 0 → dispatch stayed at Q0.
+    //
+    // Per spec §6.6, ACDEST/ACSOURCE also affect the WRITE address
+    // (same RSEL, since the regfile has a single addressed port).
+    let r_wen: bool = mi.bs == BusSource::LoadR;
+    let mut next_regs: [Bits<16>; 32] = q.regs;
+    if r_wen {
+        next_regs[effective_rsel] = l_after_f1;
+    }
+    d.regs = next_regs;
 
     // ---- Next MPC ------------------------------------------------
     // Default: take the NEXT field from the microinstruction.
