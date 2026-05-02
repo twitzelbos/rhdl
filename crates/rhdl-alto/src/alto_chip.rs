@@ -229,11 +229,19 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     let next_mpc: Bits<10> = q.engine.next_mpc;
     d.urom = UromIn { mpc: next_mpc.resize() };
 
-    // Disk + disk controller: not yet driven by microengine (per-task
-    // F1/F2 dispatch ships in the next chunk).  Drive both with default
-    // (idle) inputs.  The disk's outputs feed the wakeup vector.
+    // Disk: not yet driven by microengine (Phase 3.5 next adds the
+    // per-word DMA path).  Drive with default (idle) inputs.
     d.disk = DiskIn::default();
-    d.disk_ctrl = CtrlIn::default();
+    // Disk controller: driven by microengine's per-task disk_ctrl
+    // outputs.  When the Disk Sector task asserts F1=DiskCtrlWrite,
+    // the engine emits write_en + write_data targeting register
+    // RSEL[2:0]; otherwise idle.  The engine outputs are q-registered
+    // (1-cycle late from the firing instruction).
+    d.disk_ctrl = CtrlIn {
+        reg_addr: q.engine.disk_ctrl_addr,
+        write_data: q.engine.disk_ctrl_write_data,
+        write_en: q.engine.disk_ctrl_write_en,
+    };
 
     // Compose the effective wakeup vector: user-supplied bits OR'd
     // with disk-derived wakeups (bit 4 from sector_mark, bit 14 from

@@ -137,7 +137,14 @@ pub enum F1Function {
     Reserved11,
     Reserved12,
     Reserved13,
-    Reserved14,
+    /// Phase 3.5 placeholder: when `current_task == 4` (Disk Sector),
+    /// writes BUS to disk controller register `RSEL[2:0]`.  In other
+    /// tasks: no-op.  Real Alto uses different F1 codes for individual
+    /// disk registers (F1=10 LOAD KADR, F1=15 LOAD KCOMM, etc.); this
+    /// is a Phase-3.5 simplification that lets one F1 code program
+    /// any of the 6 controller registers based on RSEL.  Re-align to
+    /// real Alto codes when boot trace requires it.
+    DiskCtrlWrite,
     Reserved15,
 }
 
@@ -323,7 +330,7 @@ fn f1_function_index(f: F1Function) -> u8 {
         F1Function::Reserved11 => 11,
         F1Function::Reserved12 => 12,
         F1Function::Reserved13 => 13,
-        F1Function::Reserved14 => 14,
+        F1Function::DiskCtrlWrite => 14,
         F1Function::Reserved15 => 15,
     }
 }
@@ -343,7 +350,7 @@ fn f1_function_from_index(i: u8) -> F1Function {
         11 => F1Function::Reserved11,
         12 => F1Function::Reserved12,
         13 => F1Function::Reserved13,
-        14 => F1Function::Reserved14,
+        14 => F1Function::DiskCtrlWrite,
         _ => F1Function::Reserved15,
     }
 }

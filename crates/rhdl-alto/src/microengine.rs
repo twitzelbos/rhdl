@@ -99,6 +99,14 @@ pub struct Out {
     pub mem_write_en: bool,
     /// Memory write data — equals BUS when `mem_write_en`.
     pub mem_write_data: Bits<16>,
+    /// Disk-controller register address (3 bits → registers 0-5).
+    /// Sourced from RSEL[2:0] of the current instruction.
+    pub disk_ctrl_addr: Bits<3>,
+    /// Disk-controller write enable — true when F1 = DiskCtrlWrite
+    /// AND current_task == 4 (Disk Sector).
+    pub disk_ctrl_write_en: bool,
+    /// Disk-controller write data — equals BUS when write_en.
+    pub disk_ctrl_write_data: Bits<16>,
 }
 
 /// The Alto microengine widget.
@@ -238,6 +246,16 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     o.mem_write_en   = mi.f2 == F2Function::WriteMd;
     o.mem_write_data = bus;
 
+    // ---- Per-task disk-controller register write -----------------
+    // F1 = DiskCtrlWrite + current_task == 4 (Disk Sector) → write
+    // BUS to controller register at index RSEL[2:0].  In any other
+    // task, this F1 code is a no-op (gated).
+    let is_disk_sector_task: bool = i.current_task == bits::<4>(4);
+    let is_disk_ctrl_write: bool = mi.f1 == F1Function::DiskCtrlWrite;
+    o.disk_ctrl_addr       = mi.rsel.resize();
+    o.disk_ctrl_write_en   = is_disk_sector_task && is_disk_ctrl_write;
+    o.disk_ctrl_write_data = bus;
+
     // ---- Outputs ---------------------------------------------------
     o.t          = q.t;
     o.l          = q.l;
@@ -264,6 +282,9 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         o.mem_address = bits::<16>(0);
         o.mem_write_en = false;
         o.mem_write_data = bits::<16>(0);
+        o.disk_ctrl_addr = bits::<3>(0);
+        o.disk_ctrl_write_en = false;
+        o.disk_ctrl_write_data = bits::<16>(0);
     }
     (o, d)
 }
@@ -342,7 +363,7 @@ fn f1_from_index(i: Bits<4>) -> F1Function {
     else if i == bits::<4>(11) { F1Function::Reserved11 }
     else if i == bits::<4>(12) { F1Function::Reserved12 }
     else if i == bits::<4>(13) { F1Function::Reserved13 }
-    else if i == bits::<4>(14) { F1Function::Reserved14 }
+    else if i == bits::<4>(14) { F1Function::DiskCtrlWrite }
     else                       { F1Function::Reserved15 }
 }
 
