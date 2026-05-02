@@ -5,7 +5,7 @@ branch, single PR per the user's "complete this phase, don't ship a
 v1, don't defer" constraint.  PR opens only when **Nova PC = 0o345**
 is reached with cycle-equivalent ContrAlto trace.
 
-## Status (12 commits in, 100 tests pass)
+## Status (14 commits in, 101 tests pass)
 
 ### ✅ Done
 
@@ -37,15 +37,20 @@ is reached with cycle-equivalent ContrAlto trace.
    produces a working `ContraltoLib.dll`.
 10. **Task system renumbered to ContrAlto convention**:
     0/4/7/8/9/10/11/12/13/14 (10 real tasks; slots 1, 2, 3, 5, 6, 15
-    have no rule).  Real Alto microcode wakes specific task numbers,
-    so this had to be fixed before task_system is wired into AltoChip.
-    16 task_system tests + 3 disk_dma_integration tests all pass.
+    have no rule).
+11. **AltoTaskSystem wired into AltoChip**.  Single-mpc DFF replaced
+    with the 16-task arbiter as a sub-widget.  Engine takes
+    `current_task: Bits<4>` input (echoed in output for trace);
+    task_system's `last_task` (1-cycle pipeline lag — matches Alto
+    MIF/MIE) drives the engine's MPC selection; engine's `next_mpc`
+    writes back to the firing task's slot in `next_mpc_per_task`.
+    Multi-task arbitration test confirmed: with both Task 0 and Task
+    4 woken, Task 4 (Disk Sector) wins through the chip.
 
 ### ⏳ Remaining for Phase 3.5
 
 | Step | Description | Est |
 |------|-------------|-----|
-| `AltoChip` task system integration | Add `current_task: Bits<4>` input to microengine; replace AltoChip's single-mpc DFF with task_system as sub-widget; route current_task's MPC into engine, engine.next_mpc back into task_system.next_mpc_per_task[current_task] | 2-3d |
 | Per-task F1/F2 dispatch | Per-task code dispatch in microengine: gate MAR← / MD← to MRT (task 8), KSTROBE / KCOM / KADR← to Disk Sector (task 4), MTEMP to Display Word (task 9), IRLoad / SWMODE / FETCH to Emulator (task 0) | 1-2w |
 | Disk widget rewrite | Rotation timing (3.3ms = many thousands of microcycles per sector); serial word transfer; sector header/label/data structure (the disk-sector microcode reads these word-by-word as the disk rotates) | 3-5d |
 | Disk controller | Real KCOM/KSTAT bit semantics + KADR field decode + transfer state machine | 2-3d |
