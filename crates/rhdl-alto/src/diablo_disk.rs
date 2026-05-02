@@ -155,6 +155,25 @@ impl Default for DiabloDisk {
     }
 }
 
+impl DiabloDisk {
+    /// Construct a DiabloDisk with the active sector buffer pre-loaded
+    /// from the supplied 256-word array.  Useful for testing the DMA
+    /// path without going through the disk-image-loader chain — and
+    /// for staging a single sector worth of test data.
+    pub fn with_sector(words: &[u16; 256]) -> Self {
+        let mut buf = [bits::<16>(0); 256];
+        for (i, &w) in words.iter().enumerate() {
+            buf[i] = bits::<16>(w as u128);
+        }
+        Self {
+            sector_tick: dff::DFF::new(bits::<10>(0)),
+            transfer_remaining: dff::DFF::new(bits::<10>(0)),
+            current_word_position: dff::DFF::new(bits::<8>(0)),
+            sector_buffer: dff::DFF::new(buf),
+        }
+    }
+}
+
 impl SynchronousIO for DiabloDisk {
     type I = DiskIn;
     type O = DiskOut;

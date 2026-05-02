@@ -278,6 +278,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let is_kcomm: bool = mi.f1 == F1Function::WriteKcomm;
     let is_kadr:  bool = mi.f1 == F1Function::WriteKadr;
     let is_kdata: bool = mi.f1 == F1Function::WriteKdata;
+    let is_kcwa:  bool = mi.f1 == F1Function::WriteKcwa;
     o.disk_ctrl_addr = if is_dma {
         bits::<3>(4)  // REG_KCWA
     } else if is_kcomm {
@@ -286,10 +287,12 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         bits::<3>(3)  // REG_KADR
     } else if is_kdata {
         bits::<3>(1)  // REG_KDATA
+    } else if is_kcwa {
+        bits::<3>(4)  // REG_KCWA
     } else {
         bits::<3>(0)  // any value; write_en will be false
     };
-    o.disk_ctrl_write_en   = is_dma || (is_disk_sector_task && (is_kcomm || is_kadr || is_kdata));
+    o.disk_ctrl_write_en   = is_dma || (is_disk_sector_task && (is_kcomm || is_kadr || is_kdata || is_kcwa));
     o.disk_ctrl_write_data = if is_dma { i.kcwa + bits::<16>(1) } else { bus };
 
     // ---- Per-task IR load (Emulator) ------------------------------
@@ -408,7 +411,7 @@ fn f1_from_index(i: Bits<4>) -> F1Function {
     else if i == bits::<4>(9)  { F1Function::Reserved9 }
     else if i == bits::<4>(10) { F1Function::Reserved10 }
     else if i == bits::<4>(11) { F1Function::Reserved11 }
-    else if i == bits::<4>(12) { F1Function::Reserved12 }
+    else if i == bits::<4>(12) { F1Function::WriteKcwa }
     else if i == bits::<4>(13) { F1Function::WriteKcomm }
     else if i == bits::<4>(14) { F1Function::WriteKadr }
     else                       { F1Function::WriteKdata }

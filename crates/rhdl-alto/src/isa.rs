@@ -135,7 +135,10 @@ pub enum F1Function {
     Reserved9,
     Reserved10,
     Reserved11,
-    Reserved12,
+    /// `KCWA← BUS` — write BUS to KCWA register (the DMA memory
+    /// destination address).  Disk Sector task (4) only; gated no-op
+    /// in any other task.
+    WriteKcwa,
     /// `KCOMM← BUS` — write BUS to KCOM register.  Disk Sector task
     /// (4) only; gated no-op in any other task.  Per the Alto
     /// Hardware Manual §6 + ContrAlto's `DiskSectorTask.cs`.
@@ -341,7 +344,7 @@ fn f1_function_index(f: F1Function) -> u8 {
         F1Function::Reserved9 => 9,
         F1Function::Reserved10 => 10,
         F1Function::Reserved11 => 11,
-        F1Function::Reserved12 => 12,
+        F1Function::WriteKcwa => 12,
         F1Function::WriteKcomm => 13,
         F1Function::WriteKadr => 14,
         F1Function::WriteKdata => 15,
@@ -361,7 +364,7 @@ fn f1_function_from_index(i: u8) -> F1Function {
         9 => F1Function::Reserved9,
         10 => F1Function::Reserved10,
         11 => F1Function::Reserved11,
-        12 => F1Function::Reserved12,
+        12 => F1Function::WriteKcwa,
         13 => F1Function::WriteKcomm,
         14 => F1Function::WriteKadr,
         _ => F1Function::WriteKdata,
