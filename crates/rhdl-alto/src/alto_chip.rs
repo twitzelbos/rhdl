@@ -1059,10 +1059,12 @@ mod tests {
     }
 
     /// IDispatch under Emulator: stage IR=0xCAFE then run F2=IDispatch
-    /// with NEXT=0x100; expect next_mpc = 0x100 | 0xFE = 0x1FE.
+    /// with NEXT=0x100.  Per spec §6.6 IDISP PROM:
+    ///   IR=0xCAFE → ir_1_2 = (0xCAFE >> 13) & 3 = 2 → dispatch_value = 5.
+    /// So next_mpc = 0x100 | 5 = 0x105.
     #[test]
     fn f2_idispatch_routes_via_ir_low_byte() {
-        // addr 0: F1=Constant idx=0=0x0100, F2=LoadMar → MAR ← 0x0100.
+        // addr 0: F1=LoadMar + F2=Constant idx=0=0x0100 → MAR ← 0x0100.
         let mi0 = Microinstruction {
             rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
             f1: F1Function::LoadMar, f2: F2Function::Constant,
@@ -1080,29 +1082,30 @@ mod tests {
             f1: F1Function::Nop, f2: F2Function::LoadIr,
             t_load: false, l_load: false, next: bits::<10>(3),
         };
-        // addr 3: F2=IDispatch with NEXT=0x100.
-        // Expected next_mpc = 0x100 | (IR[7:0]=0xFE) = 0x1FE.
-        // Microcode at 0x1FE will be a NOP loop.
+        // addr 3: F2=IDispatch with NEXT=0x100.  IR=0xCAFE.
+        // Per spec §6.6 IDISP PROM: IR[1-2] = (0xCAFE >> 13) & 3 =
+        // (0x6) & 3 = 2 → dispatch_value = 5.
+        // next_mpc = 0x100 | 5 = 0x105.  Handler at 0x105.
         let mi3 = Microinstruction {
             rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
             f1: F1Function::Nop, f2: F2Function::IDispatch,
             t_load: false, l_load: false, next: bits::<10>(0x100),
         };
-        // addr 0x1FE: NOP loop, mark via T register.
+        // addr 0x105: handler — BUS+1 → L = 1, loop.
         let mi_target = Microinstruction {
             rsel: bits::<5>(0),
-            aluf: AluFunction::BusPlusOne,  // BUS+1 = 1; latch to L
+            aluf: AluFunction::BusPlusOne,
             bs: BusSource::ReadR,
             f1: F1Function::Nop, f2: F2Function::Nop,
             t_load: false, l_load: true,
-            next: bits::<10>(0x1FE),
+            next: bits::<10>(0x105),
         };
         let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
         microcode[0] = mi0.pack();
         microcode[1] = mi1.pack();
         microcode[2] = mi2.pack();
         microcode[3] = mi3.pack();
-        microcode[0x1FE] = mi_target.pack();
+        microcode[0x105] = mi_target.pack();
 
         let mut constants = [0u16; crate::constant_rom::NUM_CONSTANTS];
         constants[0] = 0x0100;  // MAR target
@@ -1113,16 +1116,12 @@ mod tests {
         );
         let trace = run(uut, 16);
 
-        // After enough cycles for the chain to settle:
-        //   reset → addr 0 (MAR ← 0x100) → addr 1 (filler) →
-        //   addr 2 (IR ← MD = 0xCAFE) → addr 3 (IDispatch) →
-        //   addr 0x1FE (NOP+L_LOAD).
-        // L should latch 1 (BUS+1 with BUS=0).
+        // L should latch 1 (BUS+1 with BUS=0) at the handler.
         let final_l = trace.last().unwrap().l.raw();
         assert_eq!(final_l, 1,
-            "L should latch 1 from the addr-0x1FE BUS+1 ALU op, proving \
-             IDispatch routed MPC to 0x1FE = 0x100 | (IR[7:0]=0xFE)");
-        // And confirm IR was loaded correctly.
+            "L should latch 1 from the addr-0x105 BUS+1 ALU op, proving \
+             spec §6.6 IDISP PROM routed MPC to 0x105 = 0x100 | 5 \
+             (IR[1-2]=2 → dispatch=5)");
         let final_ir = trace.last().unwrap().ir.raw();
         assert_eq!(final_ir, 0xCAFE,
             "IR should hold 0xCAFE from the LoadIr step");

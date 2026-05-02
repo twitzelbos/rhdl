@@ -358,16 +358,37 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         _                     => next_addr,
     };
     next_addr = (next_addr_or_bus & bits::<10>(0x3FE)) | bit0;
-    // F2=IDispatch (Emulator only): OR IR[7:0] into the low 8 bits of
-    // NEXT.  This is the Nova-emulator instruction-dispatch path —
-    // routes execution to the per-opcode microcode handler keyed by
-    // the IR.  Real Alto IDISP also factors in the AC source ROM;
-    // Phase 3.5 simplification: just OR IR[7:0] directly.
+    // F2=IDispatch (Emulator only, F2=15B = binary 13): the 16-way
+    // PROM dispatch per *Alto Hardware Manual* §3.5 + spec §6.6.
+    // The actual table from spec §6.6:
+    //
+    //   Conditions          | OR'd onto NEXT
+    //   --------------------|-----------------
+    //   if IR[1-2] = 0      | IR[3-4]
+    //   elseif IR[1-2] = 1  | 4
+    //   elseif IR[1-2] = 2  | 5
+    //   elseif IR[4-7] = 0  | 1
+    //   elseif IR[4-7] = 1  | 0
+    //   elseif IR[4-7] = 6  | 16B (= 14)
+    //   else                | IR[4-7]
+    //
+    // Alto's MSB=0 numbering: IR[1-2] = our bits 14-13 (top two below
+    // the MSB); IR[3-4] = our bits 12-11; IR[4-7] = our bits 11-8.
     let is_emulator_for_idisp: bool = i.current_task == bits::<4>(0);
     let is_idisp: bool = mi.f2 == F2Function::IDispatch;
     if is_emulator_for_idisp && is_idisp {
-        let ir_low: Bits<10> = (q.ir & bits::<16>(0xFF)).resize();
-        next_addr = next_addr | ir_low;
+        let ir_1_2: Bits<10> = ((q.ir >> 13) & bits::<16>(0b11)).resize();
+        let ir_3_4: Bits<10> = ((q.ir >> 11) & bits::<16>(0b11)).resize();
+        let ir_4_7: Bits<10> = ((q.ir >> 8)  & bits::<16>(0b1111)).resize();
+        let dispatch_value: Bits<10> =
+                 if ir_1_2 == bits::<10>(0) { ir_3_4 }
+            else if ir_1_2 == bits::<10>(1) { bits::<10>(4) }
+            else if ir_1_2 == bits::<10>(2) { bits::<10>(5) }
+            else if ir_4_7 == bits::<10>(0) { bits::<10>(1) }
+            else if ir_4_7 == bits::<10>(1) { bits::<10>(0) }
+            else if ir_4_7 == bits::<10>(6) { bits::<10>(0o16) }
+            else                            { ir_4_7 };
+        next_addr = next_addr | dispatch_value;
     }
 
     // Per-task F2 NEXT-modify codes for Disk tasks per *Alto Hardware
