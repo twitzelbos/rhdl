@@ -125,6 +125,14 @@ pub struct Out {
     /// F1=TASK, not per-cycle.  AltoChip uses this to gate its
     /// `current_task` latch.
     pub task_yield: bool,
+    /// True when this cycle's microinstruction has F1=Block (BLOCK).
+    /// Per *Alto Hardware Manual* §2.4 + spec §5.5: BLOCK is "a
+    /// hardware convention" by which the running task asks its
+    /// associated **device interface** to deassert that device's
+    /// wakeup signal.  The microengine surfaces the F1=Block bit;
+    /// device widgets (e.g. DiabloDisk) snoop this in conjunction
+    /// with `current_task` to decide whether to drop their wakeup.
+    pub block_task: bool,
     /// Instruction Register — current Nova instruction (Emulator task).
     pub ir: Bits<16>,
 }
@@ -325,6 +333,11 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     o.disk_ctrl_write_data = if is_dma { i.kcwa + bits::<16>(1) } else { bus };
     o.disk_word_consumed   = is_dma;
     o.task_yield           = mi.f1 == F1Function::TaskYield;
+    // F1=Block (universal, F1=3): per *Alto Hardware Manual* §2.4
+    // and spec §5.5.  Surfaced as a chip-level signal so device
+    // widgets (e.g. DiabloDisk) can snoop it together with
+    // current_task to deassert their own wakeup signals.
+    o.block_task           = mi.f1 == F1Function::Block;
 
     // ---- Per-task IR load (Emulator) ------------------------------
     // F2 = LoadIr + current_task == 0 (Emulator) → IR ← MD
@@ -367,6 +380,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         o.disk_ctrl_write_data = bits::<16>(0);
         o.disk_word_consumed = false;
         o.task_yield = false;
+        o.block_task = false;
         o.ir = bits::<16>(0);
     }
     (o, d)

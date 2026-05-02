@@ -312,6 +312,15 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     let mut disk_in = DiskIn::default();
     disk_in.transfer_request = q.disk_ctrl.transfer_request;
     disk_in.word_consumed = q.engine.disk_word_consumed;
+    // F1=Block + current_task per spec §5.5: the device interface
+    // monitors F1=Block in conjunction with current_task to clear its
+    // own wakeup signal.  Pass both into the disk; it decides whether
+    // a Block applies to one of its tasks (4 = Disk Sector, 14 = Disk
+    // Word).  q.engine.block_task is the previous cycle's F1=Block
+    // (1-cycle lag from the firing instruction); current_task is the
+    // chip's sticky-current-task DFF read this cycle.
+    disk_in.block_task = q.engine.block_task;
+    disk_in.current_task = current_task;
     d.disk = disk_in;
     // Disk controller: driven by microengine's per-task disk_ctrl
     // outputs.  When the Disk Sector task asserts F1=DiskCtrlWrite,
@@ -1313,41 +1322,64 @@ mod tests {
             if task < 16 { task_counts[task] += 1; }
         }
 
-        // Sector_mark count.
-        let sector_marks: u32 = trace.iter().filter(|t| t.disk_sector_mark).count() as u32;
+        // Sector_mark "rising-edge" count: per *Alto Hardware Manual*
+        // §2.4 + spec §5.5, sector_mark is a SUSTAINED wakeup (set on
+        // sector boundary, cleared by KSEC's F1=Block).  Count rising
+        // edges (false → true transitions) to find sector events.
+        let mut sector_events: u32 = 0;
+        let mut prev_sm: bool = false;
+        for t in &trace {
+            if !prev_sm && t.disk_sector_mark {
+                sector_events += 1;
+            }
+            prev_sm = t.disk_sector_mark;
+        }
 
         eprintln!("[boot_trace_baseline_metrics] 2000-cycle trace:");
         eprintln!("  distinct microaddresses visited: {}", visited.len());
         eprintln!("  task firing counts: {task_counts:?}");
-        eprintln!("  disk sector_mark fired: {sector_marks} times");
+        eprintln!("  disk sector_mark events (rising edges): {sector_events}");
 
-        // Baseline assertions:
-        // - at least 8 distinct microaddresses (current ceiling — boot
-        //   path stuck here pending more per-task codes; future
-        //   sessions implementing more codes should drive this up,
-        //   which would update this assertion).
-        // - sector_mark fires once per 256 cycles → ~7 marks in 2000 cycles.
-        assert!(visited.len() >= 8,
-            "current ceiling is 8 distinct addresses; if this regresses, \
-             something broke the partial-boot loop; got {}", visited.len());
-        assert!(sector_marks >= 5,
-            "disk sector_mark should fire ~7 times in 2000 cycles; saw {sector_marks}");
-
-        // Per Alto Hardware Manual §2.4, task switches happen ONLY when
-        // microcode issues F1=TaskYield.  The Emulator's boot loop
-        // includes a TaskYield (at MPC=0x153 in the real microcode), so
-        // the chip can hand control to Disk Sector each time
-        // sector_mark fires.  Therefore Disk Sector firings should
-        // match the sector_mark count one-for-one.
         let disk_sector_firings = task_counts[4];
         let emulator_firings = task_counts[0];
         eprintln!("  Emulator (task 0) firings: {emulator_firings}");
         eprintln!("  Disk Sector (task 4) firings: {disk_sector_firings}");
-        assert!(emulator_firings > 1500,
-            "Emulator should be the default-running task; saw {emulator_firings} firings");
-        assert!(disk_sector_firings >= sector_marks,
-            "Disk Sector firings ({disk_sector_firings}) should match \
-             sector_mark count ({sector_marks}) — Emulator's TaskYield \
-             at MPC=0x153 hands off control");
+
+        // Baseline assertions, post-Block-architecture:
+        //
+        // Per Alto Hardware Manual §2.4 + spec §5.5: task switches
+        // happen ONLY on F1=TASK; sector_mark is a sustained wakeup
+        // cleared by F1=Block in current_task=4.  KSEC's microcode at
+        // its MPC=4 entry needs per-task F1 codes (STARTF, INCRECNO,
+        // CLRSTAT, STROBE) we have NOT implemented to reach F1=Block.
+        // Result: once the first sector_mark fires, KSEC takes over
+        // and runs its (incomplete) setup loop indefinitely until the
+        // next sector_mark — but priority encoder picks Disk Sector
+        // (bit 4 sustained) > Emulator (bit 0), so Disk Sector
+        // dominates the trace.
+        //
+        // This is *correct architectural behavior* per the spec — and
+        // a useful observable property: future per-task F1 work will
+        // make KSEC reach F1=Block, at which point Emulator regains
+        // dominance and the task counts shift back.
+        //
+        // Until then, the baseline asserts:
+        // - At least 8 distinct addresses (Emulator's tight loop).
+        // - At least 1 sector_mark event in the 2000-cycle window.
+        // - Disk Sector fires for the bulk of cycles (since it can't
+        //   reach F1=Block without per-task F1 codes).
+        // - Emulator fires for some cycles at boot (before the first
+        //   sector_mark).
+        assert!(visited.len() >= 8,
+            "current ceiling is 8 distinct addresses; if this regresses, \
+             something broke the partial-boot loop; got {}", visited.len());
+        assert!(sector_events >= 1,
+            "disk sector_mark should fire at least once in 2000 cycles; saw {sector_events}");
+        assert!(disk_sector_firings >= 100,
+            "once sector_mark fires Disk Sector takes over (no F1=Block \
+             reached without per-task F1 codes); saw {disk_sector_firings}");
+        assert!(emulator_firings > 0,
+            "Emulator should fire at least once during initial boot before \
+             the first sector_mark; saw {emulator_firings}");
     }
 }

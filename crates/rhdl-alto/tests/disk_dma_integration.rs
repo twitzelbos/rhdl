@@ -62,24 +62,38 @@ fn input_from_wakeups(wakeups: u128) -> AltoIn {
 #[test]
 fn disk_sector_mark_drives_disk_sector_task() {
     // Run the disk for ~3 sector boundaries (3 × 256 + a few cycles).
+    // Per *Alto Hardware Manual* §2.4 + spec §5.5, sector_mark is a
+    // SUSTAINED wakeup signal — set on sector boundary and only
+    // cleared by F1=Block from current_task=4.  This standalone-disk
+    // test passes block_task=false (DiskIn::default()), so once
+    // sector_mark fires at cycle 255 it stays high for the rest of
+    // the trace (with another rising edge happening only if it had
+    // been cleared).  Verify the rising-edge events instead.
     let cycles = 256 * 3 + 10;
     let disk = DiabloDisk::default();
     let disk_trace = run_disk(disk, cycles);
 
-    // Expect three sector_mark events at cycles 255, 511, 767.
-    let mark_cycles: Vec<usize> = disk_trace.iter().enumerate()
-        .filter(|(_, o)| o.sector_mark)
-        .map(|(i, _)| i)
-        .collect();
-    assert_eq!(mark_cycles, vec![255, 511, 767], "exactly 3 sector marks");
+    let mut rising_edges: Vec<usize> = Vec::new();
+    let mut prev = false;
+    for (i, o) in disk_trace.iter().enumerate() {
+        if !prev && o.sector_mark {
+            rising_edges.push(i);
+        }
+        prev = o.sector_mark;
+    }
+    // Without Block to clear sector_mark, only the FIRST rising edge
+    // happens; the signal then stays high for the rest of the trace.
+    assert_eq!(rising_edges, vec![255],
+        "first sector_mark rising edge at cycle 255; subsequent ticks \
+         re-OR true→true (no rising edge) per the sustained-wakeup model");
 
     // Translate the disk trace into wakeup inputs (ContrAlto convention):
-    // - sector_mark → wakeup bit 4 (Disk Sector, task 4)
-    // - word_strobe → wakeup bit 14 (Disk Word, task 14)
+    // sector_mark → bit 4.  Once asserted, every subsequent cycle wakes
+    // task 4, so the arbiter fires task 4 on every cycle from 255 on.
     let arbiter_inputs: Vec<AltoIn> = disk_trace.iter().map(|o| {
         let mut wake: u128 = 0;
-        if o.sector_mark  { wake |= 0x0010; }  // task 4
-        if o.word_strobe  { wake |= 0x4000; }  // task 14
+        if o.sector_mark  { wake |= 0x0010; }
+        if o.word_strobe  { wake |= 0x4000; }
         input_from_wakeups(wake)
     }).collect();
 
@@ -87,8 +101,16 @@ fn disk_sector_mark_drives_disk_sector_task() {
     let arbiter_trace = run_arbiter(arbiter, arbiter_inputs);
 
     let final_state = arbiter_trace.last().unwrap();
-    assert_eq!(final_state.disk_sector_count.raw(), 3,
-        "disk_sector_count should match the 3 sector_mark pulses");
+    // disk_sector_count fires once per cycle that task 4 wins
+    // arbitration.  With sustained sector_mark from cycle 255 onward
+    // (and no other competing tasks), task 4 fires every cycle from
+    // 255 to end.  cycles - 255 = 778-256 = ~523 firings (allowing
+    // ±1 for pipeline / output-DFF edge-of-trace).
+    let firings = final_state.disk_sector_count.raw();
+    let expected_min = (cycles - 255 - 2) as u128;
+    assert!(firings >= expected_min,
+        "task 4 should fire every cycle from sector_mark onward; \
+         expected ≥{expected_min}, got {firings}");
     assert_eq!(final_state.disk_word_count.raw(), 0,
         "no transfer started → no word strobes → word counter idle");
     assert_eq!(final_state.last_task.raw(), 4,

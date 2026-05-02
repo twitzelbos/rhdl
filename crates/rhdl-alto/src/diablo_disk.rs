@@ -90,6 +90,18 @@ pub struct DiskIn {
     /// DMA) makes the timing match the engine's task-firing cadence,
     /// not the simulator's clock cadence.
     pub word_consumed: bool,
+    /// True when the running microinstruction has F1=Block.  Per
+    /// *Alto Hardware Manual* §2.4 + spec §5.5: BLOCK is a hardware
+    /// convention by which the running task asks its associated
+    /// device to deassert that device's wakeup signal.  The disk
+    /// snoops this together with `current_task` and clears its
+    /// sustained `sector_wake` (when current_task=4) or `word_wake`
+    /// (when current_task=14).
+    pub block_task: bool,
+    /// Which task is currently running (0..15).  Used together with
+    /// `block_task` to decide which of the disk's wakeup signals to
+    /// clear on F1=Block.
+    pub current_task: Bits<4>,
 }
 
 /// Outputs from the Diablo 31 widget.
@@ -134,8 +146,15 @@ pub struct DiskOut {
 #[rhdl(dq_no_prefix)]
 pub struct DiabloDisk {
     /// Sector tick counter — wraps every `WORDS_PER_SECTOR` cycles.
-    /// When it hits zero, `sector_mark` is asserted for one cycle.
+    /// When it wraps, the SECTOR-task wakeup is set (sustained until
+    /// cleared by F1=Block from current_task=4).
     sector_tick: dff::DFF<Bits<10>>,
+    /// **Sustained** SECTOR-task wakeup signal per *Alto Hardware
+    /// Manual* §2.4 + spec §5.5.  Set when the rotational sector_tick
+    /// wraps (sector boundary detected); cleared when the Disk Sector
+    /// microcode (current_task=4) executes F1=Block.  This matches
+    /// the real Alto's "wakeup signals are hardware-generated" model.
+    sector_wake: dff::DFF<bool>,
     /// True while a sector transfer is in progress (set by the
     /// Disk Sector task's command; cleared after the last word).
     /// Phase-3 sim: tied to a "transfer_words" counter.
@@ -156,6 +175,7 @@ impl Default for DiabloDisk {
     fn default() -> Self {
         Self {
             sector_tick: dff::DFF::new(bits::<10>(0)),
+            sector_wake: dff::DFF::new(false),
             transfer_remaining: dff::DFF::new(bits::<10>(0)),
             current_word_position: dff::DFF::new(bits::<8>(0)),
             sector_buffer: dff::DFF::new([bits::<16>(0); 256]),
@@ -175,6 +195,7 @@ impl DiabloDisk {
         }
         Self {
             sector_tick: dff::DFF::new(bits::<10>(0)),
+            sector_wake: dff::DFF::new(false),
             transfer_remaining: dff::DFF::new(bits::<10>(0)),
             current_word_position: dff::DFF::new(bits::<8>(0)),
             sector_buffer: dff::DFF::new(buf),
@@ -193,15 +214,43 @@ pub fn diablo_disk_kernel(cr: ClockReset, i: DiskIn, q: Q) -> (DiskOut, D) {
     let mut d = D::dont_care();
     let mut o = DiskOut::dont_care();
 
-    // Sector tick: count up to WORDS_PER_SECTOR-1, then wrap.  When
-    // we wrap, assert sector_mark for that cycle.
+    // Sector tick: count up to WORDS_PER_SECTOR-1, then wrap.
     let next_tick: Bits<10> = q.sector_tick + bits::<10>(1);
     let wraps: bool = q.sector_tick == bits::<10>(255); // 256 words/sector
     d.sector_tick = if wraps { bits::<10>(0) } else { next_tick };
-    o.sector_mark = wraps;
 
-    // Word strobe: asserted while a transfer is in progress.
-    o.word_strobe = q.transfer_remaining != bits::<10>(0);
+    // Sustained SECTOR-task wakeup per *Alto Hardware Manual* §2.4 +
+    // spec §5.5.  Set when sector_tick wraps (sector boundary
+    // detected); cleared when current_task=4 issues F1=Block ("the
+    // device interface monitors the F1 lines and clears its own
+    // wakeup when it sees its task asserting F1=3").
+    let block_clears_sector: bool =
+        i.block_task && i.current_task == bits::<4>(4);
+    let next_sector_wake: bool = if block_clears_sector {
+        false
+    } else if wraps {
+        true
+    } else {
+        q.sector_wake
+    };
+    d.sector_wake = next_sector_wake;
+    o.sector_mark = next_sector_wake;
+
+    // Word strobe: sustained while a transfer is in progress, AND not
+    // currently being cleared by a Block from current_task=14 (Disk
+    // Word).  Real Alto's word_strobe is sustained between the disk
+    // controller's per-word strobes; the device deasserts on Block per
+    // §5.5.  Phase-3.5 simplification: word_strobe is purely derived
+    // from `transfer_remaining > 0` (no separate strobe DFF), but
+    // Block clears it for one cycle so the chip-level priority
+    // encoder lets a different task win.  Once current_task changes,
+    // word_strobe re-asserts (still in transfer), which re-wins
+    // arbitration on the next yield — matching real-Alto per-word
+    // re-arbitration behavior.
+    let block_clears_word: bool =
+        i.block_task && i.current_task == bits::<4>(14);
+    o.word_strobe = (q.transfer_remaining != bits::<10>(0))
+        && !block_clears_word;
 
     // Combinational read of the addressed word.
     let read_idx: Bits<8> = i.word_addr;
@@ -244,6 +293,7 @@ pub fn diablo_disk_kernel(cr: ClockReset, i: DiskIn, q: Q) -> (DiskOut, D) {
 
     if cr.reset.any() {
         d.sector_tick = bits::<10>(0);
+        d.sector_wake = false;
         d.transfer_remaining = bits::<10>(0);
         d.current_word_position = bits::<8>(0);
         d.sector_buffer = [bits::<16>(0); 256];

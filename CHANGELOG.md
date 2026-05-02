@@ -31,6 +31,59 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4c: F1=Block + sustained device wakeup (per spec §5.5)
+
+**Paths:**
+
+- `crates/rhdl-alto/alto-processor-and-microcode-spec.md` (new, ~1300 lines) — comprehensive Alto processor + microcode reference, distilled from `assets/bitsavers/Alto_Hardware_Manual_Aug76.pdf`, `AltoHWRef.part1/2.pdf`, `AltoSubsystems_Oct79.pdf`, `AltoIICode3.mu.txt`, `AltoConsts23.mu.txt`, the PROM dumps, and ContrAlto2 source.  Sections marked "✓ verified against AltoHW (Aug76) §X" are reconciled against the canonical PDFs.  Authoritative reference for any future Alto core work.
+- `crates/rhdl-alto/src/microengine.rs` — added `block_task: bool` to `Out` struct, set on `mi.f1 == F1Function::Block`, cleared in reset path.
+- `crates/rhdl-alto/src/diablo_disk.rs` — added `block_task: bool` and `current_task: Bits<4>` to `DiskIn`.  Added `sector_wake: dff::DFF<bool>` field that latches sustained sector wakeup.  `o.sector_mark` is now `q.sector_wake` (sustained), set when sector_tick wraps and cleared when current_task=4 issues F1=Block.  `o.word_strobe` is `(transfer_remaining > 0) && !block_clears_word` (sustained while transfer active, momentarily zero on Block from current_task=14).
+- `crates/rhdl-alto/src/alto_chip.rs` — wired `q.engine.block_task` and `current_task` through to `disk_in.block_task` / `disk_in.current_task`.  Updated `boot_trace_baseline_metrics` assertions: count sector_mark *rising edges* (not cycles where high), assert Disk Sector dominates (since KSEC's microcode loops without F1=Block until per-task F1 codes implemented).
+- `crates/rhdl-alto/tests/diablo_disk.rs` — `sector_mark_fires_at_position_255` and `sector_mark_fires_every_words_per_sector_cycles` updated to count rising edges + verify the sustained-high property.
+- `crates/rhdl-alto/tests/disk_dma_integration.rs` — `disk_sector_mark_drives_disk_sector_task` updated: standalone disk has only one rising edge in 778 cycles (no F1=Block to clear); arbiter fires task 4 every cycle from 255 onward (sustained wakeup); assertion adjusted to `firings ≥ cycles - 255 - 2`.
+
+**Why this, why now:** Per *Alto Hardware Manual* §2.4 + the new `alto-processor-and-microcode-spec.md` §5.5 (verified against the manual): "BLOCK function (F1=3) is used, by convention, to signal a hardware device associated with the currently running task to remove its wakeup signal.  This function is **not** accomplished by the Alto microprocessor, but rather by the individual device interfaces."  And: "the wakeup signals which drive the priority encoder are hardware-generated" — they are **sustained**, not pulsed.
+
+The pre-fix model had `o.sector_mark = wraps` (1-cycle pulse).  Combined with sticky `current_task` (Step 3) and correct F1/F2 encoding (Step 4a), this meant most sector_marks were missed: the 1-cycle window had to coincide with Emulator's TaskYield at MPC=0x153.  The previous boot-trace baseline observed 7 sector_marks → 7 Disk Sector "firings" — but the trace dump revealed all 7 were consecutive cycles after a single coincident yield, not 7 separate handoffs.
+
+The fix matches the spec exactly: device wakeups are sustained, F1=Block clears the device's wakeup.
+
+**Design decisions:**
+
+- **Device-side cooperation, not chip-side latching.**  The user explicitly asked to verify with specs before implementing.  The spec § 5.5 makes the architecture clear: "the **device** widget must snoop F1 and gate its wakeup output on (~~F1==BLOCK while this task active~~)".  An earlier attempt at chip-side latching (a `wakeup_latched: dff::DFF<Bits<16>>` in AltoChip) was reverted because it can't terminate sustained signals (Block clears the latch but sustained word_strobe immediately re-OR's it back).  Device-side cooperation is the only design that satisfies the spec.
+
+- **`sector_wake` DFF, not pulse-pass-through.**  DiabloDisk's `sector_mark` was a 1-cycle pulse; the spec says it should be sustained.  Changed the output to `q.sector_wake`, a DFF latched true when sector_tick wraps and cleared when current_task=4 issues F1=Block.
+
+- **`word_strobe` sustained-with-Block-mask.**  word_strobe was already sustained while `transfer_remaining > 0`; just added an `&& !block_clears_word` mask so a Block from current_task=14 momentarily deasserts it (per the same one-cycle handshake pattern).  Block doesn't permanently clear word_strobe — `transfer_remaining` is the underlying state.  This matches real Alto's per-word-strobe model where the disk hardware re-asserts the strobe each word-time.
+
+- **Standalone disk tests: count rising edges, not cycles-high.**  Without a chip wrapping it, `DiskIn::default()` leaves `block_task = false` forever, so once sector_mark fires it stays high for the rest of the trace.  Tests count rising edges and verify the sustained-high property explicitly.
+
+- **`boot_trace_baseline_metrics`: asserts Disk Sector dominates.**  Once the first sector_mark fires (~cycle 255), KSEC's microcode runs from MPC=4 through `LoadMar + Constant + jump to 0x37c` and onward.  KSEC's setup needs per-task F1 codes (STARTF, INCRECNO, CLRSTAT, STROBE) to reach F1=Block.  Until those land, KSEC loops without yielding back to Emulator.  Net result: 262 Emulator cycles (boot before first sector_mark) + 1738 Disk Sector cycles.  This is *correct architectural behavior* under the spec; documented in the test's relaxed assertions.
+
+**Surprises and gotchas:**
+
+- **Spec verification was load-bearing.**  The user's interrupt of the implementation ("before implementing verify with specs and docs") was exactly right.  Quick-greppable confirmation in ContrAlto's `Task.cs:343` (`_cpu.BlockTask(this._taskType)`) and the verbatim spec quote ("the BLOCK function ... is *not* accomplished by the Alto microprocessor, but rather by the individual device interfaces") let me distinguish device-side from chip-side architectures and pick the right one.
+
+- **Updated tests reveal architectural correctness.**  Pre-fix `disk_sector_mark_drives_disk_sector_task` expected `mark_cycles == [255, 511, 767]` — three pulses.  Post-fix shows only one rising edge at 255, with the signal sustained.  This isn't a regression — it's the spec-compliant behavior the test should have expressed all along.
+
+- **`boot_trace_baseline_metrics` reverses dominant task.**  Pre-fix: Emulator dominates (1993 cycles), Disk Sector blips (7 cycles).  Post-fix: Disk Sector dominates (1738 cycles), Emulator gets the boot prefix (262 cycles).  This is correct per spec: KSEC hasn't been given the F1 codes it needs to reach Block, so it stays running.  The next phase (per-task F1=8-15 dispatch) will let KSEC complete its loop and yield back, restoring Emulator's "background" role.
+
+**Validation:**
+
+- 105/105 alto tests pass across 9 test files (`cargo test -p rhdl-alto`):
+  alto_chip 42, alu 20, diablo_disk 8, disk_controller 4, disk_dma_integration 3, memory 5, microengine 6, regfile 4, task_system 16, plus 1 ignored diagnostic.
+- iverilog round-trip on DiabloDisk + AltoChip with the new sustained-wakeup signals confirmed.
+- Boot trace: 1 sector_mark rising edge in 2000 cycles + Disk Sector dominates (1738 firings) — both spec-compliant.
+
+**Follow-ups:**
+
+- Per-task F1=8-15 dispatch (Emulator: SWMODE, STARTF; Disk: STROBE, LoadKSTAT, INCRECNO, CLRSTAT, LoadKCOMM, LoadKADR, LoadKDATA).  Without these, KSEC's microcode at MPC=4 → 0x37c can't reach F1=Block.  This is the next architectural unblock for boot trace progress.
+- Per-task BS=3/4 sources (`ReadKSTAT`/`ReadKDATA` for disk tasks vs `ReadSLocation`/`LoadSLocation` for Emulator) per spec §3.2.
+- Constants-ROM `BS≥4` wired-AND mask path (spec §7).
+- Disk word-DMA's full multi-cycle STROBE/KFER/STROBE2 protocol per spec §8.5 (currently collapsed to single-cycle `DiskWordTransfer`).
+
+---
+
 ## 2026-05-01 — Tier C #2 Alto Phase 3.5 Step 4b: per-task reset MPCs (chip-level via task_started)
 
 **Paths:**
