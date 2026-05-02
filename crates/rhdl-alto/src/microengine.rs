@@ -160,6 +160,14 @@ pub struct Out {
     /// seek needed).  Routed to disk.transfer_request to arm the
     /// 256-word transfer.
     pub disk_strobe: bool,
+    /// True when current_task is Emulator (0) AND F1=17B (binary 15,
+    /// STARTF per spec §6.6): "The STARTF function is used by the
+    /// SIO instruction, and is used to define commands for I/O
+    /// hardware, including the Ethernet."  Surfaced for the chip to
+    /// route to per-device I/O triggers (boot disk read, Ethernet
+    /// dispatch, etc.).  Same binary code as Disk task's WriteKdata
+    /// (LoadKDATA per spec §8.5); per-task gating distinguishes.
+    pub startf: bool,
     /// Instruction Register — current Nova instruction (Emulator task).
     pub ir: Bits<16>,
 }
@@ -532,6 +540,15 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     o.disk_strobe = (i.current_task == bits::<4>(4)
         || i.current_task == bits::<4>(14))
         && (mi.f1 == F1Function::Code9);
+    // F1=STARTF (Emulator-only, F1=17B/binary 15 per spec §6.6):
+    // "The STARTF function is used by the SIO instruction, and is
+    // used to define commands for I/O hardware, including the
+    // Ethernet."  In Emulator (task 0), F1=15 is STARTF; in Disk
+    // task it's WriteKdata (LoadKDATA per spec §8.5).  Per-task
+    // gating distinguishes.  Surfaced as `startf` for the chip to
+    // route to per-device boot/I/O triggers.
+    o.startf = i.current_task == bits::<4>(0)
+        && mi.f1 == F1Function::WriteKdata;
     // F1=CLRSTAT (per-task, F1=12 in Disk Sector / Disk Word per
     // spec §3.3 + §8.5): "Causes all error latches in disk controller
     // hardware to reset, clears KSTAT[13]" (per ContrAlto's
@@ -585,6 +602,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         o.block_task = false;
         o.disk_clr_stat = false;
         o.disk_strobe = false;
+        o.startf = false;
         o.ir = bits::<16>(0);
     }
     (o, d)
