@@ -33,7 +33,11 @@ use crate::alu::{alu, AluOut};
 use crate::isa::{
     AluFunction, BusSource, F1Function, F2Function, Microinstruction,
 };
-use crate::regfile::{In as RegIn, Out as RegOut, RegFile};
+// Note: the RegFile widget (in `regfile.rs`) is no longer composed
+// as a sub-widget of Microengine — its DFF storage is inlined into
+// Microengine directly per the Path B refactor.  RegFile is kept as
+// a standalone widget for its own tests + as documentation of the
+// regfile API surface.
 use rhdl::prelude::*;
 use rhdl_fpga::core::dff;
 
@@ -167,6 +171,16 @@ pub struct Out {
 /// AltoChip and the standalone microengine tests both supply MPC
 /// externally (task_system's per-task MPCs in AltoChip;
 /// a test-harness u16 in standalone tests).
+///
+/// **Path B refactor**: the R-register file's storage is now a DFF
+/// owned directly by Microengine (not a sub-widget).  This collapses
+/// the 1-cycle Q-register delay that sub-widget composition would
+/// introduce, so the engine kernel can compute the **effective RSEL**
+/// per-cycle (e.g., overridden by F2=ACSOURCE / F2=ACDEST in the
+/// Emulator task per spec §6.6) and read R[effective_rsel]
+/// combinationally in the same cycle.  Without this, ACSOURCE/ACDEST
+/// would only address the IR-derived register one cycle later, which
+/// is microcode-incompatible with real Alto.
 #[derive(Clone, Debug, Default, Synchronous, SynchronousDQ)]
 #[rhdl(dq_no_prefix)]
 pub struct Microengine {
@@ -174,8 +188,11 @@ pub struct Microengine {
     t: dff::DFF<Bits<16>>,
     /// L register (latched ALU result).
     l: dff::DFF<Bits<16>>,
-    /// R-register file.
-    regs: RegFile,
+    /// R-register file storage (32 × 16 bits).  Inlined as a single
+    /// DFF (per the §3.1 protocol-PHY pattern in CLAUDE.md) instead
+    /// of the previous `RegFile` sub-widget.  Combinational reads
+    /// happen in microengine_kernel via `q.regs[effective_rsel]`.
+    regs: dff::DFF<[Bits<16>; 32]>,
     /// Memory Address Register — holds the current memory address
     /// for read/write ops.  Updated by F2 = LoadMar.
     mar: dff::DFF<Bits<16>>,
@@ -211,12 +228,46 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     o.mpc = i.mpc;
     o.current_task = i.current_task;
 
+    // ---- Effective RSEL (per spec §6.6 ACDEST/ACSOURCE) -----------
+    // ACDEST (Emulator F2=11, binary 11): "(IR[3-4] XOR 3) to be
+    // used as the low order two bits of the RSELECT field. This
+    // addresses the accumulators from the destination field of the
+    // instruction."
+    // ACSOURCE (Emulator F2=14, binary 14): "(IR[1-2] XOR 3) ...
+    // allowing the emulator to address its accumulators."
+    //
+    // Alto's MSB=0 numbering: IR[3-4] = our bits 12-11; IR[1-2] =
+    // our bits 14-13.  Both override RSEL[1:0] (low 2 bits) with
+    // the IR-derived AC index (XOR'd with 0b11), preserving RSEL[4:2]
+    // from the microinstruction.
+    //
+    // (Note F2=11 = our F2Function::Code11; F2=14 = Code14.)
+    let is_emulator: bool = i.current_task == bits::<4>(0);
+    let ir_dest_ac: Bits<5> = (((q.ir >> 11) & bits::<16>(0b11))
+        ^ bits::<16>(0b11)).resize();
+    let ir_src_ac: Bits<5> = (((q.ir >> 13) & bits::<16>(0b11))
+        ^ bits::<16>(0b11)).resize();
+    let rsel_high: Bits<5> = mi.rsel & bits::<5>(0b11100);
+    let effective_rsel: Bits<5> = if is_emulator
+        && mi.f2 == F2Function::Code11
+    {
+        rsel_high | ir_dest_ac
+    } else if is_emulator && mi.f2 == F2Function::Code14 {
+        rsel_high | ir_src_ac
+    } else {
+        mi.rsel
+    };
+
     // ---- BUS source -------------------------------------------------
-    // BS = ReadR              → drive bus from R[rsel].
+    // BS = ReadR              → drive bus from R[effective_rsel].
+    //   Reads the R-register file COMBINATIONALLY this cycle (Path B
+    //   refactor: regfile DFF inlined into Microengine).  This is what
+    //   ACSOURCE/ACDEST need — same-cycle effective_rsel → same-cycle
+    //   regfile read, matching real Alto's 1-cycle pipeline.
     // BS = MemoryData         → drive bus from memory[MAR] (1-cycle BRAM-delivered).
     // BS = InstructionRegister → drive bus from IR (Nova-emulator dispatch).
     // Other BS sources drive zero in Phase 3.5.
-    let r_read: Bits<16> = q.regs.rdata;
+    let r_read: Bits<16> = q.regs[effective_rsel];
     // Per *Alto Hardware Manual* §2.1 Bus Sources + spec §3.2 + §8.5,
     // BS=3 and BS=4 are TASK-SPECIFIC.  In Disk Sector (4) and Disk
     // Word (14) tasks, BS=3 reads KSTAT and BS=4 reads KDATA.  In
@@ -263,14 +314,16 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // ---- R write --------------------------------------------------
     // Phase 1: R is written when BS = LoadR.  Real Alto uses certain
     // F1/F2 codes; for the simple subset, BS = LoadR is enough to
-    // express R-load patterns in hand-written test microcode.
+    // express R-load patterns in hand-written test microcode.  Per
+    // spec §6.6, ACDEST/ACSOURCE also affect the WRITE address (same
+    // RSEL, since the regfile has a single addressed port for
+    // both read and write).
     let r_wen: bool = mi.bs == BusSource::LoadR;
-    d.regs = RegIn {
-        raddr: mi.rsel,
-        waddr: mi.rsel,
-        wdata: aout.result,
-        wen:   r_wen,
-    };
+    let mut next_regs: [Bits<16>; 32] = q.regs;
+    if r_wen {
+        next_regs[effective_rsel] = aout.result;
+    }
+    d.regs = next_regs;
 
     // ---- L shifts (F1) --------------------------------------------
     // F1 = LeftShift1 / RightShift1 / LeftCycle8 modify L AFTER the
@@ -490,12 +543,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     if cr.reset.any() {
         d.t = bits::<16>(0);
         d.l = bits::<16>(0);
-        d.regs = RegIn {
-            raddr: bits::<5>(0),
-            waddr: bits::<5>(0),
-            wdata: bits::<16>(0),
-            wen: false,
-        };
+        d.regs = [bits::<16>(0); 32];
         d.mar = bits::<16>(0);
         d.ir = bits::<16>(0);
         o.mpc = bits::<10>(0);
@@ -619,9 +667,3 @@ fn f2_from_index(i: Bits<4>) -> F2Function {
     else                       { F2Function::Code15 }
 }
 
-/// Mark an unused-import suppressor.  `RegOut` is exposed in the
-/// public API of `regfile` but isn't consumed inside this kernel
-/// directly (we read `q.regs.rdata` via the auto-derived path);
-/// keep the import for downstream documentation.
-#[allow(dead_code)]
-fn _force_use(_x: RegOut) {}
