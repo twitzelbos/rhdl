@@ -322,19 +322,29 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     o.mem_write_data = if is_dma { i.disk_word_data } else { bus };
 
     // ---- Per-task disk-controller register writes ---------------
-    // Three F1 codes route BUS into specific disk-controller registers,
-    // gated to current_task == 4 (Disk Sector):
-    //   F1 = WriteKcomm → disk_ctrl_addr = REG_KCOM (2)
-    //   F1 = WriteKadr  → disk_ctrl_addr = REG_KADR (3)
-    //   F1 = WriteKdata → disk_ctrl_addr = REG_KDATA (1)
+    // Per *Alto Hardware Manual* §2.1 + spec §3.3 + §8.5, F1 codes
+    // 8-15 are task-specific.  In Disk Sector (4) and Disk Word (14)
+    // tasks the writable disk-controller register paths are:
+    //   F1 = 10 (Code10) = LoadKSTAT → KSTAT  (REG_KSTAT = 0)
+    //   F1 = 13 (WriteKcomm) = LoadKCOMM → KCOM (REG_KCOM = 2)
+    //   F1 = 14 (WriteKadr)  = LoadKADR  → KADR (REG_KADR = 3)
+    //   F1 = 15 (WriteKdata) = LoadKDATA → KDATA (REG_KDATA = 1)
+    // F1 = 12 (WriteKcwa) is our Phase-3.5 simplification — real Alto
+    // F1=12 is CLRSTAT.  Kept for the legacy DMA test microcode that
+    // sets KCWA via this F1 code.  Real microcode should not hit it.
     // DMA path overrides: writes KCWA + 1 to REG_KCWA (4).
     let is_disk_sector_task: bool = i.current_task == bits::<4>(4);
+    let is_disk_word_task_for_f1: bool = i.current_task == bits::<4>(14);
+    let in_disk_task: bool = is_disk_sector_task || is_disk_word_task_for_f1;
     let is_kcomm: bool = mi.f1 == F1Function::WriteKcomm;
     let is_kadr:  bool = mi.f1 == F1Function::WriteKadr;
     let is_kdata: bool = mi.f1 == F1Function::WriteKdata;
     let is_kcwa:  bool = mi.f1 == F1Function::WriteKcwa;
+    let is_kstat: bool = mi.f1 == F1Function::Code10;
     o.disk_ctrl_addr = if is_dma {
         bits::<3>(4)  // REG_KCWA
+    } else if is_kstat {
+        bits::<3>(0)  // REG_KSTAT
     } else if is_kcomm {
         bits::<3>(2)  // REG_KCOM
     } else if is_kadr {
@@ -346,7 +356,9 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     } else {
         bits::<3>(0)  // any value; write_en will be false
     };
-    o.disk_ctrl_write_en   = is_dma || (is_disk_sector_task && (is_kcomm || is_kadr || is_kdata || is_kcwa));
+    o.disk_ctrl_write_en   = is_dma
+        || (is_disk_sector_task && (is_kcomm || is_kadr || is_kdata || is_kcwa))
+        || (in_disk_task && is_kstat);
     o.disk_ctrl_write_data = if is_dma { i.kcwa + bits::<16>(1) } else { bus };
     o.disk_word_consumed   = is_dma;
     o.task_yield           = mi.f1 == F1Function::TaskYield;
