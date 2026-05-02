@@ -31,6 +31,48 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4d: per-task URom MPC stream alignment (per spec §5.4)
+
+**Paths:**
+
+- `crates/rhdl-alto/src/alto_chip.rs` — single-line change with comprehensive comment.  `d.urom = UromIn { mpc: current_mpc.resize() }` instead of `d.urom = UromIn { mpc: next_mpc.resize() }` (where `next_mpc = q.engine.next_mpc`).  Plus updated `boot_trace_baseline_metrics` assertions: distinct microaddresses ≥ 30 (was 8), sector_mark events ≥ 2 (KSEC reaches F1=Block which clears the sustained sector_mark, allowing the next sector tick to re-fire).
+- `notes/alto-phase-3-5-progress.md` — detailed analysis of the URom-fetch-on-task-switch problem, the spec §5.4 task-switch pipeline table, and the three architectural paths considered.
+
+**Why this, why now:** Per *Alto Hardware Manual* §2.4 + spec §5.4: each task fetches from its **own** saved MPC stream.  When TASK fires and the chip switches to K2, the URom must immediately start fetching from K2's saved MPC — not continue with K1's residue.
+
+The pre-fix model presented `d.urom.mpc = q.engine.next_mpc` (engine's previous-cycle output) to URom.  That was K1's continuation address even after current_task switched to K2.  Result: KSEC at MPC=4 never actually fetched its `0x7001737c` instruction; it executed Emulator's residue stream (the 8 addresses 0x000, 0x130, 0x14e, 0x150-0x154 we'd been seeing).
+
+The fix presents `current_mpc` (the chip's task-aware MPC lookup) to URom.  `current_mpc = task_mpc[current_task]` (or task_number fallback if not started).  When current_task switches K1→K2, current_mpc immediately becomes K2's MPC, URom fetches from K2's stream, and the new task's instructions execute at the next BRAM-output cycle.
+
+**Design decisions:**
+
+- **Use `current_mpc`, not a redirect-on-yield latch.**  Considered three architectural paths (documented in progress notes): (1) move URom inside Microengine widget, (2) combinational redirect from chip kernel, (3) extra "task_switch_pending" DFF.  The simpler observation: `current_mpc` already encodes the task-aware MPC, and `task_mpc[current_task]` is updated each cycle from `engine.next_mpc` via the arbiter rule.  Within a single task's stream, presenting `current_mpc` to URom is functionally equivalent to presenting `q.engine.next_mpc` (just routed through a different DFF).  At task switch, `current_mpc` immediately reflects the new task — exactly what the spec needs.
+
+- **Result: KSEC visits 35 unique microaddresses, reaches F1=Block.**  Pre-fix: 8 addresses (Emulator's tight loop in K2 context).  Post-fix: 35 addresses including KSEC's real entry chain (0x37c → 0x37d → 0x381 → 0x382 → 0x383 → 0x384 → 0x385 → 0x368 → 0x36a → 0x37a → ...).  The fact that sector_mark events went from 1 to 2 in the same 2000-cycle window means KSEC's microcode actually reached F1=Block, cleared sector_mark, ran Emulator briefly, then the next sector tick re-fired sector_mark.  Real boot semantics, finally.
+
+- **Pipeline depth: still 2 cycles per instruction.**  This change doesn't address the 2-cycle-per-instruction throughput (URom 1-cycle BRAM + engine output Q-register 1-cycle).  Real Alto's 1-cycle pipeline would require either pulling URom inside Microengine or breaking the Q-register barrier — both substantial refactors.  The 2-cycle pipeline is functionally correct; only timing diverges from real Alto, which matters for cycle-equivalent ContrAlto lockstep but not for boot-progress validation.  Documented as a follow-up.
+
+**Surprises and gotchas:**
+
+- **The fix is a single line.**  `d.urom = UromIn { mpc: current_mpc.resize() }`.  The architectural reasoning (spec §5.4 mandate) and downstream impact (KSEC starts running real microcode!) is enormous; the diff is tiny.  Encodes a generally-useful pattern: when a sub-widget's output is delayed by Q-register but you need a per-task / per-context fork, route the address through the chip-level state instead.
+
+- **Per-task arbiter rule firing matters.**  `task_mpc[K]` is updated by the arbiter rule for task K when bit K is set in `effective_wakeups`.  With sustained sector_mark + Emulator's bit 0 always set, both rules want to fire — but rhdl-rule's priority scheduler picks ONE rule per cycle.  Task 4 (priority 8) outranks Task 0 (priority 9), so when both bits are set Task 4's rule fires and Task 0's task_mpc[0] doesn't update.  This means `task_mpc[0]` stays "frozen" at whatever it was last set to during Emulator's cycles — which is fine because the engine isn't running Emulator's stream anyway during that time.  Worth documenting as the next observation if Emulator doesn't resume cleanly after Disk Sector yields back.
+
+- **Trace's `instruction` column is off-by-one with `mpc` column.**  `t.instruction` is `q.urom.instruction` — the BRAM output for the address presented LAST cycle.  `t.mpc` is `current_mpc` THIS cycle.  So the trace shows mpc=X with instr=("instruction at the address we presented last cycle"), not "instruction at X".  This is a trace observability artifact, not a chip behavior bug.  Future work: relabel trace columns to make this explicit.
+
+**Validation:**
+
+- 105/105 alto tests pass (`cargo test -p rhdl-alto`).
+- `boot_trace_baseline_metrics`: 35 distinct microaddresses (was 9), 2 sector_mark events (was 1), confirming KSEC reaches F1=Block.
+- `boot_trace_decode_diagnostic`: shows KSEC visits 0x004, 0x368, 0x36a, 0x37a, 0x37c, 0x37d, 0x381..0x38a — the real KSEC entry/setup chain per spec §8 disk subsystem.
+
+**Follow-ups:**
+
+- Per-task F1=8-15 dispatch (Emulator: SWMODE/STARTF; Disk: STROBE/LoadKSTAT/INCRECNO/CLRSTAT).  KSEC reaches F1=Block now, but its full setup likely needs these codes to actually progress through the disk-controller register-write chain (LoadKADR + INCRECNO + STROBE + ...) per spec §8.5.
+- 1-cycle pipeline (URom inside Microengine).  Would match real Alto's pipeline depth for ContrAlto lockstep parity.  Substantial refactor; defer to lockstep harness step.
+
+---
+
 ## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4c: F1=Block + sustained device wakeup (per spec §5.5)
 
 **Paths:**

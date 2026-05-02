@@ -300,7 +300,27 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
 
     // Engine outputs next_mpc this cycle.
     let next_mpc: Bits<10> = q.engine.next_mpc;
-    d.urom = UromIn { mpc: next_mpc.resize() };
+    // URom fetch address per *Alto Hardware Manual* §2.4 / spec §5.4.
+    // Each task has its own MPC stream — when the chip switches
+    // current_task, the URom must immediately start fetching from
+    // the new task's saved MPC (the spec table in §5.4 shows J — the
+    // first new-task instruction — being fetched the cycle after
+    // TASK fires, with the new task's MPC).
+    //
+    // We can't read `engine.next_mpc` combinationally from the chip
+    // (it's Q-register-delayed), so we DON'T present `q.engine.next_mpc`
+    // to URom directly — that would always follow the OLD task's
+    // stream after a yield, since q.engine.next_mpc was computed
+    // before current_task changed.  Instead we present `current_mpc`
+    // (the chip's task-aware MPC lookup), which IS the new task's
+    // MPC the cycle current_task switches.  task_mpc[current_task]
+    // is updated each cycle by the arbiter rule from
+    // `next_mpc_per_task[current_task] = engine.next_mpc`, so within
+    // a single task's stream the URom advances one instruction per
+    // (2-cycle pipeline) just as before.  On task switch, current_mpc
+    // immediately reflects the new task — matching real Alto's
+    // 1-delay-slot pipeline.
+    d.urom = UromIn { mpc: current_mpc.resize() };
 
     // Disk: per-word DMA inputs (word_addr / write_data / read_en /
     // write_en) not yet driven by microengine — Phase 3.5 next adds
@@ -1345,39 +1365,35 @@ mod tests {
         eprintln!("  Emulator (task 0) firings: {emulator_firings}");
         eprintln!("  Disk Sector (task 4) firings: {disk_sector_firings}");
 
-        // Baseline assertions, post-Block-architecture:
+        // Baseline assertions per *Alto Hardware Manual* §2.4 + spec
+        // §5.4 (per-task MPC streams) + §5.5 (sustained device wakeup
+        // + F1=Block convention):
         //
-        // Per Alto Hardware Manual §2.4 + spec §5.5: task switches
-        // happen ONLY on F1=TASK; sector_mark is a sustained wakeup
-        // cleared by F1=Block in current_task=4.  KSEC's microcode at
-        // its MPC=4 entry needs per-task F1 codes (STARTF, INCRECNO,
-        // CLRSTAT, STROBE) we have NOT implemented to reach F1=Block.
-        // Result: once the first sector_mark fires, KSEC takes over
-        // and runs its (incomplete) setup loop indefinitely until the
-        // next sector_mark — but priority encoder picks Disk Sector
-        // (bit 4 sustained) > Emulator (bit 0), so Disk Sector
-        // dominates the trace.
+        // - URom is presented `current_mpc` (chip's task-aware MPC
+        //   lookup) so each task fetches from its OWN MPC stream
+        //   per spec §5.4.  After a yield, the new task's MPC is
+        //   immediately presented to URom — KSEC fetches its real
+        //   microcode at MPC=4 → 0x37c → ... per spec §5.1's reset
+        //   convention + the §8.7 boot sequence.
+        // - F1=Block in current_task=4 clears DiabloDisk's sustained
+        //   sector_mark per spec §5.5.  KSEC reaches Block somewhere
+        //   in its setup loop, releasing Emulator briefly between
+        //   sector boundaries.
         //
-        // This is *correct architectural behavior* per the spec — and
-        // a useful observable property: future per-task F1 work will
-        // make KSEC reach F1=Block, at which point Emulator regains
-        // dominance and the task counts shift back.
-        //
-        // Until then, the baseline asserts:
-        // - At least 8 distinct addresses (Emulator's tight loop).
-        // - At least 1 sector_mark event in the 2000-cycle window.
-        // - Disk Sector fires for the bulk of cycles (since it can't
-        //   reach F1=Block without per-task F1 codes).
-        // - Emulator fires for some cycles at boot (before the first
-        //   sector_mark).
-        assert!(visited.len() >= 8,
-            "current ceiling is 8 distinct addresses; if this regresses, \
-             something broke the partial-boot loop; got {}", visited.len());
-        assert!(sector_events >= 1,
-            "disk sector_mark should fire at least once in 2000 cycles; saw {sector_events}");
+        // Observable: distinct microaddresses ≥ 30 (KSEC's real
+        // microcode is running), sector_mark events ≥ 2 (KSEC hits
+        // Block, which clears sector_mark; next sector tick fires
+        // another mark), Disk Sector dominates total cycles (KSEC's
+        // setup loop is much longer than Emulator's tight boot loop).
+        assert!(visited.len() >= 30,
+            "real KSEC microcode should visit ≥30 distinct microaddresses \
+             (was ≤8 before per-task MPC stream alignment); got {}", visited.len());
+        assert!(sector_events >= 2,
+            "F1=Block in KSEC clears sustained sector_mark; subsequent \
+             sector tick re-fires it.  Expected ≥2 events in 2000 cycles, \
+             saw {sector_events}");
         assert!(disk_sector_firings >= 100,
-            "once sector_mark fires Disk Sector takes over (no F1=Block \
-             reached without per-task F1 codes); saw {disk_sector_firings}");
+            "once sector_mark fires Disk Sector dominates; got {disk_sector_firings}");
         assert!(emulator_firings > 0,
             "Emulator should fire at least once during initial boot before \
              the first sector_mark; saw {emulator_firings}");

@@ -167,6 +167,74 @@ with Emulator's MPC=0x153 yield window, Disk Sector runs through
 ~7 cycles of Emulator's loop in Disk-Sector-context until the next
 TaskYield kicks it out.
 
+## 2026-05-02 (continued) — F1=Block landed; URom-fetch-on-task-switch identified as next blocker
+
+After the F1=Block + sustained device wakeup commit (`1193c121`) the
+boot trace shows Disk Sector taking over for 1738/2000 cycles and
+visiting addresses 0x004, 0x130, 0x14e, 0x150, 0x151, 0x152, 0x153,
+0x154 (the same 8 Emulator addresses).  The decoder dump reveals KSEC
+at MPC=4 sees `instr=0x28100130` — Emulator's MPC=0x154 instruction —
+NOT KSEC's actual `instr=0x7001737c` (which has `f1=LoadMar f2=Constant
+rsel=14 next=0x37c`).
+
+**Diagnosis (verified against spec §5.4):**
+
+Per spec §5.4 (AltoHW §2.4) the task-switch pipeline is:
+
+| Cycle | Executing | Fetching | Address Stored MPC |
+|-------|-----------|----------|--------------------|
+| TY    | C (TASK)  | D        | E                  |
+| TY+1  | D (delay slot) | J (= **K2's saved MPC**) | K |
+| TY+2  | J (K2's first instr) | K | L |
+
+After TASK fires, the URom must redirect to **K2's saved MPC** at
+cycle TY+1 (one cycle after the TASK).
+
+**Our chip presents `d.urom.mpc = q.engine.next_mpc`** — the
+PREVIOUS-cycle engine output.  At TY+1, that's `D.next` (OLD stream's
+continuation), not K2's MPC.  Result: URom keeps fetching the OLD
+task's stream after yield.  KSEC's MPC=4 instruction is never
+actually fetched.
+
+**Why we can't trivially fix it.**  The chip cannot read the engine's
+THIS-cycle `next_mpc` output combinationally — the Q-register on the
+engine's outputs is inherent to RHDL's `Synchronous` composition
+pattern.  `q.engine.next_mpc` is always 1 cycle late.  So we cannot
+write `d.urom.mpc = engine.next_mpc_this_cycle` to match real Alto's
+pipeline.
+
+**Three architectural paths to consider:**
+
+1. **Move the URom inside the Microengine widget.**  The engine then
+   owns its fetch loop: presents its own `d.urom.mpc` from internal
+   `next_mpc` combinationally, reads its own `q.urom.instruction`.
+   The chip just passes `current_task` in and reads outputs.
+   Pipeline collapses to 1 cycle (matching real Alto).
+   - Pro: matches real Alto exactly; clean architecture.
+   - Con: substantial engine refactor; URom no longer chip-level
+     observable for trace diagnostics.
+
+2. **Combinational redirect on yield in the chip kernel.**  Add a
+   `winning_task_mpc` lookup in the chip and combinationally compute
+   `d.urom.mpc = if engine_will_yield_this_cycle { winning_task_mpc }
+   else { ... }`.  Requires combinational access to engine.task_yield
+   THIS cycle, which has the same Q-register problem.
+   - Won't work without breaking the Q-register barrier.
+
+3. **Track a "task_switch_pending" DFF in the chip.**  Latch
+   `q.engine.task_yield` into a 1-cycle delay DFF.  When the DFF is
+   set on a given cycle, redirect `d.urom.mpc` to the new task's MPC
+   for that cycle.  This adds 1 more cycle of pipeline delay (so
+   each task switch costs 2 delay-slot cycles instead of 1) but keeps
+   the chip+engine boundary simple.
+   - Pro: minimal refactor; keeps URom chip-level visible.
+   - Con: pipeline diverges from real Alto by 1 extra delay slot —
+     potentially observable in lockstep against ContrAlto.
+
+For Phase 3.5 boot trace: any of these three would unblock KSEC
+running its real microcode.  Path 3 is fastest to land but creates
+lockstep divergence.  Path 1 is the long-term right answer.
+
 ## Resumption notes
 
 - Assets (PROMs, .dsk, ContrAlto source) all live under
