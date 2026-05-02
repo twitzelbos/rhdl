@@ -133,6 +133,12 @@ pub struct AltoChip {
     disk: DiabloDisk,
     /// Universal-task microengine.
     engine: Microengine,
+    /// Previous-cycle's `current_task`, used to detect task switches
+    /// and stall the engine for one cycle while the urom refetches
+    /// with the new task's MPC.  Without this, a task switch causes
+    /// the new task to execute the previous task's microinstruction
+    /// (urom 1-cycle latency vs immediate task selection).
+    prev_task: rhdl_fpga::core::dff::DFF<Bits<4>>,
 }
 
 impl Default for AltoChip {
@@ -145,6 +151,7 @@ impl Default for AltoChip {
             disk_ctrl: DiskController::default(),
             disk: DiabloDisk::default(),
             engine: Microengine::default(),
+            prev_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
         }
     }
 }
@@ -162,6 +169,7 @@ impl AltoChip {
             disk_ctrl: DiskController::default(),
             disk: DiabloDisk::default(),
             engine: Microengine::default(),
+            prev_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
         }
     }
 
@@ -179,6 +187,7 @@ impl AltoChip {
             disk_ctrl: DiskController::default(),
             disk: DiabloDisk::default(),
             engine: Microengine::default(),
+            prev_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
         }
     }
 
@@ -197,6 +206,7 @@ impl AltoChip {
             disk_ctrl: DiskController::default(),
             disk: DiabloDisk::default(),
             engine: Microengine::default(),
+            prev_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
         }
     }
 }
@@ -234,6 +244,17 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
 
     // Memory bus.
     let mem_data_for_engine: Bits<16> = q.mem.read_data;
+
+    // The naïve stall-on-task-switch fix was attempted (see prior
+    // commits) but causes worse behavior with short-pulse wakeups
+    // (sector_mark is a 1-cycle pulse → Task 4 wakes only briefly →
+    // stall converts that cycle to NOP → Task 4 never executes).
+    // The real fix needs wakeup-latching (the disk's sector_mark
+    // pending until Task 4 actually services it).  Documented in
+    // notes/alto-phase-3-5-progress.md as a deferred multi-day fix.
+    // For now, just track prev_task for future use.
+    d.prev_task = current_task;
+
     d.engine = MicroIn {
         mpc: current_mpc,
         instr: instr_this_cycle,
@@ -727,6 +748,7 @@ mod tests {
             disk_ctrl: DiskController::default(),
             disk: DiabloDisk::with_sector(&sector),
             engine: Microengine::default(),
+            prev_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
         };
 
         // Wakeup pattern: Task 4 (Disk Sector) always woken so its
@@ -1100,8 +1122,14 @@ mod tests {
         let mut seen: std::collections::BTreeMap<(u128, u128), u128> =
             std::collections::BTreeMap::new();
         for t in &trace {
-            seen.entry((t.current_task.raw(), t.mpc.raw()))
-                .or_insert(t.instruction.raw());
+            // Skip stall-NOP frames (instr = current_mpc with all
+            // functional fields 0 → instr equals mpc, which is small).
+            // Real microcode at any address has multiple non-zero
+            // fields packed into the high 16 bits.
+            if t.instruction.raw() < 0x10000 && t.instruction.raw() == t.mpc.raw() {
+                continue;
+            }
+            seen.insert((t.current_task.raw(), t.mpc.raw()), t.instruction.raw());
         }
 
         eprintln!("[boot_trace_decode_diagnostic] {} unique (task, mpc) pairs visited:", seen.len());

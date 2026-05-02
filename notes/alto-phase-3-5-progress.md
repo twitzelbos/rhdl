@@ -138,8 +138,20 @@ Realistic remaining timeline: 2-3 months of focused work.
   Doesn't break the existing tests (DMA test runs almost entirely
   in Task 14 — no switching).  But blocks real-microcode boot
   progress because Task 4's first execution at MPC=0 doesn't run
-  the disk-task setup.  Fix options: (a) per-task instruction
-  pre-fetch cache (16 × 32 bits); (b) stall-on-task-switch (insert
-  no-op cycle); (c) restructure arbitration to be combinational so
-  the urom fetch can happen with the right task's MPC each cycle.
-  Substantial multi-day work.
+  the disk-task setup.
+
+  **Attempted fix: stall-on-task-switch.**  The naïve fix (override
+  instr to NOP for one cycle when task changes) makes things WORSE
+  for short-pulse wakeups.  sector_mark is a 1-cycle pulse → Task 4
+  wakes only that cycle → stall converts that cycle to NOP → Task 4
+  *never* actually executes its microcode.  Reverted; prev_task DFF
+  kept for future re-use.
+
+  **Real fix needs wakeup-latching:** the disk's sector_mark needs
+  to set a "Task 4 pending" latch that stays asserted until Task 4
+  has actually serviced it (i.e., executed at least one real
+  microinstruction, not a stall NOP).  Combined with the stall,
+  that gives Task 4 enough cycles to actually do work.  Or:
+  per-task instruction prefetch cache (16 × 32 bits) — every cycle,
+  prefetch each task's next instruction so on switch the right
+  instruction is immediately available.  Both are multi-day work.
