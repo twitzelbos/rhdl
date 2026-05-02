@@ -5,14 +5,32 @@ branch, single PR per the user's "complete this phase, don't ship a
 v1, don't defer" constraint.  PR opens only when **Nova PC = 0o345**
 is reached with cycle-equivalent ContrAlto trace.
 
-## Status (30 commits in, 108 tests pass)
+## Status (35 commits in, 110 tests pass)
 
-🎯 **Architectural milestone reached: end-to-end 256-word DMA works
-through real microengine cycles.**  Hand-written Disk Sector
-microcode arms a transfer; Disk Word task body does 256 atomic
-per-word DMAs; transfer ends cleanly.  Verified via task fire
-counts: `disk_word_count = 257` (256 DMAs + 1 transition cycle),
-`disk_sector_count = 142` (post-DMA NOP loop).
+🎯 **Two architectural milestones reached this branch:**
+1. **End-to-end 256-word DMA via real microengine cycles** — hand-
+   written Disk Sector microcode arms transfer; Disk Word DMAs all
+   256 words; verified address-by-address: `mem[0x200..0x300]` got
+   `[0xA000, 0xA001, ..., 0xA0FF]` exactly.
+2. **Nova-emulator FETCH-DISPATCH cycle functional** — F2=LoadIr
+   loads IR from MD; F2=IDispatch ORs IR[7:0] into NEXT for opcode-
+   based routing; BS=InstructionRegister drives BUS from IR.
+
+🔍 **Diagnostic insight (from `boot_trace_decode_diagnostic`):**
+   Real Alto microcode boots into an 8-address loop (0x000, 0x130,
+   0x14e, 0x150-0x154) and stays there because:
+   - Emulator at MPC=0 needs to write disk_ctrl registers, but
+     KCOMM/KADR/etc. F1 codes are gated to Disk Sector (task 4) only.
+   - Disk Sector at MPC=0 also runs the shared microcode but takes
+     no useful disk-specific path because per-task BS sources
+     (BS=3 = KSTAT for Disk Sector, etc.) aren't implemented.
+   - Net result: nothing programs the disk; memory stays empty;
+     IR loads from `memory[MAR=0]=0` forever; loop continues.
+
+   **Next high-leverage unblock:** per-task BS sources (BS=3, BS=4)
+   that dispatch differently per task (KSTAT/KDATA for disk tasks,
+   NWRD/NREAD for Emulator).  Plus initialization microcode that
+   sets per-task MPCs to their proper entry points.
 
 ### ✅ Done
 
