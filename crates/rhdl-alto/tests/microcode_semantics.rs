@@ -1208,8 +1208,165 @@ fn acsource_ir12_eq_3_does_not_or_indirect_bit() {
 }
 
 // =====================================================================
-// §6.6 — SKIP latch (D16 partial: latch + IR← clears it)
+// §6.6 — DNS (Do Nova Shift) — F2=Code10 in Emulator (D16 full)
 // =====================================================================
+//
+// DNS implements Nova SHIFT instruction emulation with several
+// simultaneous side-effects:
+//   - Modifies LSH/RSH to do Nova-style 17-bit rotates with carry.
+//   - Computes new Nova CARRY based on IR carry-control + ALU op.
+//   - Sets SKIP based on IR low 3 bits (Nova SKP modes) + result.
+//   - Suppresses R-write when IR bit 12 (= our bit 3) is set.
+//   - Latches new CARRY when R-write is enabled.
+
+#[test]
+fn dns_lsh_rotates_carry_into_bit_0() {
+    // Pre-load CARRY=1 by running DNS with carry-control=O (force 1).
+    // Then DNS+LSH: bit 0 ← carry_in.  L=0x0042, carry=1 → result =
+    // (0x0042<<1) | 1 = 0x0085.
+    // IR: carry-control = 2 (O = force 1), bits 5-4 = 0b10.
+    //     skip-mode = 0, bits 0-2 = 000.
+    //     arith op (bits 8-10) = 0 (COM = unaffected).  Bits 0x20.
+    let out = observe_after(vec![
+        // First: load IR with carry-control=2, IR[12]=0 (R-write enabled).
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
+            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
+            .with_md(0x0020).with_task(0),
+        // L <- 0x0042 (set up the value to shift).
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, false, true, 0), 0x0042),
+        // DNS + LSH.  LoadDNS = F2=Code10.  carry-control=2 → carry_in=1.
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::LeftShift1, F2Function::Code10, false, false, 0), 0),
+    ]);
+    assert_eq!(out.l.raw() as u16, 0x0085,
+        "DNS LSH with carry_in=1: (0x0042<<1) | 1 = 0x0085");
+}
+
+#[test]
+fn dns_rsh_rotates_carry_into_bit_15() {
+    // Same as above but RSH.  IR carry-control=O → carry_in=1.
+    // L=0x0080, RSH+DNS: bit 15 ← 1 → (0x0080>>1) | 0x8000 = 0x8040.
+    let out = observe_after(vec![
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
+            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
+            .with_md(0x0020).with_task(0),
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, false, true, 0), 0x0080),
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::RightShift1, F2Function::Code10, false, false, 0), 0),
+    ]);
+    assert_eq!(out.l.raw() as u16, 0x8040,
+        "DNS RSH with carry_in=1: (0x0080>>1) | 0x8000 = 0x8040");
+}
+
+#[test]
+fn dns_carry_control_z_forces_zero_carry_in() {
+    // IR carry-control=1 (Z = force 0).  L=0x0042, LSH+DNS → no carry
+    // injection → 0x0084 (plain LSH result).
+    let out = observe_after(vec![
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
+            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
+            .with_md(0x0010).with_task(0),  // bits 5-4 = 0b01 = Z
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, false, true, 0), 0x0042),
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::LeftShift1, F2Function::Code10, false, false, 0), 0),
+    ]);
+    assert_eq!(out.l.raw() as u16, 0x0084, "DNS carry-control=Z forces carry_in=0");
+}
+
+#[test]
+fn dns_skip_mode_skp_always_sets_skip() {
+    // IR low 3 bits = 1 (SKP = always skip).
+    // After DNS, SKIP DFF should be set.  Verify by next-cycle ALUF=BusPlusSkip.
+    let out = observe_after(vec![
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
+            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
+            .with_md(0x0001).with_task(0),  // bits 0-2 = 001 = SKP
+        // DNS with no-op shift (mi.f1=Nop) so result is just whatever L is.
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Nop, F2Function::Code10, false, false, 0), 0).with_task(0),
+        // Now ALUF=BusPlusSkip with BUS=0; should give 0+SKIP = 1 (since SKP).
+        InCfg::new(ui(0, AluFunction::BusPlusSkip, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, false, true, 0), 0).with_task(0),
+    ]);
+    assert_eq!(out.l.raw() as u16, 1,
+        "DNS SKP mode sets SKIP latch; subsequent ALUF=BusPlusSkip with BUS=0 → 0+SKIP=1");
+}
+
+#[test]
+fn dns_skip_mode_szr_sets_skip_when_result_zero() {
+    // IR low 3 bits = 4 (SZR = skip if result zero).
+    // L=0, DNS+Nop → result = 0 → SKIP set.
+    let out = observe_after(vec![
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
+            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
+            .with_md(0x0004).with_task(0),  // bits 0-2 = 100 = SZR
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, false, true, 0), 0).with_task(0),
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Nop, F2Function::Code10, false, false, 0), 0).with_task(0),
+        InCfg::new(ui(0, AluFunction::BusPlusSkip, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, false, true, 0), 0).with_task(0),
+    ]);
+    assert_eq!(out.l.raw() as u16, 1,
+        "DNS SZR mode + result=0 → SKIP set; ALUF=BusPlusSkip with BUS=0 → 1");
+}
+
+#[test]
+fn dns_skip_mode_szr_clears_skip_when_result_nonzero() {
+    // SZR + L=nonzero → SKIP NOT set.
+    let out = observe_after(vec![
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
+            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
+            .with_md(0x0004).with_task(0),  // SZR
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, false, true, 0), 0x42).with_task(0),
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Nop, F2Function::Code10, false, false, 0), 0).with_task(0),
+        InCfg::new(ui(0, AluFunction::BusPlusSkip, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, false, true, 0), 0).with_task(0),
+    ]);
+    assert_eq!(out.l.raw() as u16, 0,
+        "DNS SZR + result!=0 → SKIP=0; ALUF=BusPlusSkip with BUS=0 → 0");
+}
+
+#[test]
+fn dns_ir_bit_3_set_suppresses_r_write() {
+    // IR bit 3 (= IR[12] in Alto MSB=0) suppresses R-write under DNS.
+    // First load R[5] with a known value, then DNS+BS=LoadR with IR[12]=1
+    // — R[5] should NOT change.
+    let out = observe_after(vec![
+        // Load R[5] = 0xCAFE via L (per spec §2.7).
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, false, true, 0), 0xCAFE),
+        InCfg::new(ui(5, AluFunction::Bus, BusSource::LoadR,
+            F1Function::Nop, F2Function::Nop, false, false, 0), 0),
+        // Set IR[12]=1 (suppress) and IR[3-4]=ensures effective_rsel=5.
+        // IR[3-4] XOR 3 with bits 12-11 → for effective_rsel low 2 bits=1
+        // (so |= 1 to RSEL high bits), IR bits 12-11 = 0b10 (XOR 3 → 0b01).
+        // Set IR=0x1008: bits 12-11 = 0b10, bit 3 = 1 (suppress).
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
+            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
+            .with_md(0x1008).with_task(0),
+        // DNS+BS=LoadR.  With effective_rsel from IR[3-4], target would
+        // be R[(5 high) | 1]=... wait RSEL is 5 bits; with high-3 and
+        // low-2 from IR.  Skip the address calculation; just verify
+        // R[5] unchanged.  Use rsel=5 (high 3=001, low 2=01) → IR
+        // override gives R[(rsel & ~3) | (XOR'd low 2)]= R[4|1]=R[5].
+        // Actually rsel=5 = 0b00101.  rsel_high = 0b00100 = 4.  IR[3-4]
+        // bits 12-11 = 0b10 = 2; XOR 3 = 1.  So effective_rsel = 4|1 = 5.
+        // So would-be write target IS R[5].  Verify it's NOT written.
+        InCfg::new(ui(5, AluFunction::Bus, BusSource::LoadR,
+            F1Function::Nop, F2Function::Code10, false, true, 0), 0xDEAD).with_task(0),
+        // Read R[5] back via T-load.
+        InCfg::new(ui(5, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Nop, F2Function::Nop, true, false, 0), 0).with_task(0),
+    ]);
+    assert_eq!(out.t.raw() as u16, 0xCAFE,
+        "DNS with IR[12]=1 (suppress) must NOT write R; R[5] stays 0xCAFE");
+}
 //
 // Per spec §6.6 + ContrAlto's Shifter.cs commentary: SKIP is a one-bit
 // latch in the Emulator.  Set by F2=LoadDNS (not yet implemented);

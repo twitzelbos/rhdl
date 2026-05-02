@@ -31,6 +31,46 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4n: D16 full DNS (Nova SHIFT instruction emulation)
+
+**Paths:**
+
+- `crates/rhdl-alto/src/microengine.rs` — full D16 DNS implementation per spec §6.6 + ContrAlto's `EmulatorTask.cs` LoadDNS handlers + `Shifter.cs` DNS modifier:
+  - Added `carry: dff::DFF<bool>` (Nova CARRY flip-flop).
+  - F2=Code10 (LoadDNS) extends the effective_rsel ACDEST-style override (uses IR[3-4] XOR 3 same as ACDEST).
+  - DNS shifter modifier on LSH/RSH: 17-bit Nova rotate with `dns_carry_in` (computed from q.carry + IR[5-4] carry-control + ALU C0 + Nova arith op IR[10-8]).
+  - Nova carry-control modes: 0=hold, 1=Z (zero), 2=O (one), 3=C (complement).
+  - Nova arith-op carry adjustment: invert dns_carry on NEG/INC/ADC/SUB/ADD if ALU produced a carry-out.
+  - R-write suppression when DNS + IR[12] (= our bit 3) is set, per Nova "no-load" bit.
+  - SKIP-mode setting (IR low 3 bits): SKP / SZC / SNC / SZR / SNR / SEZ / SBN modes per Nova SKP encoding.
+  - CARRY DFF latches dns_carry_out IFF R-write is enabled.
+- `crates/rhdl-alto/tests/microcode_semantics.rs` — added 7 DNS tests covering: LSH carry-injection, RSH carry-injection, Z carry-control, SKP-always, SZR (zero/nonzero), IR[12] R-write suppression.
+
+**Why this, why now:** D16 was the largest remaining audit item.  Nova SHIFT instructions are pervasive in the OS loader — without DNS, every emulator handler that sets CARRY/SKIP from a shift result silently misbehaves.  The SKIP DFF infrastructure was already in place from Step 4l.
+
+**Design decisions:**
+
+- **Single-cycle implementation, no early/late split.**  ContrAlto separates the DNS work into "early" (pre-shifter: carry input, modifier-set, RSEL override, R-write enable) and "late" (post-shifter: SKIP-from-result, CARRY latch).  Our microengine kernel runs the whole instruction in one combinational pass, so all the work happens in sequence in one cycle.  The Nova carry/skip semantics are equivalent.
+
+- **`dns_carry_out` reads pre-shift L.**  Tricky: `d.l` gets overwritten by the shift result, so I capture `l_pre_shift = d.l` before the shifter to read the bit being rotated out.  For a non-shift DNS, `dns_carry_out = dns_carry_in` (passes through).
+
+- **DNS overrides BS=LoadR R-write.**  Per ContrAlto: if `IR[12]=1` AND DNS, R-write is suppressed even with BS=LoadR.  Our existing `r_wen = mi.bs == BusSource::LoadR` is now `&& !dns_suppress_r`.
+
+- **SKIP cleared on next IR←** (per spec §6.6, already implemented in Step 4l).  So a SKIP set by DNS lasts for exactly one macroinstruction window — until the Nova fetch loop's next IR← clears it.  This is the correct Nova "skip the next instruction" semantics.
+
+**Validation:**
+
+- 219 alto tests pass (up from 212 — added 7 DNS tests).  No regressions.
+- Boot trace metrics unchanged (76 unique microaddresses); the Emulator's tight loop in 2000 cycles doesn't yet reach Nova SHIFT instruction handlers in measurable volume.  DNS impact will be visible once boot reaches OS-loader code that uses shifts heavily.
+
+**Follow-ups:**
+
+- D19 INCRECNO; D20 KWDX F2 codes — disk-state model needed.
+- D2/D3 §4.4(b) memory-suspend modeling.
+- D4/D5 §4.4(d/e) refresh + MAR-after-MD hazard.
+
+---
+
 ## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4m: E2 + E3 + E5 (tighten weak assertions)
 
 **Paths:**

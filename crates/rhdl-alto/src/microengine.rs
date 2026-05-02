@@ -215,11 +215,17 @@ pub struct Microengine {
     /// F2=AluCarryToNext.
     alu_carry: dff::DFF<bool>,
     /// SKIP latch (Emulator only, per spec §6.6 / "NOVEL SHIFTS"
-    /// commentary in ContrAlto's Shifter.cs).  Set by F2=LoadDNS (D16,
-    /// not yet implemented); cleared by F2=LoadIr.  Read by ALUF=11
-    /// (BUS+SKIP): when SKIP is set, the ALU adds 1 to BUS instead of
-    /// passing it through, implementing Nova's skip-on-condition.
+    /// commentary in ContrAlto's Shifter.cs).  Set by F2=LoadDNS based
+    /// on Nova SKIP-condition (IR low 3 bits).  Cleared by F2=LoadIr.
+    /// Read by ALUF=11 (BUS+SKIP): when SKIP is set, the ALU adds 1 to
+    /// BUS instead of passing it through, implementing Nova's skip-on-
+    /// condition (the next macroinstruction's PC increment).
     skip: dff::DFF<bool>,
+    /// Nova CARRY flip-flop (Emulator only).  Used by F2=LoadDNS for
+    /// Nova-style 17-bit rotates and carry-condition computations.
+    /// Cleared by reset; updated by LoadDNS late phase based on the
+    /// shifter result and the Nova arithmetic op's carry semantics.
+    carry: dff::DFF<bool>,
 }
 
 impl SynchronousIO for Microengine {
@@ -268,8 +274,12 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let ir_src_ac: Bits<5> = (((q.ir >> 13) & bits::<16>(0b11))
         ^ bits::<16>(0b11)).resize();
     let rsel_high: Bits<5> = mi.rsel & bits::<5>(0b11100);
+    // F2=Code10 (LoadDNS) ALSO uses the destination-AC override, per
+    // ContrAlto's EmulatorTask.cs early LoadDNS handler:
+    // `_rSelect = (_rSelect & 0xfffc) | (((ir & 0x1800) >> 11) ^ 3)` —
+    // identical to ACDEST.
     let effective_rsel: Bits<5> = if is_emulator
-        && mi.f2 == F2Function::Code11
+        && (mi.f2 == F2Function::Code11 || mi.f2 == F2Function::Code10)
     {
         rsel_high | ir_dest_ac
     } else if is_emulator && mi.f2 == F2Function::Code14 {
@@ -368,20 +378,76 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     //   - Left shift:  bit 0  ← T bit 15 (MSB of T)
     //   - Right shift: bit 15 ← T bit 0  (LSB of T)
     //   - LCY8: no MAGIC variant (per ContrAlto Shifter)
+    //
+    // F2=LoadDNS (Emulator-only, F2=10) modifies LSH/RSH to do Nova-
+    // style 17-bit rotates with the dns_carry value (computed from
+    // q.carry + IR bits 4-5 + Nova arith op + ALU C0):
+    //   - Left shift:  bit 0  ← dns_carry; new carry ← input bit 15
+    //   - Right shift: bit 15 ← dns_carry; new carry ← input bit 0
     let is_magic: bool = is_emulator && mi.f2 == F2Function::Code9;
+    let is_dns:   bool = is_emulator && mi.f2 == F2Function::Code10;
+
+    // Nova carry input for DNS, per ContrAlto's LoadDNS early handler.
+    // IR bits 5-4 (in our LSB=0 numbering, value 0..3) select carry
+    // base; then if Nova arith op (IR bits 10-8, value 0..7) is one of
+    // NEG/INC/ADC/SUB/ADD AND ALU produced a carry-out, invert.
+    let dns_carry_base: bool = if is_dns {
+        let cc: Bits<2> = ((q.ir >> 4) & bits::<16>(0b11)).resize();
+        if cc == bits::<2>(0)      { q.carry }
+        else if cc == bits::<2>(1) { false }            // Z
+        else if cc == bits::<2>(2) { true }             // O
+        else                        { !q.carry }        // C: complement
+    } else {
+        q.carry
+    };
+    let dns_carry_in: bool = if is_dns {
+        let op: Bits<3> = ((q.ir >> 8) & bits::<16>(0b111)).resize();
+        let invert: bool =
+               op == bits::<3>(1)
+            || op == bits::<3>(3)
+            || op == bits::<3>(4)
+            || op == bits::<3>(5)
+            || op == bits::<3>(6);
+        if invert && aout.carry { !dns_carry_base } else { dns_carry_base }
+    } else {
+        false  // unused when !is_dns
+    };
+
+    // Capture pre-shift value (= L after L_LOAD but before F1's shift).
+    // Needed so dns_carry_out can read the bit that gets rotated out.
+    let l_pre_shift: Bits<16> = d.l;
+
+    // Compute shifter output.
     let l_after_f1: Bits<16> = match mi.f1 {
         F1Function::LeftShift1  => {
-            let shifted = d.l << 1;
-            if is_magic { shifted | ((q.t >> 15) & bits::<16>(1)) } else { shifted }
+            let shifted = l_pre_shift << 1;
+            if is_magic        { shifted | ((q.t >> 15) & bits::<16>(1)) }
+            else if is_dns     { shifted | (if dns_carry_in { bits::<16>(1) } else { bits::<16>(0) }) }
+            else               { shifted }
         }
         F1Function::RightShift1 => {
-            let shifted = d.l >> 1;
-            if is_magic { shifted | ((q.t & bits::<16>(1)) << 15) } else { shifted }
+            let shifted = l_pre_shift >> 1;
+            if is_magic        { shifted | ((q.t & bits::<16>(1)) << 15) }
+            else if is_dns     { shifted | (if dns_carry_in { bits::<16>(0x8000) } else { bits::<16>(0) }) }
+            else               { shifted }
         }
-        F1Function::LeftCycle8  => (d.l << 8) | (d.l >> 8),
-        _                       => d.l,
+        F1Function::LeftCycle8  => (l_pre_shift << 8) | (l_pre_shift >> 8),
+        _                       => l_pre_shift,
     };
     d.l = l_after_f1;
+
+    // dns_carry_out: the bit that gets rotated INTO the new carry.
+    // Per ContrAlto: left shift → input bit 15; right shift → input bit 0.
+    // For non-shift (e.g. just F2=LoadDNS without LSH/RSH), dns_carry_in.
+    let dns_carry_out: bool = if is_dns {
+        match mi.f1 {
+            F1Function::LeftShift1  => (l_pre_shift & bits::<16>(0x8000)) != bits::<16>(0),
+            F1Function::RightShift1 => (l_pre_shift & bits::<16>(1))      != bits::<16>(0),
+            _                       => dns_carry_in,
+        }
+    } else {
+        false
+    };
 
     // ---- R write --------------------------------------------------
     // Per *Alto Hardware Manual* §2.7 + ContrAlto's `Task.cs`:
@@ -398,7 +464,11 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     //
     // Per spec §6.6, ACDEST/ACSOURCE also affect the WRITE address
     // (same RSEL, since the regfile has a single addressed port).
-    let r_wen: bool = mi.bs == BusSource::LoadR;
+    // F2=LoadDNS suppresses R-write when IR[12] is set (Alto bit 12 =
+    // our bit 3, the Nova "no-load" bit on shift instructions).  Per
+    // ContrAlto: `_loadR = (_cpu._ir & 0x0008) == 0`.
+    let dns_suppress_r: bool = is_dns && (q.ir & bits::<16>(0x0008)) != bits::<16>(0);
+    let r_wen: bool = mi.bs == BusSource::LoadR && !dns_suppress_r;
     let mut next_regs: [Bits<16>; 32] = q.regs;
     if r_wen {
         next_regs[effective_rsel] = l_after_f1;
@@ -727,11 +797,38 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     d.ir = if is_emulator_task && is_load_ir { bus } else { q.ir };
     o.ir = q.ir;
 
-    // SKIP latch update per spec §6.6: cleared by IR←.  Set by
-    // F2=LoadDNS (D16; not yet implemented — DNS would compute a
-    // skip-condition based on shifter result + IR[8-9]).  For now,
-    // the only writer is the IR← clear path.
-    d.skip = if is_emulator_task && is_load_ir { false } else { q.skip };
+    // SKIP latch update per spec §6.6:
+    //   - Cleared by F2=LoadIr.
+    //   - Set by F2=LoadDNS based on IR low 3 bits (Nova SKP modes)
+    //     and the post-shift result + dns_carry_out:
+    //       0 SKP=none → SKIP=0
+    //       1 SKP      → SKIP=1
+    //       2 SZC      → SKIP=(carry_out == 0)
+    //       3 SNC      → SKIP=(carry_out != 0)
+    //       4 SZR      → SKIP=(result == 0)
+    //       5 SNR      → SKIP=(result != 0)
+    //       6 SEZ      → SKIP=(result == 0 || carry_out == 0)
+    //       7 SBN      → SKIP=(result != 0 && carry_out != 0)
+    let dns_skip_mode: Bits<3> = (q.ir & bits::<16>(0b111)).resize();
+    let result_zero: bool = l_after_f1 == bits::<16>(0);
+    let carry_zero: bool  = !dns_carry_out;
+    let dns_new_skip: bool =
+             if dns_skip_mode == bits::<3>(0) { false }
+        else if dns_skip_mode == bits::<3>(1) { true }
+        else if dns_skip_mode == bits::<3>(2) { carry_zero }
+        else if dns_skip_mode == bits::<3>(3) { !carry_zero }
+        else if dns_skip_mode == bits::<3>(4) { result_zero }
+        else if dns_skip_mode == bits::<3>(5) { !result_zero }
+        else if dns_skip_mode == bits::<3>(6) { result_zero || carry_zero }
+        else                                  { !result_zero && !carry_zero };
+    d.skip = if is_emulator_task && is_load_ir { false }
+        else if is_dns                          { dns_new_skip }
+        else                                    { q.skip };
+
+    // CARRY latch update: F2=LoadDNS late phase writes back
+    // dns_carry_out IFF R-write is enabled (per ContrAlto:
+    // `if (_loadR) { _carry = carry; }`).  Without DNS, carry is held.
+    d.carry = if is_dns && !dns_suppress_r { dns_carry_out } else { q.carry };
 
     // ---- Outputs ---------------------------------------------------
     o.t          = q.t;
@@ -747,6 +844,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         d.ir = bits::<16>(0);
         d.alu_carry = false;
         d.skip = false;
+        d.carry = false;
         o.mpc = bits::<10>(0);
         o.current_task = bits::<4>(0);
         o.next_mpc = bits::<10>(0);
