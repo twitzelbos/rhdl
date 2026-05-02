@@ -119,6 +119,12 @@ pub struct Out {
     /// `word_consumed` input so the disk advances its position +
     /// decrements transfer_remaining only when DMA actually happens.
     pub disk_word_consumed: bool,
+    /// True when this cycle's microinstruction has F1=TaskYield (TASK).
+    /// Per the *Alto Hardware Manual* §2.4: this is the only signal
+    /// that triggers task arbitration — task switches happen ONLY on
+    /// F1=TASK, not per-cycle.  AltoChip uses this to gate its
+    /// `current_task` latch.
+    pub task_yield: bool,
     /// Instruction Register — current Nova instruction (Emulator task).
     pub ir: Bits<16>,
 }
@@ -313,6 +319,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     o.disk_ctrl_write_en   = is_dma || (is_disk_sector_task && (is_kcomm || is_kadr || is_kdata || is_kcwa));
     o.disk_ctrl_write_data = if is_dma { i.kcwa + bits::<16>(1) } else { bus };
     o.disk_word_consumed   = is_dma;
+    o.task_yield           = mi.f1 == F1Function::TaskYield;
 
     // ---- Per-task IR load (Emulator) ------------------------------
     // F2 = LoadIr + current_task == 0 (Emulator) → IR ← MD
@@ -354,6 +361,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         o.disk_ctrl_write_en = false;
         o.disk_ctrl_write_data = bits::<16>(0);
         o.disk_word_consumed = false;
+        o.task_yield = false;
         o.ir = bits::<16>(0);
     }
     (o, d)

@@ -31,6 +31,52 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-01 — Tier C #2 Alto Phase 3.5 Step 3: sticky `current_task` + arbitration on F1=TaskYield
+
+**Paths:**
+
+- `crates/rhdl-alto/src/microengine.rs` — added `task_yield: bool` to `Out`; set in kernel from `mi.f1 == F1Function::TaskYield`; cleared in reset path.
+- `crates/rhdl-alto/src/alto_chip.rs` — replaced the per-cycle priority arbiter (which mutated `current_task` every cycle from the wakeup vector) with a sticky `current_task` DFF + combinational priority encoder gated by `q.engine.task_yield`.  The DFF replaces the prior `prev_task: dff::DFF<Bits<4>>` field; renamed in place.  Five hand-written-microcode tests rewritten to issue `F1=TaskYield` at the points where they intend the arbiter to run (`multi_task_arbitration_picks_higher_priority`, `f1_write_kadr_only_active_under_disk_sector_task`, `end_to_end_256_word_dma`, `kcom_write_arms_disk_and_fires_disk_word_task`, `disk_sector_mark_fires_disk_sector_task`).  `boot_trace_baseline_metrics` relaxed to drop the "Disk Sector firings ≥ sector_marks" assertion (which was an artefact of the old per-cycle arbitration model — under sticky semantics the count depends on whether the real Emulator boot path reaches a TaskYield, which depends on F1/F2 codes not yet implemented).
+- `.gitignore` — `assets/` added; the local Bitsavers mirror (currently ~57 MB across `assets/bitsavers/`) is reference material, not part of the repo.
+
+**Why this, why now:** Phase 3 (PR #44 / commit `9994f309`) shipped a per-cycle priority arbiter — every cycle the chip re-arbitrated, walking the wakeup vector and picking the highest-priority woken task.  This was structurally wrong.  Per *Alto Hardware Manual* §2.4 the real Alto pipeline has **one** global MIR pipeline register; task switches happen **only** when microcode issues `F1=TASK`; in between, the same task runs every cycle even if a higher-priority task is waking.  The bug was masked by the Phase-3 hand-written test microcode (which didn't depend on multi-cycle task continuity) but surfaced immediately when running real Alto microcode against Phase 3.5 boot wiring — the chip was scheduling the wrong task on the wrong cycles, with task switches happening on every wakeup-vector edge.
+
+**Design decisions:**
+
+- **Sticky `current_task` DFF** — the chip latches the priority-encoder winner into `current_task` exactly when the engine asserts `task_yield` (i.e., the running microinstruction has `F1=TaskYield`).  Otherwise `current_task` holds.  This matches the *Alto Hardware Manual* §2.4 description of the TASK function.  Confirmed by reading ContrAlto2's `CPU.cs` and `Tasks/Task.cs` — same architecture, with the priority encoder as a cascade of `if`/`else` over the 16 task wakeup bits, gated by the current instruction's `F1==TASK`.
+
+- **`task_yield` as a microengine output, not a hidden internal signal.**  The microengine surfaces it on `Out` so the chip-level kernel composes the gating combinationally without reaching into the engine's internals.  Makes the architectural contract visible at the `AltoChip`-vs-`Microengine` boundary.
+
+- **Test microcode updated, NOT the kernel relaxed.**  The five Phase-3 tests that depended on per-cycle arbitration were updated to issue `F1=TaskYield` where they intended an arbiter step.  Refusing the alternative — making the kernel "smart" about when to arbitrate (e.g., switching whenever the current task isn't waking) — keeps the architectural semantics exactly aligned with the real Alto.  The tests are now real-Alto-shaped; future microcode written for the real Alto will run unmodified.
+
+- **`boot_trace_baseline_metrics` assertion relaxation, not removal.**  The "Disk Sector firings ≥ sector_marks" assertion held under per-cycle arbitration (Disk Sector won immediately when `sector_mark` fired) but no longer holds under sticky arbitration (the running Emulator must reach a `TaskYield` first).  The full real-Alto boot path *does* eventually reach `TaskYield`s, but it depends on F1/F2 codes that are still unimplemented in Phase 3.5; until those land, the Emulator can stay in Task 0 across the entire 2000-cycle window.  The assertion would constrain future per-task-code implementations to also reach `TaskYield` quickly, which is a downstream constraint, not the chip-level invariant being tested here.  Replaced with a printed metric and the (still-correct) "Emulator dominates" assertion.
+
+- **`assets/` gitignored.**  The Bitsavers mirror under `assets/bitsavers/` (Xerox-era PDFs + microcode dumps + Alto disk images, currently ~57 MB) is reference material consulted during development, not redistributable source.  Kept locally; not in the repo.
+
+**Surprises and gotchas:**
+
+- **Per-cycle arbitration was confidently wrong, not obviously wrong.**  The Phase-3 tests passed cleanly because they didn't span enough cycles for sticky-vs-non-sticky to diverge.  The bug only emerged when running the real microcode through enough cycles that a task continuity assumption failed.  **Lesson:** when implementing well-documented vintage hardware, read the architectural reference (§2.4 of the Hardware Manual in this case) *before* deciding the simulation model — even when the per-cycle simplification "obviously works" against your synthetic tests.
+
+- **The DFF default-value isn't a hardware reset path.**  `current_task` defaults to `Bits<4>(0)` (Emulator).  That means after reset, the chip runs Task 0 until microcode reaches a `TaskYield` — which is the Alto's actual boot semantics (TaskTask at task 14 is loaded by external means and the boot rom is the first thing that runs).  We don't model the boot rom's role here; the convention "tests start with Emulator running, microcode TaskYields to switch" is the operational contract.
+
+- **F1 is a single-slot field — `TaskYield` and `WriteKadr` etc. are mutually exclusive.**  Tests that wanted "yield then immediately do KADR write" needed two microinstruction slots, not one.  Updated test microcode walks an extra address through this two-step sequence.
+
+- **The Emulator's idle loop in real microcode is not a NOP loop, it's a `TaskYield` loop.**  The Phase-3 NOP-loop test microcode was wrong for sticky semantics: the Emulator never yields from a literal NOP.  Real Alto Emulator loops are dispatch loops where every other instruction has `F1=TASK` so I/O tasks can preempt.  Updated `disk_sector_mark_fires_disk_sector_task` to use a `TaskYield`-loop, which is closer to real microcode shape.
+
+**Validation:**
+
+- 42/42 alto tests pass (`cargo test -p rhdl-alto`).  No regressions in the broader workspace from this change (3 unrelated pre-existing `code` crate failures depend on the local IceStorm toolchain installation).
+- `cargo build -p rhdl-alto` clean.
+- The five fixed tests now exercise the sticky-task path AND the F1=TaskYield arbitration path, which gives this commit better coverage of the real Alto pipeline contract than Phase 3 had.
+
+**Follow-ups:**
+
+- Phase 3.5 Step 4: implement the per-task F1/F2 codes the boot path requires (per-task `BS=3`/`BS=4` sources, `F1=STARTF`, `ACSOURCE`/`ACDEST←`, `SWMODE` for bank switching, `MRT` gating of `MAR←`/`MD←`) so the real Emulator microcode can advance past its initial loop and reach its first `TaskYield`.  Once it does, `boot_trace_baseline_metrics` should see Disk Sector firings ≥ sector_marks again, at which point reinstate that assertion.
+- Phase 3.5 Step 4 (cont.): realistic disk rotation timing in `DiabloDisk`; per-task body real DMA in `AltoTaskSystem` rules; boot trace until Nova PC = 0o345.
+- Phase 3.5 Step 5: ContrAlto2 CSV trace patch + cycle-equivalent lockstep harness.
+
+---
+
 ## 2026-05-01 — Tier C #2 Alto Phase 3: disk subsystem foundation + first per-task body divergence
 
 **Paths:**
