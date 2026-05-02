@@ -1609,13 +1609,16 @@ mod tests {
         // real instructions.  Spec §3.4: "PC ← 1, and the emulator is
         // started" — Emulator now executes the boot bootstrap.
         //
-        // We don't predict exact microaddress count (depends on what
-        // Nova instructions the bootstrap runs and how many distinct
-        // microcode handlers they reach), but we expect MORE than
-        // the empty-memory baseline (35 addresses).
-        assert!(visited.len() >= 35,
-            "boot-button-loaded memory should drive Emulator through \
-             at least as many addresses as empty memory; got {}",
+        // Floor: 62 distinct microaddresses.  Achieved after the NEXT-mask
+        // bugfix (Phase 3.5 Step 4g) unblocked BusToNext dispatch with
+        // odd-LSB bus values; KSEC's real microcode then began executing
+        // its 0x37c-0x388 chain instead of stalling.  The floor exists
+        // to catch regressions: any change that drops us below 62 has
+        // re-broken dispatch for one of the F1/F2 codes KSEC uses.
+        assert!(visited.len() >= 62,
+            "boot trace should visit at least 62 distinct microaddresses; \
+             got {} — likely a regression in dispatch (BusToNext, IDISP, \
+             per-task F1/F2/BS, or bit0 OR-merge)",
             visited.len());
     }
 }
