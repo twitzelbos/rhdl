@@ -235,6 +235,42 @@ For Phase 3.5 boot trace: any of these three would unblock KSEC
 running its real microcode.  Path 3 is fastest to land but creates
 lockstep divergence.  Path 1 is the long-term right answer.
 
+## 2026-05-02 (continued, post-STROBE) — per-task dispatch surface complete; next bottleneck is empty-memory boot
+
+Six more spec-aligned commits landed after the URom-alignment fix:
+
+- `cd875ef8` — Per-task BS=3 (ReadKSTAT) + BS=4 (ReadKDATA) for Disk tasks (spec §3.2 + §8.5).
+- `2c270973` — F1=10 (LoadKSTAT) for Disk tasks (spec §3.3 + §8.5).
+- `ecf41b97` — F1=12 (CLRSTAT) for Disk tasks (spec §8.5) + DiskController clr_stat input.
+- `b901dd0e` — F1=11B/binary-9 (STROBE) per spec §8.5 + engine.kdata routed from disk.current_word_data + new `f1_strobe_in_disk_sector_arms_transfer` test.
+- `2b052e09` — Per-task F2 NEXT-modify codes for Disk tasks (INIT, RWC, RECNO, XFRDAT, SWRNRDY, NFER, STROBON) per spec §8.5.
+
+The chip now has spec-correct dispatch for every per-task F1/F2/BS code that appears in KSEC's currently-visited 35-address chain.  But the boot trace metrics (35 distinct addresses, 2 sector_mark events, 1743 KSEC cycles, 257 Emulator cycles) haven't moved despite all the additions.
+
+### Why the metrics aren't moving
+
+Per spec §8.6, KSEC's job per sector boundary is:
+1. Wake on sector_mark.
+2. Read KSTAT to verify alignment.
+3. **Walk the KBLK chain at memory[521B]** to find the next disk command block (DCB).
+4. Set up KCOM/KADR/KCWA from the current DCB.
+5. Issue STROBE.
+6. BLOCK.
+
+With our default empty memory, **memory[521B] = 0** — no commands pending.  KSEC sees "nothing to do", presumably loops or blocks early.  KSEC never reaches STROBE; KWDX never wakes; transfer never happens; DMA never runs; memory never gets sector data.
+
+Per spec §3.4 (Bootstrapping), the **Emulator boot ROM** is what sets up KBLK + the initial DCB.  But our Emulator only runs 257 cycles before sector_mark fires and KSEC takes over indefinitely (KSEC's BLOCK + sustained sector_mark cycle dominates).
+
+### Two paths forward
+
+**Path A: pre-load memory with a valid bootstrap.**  Construct a valid KBLK + DCB in memory at chip init.  This bypasses the Emulator boot ROM and lets KSEC find a command immediately.  Quick: maybe 1 day of work.  Validates that the per-sector → DMA chain works end-to-end with real microcode + real disk image.
+
+**Path B: implement the Emulator boot ROM dance.**  Per spec §3.4: Emulator on reset clears memory[0], clears display, disables interrupts, reads KBDAD = 177034B (keyboard), interprets keys as disk address, sets up KBLK + DCB, then SIOs the disk to start.  Requires Emulator-task F1=15 (STARTF), per-task F2=8 (BUSODD), per-task F2=11 (ACDEST), per-task F2=14 (ACSOURCE), and the entire Nova IDISPATCH machinery to interpret the boot instructions.  Substantial: 1-2 weeks.
+
+Path A is the cheaper path to "boot trace shows actual sector DMA + Nova execution".  Path B is what's actually correct for "boot from disk like a real Alto".
+
+For Phase 3.5's "boot to OS loader" milestone, Path A gives demonstrable progress without needing the full Emulator task body.  Path B is required for Phase 4+ (full Alto fidelity).
+
 ## Resumption notes
 
 - Assets (PROMs, .dsk, ContrAlto source) all live under
