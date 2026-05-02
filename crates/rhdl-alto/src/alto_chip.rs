@@ -1119,11 +1119,29 @@ mod tests {
         eprintln!("  task firing counts: {task_counts:?}");
         eprintln!("  disk sector_mark fired: {sector_marks} times");
 
-        // Baseline assertions (intentionally loose):
-        // - at least 1 distinct microaddress (the engine ran at all)
-        // - sector_mark fires once per 256 cycles → ~7 marks in 2000 cycles
-        assert!(visited.len() >= 1, "engine should have run at least one microinstruction");
+        // Baseline assertions:
+        // - at least 8 distinct microaddresses (current ceiling — boot
+        //   path stuck here pending more per-task codes; future
+        //   sessions implementing more codes should drive this up,
+        //   which would update this assertion).
+        // - sector_mark fires once per 256 cycles → ~7 marks in 2000 cycles.
+        assert!(visited.len() >= 8,
+            "current ceiling is 8 distinct addresses; if this regresses, \
+             something broke the partial-boot loop; got {}", visited.len());
         assert!(sector_marks >= 5,
             "disk sector_mark should fire ~7 times in 2000 cycles; saw {sector_marks}");
+
+        // Disk Sector task should fire at least N times where N matches
+        // the sector_marks (per the verified architectural chain).
+        let disk_sector_firings = task_counts[4];
+        assert!(disk_sector_firings >= sector_marks,
+            "Disk Sector firings ({disk_sector_firings}) should match \
+             sector_mark count ({sector_marks})");
+
+        // Emulator should fire heavily — it's the default-running task
+        // when no I/O task is woken.  Expect ~1900-2000 firings.
+        let emulator_firings = task_counts[0];
+        assert!(emulator_firings > 1500,
+            "Emulator should be the default-running task; saw {emulator_firings} firings");
     }
 }
