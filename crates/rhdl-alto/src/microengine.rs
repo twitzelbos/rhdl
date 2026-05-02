@@ -365,6 +365,21 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         // semantics fall through to the WDTASKACT&WDINIT case which
         // is false in steady state.
     }
+
+    // F2=BUSODD (Emulator-only, F2=10B/binary 8 per spec §6.6):
+    // "BUSODD merges BUS[15] into NEXT[9]".  Alto's MSB=0 numbering
+    // means BUS[15] = LSB (our bit 0) and NEXT[9] = LSB of the
+    // 10-bit NEXT (our bit 0).  So: if BUS bit 0 is set, set NEXT
+    // bit 0.  (F2=DiskWordTransfer is the same binary code 8 — in
+    // Disk task it's our atomic-DMA simplification + INIT NEXT-
+    // modify; in Emulator it's BUSODD.  Per-task dispatch
+    // distinguishes.)
+    let is_emulator_for_busodd: bool = i.current_task == bits::<4>(0);
+    let is_busodd: bool = mi.f2 == F2Function::DiskWordTransfer;
+    if is_emulator_for_busodd && is_busodd {
+        let bus_lsb: Bits<10> = (bus & bits::<16>(1)).resize();
+        next_addr = next_addr | bus_lsb;
+    }
     o.next_mpc = next_addr;
 
     // ---- DMA detection (Disk Word task) --------------------------
