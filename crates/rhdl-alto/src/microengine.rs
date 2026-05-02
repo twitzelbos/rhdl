@@ -420,34 +420,46 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     next_addr = next_addr_or_bus | bit0;
     // F2=IDispatch (Emulator only, F2=15B = binary 13): the 16-way
     // PROM dispatch per *Alto Hardware Manual* §3.5 + spec §6.6.
-    // The actual table from spec §6.6:
+    // Full table per ContrAlto's EmulatorTask.cs (verified against
+    // the spec — D12 fix added the IR[0]=1 branch and the
+    // IR[4-7]=16B branch which were missing):
     //
-    //   Conditions          | OR'd onto NEXT
-    //   --------------------|-----------------
-    //   if IR[1-2] = 0      | IR[3-4]
-    //   elseif IR[1-2] = 1  | 4
-    //   elseif IR[1-2] = 2  | 5
-    //   elseif IR[4-7] = 0  | 1
-    //   elseif IR[4-7] = 1  | 0
-    //   elseif IR[4-7] = 6  | 16B (= 14)
-    //   else                | IR[4-7]
+    //   Conditions          | OR'd onto NEXT          | Comment
+    //   --------------------|-----------------        |--------
+    //   if IR[0] = 1        | 3 - IR[8-9]             | complement of SH field (Nova SHIFT)
+    //   elseif IR[1-2] = 0  | IR[3-4]                 | JMP, JSR, ISZ, DSZ
+    //   elseif IR[1-2] = 1  | 4                       | LDA
+    //   elseif IR[1-2] = 2  | 5                       | STA
+    //   elseif IR[4-7] = 0  | 1                       |
+    //   elseif IR[4-7] = 1  | 0                       |
+    //   elseif IR[4-7] = 6  | 16B (= 14)              | CONVERT
+    //   elseif IR[4-7] = 16B(=14) | 6                 |
+    //   else                | IR[4-7]                 |
     //
-    // Alto's MSB=0 numbering: IR[1-2] = our bits 14-13 (top two below
-    // the MSB); IR[3-4] = our bits 12-11; IR[4-7] = our bits 11-8.
+    // Alto's MSB=0 numbering:
+    //   IR[0]    = our bit 15 (MSB)
+    //   IR[1-2]  = our bits 14-13
+    //   IR[3-4]  = our bits 12-11
+    //   IR[4-7]  = our bits 11-8
+    //   IR[8-9]  = our bits 7-6
     let is_emulator_for_idisp: bool = i.current_task == bits::<4>(0);
     let is_idisp: bool = mi.f2 == F2Function::IDispatch;
     if is_emulator_for_idisp && is_idisp {
-        let ir_1_2: Bits<10> = ((q.ir >> 13) & bits::<16>(0b11)).resize();
-        let ir_3_4: Bits<10> = ((q.ir >> 11) & bits::<16>(0b11)).resize();
-        let ir_4_7: Bits<10> = ((q.ir >> 8)  & bits::<16>(0b1111)).resize();
+        let ir_0:   bool      = (q.ir & bits::<16>(0x8000)) != bits::<16>(0);
+        let ir_8_9: Bits<10>  = ((q.ir >> 6)  & bits::<16>(0b11)).resize();
+        let ir_1_2: Bits<10>  = ((q.ir >> 13) & bits::<16>(0b11)).resize();
+        let ir_3_4: Bits<10>  = ((q.ir >> 11) & bits::<16>(0b11)).resize();
+        let ir_4_7: Bits<10>  = ((q.ir >> 8)  & bits::<16>(0b1111)).resize();
         let dispatch_value: Bits<10> =
-                 if ir_1_2 == bits::<10>(0) { ir_3_4 }
-            else if ir_1_2 == bits::<10>(1) { bits::<10>(4) }
-            else if ir_1_2 == bits::<10>(2) { bits::<10>(5) }
-            else if ir_4_7 == bits::<10>(0) { bits::<10>(1) }
-            else if ir_4_7 == bits::<10>(1) { bits::<10>(0) }
-            else if ir_4_7 == bits::<10>(6) { bits::<10>(0o16) }
-            else                            { ir_4_7 };
+                 if ir_0                        { bits::<10>(3) - ir_8_9 }
+            else if ir_1_2 == bits::<10>(0)     { ir_3_4 }
+            else if ir_1_2 == bits::<10>(1)     { bits::<10>(4) }
+            else if ir_1_2 == bits::<10>(2)     { bits::<10>(5) }
+            else if ir_4_7 == bits::<10>(0)     { bits::<10>(1) }
+            else if ir_4_7 == bits::<10>(1)     { bits::<10>(0) }
+            else if ir_4_7 == bits::<10>(6)     { bits::<10>(0o16) }
+            else if ir_4_7 == bits::<10>(0o16)  { bits::<10>(6) }
+            else                                { ir_4_7 };
         next_addr = next_addr | dispatch_value;
     }
 
@@ -498,6 +510,61 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         // DMA atomic dispatch in Disk Word task, plus NEXT-modify
         // semantics fall through to the WDTASKACT&WDINIT case which
         // is false in steady state.
+    }
+
+    // F2=ACSOURCE late dispatch (Emulator only, F2=14 binary): per spec
+    // §6.6 + ContrAlto's EmulatorTask.cs ACSOURCE late handler.  ACSOURCE
+    // has TWO roles: (1) early — override RSEL low 2 bits with (IR[1-2]
+    // XOR 3), already done at the effective_rsel computation; and
+    // (2) late — dispatch into NEXT based on IR.  This block handles (2).
+    //
+    // Table per spec / ContrAlto:
+    //   if IR[0] = 1           → 3 - IR[8-9]      (Nova SHIFT complement)
+    //   else (IR[0] = 0):
+    //     if IR[1-2] != 3      → IR[5]            (the Indirect bit, OR'd in)
+    //     dispatch on IR[3-7] (5 bits, 0..31):
+    //       0  → 2  (CYCLE)
+    //       1  → 5  (RAMTRAP)
+    //       2  → 3  (NOPAR)
+    //       3  → 6  (RAMTRAP)
+    //       4  → 7  (RAMTRAP)
+    //       9  → 4  (JSRII; 11B octal)
+    //       10 → 4  (JSRIS; 12B octal)
+    //       14 → 1  (CONVERT; 16B octal)
+    //       31 → 15 (ROMTRAP/SWAT; 17B octal output)
+    //       else → 14 (ROMTRAP; 16B octal output)
+    //
+    // Alto MSB=0 → our LSB=0 mapping:
+    //   IR[0]   = bit 15
+    //   IR[1-2] = bits 14-13
+    //   IR[3-7] = bits 12-8 (5 bits)
+    //   IR[5]   = bit 10
+    //   IR[8-9] = bits 7-6
+    let is_acsource: bool = mi.f2 == F2Function::Code14;
+    if is_emulator_for_idisp && is_acsource {
+        let acs_dispatch: Bits<10> = if (q.ir & bits::<16>(0x8000)) != bits::<16>(0) {
+            // IR[0]=1: 3 - IR[8-9].
+            let sh: Bits<10> = ((q.ir >> 6) & bits::<16>(0b11)).resize();
+            bits::<10>(3) - sh
+        } else {
+            let ir_1_2_acs: Bits<10> = ((q.ir >> 13) & bits::<16>(0b11)).resize();
+            let ir_5: Bits<10>       = ((q.ir >> 10) & bits::<16>(0b1)).resize();
+            let ir_3_7: Bits<10>     = ((q.ir >> 8)  & bits::<16>(0b11111)).resize();
+            let ind_bit: Bits<10> = if ir_1_2_acs != bits::<10>(3) { ir_5 } else { bits::<10>(0) };
+            let dispatch: Bits<10> =
+                     if ir_3_7 == bits::<10>(0)     { bits::<10>(2) }
+                else if ir_3_7 == bits::<10>(1)     { bits::<10>(5) }
+                else if ir_3_7 == bits::<10>(2)     { bits::<10>(3) }
+                else if ir_3_7 == bits::<10>(3)     { bits::<10>(6) }
+                else if ir_3_7 == bits::<10>(4)     { bits::<10>(7) }
+                else if ir_3_7 == bits::<10>(9)     { bits::<10>(4) }
+                else if ir_3_7 == bits::<10>(10)    { bits::<10>(4) }
+                else if ir_3_7 == bits::<10>(14)    { bits::<10>(1) }
+                else if ir_3_7 == bits::<10>(31)    { bits::<10>(15) }
+                else                                { bits::<10>(14) };
+            ind_bit | dispatch
+        };
+        next_addr = next_addr | acs_dispatch;
     }
 
     // F2=LoadIr (Emulator only, F2=12 binary, real spec name IR←):

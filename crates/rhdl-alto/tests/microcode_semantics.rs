@@ -1009,3 +1009,226 @@ fn ir_load_merge_inactive_in_disk_task() {
     assert_eq!(out.next_mpc.raw() as u16, 0x100,
         "IR← merge is Emulator-only; disk task should leave NEXT alone");
 }
+
+// =====================================================================
+// §3.4 — F2=BUSODD (Emulator) — additional coverage
+// =====================================================================
+
+#[test]
+fn f2_busodd_does_not_set_bit_when_bus_lsb_clear() {
+    // BUSODD per spec §6.6: BUS[15] (= our LSB) is OR'd into NEXT[9]
+    // (= our LSB).  When BUS LSB = 0, NEXT must be unchanged.
+    let out = observe_comb(vec![
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Constant, F2Function::DiskWordTransfer, false, false, 0x100), 2)
+            .with_task(0),
+    ]);
+    assert_eq!(out.next_mpc.raw() as u16, 0x100,
+        "BUSODD with even BUS must leave NEXT unchanged");
+}
+
+// =====================================================================
+// §6.6 / §3.5 — IDISP PROM full table coverage (D12)
+// =====================================================================
+//
+// Helper to set IR via LoadIr (BS=MemoryData) then run IDISP with
+// NEXT=0x100 in the same observation; returns next_mpc combinationally.
+fn idisp_dispatch_for_ir(ir: u16) -> u16 {
+    let out = observe_comb(vec![
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
+            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
+            .with_md(ir).with_task(0),
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Nop, F2Function::IDispatch, false, false, 0x100), 0).with_task(0),
+    ]);
+    out.next_mpc.raw() as u16
+}
+
+#[test]
+fn idisp_branch_ir0_set_uses_complement_of_sh_field() {
+    // IR[0]=1 (bit 15 set) → dispatch = 3 - IR[8-9].
+    // IR[8-9] = bits 7-6.  Examples:
+    //   IR=0x8000 → bits 7-6 = 0b00 → 3-0 = 3 → next = 0x103
+    //   IR=0x8040 → bits 7-6 = 0b01 → 3-1 = 2 → next = 0x102
+    //   IR=0x8080 → bits 7-6 = 0b10 → 3-2 = 1 → next = 0x101
+    //   IR=0x80C0 → bits 7-6 = 0b11 → 3-3 = 0 → next = 0x100
+    assert_eq!(idisp_dispatch_for_ir(0x8000), 0x103, "IR[0]=1 IR[8-9]=0 → 3");
+    assert_eq!(idisp_dispatch_for_ir(0x8040), 0x102, "IR[0]=1 IR[8-9]=1 → 2");
+    assert_eq!(idisp_dispatch_for_ir(0x8080), 0x101, "IR[0]=1 IR[8-9]=2 → 1");
+    assert_eq!(idisp_dispatch_for_ir(0x80C0), 0x100, "IR[0]=1 IR[8-9]=3 → 0");
+}
+
+#[test]
+fn idisp_branch_ir12_zero_uses_ir34() {
+    // IR[1-2]=0 → dispatch = IR[3-4] (our bits 12-11).
+    // To hit this: IR[0]=0 (bit 15 clear) AND IR[1-2]=0 (bits 14-13 = 00).
+    //   IR=0x0000 → IR[3-4]=0 → next=0x100
+    //   IR=0x0800 → IR[3-4]=1 → next=0x101
+    //   IR=0x1000 → IR[3-4]=2 → next=0x102
+    //   IR=0x1800 → IR[3-4]=3 → next=0x103
+    assert_eq!(idisp_dispatch_for_ir(0x0000), 0x100);
+    assert_eq!(idisp_dispatch_for_ir(0x0800), 0x101);
+    assert_eq!(idisp_dispatch_for_ir(0x1000), 0x102);
+    assert_eq!(idisp_dispatch_for_ir(0x1800), 0x103);
+}
+
+#[test]
+fn idisp_branch_ir12_one_dispatches_to_4() {
+    // IR[1-2]=1 (bit 14=0, bit 13=1) → dispatch = 4.  IR=0x2000.
+    assert_eq!(idisp_dispatch_for_ir(0x2000), 0x104);
+}
+
+#[test]
+fn idisp_branch_ir12_two_dispatches_to_5() {
+    // IR[1-2]=2 (bit 14=1, bit 13=0) → dispatch = 5.  IR=0x4000.
+    assert_eq!(idisp_dispatch_for_ir(0x4000), 0x105);
+}
+
+#[test]
+fn idisp_branch_ir47_zero_dispatches_to_1() {
+    // IR[1-2]=3 falls through to IR[4-7]=0 branch.
+    // IR[1-2]=3 (bits 14-13 = 11) AND IR[4-7]=0 (bits 11-8 = 0000).
+    // IR = 0x6000 has bits 14-13=11, bits 11-8=0 → satisfies both.
+    assert_eq!(idisp_dispatch_for_ir(0x6000), 0x101);
+}
+
+#[test]
+fn idisp_branch_ir47_one_dispatches_to_0() {
+    // IR[1-2]=3 AND IR[4-7]=1 (bits 11-8 = 0001).
+    // IR = 0x6100 (bits 14-13=11, bits 11-8=0001).
+    assert_eq!(idisp_dispatch_for_ir(0x6100), 0x100);
+}
+
+#[test]
+fn idisp_branch_ir47_six_dispatches_to_14() {
+    // IR[1-2]=3 AND IR[4-7]=6 (bits 11-8 = 0110).  CONVERT.
+    // IR = 0x6600.
+    assert_eq!(idisp_dispatch_for_ir(0x6600), 0x10E);
+}
+
+#[test]
+fn idisp_branch_ir47_fourteen_dispatches_to_6() {
+    // IR[1-2]=3 AND IR[4-7]=14 (bits 11-8 = 1110).
+    // IR = 0x6E00.  Per ContrAlto's spec: dispatch = 6.
+    assert_eq!(idisp_dispatch_for_ir(0x6E00), 0x106);
+}
+
+#[test]
+fn idisp_branch_default_uses_ir47() {
+    // IR[1-2]=3 AND IR[4-7] not in {0,1,6,14} → dispatch = IR[4-7].
+    // IR = 0x6500 (bits 14-13=11, bits 11-8=5) → dispatch=5.
+    assert_eq!(idisp_dispatch_for_ir(0x6500), 0x105);
+    // IR = 0x6700 (bits 11-8=7) → dispatch=7.
+    assert_eq!(idisp_dispatch_for_ir(0x6700), 0x107);
+}
+
+// =====================================================================
+// §6.6 — ACSOURCE late dispatch (D13 fix)
+// =====================================================================
+//
+// Helper: set IR via LoadIr, then run F2=ACSOURCE (Code14) with
+// NEXT=0x100; return the resulting next_mpc.  ACSOURCE has TWO roles:
+// the early RSEL-override is tested separately; this exercises the
+// late NEXT-modify dispatch.
+fn acsource_dispatch_for_ir(ir: u16) -> u16 {
+    let out = observe_comb(vec![
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
+            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
+            .with_md(ir).with_task(0),
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Nop, F2Function::Code14, false, false, 0x100), 0).with_task(0),
+    ]);
+    out.next_mpc.raw() as u16
+}
+
+#[test]
+fn acsource_ir0_set_uses_complement_of_sh_field() {
+    // IR[0]=1 (bit 15) → dispatch = 3 - IR[8-9] (bits 7-6).
+    // IR=0x8000: bits 7-6 = 00 → 3-0 = 3 → next = 0x103.
+    // IR=0x80C0: bits 7-6 = 11 → 3-3 = 0 → next = 0x100.
+    assert_eq!(acsource_dispatch_for_ir(0x8000), 0x103);
+    assert_eq!(acsource_dispatch_for_ir(0x80C0), 0x100);
+}
+
+#[test]
+fn acsource_ir37_zero_dispatches_to_2_cycle() {
+    // IR[0]=0, IR[1-2]=3 (so no IR[5] OR), IR[3-7]=0 → dispatch=2.
+    // IR=0x6000: bits 14-13=11, bits 12-8=00000, bit 10=0 → next=0x102.
+    assert_eq!(acsource_dispatch_for_ir(0x6000), 0x102);
+}
+
+#[test]
+fn acsource_ir37_one_dispatches_to_5_ramtrap() {
+    // IR[3-7]=1 → dispatch=5.  IR=0x6100 (bits 12-8=00001).
+    assert_eq!(acsource_dispatch_for_ir(0x6100), 0x105);
+}
+
+#[test]
+fn acsource_ir37_two_dispatches_to_3_nopar() {
+    // IR[3-7]=2 → dispatch=3.  IR=0x6200.
+    assert_eq!(acsource_dispatch_for_ir(0x6200), 0x103);
+}
+
+#[test]
+fn acsource_ir37_default_dispatches_to_14_romtrap() {
+    // IR[3-7]=5 (not in special table) → dispatch=14.  IR=0x6500.
+    assert_eq!(acsource_dispatch_for_ir(0x6500), 0x10E);
+}
+
+#[test]
+fn acsource_ir37_31_dispatches_to_15_swat() {
+    // IR[3-7]=31 (=37B octal) → dispatch=15 (=17B octal).  IR=0x7F00.
+    assert_eq!(acsource_dispatch_for_ir(0x7F00), 0x10F);
+}
+
+#[test]
+fn acsource_ir37_14_dispatches_to_1_convert() {
+    // IR[3-7]=14 (=16B octal) → dispatch=1 (CONVERT).  IR=0x6E00.
+    assert_eq!(acsource_dispatch_for_ir(0x6E00), 0x101);
+}
+
+#[test]
+fn acsource_ir12_not_3_ors_indirect_bit_into_dispatch() {
+    // IR[5] (bit 10) overlaps with IR[3-7] (bits 12-8), so for the
+    // OR to be observable, pick IR[3-7] whose dispatch has bit 0
+    // CLEAR.  IR[3-7]=5 → default dispatch=14 (bit 0 clear).  With
+    // IR[5]=1 and IR[1-2]=0 (not 3) → ind_bit=1 OR'd in → 14|1=15.
+    // IR=0x0500 (bits 14-13=00, bits 12-8=00101=5, bit 10=1).
+    assert_eq!(acsource_dispatch_for_ir(0x0500), 0x10F,
+        "IR[1-2]!=3 OR's the indirect-bit IR[5] into the dispatch");
+}
+
+#[test]
+fn acsource_ir12_eq_3_does_not_or_indirect_bit() {
+    // When IR[1-2]=3, IR[5] is NOT OR'd in.  IR=0x6500 has bits 14-13=11
+    // (= 3), bits 12-8=00101 (=5), bit 10=1.  Dispatch=14 (default for
+    // IR[3-7]=5); ind_bit suppressed → next=0x100 | 14 = 0x10E.
+    assert_eq!(acsource_dispatch_for_ir(0x6500), 0x10E,
+        "IR[1-2]=3 suppresses the IR[5] indirect-bit OR");
+}
+
+#[test]
+fn acsource_inactive_in_disk_task() {
+    // F2=Code14 (=ACSOURCE in Emulator) is per-task; in disk task
+    // (F2=14 = STROBON per spec §8.5), ACSOURCE late dispatch must NOT
+    // fire.  Stage IR via Emulator, switch to disk task, run F2=Code14.
+    let out = observe_comb(vec![
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
+            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
+            .with_md(0x8000).with_task(0),
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Nop, F2Function::Code14, false, false, 0x100), 0).with_task(4),
+    ]);
+    assert_eq!(out.next_mpc.raw() as u16, 0x100,
+        "ACSOURCE late dispatch is Emulator-only; disk task must not modify NEXT");
+}
+
+#[test]
+fn idisp_priority_ir0_wins_over_ir12() {
+    // IR[0]=1 takes precedence over IR[1-2] checks per spec table.
+    // IR=0xE000 has IR[0]=1 AND IR[1-2]=3.  Should use IR[0]=1 branch.
+    // IR[8-9] = 0 → 3-0 = 3.  So next = 0x103 (NOT 0x103 from IR[4-7]
+    // path which would also give 0).
+    assert_eq!(idisp_dispatch_for_ir(0xE000), 0x103,
+        "IR[0]=1 must take precedence over the IR[1-2]/IR[4-7] table");
+}

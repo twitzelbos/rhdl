@@ -364,21 +364,21 @@ The Alto's defining architectural feature. Sixteen hardware tasks; on every micr
 
 Per AltoHW §2.4: "Control of the Alto microprocessor is shared among 16 'tasks' arranged in a priority order. The tasks are numbered 0 to 15: **0 is the lowest priority task and 15 is the highest**. The lowest priority task is the emulator task which fetches instructions and executes them."
 
-Per AltoHW §2.3 footnote (c): **"Parity errors result in activation of the highest-priority task (task number 15) whose purpose is to deal with the error."** So task 15 is canonically the **parity error task** (PART), not "reserved".
+Per AltoHW §2.3 footnote (c): **"Parity errors result in activation of the highest-priority task (task number 15) whose purpose is to deal with the error."** The HW manual treats task 15 as canonical for parity in *generic* terms — but real Alto II microcode (`altoIIcode3.mu`) places `PART` at **task 13** and leaves task 15 unused, with `KWDX` (Disk Word, the hard-realtime task) as the highest-priority *active* task.  ContrAlto's `CPU.cs` enum agrees: `Parity = 13, DiskWord = 14`.  This implementation follows the real-microcode convention — see §5.2 below.
 
 **Reset entry points (AltoHW §2.4 *Initialization*).** Each task starts at MPC = its task number:
 
 > "This presents an initialization problem which is solved by having each task start at the location which is its task number (thus the emulator task finds its first instruction to execute at MPC=0). Task numbers are written into the MPC RAM during a reset cycle, which may be initiated manually or by a CPU instruction (see SIO instruction in section 3.3)."
 
-So the Emulator task starts at **MPC=0**, KSEC at **MPC=4**, MRT at **MPC=8**, ..., PART at **MPC=15**. The microcode labels (`NOVEM`, `KSEC`, `MRT`, etc.) are *Mu-assembler labels* that resolve to those addresses by being placed at those positions in the assembled output.
+So the Emulator task starts at **MPC=0**, KSEC at **MPC=4**, MRT at **MPC=8**, PART at **MPC=13**, KWDX at **MPC=14**. The microcode labels (`NOVEM`, `KSEC`, `MRT`, etc.) are *Mu-assembler labels* that resolve to those addresses by being placed at those positions in the assembled output via the `!17,20,...` directive in altoIIcode3.mu.
 
-### 5.2 Task table (canonical numbering)
+### 5.2 Task table (canonical numbering — matches real altoIIcode3.mu)
 
-From `altoIIcode3.mu.txt:25-32` (reset-vector predefinitions) cross-referenced with AltoHW §2.4:
+From `altoIIcode3.mu.txt:25` (the `!17,20,NOVEM,,,,KSEC,,,EREST,MRT,DWT,CURT,DHT,DVT,PART,KWDX,;` reset-vector directive) and cross-referenced with ContrAlto's `CPU.cs` enum:
 
 | Index | Mnemonic   | Reset MPC | Purpose                                                | Priority |
 |-------|------------|-----------|--------------------------------------------------------|----------|
-| 0     | `EMU`      | 0         | Nova-instruction emulator (CPU)                        | **lowest** — always requesting wakeup; runs whenever no other task is woken |
+| 0     | `EMU` / `NOVEM` | 0    | Nova-instruction emulator (CPU)                        | **lowest** — always requesting wakeup; runs whenever no other task is woken |
 | 1     | (unused)   | 1         | reserved                                               | — |
 | 2     | (unused)   | 2         | reserved                                               | — |
 | 3     | (unused)   | 3         | reserved                                               | — |
@@ -391,11 +391,11 @@ From `altoIIcode3.mu.txt:25-32` (reset-vector predefinitions) cross-referenced w
 | 10    | `CURT`     | 10        | Cursor task — overlay mouse cursor on framebuffer       | high |
 | 11    | `DHT`      | 11        | Display Horizontal Task — end-of-line housekeeping     | high |
 | 12    | `DVT`      | 12        | Display Vertical Task — end-of-frame, vertical retrace | high |
-| 13    | (reserved) | 13        | reserved                                               | — |
-| 14    | `KWDX`     | 14        | Disk Word Task — per-word disk DMA                      | very high |
-| 15    | `PART`     | 15        | **Parity error task** — handles memory parity errors    | **highest** |
+| 13    | `PART`     | 13        | **Parity error task** — handles memory parity errors   | very high |
+| 14    | `KWDX`     | 14        | Disk Word Task — per-word disk DMA                      | **highest active** |
+| 15    | (unused)   | 15        | reserved (HW manual reserves task 15 for parity in generic terms; real Alto II microcode does not use this slot) | — |
 
-Higher-numbered task = higher priority. The Emulator (task 0) runs as the "background" task; KWDX (task 14) preempts almost everything to keep up with disk word strobes; PART (task 15) preempts everything to handle parity errors.
+Higher-numbered task = higher priority.  The Emulator (task 0) runs as the "background" task; KWDX (task 14) preempts almost everything to keep up with disk word strobes; PART (task 13) handles parity-error interrupts.  Task 15 is reserved by the hardware spec but unused by the as-shipped Alto II microcode binary.
 
 ### 5.3 Wakeup signals
 
