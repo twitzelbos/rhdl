@@ -60,6 +60,11 @@ pub struct CtrlOut {
     /// in the Phase-3.5 simplified KCOM encoding).  Routed to
     /// DiabloDisk.transfer_request to arm a 256-word transfer.
     pub transfer_request: bool,
+    /// Current KCWA (memory-write-address-for-DMA) register value.
+    /// The Disk Word DMA path reads this to know where to write the
+    /// next disk word in memory; engine increments it via the
+    /// F2=DiskWordTransfer DMA atomic.
+    pub kcwa_value: Bits<16>,
 }
 
 /// Register addresses (Phase-3 subset; will expand as more disk
@@ -161,6 +166,7 @@ pub fn disk_controller_kernel(cr: ClockReset, i: CtrlIn, q: Q) -> (CtrlOut, D) {
     // bits + a few control flags); we'll re-align when boot trace
     // requires it.
     o.transfer_request = (q.kcom & bits::<16>(0x8000)) != bits::<16>(0);
+    o.kcwa_value = q.kcwa;
 
     if cr.reset.any() {
         d.kstat = bits::<16>(0);
@@ -177,6 +183,7 @@ pub fn disk_controller_kernel(cr: ClockReset, i: CtrlIn, q: Q) -> (CtrlOut, D) {
         o.kcom_op      = bits::<3>(0);
         o.kstat_ready  = false;
         o.transfer_request = false;
+        o.kcwa_value = bits::<16>(0);
     }
 
     (o, d)

@@ -70,6 +70,13 @@ pub struct In {
     /// per-task F1/F2 dispatch — currently unused by the kernel
     /// (universal codes only) but plumbed for the next phase.
     pub current_task: Bits<4>,
+    /// Disk's current rotational word data (combinational from
+    /// disk's `current_word_data` output).  Used by F2=DiskWordTransfer
+    /// in Disk Word task to write the word to memory[KCWA].
+    pub disk_word_data: Bits<16>,
+    /// KCWA register value (combinational from controller's q.kcwa).
+    /// The address memory[KCWA] is the destination for per-word DMA.
+    pub kcwa: Bits<16>,
 }
 
 /// Outputs from the microengine.
@@ -243,14 +250,22 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     next_addr = (next_addr_or_bus & bits::<10>(0x3FE)) | bit0;
     o.next_mpc = next_addr;
 
+    // ---- DMA detection (Disk Word task) --------------------------
+    // F2 = DiskWordTransfer + current_task == 14 (Disk Word) overrides
+    // both the memory-bus and disk-ctrl outputs to perform an atomic
+    // per-word DMA: memory[KCWA] ← disk_word_data; KCWA ← KCWA + 1.
+    let is_disk_word_task: bool = i.current_task == bits::<4>(14);
+    let is_dma: bool = is_disk_word_task && (mi.f2 == F2Function::DiskWordTransfer);
+
     // ---- Memory bus -----------------------------------------------
     // F2 = LoadMar → MAR ← BUS (commit at edge).
     // F2 = WriteMd → emit a memory write at q.mar with BUS as data.
+    // DMA      → emit a memory write at i.kcwa with i.disk_word_data.
     // BS = MemoryData reads memory[MAR] (1-cycle delay on BRAM).
     d.mar = if mi.f2 == F2Function::LoadMar { bus } else { q.mar };
-    o.mem_address    = q.mar;
-    o.mem_write_en   = mi.f2 == F2Function::WriteMd;
-    o.mem_write_data = bus;
+    o.mem_address    = if is_dma { i.kcwa } else { q.mar };
+    o.mem_write_en   = is_dma || (mi.f2 == F2Function::WriteMd);
+    o.mem_write_data = if is_dma { i.disk_word_data } else { bus };
 
     // ---- Per-task disk-controller register writes ---------------
     // Three F1 codes route BUS into specific disk-controller registers,
@@ -258,12 +273,14 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     //   F1 = WriteKcomm → disk_ctrl_addr = REG_KCOM (2)
     //   F1 = WriteKadr  → disk_ctrl_addr = REG_KADR (3)
     //   F1 = WriteKdata → disk_ctrl_addr = REG_KDATA (1)
-    // In any other task, these F1 codes are no-ops (gated).
+    // DMA path overrides: writes KCWA + 1 to REG_KCWA (4).
     let is_disk_sector_task: bool = i.current_task == bits::<4>(4);
     let is_kcomm: bool = mi.f1 == F1Function::WriteKcomm;
     let is_kadr:  bool = mi.f1 == F1Function::WriteKadr;
     let is_kdata: bool = mi.f1 == F1Function::WriteKdata;
-    o.disk_ctrl_addr = if is_kcomm {
+    o.disk_ctrl_addr = if is_dma {
+        bits::<3>(4)  // REG_KCWA
+    } else if is_kcomm {
         bits::<3>(2)  // REG_KCOM
     } else if is_kadr {
         bits::<3>(3)  // REG_KADR
@@ -272,8 +289,8 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     } else {
         bits::<3>(0)  // any value; write_en will be false
     };
-    o.disk_ctrl_write_en   = is_disk_sector_task && (is_kcomm || is_kadr || is_kdata);
-    o.disk_ctrl_write_data = bus;
+    o.disk_ctrl_write_en   = is_dma || (is_disk_sector_task && (is_kcomm || is_kadr || is_kdata));
+    o.disk_ctrl_write_data = if is_dma { i.kcwa + bits::<16>(1) } else { bus };
 
     // ---- Per-task IR load (Emulator) ------------------------------
     // F2 = LoadIr + current_task == 0 (Emulator) → IR ← MD
@@ -407,7 +424,7 @@ fn f2_from_index(i: Bits<4>) -> F2Function {
     else if i == bits::<4>(5)  { F2Function::AluCarryToNext }
     else if i == bits::<4>(6)  { F2Function::LoadMar }
     else if i == bits::<4>(7)  { F2Function::WriteMd }
-    else if i == bits::<4>(8)  { F2Function::Reserved8 }
+    else if i == bits::<4>(8)  { F2Function::DiskWordTransfer }
     else if i == bits::<4>(9)  { F2Function::Reserved9 }
     else if i == bits::<4>(10) { F2Function::Reserved10 }
     else if i == bits::<4>(11) { F2Function::Reserved11 }

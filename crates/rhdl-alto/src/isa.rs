@@ -177,7 +177,14 @@ pub enum F2Function {
     /// `MD← BUS` — write BUS to memory[MAR] this cycle.  Same task-
     /// gating caveat as `LoadMar`.
     WriteMd,
-    Reserved8,
+    /// `DiskWordTransfer` — atomic per-word DMA when `current_task == 14`
+    /// (Disk Word).  Writes disk's current_word_data to memory[KCWA]
+    /// and increments KCWA.  In any other task: no-op.
+    ///
+    /// Phase-3.5 simplification: real Alto does this over multiple
+    /// cycles via STROBE/KFER/STROBE2 codes.  Collapsed to one cycle
+    /// here to avoid implementing the full disk-controller word-FSM.
+    DiskWordTransfer,
     Reserved9,
     Reserved10,
     Reserved11,
@@ -371,7 +378,7 @@ fn f2_function_index(f: F2Function) -> u8 {
         F2Function::AluCarryToNext => 5,
         F2Function::LoadMar => 6,
         F2Function::WriteMd => 7,
-        F2Function::Reserved8 => 8,
+        F2Function::DiskWordTransfer => 8,
         F2Function::Reserved9 => 9,
         F2Function::Reserved10 => 10,
         F2Function::Reserved11 => 11,
@@ -391,7 +398,7 @@ fn f2_function_from_index(i: u8) -> F2Function {
         5 => F2Function::AluCarryToNext,
         6 => F2Function::LoadMar,
         7 => F2Function::WriteMd,
-        8 => F2Function::Reserved8,
+        8 => F2Function::DiskWordTransfer,
         9 => F2Function::Reserved9,
         10 => F2Function::Reserved10,
         11 => F2Function::Reserved11,

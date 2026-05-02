@@ -227,6 +227,8 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
         constant_value: const_value,
         mem_read_data: mem_data_for_engine,
         current_task,
+        disk_word_data: q.disk.current_word_data,
+        kcwa: q.disk_ctrl.kcwa_value,
     };
     d.mem = MemIn {
         address: q.engine.mem_address,
