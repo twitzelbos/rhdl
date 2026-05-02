@@ -31,6 +31,7 @@
 use rhdl::prelude::*;
 use rhdl_fpga::core::dff;
 
+use crate::constant_rom::{ConstantIn, ConstantOut, ConstantRom};
 use crate::microcode_rom::{MicrocodeRom, UromIn, UromOut};
 use crate::microengine::{In as MicroIn, Microengine, Out as MicroOut};
 
@@ -65,10 +66,10 @@ pub struct ChipOut {
     pub instruction: Bits<32>,
 }
 
-/// The Alto chip — composition of microengine + microcode RAM.
+/// The Alto chip — composition of microengine + microcode RAM + constant ROM.
 ///
-/// Construct with [`AltoChip::with_microcode`] to load a microcode
-/// image, or [`AltoChip::default`] for an all-zero (no-op) ROM.
+/// Construct with [`AltoChip::with_microcode`] to load microcode and
+/// constant images, or [`AltoChip::default`] for all-zero ROMs.
 #[derive(Clone, Debug, Synchronous, SynchronousDQ)]
 #[rhdl(dq_no_prefix)]
 pub struct AltoChip {
@@ -77,6 +78,9 @@ pub struct AltoChip {
     mpc: dff::DFF<Bits<10>>,
     /// 2K-entry microcode RAM (loaded at construction).
     urom: MicrocodeRom,
+    /// 256-entry constant ROM — read combinationally each cycle by
+    /// the microengine via `F1=Constant`.
+    crom: ConstantRom,
     /// Universal-task microengine.
     engine: Microengine,
 }
@@ -86,19 +90,35 @@ impl Default for AltoChip {
         Self {
             mpc: dff::DFF::new(bits::<10>(0)),
             urom: MicrocodeRom::default(),
+            crom: ConstantRom::default(),
             engine: Microengine::default(),
         }
     }
 }
 
 impl AltoChip {
-    /// Construct an AltoChip with the supplied microcode image.
-    /// Pass the output of [`crate::microcode_loader::load_alto_ii_microcode`]
-    /// directly.
+    /// Construct an AltoChip with the supplied microcode image but
+    /// an empty constant ROM.  Useful for tests that don't depend on
+    /// constants.
     pub fn with_microcode(microcode_words: &[u32; crate::microcode_rom::MICROCODE_WORDS]) -> Self {
         Self {
             mpc: dff::DFF::new(bits::<10>(0)),
             urom: MicrocodeRom::with_words(microcode_words),
+            crom: ConstantRom::default(),
+            engine: Microengine::default(),
+        }
+    }
+
+    /// Construct an AltoChip with both microcode and constant ROMs
+    /// loaded.  This is the normal Phase 3.5 boot constructor.
+    pub fn with_microcode_and_constants(
+        microcode_words: &[u32; crate::microcode_rom::MICROCODE_WORDS],
+        constants: &[u16; crate::constant_rom::NUM_CONSTANTS],
+    ) -> Self {
+        Self {
+            mpc: dff::DFF::new(bits::<10>(0)),
+            urom: MicrocodeRom::with_words(microcode_words),
+            crom: ConstantRom::with_constants(constants),
             engine: Microengine::default(),
         }
     }
@@ -128,9 +148,20 @@ pub fn alto_chip_kernel(_cr: ClockReset, _i: ChipIn, q: Q) -> (ChipOut, D) {
     // cycle T+1 the BRAM has contents[next_mpc(T)] = contents[mpc(T+1)].
     let instr_this_cycle: Bits<32> = q.urom.instruction;
 
+    // Decode RSEL[31:27] and BS[22:20] from the instruction; constant
+    // ROM index = (RSEL << 3) | BS = 8 bits.  Drive the constant ROM
+    // combinationally with this index so the engine sees the looked-up
+    // value the same cycle it processes the instruction.
+    let rsel: Bits<5> = ((instr_this_cycle >> 27) & bits::<32>(0x1F)).resize();
+    let bs:   Bits<3> = ((instr_this_cycle >> 20) & bits::<32>(0x07)).resize();
+    let const_idx: Bits<8> = (rsel.resize::<8>() << 3) | bs.resize::<8>();
+    d.crom = ConstantIn { index: const_idx };
+    let const_value: Bits<16> = q.crom.value;
+
     d.engine = MicroIn {
         mpc: q.mpc,
         instr: instr_this_cycle,
+        constant_value: const_value,
     };
 
     // Drive next cycle's instruction fetch from microengine's computed
@@ -235,22 +266,83 @@ mod tests {
         assert_eq!(final_mpc, 3, "should branch to addr 3 and loop there");
     }
 
-    /// Real-microcode integration: load the actual Alto II microcode
-    /// and run a few cycles.  Verifies the loader → ROM → engine path
-    /// works end-to-end without crashing.  Cannot yet check correctness
-    /// (that needs all the per-task F1/F2 + memory + disk wiring).
+    /// F1=Constant should drive BUS from the constant ROM.  Verify
+    /// end-to-end: AltoChip decodes RSEL+BS, drives constant_rom,
+    /// returns the looked-up value, microengine uses it as BUS.
     #[test]
-    fn boot_with_real_microcode_does_not_crash() {
+    fn f1_constant_drives_bus_from_constant_rom() {
+        // Microcode at addr 0:
+        //   F1 = Constant, ALUF = Bus (pass through), L_LOAD = 1,
+        //   RSEL = 0, BS = 0  →  constant ROM index 0
+        //   NEXT = 0 (loop)
+        let mi0 = Microinstruction {
+            rsel: bits::<5>(0),
+            aluf: AluFunction::Bus,
+            bs: BusSource::ReadR,  // overridden by F1=Constant
+            f1: F1Function::Constant,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: true,
+            next: bits::<10>(0),
+        };
+        let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
+        microcode[0] = mi0.pack();
+
+        // Constant ROM: index 0 = 0x1234.
+        let mut constants = [0u16; crate::constant_rom::NUM_CONSTANTS];
+        constants[0] = 0x1234;
+
+        let uut = AltoChip::with_microcode_and_constants(&microcode, &constants);
+        let trace = run(uut, 8);
+
+        // After enough cycles for the BRAM to settle and L to commit,
+        // L should hold 0x1234 (the constant).
+        let final_l = trace.last().unwrap().l.raw();
+        assert_eq!(final_l, 0x1234,
+            "L should latch the constant ROM value via F1=Constant");
+    }
+
+    #[test]
+    fn f1_constant_with_different_index() {
+        // RSEL=0b00001 (1), BS=0b010 (2) → index = (1 << 3) | 2 = 10.
+        let mi0 = Microinstruction {
+            rsel: bits::<5>(1),
+            aluf: AluFunction::Bus,
+            bs: BusSource::None,  // BS=2; overridden by F1=Constant for BUS
+            f1: F1Function::Constant,
+            f2: F2Function::Nop,
+            t_load: false, l_load: true,
+            next: bits::<10>(0),
+        };
+        let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
+        microcode[0] = mi0.pack();
+        let mut constants = [0u16; crate::constant_rom::NUM_CONSTANTS];
+        constants[10] = 0xCAFE;
+        let uut = AltoChip::with_microcode_and_constants(&microcode, &constants);
+        let trace = run(uut, 8);
+        assert_eq!(trace.last().unwrap().l.raw(), 0xCAFE,
+            "L should latch the constant at index (RSEL<<3)|BS = 10");
+    }
+
+    /// Real-microcode integration: load the actual Alto II microcode
+    /// AND constant ROM, run a few cycles.  Verifies the
+    /// loader → ROM → engine path works end-to-end without crashing.
+    /// Cannot yet check correctness (that needs all the per-task F1/F2
+    /// + memory + disk wiring).
+    #[test]
+    fn boot_with_real_microcode_and_constants_does_not_crash() {
         use crate::microcode_loader;
         let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("assets").join("rom");
-        if !dir.join("U55").exists() {
-            eprintln!("[boot_with_real_microcode_does_not_crash] skipping — PROMs absent");
+        if !dir.join("U55").exists() || !dir.join("C0").exists() {
+            eprintln!("[boot_with_real_microcode_and_constants_does_not_crash] skipping — assets absent");
             return;
         }
         let microcode = microcode_loader::load_alto_ii_microcode_from_dir(&dir)
             .expect("load real Alto II microcode");
-        let uut = AltoChip::with_microcode(&microcode);
+        let constants = microcode_loader::load_alto_ii_constant_rom_from_dir(&dir)
+            .expect("load real Alto II Constant ROM");
+        let uut = AltoChip::with_microcode_and_constants(&microcode, &constants);
         let trace = run(uut, 64);
 
         // The trace should be well-formed (right length, no panics).
@@ -263,5 +355,14 @@ mod tests {
         // instruction (the real microcode at addr 0 is non-zero).
         let any_nonzero = trace.iter().any(|t| t.instruction.raw() != 0);
         assert!(any_nonzero, "should fetch at least one non-zero microinstruction from real microcode");
+        // It should also have visited multiple distinct microaddresses
+        // (the boot path doesn't immediately stick at one address).
+        let mut visited: std::collections::HashSet<u128> = std::collections::HashSet::new();
+        for t in &trace {
+            visited.insert(t.mpc.raw());
+        }
+        assert!(visited.len() >= 2,
+            "boot trace should visit at least 2 distinct microaddresses; visited {:?}",
+            visited);
     }
 }

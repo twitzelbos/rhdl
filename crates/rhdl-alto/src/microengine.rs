@@ -56,6 +56,12 @@ pub struct In {
     /// with `mpc` (with appropriate latency handling) and feeds the
     /// result here.
     pub instr: Bits<32>,
+    /// Constant-ROM value at index `(RSEL[4:0] << 3) | BS[2:0]`.
+    /// Owner (AltoChip) is responsible for decoding the index from
+    /// `instr`, indexing the constant ROM, and feeding the value
+    /// here combinationally.  When `F1 = Constant`, the engine drives
+    /// BUS from this value instead of the BS-selected source.
+    pub constant_value: Bits<16>,
 }
 
 /// Outputs from the microengine.
@@ -124,9 +130,16 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // BS = ReadR  → drive bus from R[rsel].  All other Phase-1 sources
     // drive zero (memory data, mouse, IR are deferred to later phases).
     let r_read: Bits<16> = q.regs.rdata;
-    let bus: Bits<16> = match mi.bs {
+    let bus_from_bs: Bits<16> = match mi.bs {
         BusSource::ReadR => r_read,
         _                => bits::<16>(0),
+    };
+    // F1 = Constant overrides BUS with the constant-ROM lookup the
+    // owner provided for this cycle's instruction.  Index = (RSEL << 3) | BS.
+    let bus: Bits<16> = if mi.f1 == F1Function::Constant {
+        i.constant_value
+    } else {
+        bus_from_bs
     };
 
     // ---- ALU -------------------------------------------------------
