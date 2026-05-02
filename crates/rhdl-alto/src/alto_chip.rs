@@ -1470,23 +1470,33 @@ mod tests {
         );
         let trace = run(uut, 800);
 
-        eprintln!("[per_cycle_chain] cycle  task  mpc   instr      next_mpc");
-        for (i, t) in trace.iter().enumerate().take(800) {
-            let task = t.current_task.raw();
-            let mpc = t.mpc.raw();
-            let instr = t.instruction.raw();
-            // Mark cycles where dispatch hits unprogrammed PROM.
-            let unprog = instr == 0xfff77bff;
+        // IMPORTANT: chip output `mpc` and `instruction` are in
+        // DIFFERENT pipeline stages.  `mpc` is the address being
+        // PRESENTED to URom THIS cycle.  `instruction` is URom's
+        // RESPONSE for the address presented at the PREVIOUS cycle.
+        //
+        // To show coherent (executing-mpc, executing-instr) pairs,
+        // pair each cycle's `instr` with the PREVIOUS cycle's `mpc`.
+        // Only pair within the same task (task switches change which
+        // task's MPC stream is being read).
+        eprintln!("[per_cycle_chain] cycle  task  exec_mpc  exec_instr");
+        for i in 1..trace.len().min(800) {
+            let prev = &trace[i - 1];
+            let cur = &trace[i];
+            // Only show coherent pair if task didn't switch (otherwise
+            // the URom address from prev was for a different task).
+            if prev.current_task.raw() != cur.current_task.raw() {
+                continue;
+            }
+            let exec_mpc = prev.mpc.raw();
+            let exec_instr = cur.instruction.raw();
+            let unprog = exec_instr == 0xfff77bff;
             let mark = if unprog { " UNPROG" } else { "" };
             eprintln!(
-                "  {i:4}    {task:2}  0x{mpc:03x}  0x{instr:08x}{mark}",
+                "  {i:4}    {:2}  0x{exec_mpc:03x}     0x{exec_instr:08x}{mark}",
+                cur.current_task.raw(),
             );
-            if unprog && i > 0 {
-                eprintln!("    ^^ entered unprog from prev cycle: \
-                    task={} mpc=0x{:03x} instr=0x{:08x}",
-                    trace[i - 1].current_task.raw(),
-                    trace[i - 1].mpc.raw(),
-                    trace[i - 1].instruction.raw());
+            if unprog {
                 break;
             }
         }

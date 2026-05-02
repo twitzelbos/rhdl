@@ -31,6 +31,58 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4h: pipeline-display correction + 2-cycle-per-instruction analysis
+
+**Paths:**
+
+- `crates/rhdl-alto/src/alto_chip.rs` — corrected `boot_trace_per_cycle_chain` to pair `instruction[k]` with `mpc[k-1]` instead of with `mpc[k]`.  The chip's `o.mpc` is the address being PRESENTED to URom this cycle; `o.instruction` is URom's response from the address presented LAST cycle (URom is a 1-cycle BRAM).
+
+**Why this, why now:** While debugging the Step 4g "boot trace stall at 62 unique microaddresses with KSEC dispatch landing in uninitialized PROM," the per-cycle diagnostic appeared to show that at MPC=0x388 our chip read `0x280241e8` but ContrAlto's disassembly says address 0o1610 (= 0x388) is `MD←KSTAT`.  This looked like a per-task decode bug or a microcode-encoding bug.
+
+It was neither.  Cross-checking with a Python re-implementation of ContrAlto's microcode loader (identical PROM bytes — verified byte-for-byte match against ContrAlto's `ROM/AltoII/U*` files) showed:
+
+- ContrAlto says URom[0x004] = `0x7001737c`, URom[0x070] = `0x381001e6`, URom[0x1e6] = `0x280241e8`, URom[0x388] = `0x00306389` (= `MD←KSTAT`).
+- Our chip's "(mpc=0x004, instr=0x381001e6)" pair reports a `mpc` (0x004) that is being *fetched* this cycle, paired with an `instr` (0x381001e6 = URom[0x070]) that is the *previous* cycle's URom output.  Both values are correct — they just describe different pipeline stages.
+
+After fixing the diagnostic to pair `instruction[k]` with `mpc[k-1]`, the trace shows every MPC **executes twice** before advancing — `0x1e6, 0x1e6, 0x1ed, 0x1ed, 0x1ff, 0x1ff, ...`.  This is a real **2-cycle-per-microinstruction pipeline** in our chip.
+
+**Design observation (NOT a fix yet):**
+
+The 2-cycle stall is because the URom address is fed from `q.tasks.task_mpc[T]` (Q-registered).  When the engine computes `next_mpc` in cycle N:
+1. End of cycle N: `task_mpc[T] := next_mpc`.
+2. Cycle N+1: `current_mpc = q.task_mpc[T] = next_mpc`.  Address sent to URom.
+3. Cycle N+2: URom returns `URom[next_mpc]`.  Engine processes it.  But during cycle N+1, the engine processes URom[stale-address] — re-running the same instruction.
+
+Real Alto runs at 1 microinstruction per cycle.  Our chip runs at 1 microinstruction per 2 cycles, so 2000 chip-cycles = ~1000 microinstructions executed.  62 distinct microaddresses in 2000 cycles is consistent with ~1000 microinstructions of KSEC + Emulator activity, not a stall.  The chip is FUNCTIONALLY CORRECT; it's just slower than real Alto.
+
+**Implications:**
+
+- Step 4g's NEXT-mask fix was real (BusToNext was silently dropping BUS LSB), but the "boot trace stall" framing was wrong.  Boot trace progress isn't stalled by missing dispatch — it's gated on the half-speed pipeline.
+- Cycle-equivalent lockstep against ContrAlto (Phase 3.5 Step 5) requires fixing the 2-cycle pipeline first, OR comparing every-other-cycle to ContrAlto's every-cycle.
+- Comprehensive tests in `tests/microcode_semantics.rs` (Step 4g, 61 tests) are still valid — they isolate spec rules and verify the engine implements them correctly.  None of them depend on the chip-level URom pipeline.
+
+**The fix path (deferred, separate PR):**
+
+To get 1-cycle-per-microinstruction:
+- Option A: feed `engine.next_mpc` (combinational from this cycle's instruction) directly to `d.urom.mpc`, so URom returns `URom[next_mpc]` at cycle N+1.  Requires combinational access to engine.next_mpc from the chip — currently blocked by `q.engine.*` being Q-registered.
+- Option B: combine the engine's URom fetch into a single sub-circuit (Microengine internalizes URom).  Cleaner architecture; bigger refactor.
+
+Either path is a Phase 3.5 Step 4i / Step 5-prep effort.  Not landed in this commit.
+
+**Validation:**
+
+- All 171 alto tests still pass (no regressions).
+- Manual verification: Python loader produces ContrAlto-identical microcode words; our Rust loader is byte-equivalent at known MPCs (0x004, 0x070, 0x1e6, 0x388).
+- Corrected diagnostic shows real KSEC microcode chain: `0x004` (KSEC entry) → `0x37c` (KPOQ:CLRSTAT) → `0x37d` (MD←L←ALLONES+1) → `0x381` (GCOM2) → ... → `0x388` (MD←KSTAT).  This is correct KSEC execution.
+
+**Follow-ups:**
+
+- Phase 3.5 Step 4i: collapse the chip's 2-cycle pipeline to 1 cycle per microinstruction (Option A or B above).  Probably needed before any meaningful ContrAlto lockstep.
+- Phase 3.5 Step 5: ContrAlto cycle-equivalent lockstep — once the pipeline is fixed.
+- Update `notes/alto-phase-3-5-progress.md` with this correct understanding (the prior R[5]-corruption diagnosis is wrong).
+
+---
+
 ## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4g: comprehensive microcode semantics test suite + NEXT-mask bugfix
 
 **Paths:**
