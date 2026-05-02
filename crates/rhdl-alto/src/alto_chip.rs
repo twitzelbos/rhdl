@@ -31,6 +31,8 @@
 use rhdl::prelude::*;
 
 use crate::constant_rom::{ConstantIn, ConstantRom};
+use crate::diablo_disk::{DiabloDisk, DiskIn};
+use crate::disk_controller::{CtrlIn, DiskController};
 use crate::memory::{MemIn, Memory};
 use crate::microcode_rom::{MicrocodeRom, UromIn};
 use crate::microengine::{In as MicroIn, Microengine};
@@ -66,10 +68,18 @@ pub struct ChipOut {
     pub alu_result: Bits<16>,
     /// 32-bit packed microinstruction the engine is processing.
     pub instruction: Bits<32>,
+    /// Disk's sector_mark this cycle (drives Disk Sector wakeup bit).
+    pub disk_sector_mark: bool,
+    /// Disk's word_strobe this cycle (drives Disk Word wakeup bit).
+    pub disk_word_strobe: bool,
+    /// Effective wakeup vector this cycle (user-supplied OR'd with
+    /// disk-derived wakeups).
+    pub wakeups: Bits<16>,
 }
 
 /// The Alto chip — composition of microengine + microcode RAM +
-/// constant ROM + 64KW main memory + 16-task arbiter.
+/// constant ROM + 64KW main memory + 16-task arbiter + disk
+/// controller + Diablo-31 disk drive.
 ///
 /// Construct with [`AltoChip::with_microcode_and_constants`] for the
 /// normal boot path, or [`AltoChip::default`] for all-zero ROMs/memory.
@@ -90,6 +100,15 @@ pub struct AltoChip {
     /// MPC drives the engine this cycle, and writes back the engine's
     /// computed next_mpc to that task's slot.
     tasks: AltoTaskSystem,
+    /// Disk controller register file (KSTAT/KDATA/KCOM/KADR/KCWA/KCWD).
+    /// Inputs aren't driven by the microengine yet — Phase 3.5 will add
+    /// the per-task code dispatch that lets Disk Sector microcode
+    /// program these registers.
+    disk_ctrl: DiskController,
+    /// Simulated Diablo 31 disk drive.  Produces sector_mark and
+    /// word_strobe outputs that AltoChip routes to the task arbiter's
+    /// wakeup vector (bits 4 and 14 respectively).
+    disk: DiabloDisk,
     /// Universal-task microengine.
     engine: Microengine,
 }
@@ -101,6 +120,8 @@ impl Default for AltoChip {
             crom: ConstantRom::default(),
             mem: Memory::default(),
             tasks: AltoTaskSystem::default(),
+            disk_ctrl: DiskController::default(),
+            disk: DiabloDisk::default(),
             engine: Microengine::default(),
         }
     }
@@ -116,6 +137,8 @@ impl AltoChip {
             crom: ConstantRom::default(),
             mem: Memory::default(),
             tasks: AltoTaskSystem::default(),
+            disk_ctrl: DiskController::default(),
+            disk: DiabloDisk::default(),
             engine: Microengine::default(),
         }
     }
@@ -131,6 +154,8 @@ impl AltoChip {
             crom: ConstantRom::with_constants(constants),
             mem: Memory::default(),
             tasks: AltoTaskSystem::default(),
+            disk_ctrl: DiskController::default(),
+            disk: DiabloDisk::default(),
             engine: Microengine::default(),
         }
     }
@@ -147,6 +172,8 @@ impl AltoChip {
             crom: ConstantRom::with_constants(constants),
             mem: Memory::new(memory_initial),
             tasks: AltoTaskSystem::default(),
+            disk_ctrl: DiskController::default(),
+            disk: DiabloDisk::default(),
             engine: Microengine::default(),
         }
     }
@@ -202,26 +229,43 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     let next_mpc: Bits<10> = q.engine.next_mpc;
     d.urom = UromIn { mpc: next_mpc.resize() };
 
+    // Disk + disk controller: not yet driven by microengine (per-task
+    // F1/F2 dispatch ships in the next chunk).  Drive both with default
+    // (idle) inputs.  The disk's outputs feed the wakeup vector.
+    d.disk = DiskIn::default();
+    d.disk_ctrl = CtrlIn::default();
+
+    // Compose the effective wakeup vector: user-supplied bits OR'd
+    // with disk-derived wakeups (bit 4 from sector_mark, bit 14 from
+    // word_strobe).  Both disk outputs are q-registered (1-cycle lag
+    // from the disk's actual event).
+    let disk_sector_mark = q.disk.sector_mark;
+    let disk_word_strobe = q.disk.word_strobe;
+    let mut effective_wakeups = i.wakeups;
+    if disk_sector_mark { effective_wakeups = effective_wakeups | bits::<16>(0x0010); }
+    if disk_word_strobe { effective_wakeups = effective_wakeups | bits::<16>(0x4000); }
+
     // Build the next_mpc_per_task array for the arbiter: only the
-    // current task's slot reflects the engine's computed value;
-    // other slots stay at their current MPC (which the arbiter
-    // ignores anyway, since they don't fire this cycle).
+    // current task's slot reflects the engine's computed value.
     let mut next_mpcs = q.tasks.task_mpc;
     next_mpcs[current_task] = next_mpc;
     d.tasks = TaskIn {
-        wakeups: i.wakeups,
+        wakeups: effective_wakeups,
         next_mpc_per_task: next_mpcs,
     };
 
     // Outputs
-    o.mpc          = current_mpc;
-    o.current_task = current_task;
-    o.next_mpc     = next_mpc;
-    o.t            = q.engine.t;
-    o.l            = q.engine.l;
-    o.bus          = q.engine.bus;
-    o.alu_result   = q.engine.alu_result;
-    o.instruction  = instr_this_cycle;
+    o.mpc              = current_mpc;
+    o.current_task     = current_task;
+    o.next_mpc         = next_mpc;
+    o.t                = q.engine.t;
+    o.l                = q.engine.l;
+    o.bus              = q.engine.bus;
+    o.alu_result       = q.engine.alu_result;
+    o.instruction      = instr_this_cycle;
+    o.disk_sector_mark = disk_sector_mark;
+    o.disk_word_strobe = disk_word_strobe;
+    o.wakeups          = effective_wakeups;
 
     (o, d)
 }
@@ -502,6 +546,39 @@ mod tests {
         let final_task = trace.last().unwrap().current_task.raw();
         assert_eq!(final_task, 4,
             "with both task 0 and task 4 woken, task 4 (Disk Sector) wins");
+    }
+
+    /// End-to-end disk → wakeup → arbiter → engine path: the disk
+    /// widget's sector_mark fires every 256 cycles; with a long-enough
+    /// run, the Disk Sector task (Task 4) fires at least once.
+    #[test]
+    fn disk_sector_mark_fires_disk_sector_task() {
+        // Microcode at addr 0: NOP loop.
+        let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
+        microcode[0] = ui(0, AluFunction::Bus, BusSource::ReadR, false, false, 0);
+        let constants = [0u16; crate::constant_rom::NUM_CONSTANTS];
+        let uut = AltoChip::with_microcode_and_constants(&microcode, &constants);
+        // Wake Task 0 (Emulator) only via input; disk's sector_mark
+        // should add wakeup bit 4 every 256 cycles.
+        let inputs: Vec<ChipIn> = (0..512).map(|_| ChipIn {
+            wakeups: bits::<16>(0x0001),
+        }).collect();
+        let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
+        let trace: Vec<ChipOut> = uut.run(stream)
+            .synchronous_sample()
+            .filter(|s| !s.input.0.reset.any())
+            .map(|s| s.output)
+            .collect();
+        // Verify the wakeup vector saw the disk's sector_mark at some
+        // point (bit 4 set in the effective wakeup vector).
+        let any_disk_wakeup = trace.iter().any(|t| (t.wakeups.raw() & 0x0010) != 0);
+        assert!(any_disk_wakeup,
+            "disk sector_mark should have driven wakeup bit 4 at least once");
+        // Verify the Disk Sector task (Task 4) fired at least once
+        // (current_task = 4 in some cycle).
+        let any_task_4 = trace.iter().any(|t| t.current_task.raw() == 4);
+        assert!(any_task_4,
+            "Disk Sector task should have fired in response to the disk wakeup");
     }
 
     /// Verify the AltoChip composition emits clean Verilog and the
