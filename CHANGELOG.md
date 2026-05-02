@@ -31,6 +31,26 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4m: E2 + E3 + E5 (tighten weak assertions)
+
+**Paths:**
+
+- `crates/rhdl-alto/src/alto_chip.rs` — E2: tightened `disk_sector_count` from bare `>=4` to measured-pipeline-exact range `140..=145` (5-cycle setup + ~140 post-DMA cycles in the 400-cycle test).  E3: tightened `boot_trace_baseline_metrics` from loose floors (`visited >= 30`, `disk_sector_firings >= sector_events`, `emulator_firings > 0`) to tight ranges anchored to the measured 1-cycle/microinstruction pipeline (`visited 70..90`, `sector_events 6..10`, `disk_sector_firings 30..60`, `emulator_firings 1900..1980`).  Significant deviations from these ranges now break tests and force a deliberate update — catching regressions or new features earlier.
+- `crates/rhdl-alto/tests/disk_dma_integration.rs` — E5: tightened `disk_sector_mark_drives_disk_sector_task` from loose `>=expected_min` to tight `expected ±2` range.
+
+**Why this, why now:** Audit identified weak `>=` assertions that pass even when behavior is half-correct.  Tightening them locks in the current-pipeline-exact behavior so any subsequent regression or improvement is immediately visible.
+
+**Validation:**
+
+- 212 alto tests pass; tightened bounds match current measured behavior.
+
+**Follow-ups:**
+
+- E4 / E6 / E7 / E8: remaining weak assertions are minor (snapshot floors, hardcoded indices in test harnesses).  Lower priority.
+- Major remaining audit items (D16 full DNS, D19 INCRECNO, D20 KWDX F2 codes, D2/D3 memory-suspend modeling, D4/D5 refresh + MAR-after-MD hazard) are substantial features each warranting their own scoped work, not bundled into audit-cleanup commits.
+
+---
+
 ## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4l: D15 (MAGIC) + D16 partial (SKIP latch) + D2/D3 (memory timing tests) + E1 (tighten DMA assertion)
 
 **Paths:**

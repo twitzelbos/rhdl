@@ -1071,15 +1071,17 @@ mod tests {
             "Disk Word task should fire exactly 256 or 257 times \
              (256 DMAs + ≤1 transition cycle); got {final_disk_word_count}");
 
-        // Disk Sector should have fired its setup pass (4 cycles)
-        // then sat at addr 4 NOP loop.  Each cycle it doesn't fire
-        // (when Task 14 wins arbitration), no count increment.  After
-        // DMA ends, Disk Sector starts firing again.  Expected:
-        // ~5 firings during setup + ~140 firings post-DMA = ~145.
+        // E2 tightening: Disk Sector fires ~5 setup cycles then idles
+        // while Task 14 wins arbitration during DMA, then resumes
+        // afterward.  Total = 400 - 257 = 143 cycles available; minus
+        // pipeline-settle slack = ~140-142 measured.  Tighten from
+        // bare floor `>=4` to a measured-pipeline-exact range.
         let final_disk_sector_count = trace.last().unwrap().disk_sector_count.raw();
         eprintln!("[end_to_end_256_word_dma] disk_sector_count = {final_disk_sector_count}");
-        assert!(final_disk_sector_count >= 4,
-            "Disk Sector should fire at least 4 times (setup); got {final_disk_sector_count}");
+        assert!(final_disk_sector_count >= 140 && final_disk_sector_count <= 145,
+            "Disk Sector should fire 140..145 times (5-cycle setup + \
+             ~140 post-DMA cycles in 400-cycle test); got \
+             {final_disk_sector_count}");
 
         // ---- Verify memory contents via observed-write trace --------
         // Reconstruct the engine's memory-write trace from ChipOut and
@@ -1705,21 +1707,30 @@ mod tests {
         // (The old assertion `disk_sector_firings >= 100` was based on
         // KSEC getting STUCK dispatching into uninitialized PROM with
         // the broken 2-cycle pipeline — a bug, not the spec'd behavior.)
-        assert!(visited.len() >= 30,
-            "real KSEC microcode should visit ≥30 distinct microaddresses \
-             (was ≤8 before per-task MPC stream alignment); got {}", visited.len());
-        assert!(sector_events >= 2,
-            "F1=Block in KSEC clears sustained sector_mark; subsequent \
-             sector tick re-fires it.  Expected ≥2 events in 2000 cycles, \
-             saw {sector_events}");
-        // KSEC handler runs ~5-10 microinstructions per sector mark
-        // before yielding back.  Expect a handful of firings per mark.
-        assert!(disk_sector_firings >= sector_events as u32,
-            "KSEC must fire at least once per sector_mark event; got \
-             {disk_sector_firings} firings for {sector_events} marks");
-        assert!(emulator_firings > 0,
-            "Emulator should fire at least once during initial boot before \
-             the first sector_mark; saw {emulator_firings}");
+        // E3 tightening: replaced loose floors with measured-pipeline-
+        // exact ranges anchored to the 2000-cycle / 1-cycle-per-µinst
+        // pipeline.  Current measurements: 76 distinct microaddresses,
+        // 7 sector_mark events, 1960 Emulator firings, 40 Disk Sector
+        // firings.  Allow ±10% slack for any subsequent semantic fix
+        // that legitimately moves the numbers; bigger swings break
+        // the test and force a deliberate floor update.
+        assert!(visited.len() >= 70 && visited.len() <= 90,
+            "expected 70..90 distinct microaddresses in 2000-cycle boot \
+             trace; got {} — significant deviation suggests a regression \
+             or new feature unblocking more dispatch", visited.len());
+        assert!((6..=10).contains(&sector_events),
+            "expected 6..10 sector_mark events (every ~285 cycles in \
+             2000 cycles); got {sector_events}");
+        // KSEC handler runs ~5-6 microinstructions per sector mark
+        // before yielding back to Emulator.  ~7 marks × ~6 = ~42; allow
+        // 30..60 to absorb mark-aligned vs. start-of-trace edge effects.
+        assert!((30..=60).contains(&disk_sector_firings),
+            "Disk Sector should fire 30..60 times (~6 µinst per sector \
+             mark × ~7 marks); got {disk_sector_firings}");
+        // Emulator owns most cycles between marks.  ~2000 - 40 = ~1960.
+        assert!((1900..=1980).contains(&emulator_firings),
+            "Emulator should run 1900..1980 cycles in a 2000-cycle trace \
+             with 7 sector marks; got {emulator_firings}");
     }
 
     /// Boot-button-equivalent trace: pre-load memory with disk

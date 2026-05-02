@@ -106,11 +106,16 @@ fn disk_sector_mark_drives_disk_sector_task() {
     // (and no other competing tasks), task 4 fires every cycle from
     // 255 to end.  cycles - 255 = 778-256 = ~523 firings (allowing
     // ±1 for pipeline / output-DFF edge-of-trace).
-    let firings = final_state.disk_sector_count.raw();
-    let expected_min = (cycles - 255 - 2) as u128;
-    assert!(firings >= expected_min,
-        "task 4 should fire every cycle from sector_mark onward; \
-         expected ≥{expected_min}, got {firings}");
+    let firings = final_state.disk_sector_count.raw() as usize;
+    // E5 tightening: replaced loose `>=expected_min` with a tight
+    // ±2-cycle range.  Bound exactness within the synthetic-no-Block
+    // window: task 4 fires every cycle from cycle 255 onward.
+    let expected = cycles - 255;
+    let lo = expected.saturating_sub(2);
+    let hi = expected + 2;
+    assert!(firings >= lo && firings <= hi,
+        "task 4 should fire {expected} ±2 times (every cycle from \
+         sector_mark onward, sustained without Block); got {firings}");
     assert_eq!(final_state.disk_word_count.raw(), 0,
         "no transfer started → no word strobes → word counter idle");
     assert_eq!(final_state.last_task.raw(), 4,
