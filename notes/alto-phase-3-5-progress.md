@@ -5,7 +5,7 @@ branch, single PR per the user's "complete this phase, don't ship a
 v1, don't defer" constraint.  PR opens only when **Nova PC = 0o345**
 is reached with cycle-equivalent ContrAlto trace.
 
-## Status (14 commits in, 101 tests pass)
+## Status (18 commits in, 103 tests pass)
 
 ### ✅ Done
 
@@ -46,12 +46,23 @@ is reached with cycle-equivalent ContrAlto trace.
     writes back to the firing task's slot in `next_mpc_per_task`.
     Multi-task arbitration test confirmed: with both Task 0 and Task
     4 woken, Task 4 (Disk Sector) wins through the chip.
+12. **DiabloDisk + DiskController wired into AltoChip**.  Disk's
+    sector_mark / word_strobe outputs OR'd into the wakeup vector
+    (bits 4 and 14).  Disk-Sector-task firing in response to
+    sector_mark verified end-to-end (chip's current_task hits 4
+    when sector_mark fires).
+13. **First per-task F1 code: `F1=DiskCtrlWrite`**.  Microengine takes
+    `current_task` into account; F1=DiskCtrlWrite under Disk Sector
+    (task 4) writes BUS to disk_ctrl register at RSEL[2:0]; under any
+    other task it's a no-op.  Validated end-to-end via two-scenario
+    test: Disk Sector task wakes → write_en asserted; Emulator task
+    wakes → write_en NEVER asserted.  Per-task dispatch pattern proven.
 
 ### ⏳ Remaining for Phase 3.5
 
 | Step | Description | Est |
 |------|-------------|-----|
-| Per-task F1/F2 dispatch | Per-task code dispatch in microengine: gate MAR← / MD← to MRT (task 8), KSTROBE / KCOM / KADR← to Disk Sector (task 4), MTEMP to Display Word (task 9), IRLoad / SWMODE / FETCH to Emulator (task 0) | 1-2w |
+| Per-task F1/F2 dispatch (continued) | Pattern proven via F1=DiskCtrlWrite (step 13).  Still to add: gate MAR← / MD← to MRT (task 8), KSTROBE to Disk Sector (task 4), MTEMP to Display Word (task 9), IRLoad / SWMODE / FETCH to Emulator (task 0).  Re-align my placeholder F1=14 + F2=6/7 codes to real Alto positions when boot trace requires. | 1-2w |
 | Disk widget rewrite | Rotation timing (3.3ms = many thousands of microcycles per sector); serial word transfer; sector header/label/data structure (the disk-sector microcode reads these word-by-word as the disk rotates) | 3-5d |
 | Disk controller | Real KCOM/KSTAT bit semantics + KADR field decode + transfer state machine | 2-3d |
 | Per-task body real DMA | Disk Sector / Disk Word task bodies actually drive controller registers + memory | 1w |
