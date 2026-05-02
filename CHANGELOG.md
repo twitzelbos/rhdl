@@ -31,6 +31,50 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4i: 1-cycle/microinstruction pipeline (spec §2.3)
+
+**Paths:**
+
+- `crates/rhdl-alto/src/alto_chip.rs` — feed `q.engine.next_mpc` (combinational, this cycle's engine output) directly to URom address with task-switch override, replacing the previous `q.tasks.task_mpc[current_task]` (Q-stale) routing.  Each microinstruction now completes in 1 cycle per spec §2.3 (MIF || MIE 2-stage pipeline).
+- `crates/rhdl-alto/src/alto_chip.rs` — fixed `end_to_end_256_word_dma` test microcode: previously placed mi0..mi6 at MPC=0..6 and relied on the OLD 2-cycle pipeline's stuttering execution to "double-fire" `KCOM<-R[1]` so R[1] would be loaded by the second firing.  Now placed at the per-task reset MPCs (microcode[4]..[9] for Disk Sector starting at task 4's reset MPC, microcode[14] for Disk Word).  Added `mi_emu_bootstrap` at MPC=0 (TaskYield) so Emulator can yield out to Disk Sector.
+- `crates/rhdl-alto/src/alto_chip.rs` — corrected `boot_trace_baseline_metrics` assertion from `disk_sector_firings >= 100` (which was passing because KSEC was getting STUCK dispatching into uninitialized PROM, a bug) to `>= sector_events` (which matches the spec'd behavior: KSEC handles each sector mark with ~5-10 microinstructions then yields back).
+- `crates/rhdl-alto/src/alto_chip.rs` — tightened `boot_trace_with_boot_button` floor from 62 → 76 distinct microaddresses (achieved by 2× throughput).
+- `crates/rhdl-alto/src/alto_chip.rs` — updated `chip_runs_at_known_cycles_per_microinstruction` to assert ZERO duplicate consecutive MPC pairs (spec contract met).
+
+**Why this, why now:** User asked "now fix it" after we identified that the chip was running at 2 cycles per microinstruction in violation of spec §2.3.  The fix was a small change with large blast radius — both upstream (test microcode that relied on pipeline accidents broke) and downstream (boot trace progress doubled).
+
+**Spec on pipelining (the contract being met):**
+
+- §2.3: 2-stage pipeline (MIF Microinstruction Fetch || MIE Microinstruction Execute) overlapped — 1 microinstruction completes per cycle.
+- Line 26: *"the microengine executes a 32-bit horizontal microinstruction every 170 ns"*.
+
+**Design decisions:**
+
+- **`q.engine.next_mpc` is combinational**, contrary to the previous chip code's comment ("we can't read engine.next_mpc combinationally from the chip — it's Q-register-delayed").  Confirmed by reading `crates/rhdl-fpga/src/fifo/synchronous.rs:130` (`d.read_logic.write_address = q.write_logic.write_address` — sub-circuit's CURRENT output flows into another sub-circuit's CURRENT input within the same cycle).  This is RHDL's standard composition pattern.
+
+- **Task-switch override**: when `q.engine.task_yield && winning_task != current_task`, present the new task's saved MPC (= `q.tasks.task_mpc[winning_task]` if that task has run before, else `winning_task` per spec §2.4 reset).  Otherwise present `engine.next_mpc` (continuing same task).  Both branches feed URom in the same cycle as the engine produces them.
+
+- **Bootstrap**: chip `current_task` defaults to 0 (Emulator).  If task 0 isn't woken AND microcode[0] doesn't assert task_yield, the chip never escapes task 0.  In real Alto this isn't an issue because Emulator's microcode at MPC=0 starts the Nova fetch loop which yields naturally.  Synthetic-microcode tests must include a TaskYield at MPC=0 to bootstrap.
+
+**Surprises and gotchas:**
+
+- The `end_to_end_256_word_dma` test had been PASSING in the OLD pipeline because the 2-cycle stutter caused `mi4` (KCOM<-R[1]) to execute TWICE — once with R[1]=0 (no transfer arm), then later with R[1]=0x8000 (transfer armed).  The microcode was placed at MPC=0..6, but task 4 starts at MPC=4 per spec, so the constant-load instructions at MPC=1, 2 were SKIPPED.  In the OLD pipeline, `task_mpc[4]` got polluted with the previous instruction's NEXT during the stuttering, eventually causing mi4 to re-execute after the loaders ran.  The "test passing" was 100% pipeline-accident-dependent.  This is the canonical example of why throughput tests matter — without quantifying execution rate, hidden timing dependencies are silent.
+
+- `boot_trace_baseline_metrics` asserted `disk_sector_firings >= 100`, which it satisfied by KSEC dispatching into uninitialized PROM and looping forever in task 4.  Once dispatch was correct, KSEC properly yielded back after handling each sector mark, and Emulator (correctly) dominated the cycle budget.  Updated assertion to match the spec'd behavior (KSEC must fire ≥ once per sector_mark).
+
+**Validation:**
+
+- 172 alto tests pass (45 lib unit + 127 integration, no regressions).  The throughput test now enforces the spec contract: 0 duplicate consecutive MPC pairs.
+- Boot trace progression: 35 → 62 → **76 distinct microaddresses** (Step 4g's NEXT-mask fix + Step 4i's pipeline fix together doubled progress).
+- Throughput now matches spec §2.3: 1 microinstruction per cycle.
+
+**Follow-ups:**
+
+- Boot trace currently runs 2000 cycles and visits 76 unique microaddresses (most cycles are repetitive Emulator loops at the same handful of addresses).  Reaching the OS loader checkpoint will need many more cycles AND likely additional missing F1/F2 codes the boot Nova bootstrap exercises.
+- Phase 3.5 Step 5: ContrAlto cycle-equivalent lockstep is now MUCH more tractable since the chip runs at the spec'd rate.  Each chip cycle = 1 microinstruction = 1 ContrAlto step, so direct cycle-by-cycle comparison works without rate-adjustment.
+
+---
+
 ## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4h+: throughput test + spec violation lock-in
 
 **Paths:**

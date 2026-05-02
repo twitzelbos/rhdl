@@ -369,29 +369,12 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
         write_en: q.engine.mem_write_en,
     };
 
-    // Engine outputs next_mpc this cycle.
+    // Engine outputs next_mpc this cycle (combinational from this
+    // cycle's instr).  Per RHDL Synchronous-widget composition,
+    // `q.engine.next_mpc` is the engine's CURRENT-cycle combinational
+    // output (see fifo::synchronous wiring `d.read_logic = q.write_logic`
+    // for the same idiom).
     let next_mpc: Bits<10> = q.engine.next_mpc;
-    // URom fetch address per *Alto Hardware Manual* §2.4 / spec §5.4.
-    // Each task has its own MPC stream — when the chip switches
-    // current_task, the URom must immediately start fetching from
-    // the new task's saved MPC (the spec table in §5.4 shows J — the
-    // first new-task instruction — being fetched the cycle after
-    // TASK fires, with the new task's MPC).
-    //
-    // We can't read `engine.next_mpc` combinationally from the chip
-    // (it's Q-register-delayed), so we DON'T present `q.engine.next_mpc`
-    // to URom directly — that would always follow the OLD task's
-    // stream after a yield, since q.engine.next_mpc was computed
-    // before current_task changed.  Instead we present `current_mpc`
-    // (the chip's task-aware MPC lookup), which IS the new task's
-    // MPC the cycle current_task switches.  task_mpc[current_task]
-    // is updated each cycle by the arbiter rule from
-    // `next_mpc_per_task[current_task] = engine.next_mpc`, so within
-    // a single task's stream the URom advances one instruction per
-    // (2-cycle pipeline) just as before.  On task switch, current_mpc
-    // immediately reflects the new task — matching real Alto's
-    // 1-delay-slot pipeline.
-    d.urom = UromIn { mpc: current_mpc.resize() };
 
     // Disk: per-word DMA inputs (word_addr / write_data / read_en /
     // write_en) not yet driven by microengine — Phase 3.5 next adds
@@ -470,11 +453,45 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
         else { current_task };
     // Latch winning_task into current_task only when engine.task_yield
     // (F1=TASK).  Otherwise hold (sticky).
-    d.current_task = if q.engine.task_yield { winning_task } else { current_task };
+    let next_current_task: Bits<4> = if q.engine.task_yield { winning_task } else { current_task };
+    d.current_task = next_current_task;
     // Mark current_task as "started" — the next time it's selected by
     // arbitration, the chip will read its accumulated task_mpc rather
     // than the per-task reset MPC = K.
     d.task_started = q.task_started | task_bit;
+
+    // ---- URom prefetch (spec §2.3, MIF || MIE pipeline) ----
+    //
+    // Per spec line 26 ("...executes a 32-bit horizontal microinstruction
+    // every 170 ns") and §2.3 (2-stage MIF || MIE pipeline), the chip
+    // must overlap fetch[k+1] with execute[k] so each microinstruction
+    // completes in one cycle.
+    //
+    // The address presented to URom THIS cycle determines the
+    // instruction the engine will execute NEXT cycle (URom is a 1-cycle
+    // BRAM).  So we present the MPC of the NEXT instruction:
+    //
+    //   - If task switches at end of this cycle (task_yield AND
+    //     winning_task != current_task): present the new task's saved
+    //     MPC (or the per-task reset MPC = K if it has never run).
+    //   - Otherwise (same task continues): present engine.next_mpc
+    //     (combinational this cycle, the engine just computed it
+    //     from the instruction it's executing right now).
+    let next_task_bit: Bits<16> = bits::<16>(1) << next_current_task.resize::<5>();
+    let next_task_started: bool = (q.task_started & next_task_bit) != bits::<16>(0);
+    let next_task_saved_mpc: Bits<10> = if next_task_started {
+        q.tasks.task_mpc[next_current_task]
+    } else {
+        next_current_task.resize::<10>()
+    };
+    let task_will_switch: bool =
+        q.engine.task_yield && winning_task != current_task;
+    let urom_addr: Bits<10> = if task_will_switch {
+        next_task_saved_mpc
+    } else {
+        next_mpc
+    };
+    d.urom = UromIn { mpc: urom_addr.resize() };
 
     // Outputs
     o.mpc              = current_mpc;
@@ -558,26 +575,19 @@ mod tests {
         assert_eq!(trace.last().unwrap().mpc.raw(), 0, "MPC stays at 0 in the loop");
     }
 
-    /// Chip throughput test: how many cycles per microinstruction does
-    /// the chip take?  Real Alto = 1.  Currently our chip takes 2 due
-    /// to the URom feedback path through Q-registered task_mpc.
+    /// Chip throughput test: 1 microinstruction per cycle, per spec
+    /// §2.3 (MIF || MIE 2-stage pipeline) and spec line 26
+    /// ("...executes a 32-bit horizontal microinstruction every 170 ns").
     ///
-    /// This test exists specifically to catch regressions/improvements
-    /// in the chip's instruction throughput.  When a future commit
-    /// collapses the 2-cycle pipeline to 1, this test breaks and gets
-    /// updated.  Until then, it locks in the known half-speed
-    /// behavior so we don't regress further AND so we never again miss
-    /// the throughput question.
-    ///
-    /// Why this wasn't caught before: every prior chip test was either
-    /// (a) a single-instruction loop where MPC never advances, (b) a
-    /// 2-step settle-on-final-state test that doesn't measure rate,
-    /// or (c) a microengine-only test that bypasses the chip pipeline.
-    /// None of them quantified the cycles-per-microinstruction ratio.
+    /// This test was added as the spec-violation lock-in for the
+    /// previous 2-cycles/microinstruction implementation.  The fix
+    /// (Phase 3.5 Step 4i) feeds engine.next_mpc combinationally to
+    /// URom in the same cycle, achieving the spec-required 1
+    /// microinstruction per cycle throughput.  The test now enforces
+    /// that contract.
     #[test]
     fn chip_runs_at_known_cycles_per_microinstruction() {
         // Chain of 4 distinct microaddresses: 0→1→2→3→0→1→2→3→...
-        // Each instruction is a NOP that just sets next.
         let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
         let chain: [(usize, u16); 4] = [(0, 1), (1, 2), (2, 3), (3, 0)];
         for &(a, nxt) in chain.iter() {
@@ -585,17 +595,14 @@ mod tests {
         }
 
         let uut = AltoChip::with_microcode(&microcode);
-        // Run 16 cycles.  Real Alto would visit MPCs 0,1,2,3,0,1,2,3,...
-        // (one per cycle).  Our chip visits each MPC twice: 0,0,1,1,2,2,...
         let trace = run(uut, 16);
 
-        // Skip the initial pipeline-settle cycles (first 2 cycles
-        // before URom returns its first valid output).
+        // Skip initial pipeline-settle cycles (URom returns garbage
+        // until the first address is fetched).
         let post_settle: Vec<u128> = trace.iter().skip(2).map(|t| t.mpc.raw()).collect();
 
-        // Count consecutive-MPC duplicates.  A 1-cycle/instr pipeline
-        // would have MPC change EVERY cycle (no duplicates).
-        // A 2-cycle/instr pipeline has every MPC duplicated.
+        // Count consecutive-MPC duplicates.  Per spec, MPC must
+        // change every cycle — zero duplicates allowed.
         let mut duplicate_pairs = 0;
         for w in post_settle.windows(2) {
             if w[0] == w[1] {
@@ -603,17 +610,12 @@ mod tests {
             }
         }
 
-        // CURRENT BEHAVIOR (locked in until pipeline is fixed):
-        // approximately half the consecutive pairs are duplicates,
-        // confirming 2 cycles per microinstruction.
-        let pair_count = post_settle.len() - 1;
-        assert!(
-            duplicate_pairs >= pair_count / 2 - 1,
-            "chip throughput regression: expected ~{}/2 duplicate MPC \
-             pairs (2-cycle pipeline), got {} of {}.  If the chip got \
-             FASTER, this test should be updated to expect zero \
-             duplicates (1-cycle pipeline).  Trace: {:?}",
-            pair_count, duplicate_pairs, pair_count, post_settle,
+        assert_eq!(
+            duplicate_pairs, 0,
+            "chip throughput regression: per spec §2.3, MPC must change \
+             every cycle (1 microinstruction per cycle).  Got {} \
+             duplicate consecutive-MPC pairs in {:?}",
+            duplicate_pairs, post_settle,
         );
     }
 
@@ -915,83 +917,90 @@ mod tests {
     #[test]
     fn end_to_end_256_word_dma() {
         // ---- Microcode ------------------------------------------------
-        // Shared microcode for both Disk Sector (Task 4) and Disk Word
-        // (Task 14).  Each task's MPC advances independently; per-task
-        // gating makes most instructions no-ops for the wrong task.
+        // Spec §2.4: each task K resets to MPC = K.  Task 4 (Disk Sector)
+        // therefore starts at MPC=4; Task 14 (Disk Word) starts at
+        // MPC=14.  Microcode must be placed at those addresses.
         //
-        // Per Alto Hardware Manual §2.4, task switches happen ONLY on
-        // F1=TaskYield.  The chip's current_task DFF defaults to 0
-        // (Emulator); we therefore lead with a TaskYield instruction so
-        // the priority arbiter switches us to Task 4 (Disk Sector).
-        //
-        //   addr 0: F1=TaskYield → arbitrate, switch to highest-prio
-        //           woken task (Task 4 with wakeups=0x0010).
-        //   addr 1: R[2] ← 0x0200 (KCWA target).  Bus from constant ROM
-        //           via F1=Constant + BS=LoadR ⇒ R[RSEL=2] ← const[17].
-        //   addr 2: R[1] ← 0x8000 (KCOM "start" bit).  Same shape:
-        //           const[9] = 0x8000, RSEL=1, BS=LoadR.
-        //   addr 3: KCWA ← R[2] = 0x0200.  F1=WriteKcwa (Task 4 only).
-        //   addr 4: KCOM ← R[1] = 0x8000.  F1=WriteKcomm (Task 4 only).
-        //           Arms the transfer.
-        //   addr 5: F1=TaskYield → allow Disk Word (Task 14) to win
+        // Layout:
+        //   addr 4: R[2] ← 0x0200 (KCWA target).  F1=Constant +
+        //           BS=LoadR + RSEL=2 ⇒ R[2] ← const[(2<<3)|1=17].
+        //           (Task 4's first instruction on reset.)
+        //   addr 5: R[1] ← 0x8000 (KCOM arm bit).  RSEL=1, BS=LoadR,
+        //           F1=Constant ⇒ R[1] ← const[(1<<3)|1=9].
+        //   addr 6: KCWA ← R[2] = 0x0200.  F1=WriteKcwa (Task 4 only).
+        //   addr 7: KCOM ← R[1] = 0x8000.  F1=WriteKcomm (Task 4).
+        //           Arms the transfer; word_strobe begins pulsing.
+        //   addr 8: F1=TaskYield → allow Disk Word (Task 14) to win
         //           arbitration when word_strobe pulses; falls through
-        //           to addr 6.
-        //   addr 6: NOP loop for Task 4; F2=DiskWordTransfer for Task 14
-        //           — atomic DMA per cycle while word_strobe.
-        let mi0 = Microinstruction {
-            rsel: bits::<5>(0),
-            aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::TaskYield, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(1),
-        };
-        // Per spec §2.7 + ContrAlto: R loads from Shifter.Output (L
-        // after F1 shift), NOT from ALU result.  To load a constant
-        // into R via F1=Constant + BS=LoadR, we must also set
-        // L_LOAD=true so L latches the constant; then R ← L.
-        let mi1 = Microinstruction {
+        //           to addr 9.
+        //   addr 9: Task 4 idle loop with TaskYield.  Continues yielding
+        //           so Task 14 can win whenever word_strobe is hot.
+        //   addr 14: Task 14's reset MPC.  F2=DiskWordTransfer +
+        //           F1=TaskYield, NEXT=14 — atomic DMA per firing.
+        let mi_load_r2 = Microinstruction {
             rsel: bits::<5>(2),
             aluf: AluFunction::Bus, bs: BusSource::LoadR,
             f1: F1Function::Constant, f2: F2Function::Nop,
-            t_load: false, l_load: true, next: bits::<10>(2),
+            t_load: false, l_load: true, next: bits::<10>(5),
         };
-        let mi2 = Microinstruction {
+        let mi_load_r1 = Microinstruction {
             rsel: bits::<5>(1),
             aluf: AluFunction::Bus, bs: BusSource::LoadR,
             f1: F1Function::Constant, f2: F2Function::Nop,
-            t_load: false, l_load: true, next: bits::<10>(3),
+            t_load: false, l_load: true, next: bits::<10>(6),
         };
-        let mi3 = Microinstruction {
+        let mi_write_kcwa = Microinstruction {
             rsel: bits::<5>(2),
             aluf: AluFunction::Bus, bs: BusSource::ReadR,
             f1: F1Function::WriteKcwa, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(4),
+            t_load: false, l_load: false, next: bits::<10>(7),
         };
-        let mi4 = Microinstruction {
+        let mi_write_kcom = Microinstruction {
             rsel: bits::<5>(1),
             aluf: AluFunction::Bus, bs: BusSource::ReadR,
             f1: F1Function::WriteKcomm, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(5),
+            t_load: false, l_load: false, next: bits::<10>(8),
         };
-        let mi5 = Microinstruction {
+        let mi_yield_to_dwt = Microinstruction {
             rsel: bits::<5>(0),
             aluf: AluFunction::Bus, bs: BusSource::ReadR,
             f1: F1Function::TaskYield, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(6),
+            t_load: false, l_load: false, next: bits::<10>(9),
         };
-        let mi6 = Microinstruction {
+        let mi_task4_idle = Microinstruction {
+            rsel: bits::<5>(0),
+            aluf: AluFunction::Bus, bs: BusSource::ReadR,
+            f1: F1Function::TaskYield, f2: F2Function::Nop,
+            t_load: false, l_load: false, next: bits::<10>(9),
+        };
+        let mi_task14_loop = Microinstruction {
             rsel: bits::<5>(0),
             aluf: AluFunction::Bus, bs: BusSource::ReadR,
             f1: F1Function::TaskYield, f2: F2Function::DiskWordTransfer,
-            t_load: false, l_load: false, next: bits::<10>(6),
+            t_load: false, l_load: false, next: bits::<10>(14),
+        };
+        // Task 0 (Emulator) needs SOMETHING at MPC=0 that asserts
+        // TaskYield so the chip can switch to task 4.  Without this,
+        // task 0 (= current_task on reset) runs the all-zeros microcode
+        // which is a NOP forever, never yielding, never switching.
+        // This is purely for the test bootstrap; a real Alto's
+        // Emulator microcode at MPC=0 starts the Nova fetch loop
+        // which yields naturally.
+        let mi_emu_bootstrap = Microinstruction {
+            rsel: bits::<5>(0),
+            aluf: AluFunction::Bus, bs: BusSource::ReadR,
+            f1: F1Function::TaskYield, f2: F2Function::Nop,
+            t_load: false, l_load: false, next: bits::<10>(0),
         };
         let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
-        microcode[0] = mi0.pack();
-        microcode[1] = mi1.pack();
-        microcode[2] = mi2.pack();
-        microcode[3] = mi3.pack();
-        microcode[4] = mi4.pack();
-        microcode[5] = mi5.pack();
-        microcode[6] = mi6.pack();
+        microcode[0]  = mi_emu_bootstrap.pack();
+        microcode[4]  = mi_load_r2.pack();
+        microcode[5]  = mi_load_r1.pack();
+        microcode[6]  = mi_write_kcwa.pack();
+        microcode[7]  = mi_write_kcom.pack();
+        microcode[8]  = mi_yield_to_dwt.pack();
+        microcode[9]  = mi_task4_idle.pack();
+        microcode[14] = mi_task14_loop.pack();
 
         // ---- Constant ROM ---------------------------------------------
         // const[17] (= (RSEL=2 << 3) | BS=LoadR) → 0x0200 (KCWA target).
@@ -1640,11 +1649,14 @@ mod tests {
         //   in its setup loop, releasing Emulator briefly between
         //   sector boundaries.
         //
-        // Observable: distinct microaddresses ≥ 30 (KSEC's real
-        // microcode is running), sector_mark events ≥ 2 (KSEC hits
-        // Block, which clears sector_mark; next sector tick fires
-        // another mark), Disk Sector dominates total cycles (KSEC's
-        // setup loop is much longer than Emulator's tight boot loop).
+        // With the spec §2.3 1-cycle/microinstruction pipeline (Phase
+        // 3.5 Step 4i), KSEC executes its handler chain (KSEC entry
+        // → KPOQ → CKSECT → ... → MD←KSTAT → ...) and YIELDS BACK
+        // to Emulator after the brief setup, per real Alto behavior.
+        // So Emulator dominates between sector marks, not Disk Sector.
+        // (The old assertion `disk_sector_firings >= 100` was based on
+        // KSEC getting STUCK dispatching into uninitialized PROM with
+        // the broken 2-cycle pipeline — a bug, not the spec'd behavior.)
         assert!(visited.len() >= 30,
             "real KSEC microcode should visit ≥30 distinct microaddresses \
              (was ≤8 before per-task MPC stream alignment); got {}", visited.len());
@@ -1652,8 +1664,11 @@ mod tests {
             "F1=Block in KSEC clears sustained sector_mark; subsequent \
              sector tick re-fires it.  Expected ≥2 events in 2000 cycles, \
              saw {sector_events}");
-        assert!(disk_sector_firings >= 100,
-            "once sector_mark fires Disk Sector dominates; got {disk_sector_firings}");
+        // KSEC handler runs ~5-10 microinstructions per sector mark
+        // before yielding back.  Expect a handful of firings per mark.
+        assert!(disk_sector_firings >= sector_events as u32,
+            "KSEC must fire at least once per sector_mark event; got \
+             {disk_sector_firings} firings for {sector_events} marks");
         assert!(emulator_firings > 0,
             "Emulator should fire at least once during initial boot before \
              the first sector_mark; saw {emulator_firings}");
@@ -1725,16 +1740,16 @@ mod tests {
         // real instructions.  Spec §3.4: "PC ← 1, and the emulator is
         // started" — Emulator now executes the boot bootstrap.
         //
-        // Floor: 62 distinct microaddresses.  Achieved after the NEXT-mask
-        // bugfix (Phase 3.5 Step 4g) unblocked BusToNext dispatch with
-        // odd-LSB bus values; KSEC's real microcode then began executing
-        // its 0x37c-0x388 chain instead of stalling.  The floor exists
-        // to catch regressions: any change that drops us below 62 has
-        // re-broken dispatch for one of the F1/F2 codes KSEC uses.
-        assert!(visited.len() >= 62,
-            "boot trace should visit at least 62 distinct microaddresses; \
-             got {} — likely a regression in dispatch (BusToNext, IDISP, \
-             per-task F1/F2/BS, or bit0 OR-merge)",
+        // Floor: 76 distinct microaddresses.  Achieved after the
+        // 1-cycle/microinstruction pipeline fix (Phase 3.5 Step 4i) on
+        // top of the NEXT-mask bugfix (Step 4g).  With 2x-faster
+        // microinstruction execution, KSEC's real microcode visits more
+        // of its handler chain per wall-cycle, AND Emulator now reaches
+        // more Nova fetch handlers between sector marks.
+        assert!(visited.len() >= 76,
+            "boot trace should visit at least 76 distinct microaddresses; \
+             got {} — likely a regression in dispatch, throughput, or \
+             per-task F1/F2/BS",
             visited.len());
     }
 }
