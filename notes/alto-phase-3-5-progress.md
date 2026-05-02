@@ -97,6 +97,76 @@ is reached with cycle-equivalent ContrAlto trace.
 
 Realistic remaining timeline: 2-3 months of focused work.
 
+## 2026-05-02 session — three architectural fixes landed; F1=Block + device-cooperation deferred
+
+This session's commits:
+
+1. **Sticky `current_task` + arbitration on F1=TaskYield** (commit `58b3e035`).
+   Per Alto Hardware Manual §2.4: task switches happen ONLY on F1=TASK,
+   not per-cycle.  Replaced per-cycle priority arbiter with sticky
+   `current_task: dff::DFF<Bits<4>>` + combinational priority encoder
+   gated by `q.engine.task_yield`.
+
+2. **F1/F2 binary encoding aligned with real Alto** (commit `3d10a747`).
+   Discovered our F1/F2 enum-to-binary mapping was completely wrong vs
+   ContrAlto's `MicroInstruction.cs`.  Real F1=1 is LoadMAR (we had
+   LeftShift1); F1=2 is TASK (we had RightShift1); F1=7 is Constant
+   (we had Reserved7 → noped).  After fix, real Alto microcode at
+   MPC=0x153 correctly decodes as `f1=TaskYield`, allowing Disk
+   Sector to fire (7 firings = 7 sector_marks).
+
+3. **Per-task reset MPCs at chip level via task_started** (commit
+   `64cba64a`).  Per ContrAlto's `Task.cs` Reset(): each task K
+   resets to MPC = K.  Implemented via a 16-bit `task_started` DFF
+   in AltoChip; `current_mpc = if task_started[K] then task_mpc[K]
+   else K`.
+
+### ❌ F1=Block + device wakeup cooperation — needs DiabloDisk redesign
+
+**Tried, reverted** (in this session).  Plan was: add `wakeup_latched:
+DFF<Bits<16>>` to AltoChip (sticky-OR'd from disk pulses), surface
+`block_task: bool` from microengine, clear `wakeup_latched[current_task]`
+on Block.  This matches ContrAlto's `Task.cs:343` simplification.
+
+**Why it doesn't work in isolation:** real Alto's wakeup signals are
+**sustained** per HW Manual §2.4: "The 'wakeup signals' which drive
+the priority encoder are hardware-generated".  The BLOCK function is
+*observed by the device interface* — the device deasserts its wakeup.
+Our DiabloDisk's `word_strobe` is sustained while `transfer_remaining
+> 0`, so a chip-level latch sticky-set from word_strobe never clears
+(Block clears the latch, but the same cycle's sustained word_strobe
+re-OR's it back in).  Disk Word loops forever.
+
+**Proper fix (deferred to a future PR):** integrate Block at the
+device level.  AltoChip routes `engine.block_task + current_task` into
+DiabloDisk's `block_ack: bool` input; DiabloDisk observes Block-for-
+its-task and deasserts its wakeup signal.  This matches the HW manual
+exactly.  Per-device:
+
+- `DiabloDisk` gets `block_ack_sector: bool` and `block_ack_word: bool`
+  inputs, drives a `sector_mark_pending` DFF cleared on `block_ack_sector`
+  and a `word_strobe_pending` DFF cleared on `block_ack_word`.
+- `AltoChip` drives `block_ack_sector = engine.block_task && current_task == 4`
+  and similarly for word/14.
+- `DiabloDisk` outputs sector_mark / word_strobe from the pending DFFs
+  (sustained until the corresponding ack arrives).
+- `AltoChip` priority encoder uses disk outputs directly (no latch
+  needed since disk now sustains correctly).
+
+Estimated effort: 1-2 days of focused work.  Not blocking other Phase
+3.5 progress (per-task F1/F2 dispatch can land first).
+
+**Current consequence of the gap:** sector_mark is a 1-cycle pulse;
+most fire when Emulator isn't at TaskYield, so Disk Sector fires only
+~1-out-of-32 sector_marks.  This is documented in
+`boot_trace_baseline_metrics`'s relaxed assertion ("Disk Sector firings
+≥ sector_marks" with the explanation that the wake-pulse-vs-yield
+race is the issue).  The 7-firings-from-7-marks observed in our
+2000-cycle test is coincidence: when one mark happens to coincide
+with Emulator's MPC=0x153 yield window, Disk Sector runs through
+~7 cycles of Emulator's loop in Disk-Sector-context until the next
+TaskYield kicks it out.
+
 ## Resumption notes
 
 - Assets (PROMs, .dsk, ContrAlto source) all live under
