@@ -147,6 +147,15 @@ pub struct Out {
     /// implemented).  KSEC at MPC=0x37c uses this as its first
     /// instruction.
     pub disk_clr_stat: bool,
+    /// True when current_task is a Disk task AND F1=11B (binary 9,
+    /// STROBE per spec §8.5): "Initiates a disk seek operation.
+    /// KDATA must be loaded previously, and SENDADR bit of KCOM
+    /// register set to 1."  Per §8.6, the disk hardware auto-streams
+    /// sector words after position setup, so STROBE effectively
+    /// initiates the read transfer for boot (sector 0/head 0 — no
+    /// seek needed).  Routed to disk.transfer_request to arm the
+    /// 256-word transfer.
+    pub disk_strobe: bool,
     /// Instruction Register — current Nova instruction (Emulator task).
     pub ir: Bits<16>,
 }
@@ -373,6 +382,18 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // widgets (e.g. DiabloDisk) can snoop it together with
     // current_task to deassert their own wakeup signals.
     o.block_task           = mi.f1 == F1Function::Block;
+    // F1=STROBE (per-task, F1=11B/binary 9 in Disk Sector / Disk
+    // Word per spec §8.5): "Initiates a disk seek operation. KDATA
+    // must be loaded previously, and SENDADR bit of KCOM register
+    // set to 1."  Per §8.6, the disk hardware auto-streams sector
+    // words after position setup, so for boot (sector 0/head 0/no
+    // seek needed), STROBE effectively also initiates the read
+    // transfer.  Surfaced as `disk_strobe` for the chip to route to
+    // disk.transfer_request as an arm trigger (in addition to the
+    // existing Phase-3.5 KCOM-bit-15 path).
+    o.disk_strobe = (i.current_task == bits::<4>(4)
+        || i.current_task == bits::<4>(14))
+        && (mi.f1 == F1Function::Code9);
     // F1=CLRSTAT (per-task, F1=12 in Disk Sector / Disk Word per
     // spec §3.3 + §8.5): "Causes all error latches in disk controller
     // hardware to reset, clears KSTAT[13]" (per ContrAlto's
@@ -430,6 +451,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         o.task_yield = false;
         o.block_task = false;
         o.disk_clr_stat = false;
+        o.disk_strobe = false;
         o.ir = bits::<16>(0);
     }
     (o, d)

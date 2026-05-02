@@ -291,12 +291,18 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
         current_task,
         disk_word_data: q.disk.current_word_data,
         kcwa: q.disk_ctrl.kcwa_value,
-        // Per-task BS=3/BS=4 sources (spec §3.2 + §8.5): in Disk
-        // Sector / Disk Word task, BS=3 reads KSTAT and BS=4 reads
-        // KDATA.  Wired combinationally from the disk controller's
-        // Q output.
+        // Per-task BS=3/BS=4 sources (spec §3.2 + §8.5).  In Disk
+        // Sector / Disk Word task:
+        //  - BS=3 (←KSTAT): reads the controller's KSTAT register.
+        //  - BS=4 (←KDATA): reads the disk's "input data register"
+        //    per spec §8.5 ("Disk input data register on bus") —
+        //    NOT the controller's KDATA OUTPUT register, which is
+        //    set by F1=15 LoadKDATA for write paths.  Real Alto's
+        //    KDATA-read register is fed by the disk's serial-to-
+        //    parallel converter as it streams sector bits.  Our
+        //    DiabloDisk's `current_word_data` exposes that.
         kstat: q.disk_ctrl.kstat_word,
-        kdata: q.disk_ctrl.kdata_word,
+        kdata: q.disk.current_word_data,
     };
     d.mem = MemIn {
         address: q.engine.mem_address,
@@ -336,7 +342,14 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     // transfer_request (q-registered), which arms the disk's 256-word
     // transfer countdown so word_strobe starts firing.
     let mut disk_in = DiskIn::default();
-    disk_in.transfer_request = q.disk_ctrl.transfer_request;
+    // Transfer-arm trigger: per spec §8.5, F1=STROBE in a Disk task
+    // initiates the disk operation.  Per §8.6, after KSEC sets up
+    // KCOM/KADR and issues STROBE, the disk auto-streams sector
+    // words.  Phase-3.5 also accepts the Phase-3 simplified
+    // KCOM-bit-15 trigger from the disk controller for the legacy
+    // DMA test microcode.
+    disk_in.transfer_request = q.disk_ctrl.transfer_request
+        || q.engine.disk_strobe;
     disk_in.word_consumed = q.engine.disk_word_consumed;
     // F1=Block + current_task per spec §5.5: the device interface
     // monitors F1=Block in conjunction with current_task to clear its
@@ -1197,6 +1210,64 @@ mod tests {
         let any_task_4 = trace.iter().any(|t| t.current_task.raw() == 4);
         assert!(any_task_4,
             "Disk Sector task should have fired in response to the disk wakeup");
+    }
+
+    /// F1=STROBE (binary 9, per spec §8.5) in Disk Sector arms a
+    /// disk transfer (matches real Alto's KSEC arming convention).
+    /// Verifies engine.disk_strobe → disk.transfer_request → disk
+    /// starts asserting word_strobe.  Phase-3.5 test for the spec-
+    /// correct STROBE protocol path (the Phase-3 test
+    /// `kcom_write_arms_disk_and_fires_disk_word_task` validates
+    /// the legacy KCOM-bit-15 simplification path).
+    #[test]
+    fn f1_strobe_in_disk_sector_arms_transfer() {
+        // mi0: F1=TaskYield (switch to Disk Sector, the only woken task).
+        let mi0 = Microinstruction {
+            rsel: bits::<5>(0),
+            aluf: AluFunction::Bus, bs: BusSource::ReadR,
+            f1: F1Function::TaskYield, f2: F2Function::Nop,
+            t_load: false, l_load: false, next: bits::<10>(1),
+        };
+        // mi1: F1=STROBE (Code9, per spec §8.5).  Arms transfer.
+        // Other fields are NOP-ish; the chip latches engine.disk_strobe
+        // (q-registered, 1-cycle lag) and ORs into disk.transfer_request.
+        let mi1 = Microinstruction {
+            rsel: bits::<5>(0),
+            aluf: AluFunction::Bus, bs: BusSource::ReadR,
+            f1: F1Function::Code9, f2: F2Function::Nop,
+            t_load: false, l_load: false, next: bits::<10>(2),
+        };
+        // mi2: F1=TaskYield loop (release Disk Sector so Disk Word
+        // can win arbitration when word_strobe fires).
+        let mi2 = Microinstruction {
+            rsel: bits::<5>(0),
+            aluf: AluFunction::Bus, bs: BusSource::ReadR,
+            f1: F1Function::TaskYield, f2: F2Function::Nop,
+            t_load: false, l_load: false, next: bits::<10>(2),
+        };
+        let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
+        microcode[0] = mi0.pack();
+        microcode[1] = mi1.pack();
+        microcode[2] = mi2.pack();
+        let constants = [0u16; crate::constant_rom::NUM_CONSTANTS];
+
+        let uut = AltoChip::with_microcode_and_constants(&microcode, &constants);
+        // Wake Disk Sector (task 4) only.
+        let inputs: Vec<ChipIn> = (0..50).map(|_| ChipIn {
+            wakeups: bits::<16>(0x0010),
+        }).collect();
+        let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
+        let trace: Vec<ChipOut> = uut.run(stream)
+            .synchronous_sample()
+            .filter(|s| !s.input.0.reset.any())
+            .map(|s| s.output)
+            .collect();
+
+        // After the STROBE fires, transfer arms → word_strobe asserts.
+        let any_word_strobe = trace.iter().any(|t| t.disk_word_strobe);
+        assert!(any_word_strobe,
+            "F1=STROBE in Disk Sector should arm the transfer; \
+             word_strobe should assert");
     }
 
     /// Verify the AltoChip composition emits clean Verilog and the

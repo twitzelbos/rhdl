@@ -31,6 +31,35 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4f: F1=STROBE protocol (per spec §8.5)
+
+**Paths:**
+
+- `crates/rhdl-alto/src/microengine.rs` — added `disk_strobe: bool` output, asserted when `current_task` is a Disk task (4 or 14) and `mi.f1 == F1Function::Code9` (binary 9, F1=11B/STROBE per spec §8.5).  Cleared in reset path.
+- `crates/rhdl-alto/src/alto_chip.rs` — `disk_in.transfer_request = q.disk_ctrl.transfer_request || q.engine.disk_strobe`.  STROBE is the spec-correct transfer-arm path (matches real KSEC microcode); the existing KCOM-bit-15 path is retained for the Phase-3 legacy DMA test.  Routed engine.kdata = `q.disk.current_word_data` (per spec §8.5: BS=4 reads "Disk input data register" — the disk's serial-to-parallel converter output, NOT the controller's output-side KDATA register set by F1=15 LoadKDATA).
+- `crates/rhdl-alto/src/alto_chip.rs` — new test `f1_strobe_in_disk_sector_arms_transfer` validates the spec path: KSEC microcode with F1=Code9 (STROBE) → engine.disk_strobe → disk.transfer_request → disk asserts word_strobe.
+
+**Why this, why now:** Per Alto Hardware Manual §6.0 + spec §8.5: F1=11B (binary 9) STROBE "Initiates a disk seek operation. KDATA must be loaded previously, and SENDADR bit of KCOM register set to 1."  Per §8.6: after KSEC sets up KCOM/KADR and issues STROBE, the disk hardware auto-streams sector words.  For boot (sector 0/head 0/no seek needed), STROBE effectively initiates the read transfer.  Real KSEC microcode uses STROBE — without it, real microcode can't arm transfers in our chip (only the Phase-3 KCOM-bit-15 simplification works).
+
+**Design decisions:**
+
+- **STROBE OR'd with KCOM-bit-15 trigger.**  Both paths arm the transfer.  STROBE is spec-correct for real microcode; KCOM-bit-15 was the Phase-3 simplification used by `end_to_end_256_word_dma`.  Keep both for backward compatibility.
+
+- **engine.kdata routed from disk.current_word_data, not disk_ctrl.kdata_word.**  Per spec §8.5: "←KDATA: Disk input data register on bus" — the disk's serial-to-parallel converter output as it streams sector bits.  Distinct from the controller's output-side KDATA register set by F1=15 (LoadKDATA, used for write paths).  Our DiabloDisk's `current_word_data` exposes the input register; route directly to engine for BS=4 reads.
+
+**Validation:**
+
+- 106/106 alto tests pass (added `f1_strobe_in_disk_sector_arms_transfer`).
+- Boot trace metrics unchanged (KSEC's microcode path doesn't yet visit STROBE in our 2000-cycle window — needs more setup before reaching it; the STROBE dispatch is in place for when it does).
+
+**Follow-ups:**
+
+- F1=11 (INCRECNO) — increment disk record number.  Needs DiabloDisk to track records.
+- F2=8 (INIT), F2=9 (RWC), F2=10 (RECNO), F2=11 (XFRDAT), F2=12 (SWRNRDY), F2=13 (NFER), F2=14 (STROBON) — KWDX uses these per-task F2 NEXT-modify codes per spec §8.5.  Substantial work.
+- DiabloDisk per-word streaming protocol: real Alto streams sector bits through a serial-to-parallel converter that pulses word_strobe per word completion.  Current sustained word_strobe is a Phase-3.5 simplification — close to right for boot DMA but doesn't match real per-word timing.
+
+---
+
 ## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4e: per-task BS=3/4, F1=10 (LoadKSTAT), F1=12 (CLRSTAT) (per spec §3.2/§3.3/§8.5)
 
 **Paths:**
