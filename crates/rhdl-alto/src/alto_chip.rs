@@ -82,6 +82,8 @@ pub struct ChipOut {
     /// Engine's per-task disk-controller write-enable this cycle.
     /// Test surface: confirms the per-task gating works.
     pub disk_ctrl_write_en: bool,
+    /// Instruction Register (Emulator task's current Nova instruction).
+    pub ir: Bits<16>,
 }
 
 /// The Alto chip — composition of microengine + microcode RAM +
@@ -283,6 +285,7 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     o.wakeups             = effective_wakeups;
     o.disk_ctrl_read_data = q.disk_ctrl.read_data;
     o.disk_ctrl_write_en  = q.engine.disk_ctrl_write_en;
+    o.ir                  = q.engine.ir;
 
     (o, d)
 }
@@ -611,6 +614,47 @@ mod tests {
         let write_active_b = trace_b.iter().any(|t| t.disk_ctrl_write_en);
         assert!(!write_active_b,
             "Under Emulator task, F1=WriteKadr is a no-op (gated)");
+    }
+
+    /// Per-task IR load: under Emulator (task 0), F2=LoadIr loads
+    /// IR ← MD (memory data).  Stage memory[0x100] = 0xCAFE, do
+    /// MAR ← 0x100, wait, then F2=LoadIr; verify IR == 0xCAFE.
+    #[test]
+    fn f2_load_ir_only_active_under_emulator_task() {
+        // addr 0: F1=Constant idx 0 = 0x0100, F2=LoadMar → MAR ← 0x0100
+        let mi0 = Microinstruction {
+            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
+            f1: F1Function::Constant, f2: F2Function::LoadMar,
+            t_load: false, l_load: false, next: bits::<10>(1),
+        };
+        // addr 1: filler, give BRAM read time to land
+        let mi1 = Microinstruction {
+            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
+            f1: F1Function::Nop, f2: F2Function::Nop,
+            t_load: false, l_load: false, next: bits::<10>(2),
+        };
+        // addr 2: F2=LoadIr  → IR ← MD (which is memory[MAR] = 0xCAFE)
+        //         loop here.
+        let mi2 = Microinstruction {
+            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
+            f1: F1Function::Nop, f2: F2Function::LoadIr,
+            t_load: false, l_load: false, next: bits::<10>(2),
+        };
+        let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
+        microcode[0] = mi0.pack();
+        microcode[1] = mi1.pack();
+        microcode[2] = mi2.pack();
+        let mut constants = [0u16; crate::constant_rom::NUM_CONSTANTS];
+        constants[0] = 0x0100;
+        let memory_initial = vec![(bits::<16>(0x0100), bits::<16>(0xCAFE))];
+
+        let uut = AltoChip::with_microcode_constants_and_memory(
+            &microcode, &constants, memory_initial,
+        );
+        let trace = run(uut, 16);  // Task 0 (Emulator) always woken via boot_in()
+        let final_ir = trace.last().unwrap().ir.raw();
+        assert_eq!(final_ir, 0xCAFE,
+            "IR should latch the memory value at 0x0100 via LoadIr in Emulator task");
     }
 
     /// End-to-end disk → wakeup → arbiter → engine path: the disk

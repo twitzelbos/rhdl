@@ -181,7 +181,11 @@ pub enum F2Function {
     Reserved9,
     Reserved10,
     Reserved11,
-    Reserved12,
+    /// `IR ← MD` — Instruction Register loaded from Memory Data.
+    /// Emulator task (0) only; gated no-op in any other task.  Per
+    /// the Alto Hardware Manual §5 + ContrAlto's `EmulatorTask.cs`,
+    /// this is F2=12 in Emulator.
+    LoadIr,
     Reserved13,
     Reserved14,
     Reserved15,
@@ -371,7 +375,7 @@ fn f2_function_index(f: F2Function) -> u8 {
         F2Function::Reserved9 => 9,
         F2Function::Reserved10 => 10,
         F2Function::Reserved11 => 11,
-        F2Function::Reserved12 => 12,
+        F2Function::LoadIr => 12,
         F2Function::Reserved13 => 13,
         F2Function::Reserved14 => 14,
         F2Function::Reserved15 => 15,
@@ -391,7 +395,7 @@ fn f2_function_from_index(i: u8) -> F2Function {
         9 => F2Function::Reserved9,
         10 => F2Function::Reserved10,
         11 => F2Function::Reserved11,
-        12 => F2Function::Reserved12,
+        12 => F2Function::LoadIr,
         13 => F2Function::Reserved13,
         14 => F2Function::Reserved14,
         _ => F2Function::Reserved15,

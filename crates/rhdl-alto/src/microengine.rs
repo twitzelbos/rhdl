@@ -107,6 +107,8 @@ pub struct Out {
     pub disk_ctrl_write_en: bool,
     /// Disk-controller write data — equals BUS when write_en.
     pub disk_ctrl_write_data: Bits<16>,
+    /// Instruction Register — current Nova instruction (Emulator task).
+    pub ir: Bits<16>,
 }
 
 /// The Alto microengine widget.
@@ -128,6 +130,10 @@ pub struct Microengine {
     /// Memory Address Register — holds the current memory address
     /// for read/write ops.  Updated by F2 = LoadMar.
     mar: dff::DFF<Bits<16>>,
+    /// Instruction Register — holds the current Nova instruction
+    /// being executed by the Emulator task.  Updated by F2 = LoadIr
+    /// in Emulator (task 0); other tasks don't touch it.
+    ir: dff::DFF<Bits<16>>,
 }
 
 impl SynchronousIO for Microengine {
@@ -269,6 +275,15 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     o.disk_ctrl_write_en   = is_disk_sector_task && (is_kcomm || is_kadr || is_kdata);
     o.disk_ctrl_write_data = bus;
 
+    // ---- Per-task IR load (Emulator) ------------------------------
+    // F2 = LoadIr + current_task == 0 (Emulator) → IR ← MD
+    // (memory data delivered from previous cycle's MAR).  In any
+    // other task, this F2 code is a no-op.
+    let is_emulator_task: bool = i.current_task == bits::<4>(0);
+    let is_load_ir: bool = mi.f2 == F2Function::LoadIr;
+    d.ir = if is_emulator_task && is_load_ir { i.mem_read_data } else { q.ir };
+    o.ir = q.ir;
+
     // ---- Outputs ---------------------------------------------------
     o.t          = q.t;
     o.l          = q.l;
@@ -285,6 +300,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
             wen: false,
         };
         d.mar = bits::<16>(0);
+        d.ir = bits::<16>(0);
         o.mpc = bits::<10>(0);
         o.current_task = bits::<4>(0);
         o.next_mpc = bits::<10>(0);
@@ -298,6 +314,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         o.disk_ctrl_addr = bits::<3>(0);
         o.disk_ctrl_write_en = false;
         o.disk_ctrl_write_data = bits::<16>(0);
+        o.ir = bits::<16>(0);
     }
     (o, d)
 }
@@ -394,7 +411,7 @@ fn f2_from_index(i: Bits<4>) -> F2Function {
     else if i == bits::<4>(9)  { F2Function::Reserved9 }
     else if i == bits::<4>(10) { F2Function::Reserved10 }
     else if i == bits::<4>(11) { F2Function::Reserved11 }
-    else if i == bits::<4>(12) { F2Function::Reserved12 }
+    else if i == bits::<4>(12) { F2Function::LoadIr }
     else if i == bits::<4>(13) { F2Function::Reserved13 }
     else if i == bits::<4>(14) { F2Function::Reserved14 }
     else                       { F2Function::Reserved15 }
