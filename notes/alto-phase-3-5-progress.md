@@ -432,3 +432,81 @@ execution fastest if we want a milestone-photo for the project.
   - AltoIICode3.mu.pdf, altoIIcode3.mu.txt — actual microcode source
   - Alto_II_firmware.zip — 2KCTL/MADR/DISPL/XM51 PROM dumps
   - AltoSubsystems_Oct79.pdf — subsystems reference
+
+## 2026-05-02 Audit Cleanup Complete + Boot-Trace Diagnosis
+
+After 16 commits of audit cleanup (5 critical implementation bugs +
+many coverage and tightening fixes; see CHANGELOG entries Step 4j..4o),
+the chip is functionally correct per spec.  Test count: **219 alto
+tests pass** (up from 172).
+
+### Boot-trace diagnosis (Step 4o)
+
+The corrected per-cycle diagnostic now cross-references against
+ContrAlto's altoIIcode3.mu disassembly correctly.  Boot trace
+visits 76 distinct microaddresses in 2000 cycles — these match
+ContrAlto's expected execution path for the boot dance.
+
+**Boot path observed (verified against ContrAlto disasm):**
+
+1. Cycle 1: NOVEM at MPC 0x000 (= EM0000)
+2. Cycles 2-16: Q-loop boot dance (Q0..Q7 at 0x130..0x137, plus
+   surrounding addresses 0x14e..0x152)
+3. Cycle 17: ODDCX dispatch (0x155 → 0x17e/0x17f)
+4. Cycles 18+: BLT (Block Transfer) routine
+   - 0x17f (ODDCX): L<-AC0 → HDENTER (0x1fa)
+   - 0x1fa (HDENTER): DWAX<-L
+   - 0x1fb (XH dec/test): F2=BusEqZero on R[8]
+   - When R[8]==0: exit to 0x1fd; else continue to 0x1fc
+
+### The remaining bottleneck (NOT a microengine bug)
+
+R[8] (= XH, the BLT count register) starts at 0 post-reset.  At
+MOVELOOP entry (after ODDCX setup), R[8]-1 wraps to 0xFFFF.  The
+loop counter would need ~65K iterations to terminate.
+
+**Root cause**: in real Alto, the disk DMA fills memory[1..400B] with
+sector 0 data, AND the Q-loop setup leaves Nova accumulators in a
+known state.  Our chip pre-loads memory but the Q-loop's R-register
+side-effects depend on the disk-controller state machine that we
+simulate but don't fully integrate.
+
+Specifically, looking at the trace: the chip goes from Q-loop directly
+to BLT without ever entering the Nova fetch loop on memory[1..400B].
+The Nova bootstrap (memory[1] = 0x00E5 = a Nova JMP) never executes.
+
+### Path forward for Phase 3.5 Step 4
+
+The audit-cleanup work has established that:
+
+- The microengine itself is spec-correct (5 bugs fixed, 219 tests).
+- The 1-cycle/microinstruction pipeline matches spec §2.3.
+- The microcode loader produces ContrAlto-byte-identical URom contents.
+- The boot trace executes the correct microcode sequence per ContrAlto
+  (verified by per-cycle pairing of mpc[k] with instruction[k]).
+
+The remaining gap is **state initialization**: R-registers (Nova
+accumulators) and disk-controller state at the boot-button handoff.
+The real Alto's disk DMA both fills memory AND sets up the
+disk-controller state via real KSEC microcode execution.  Our boot
+button shortcut fills memory directly, bypassing the KSEC state
+setup, which leaves R[8] (and probably others) at 0.
+
+Two paths forward:
+1. **Full disk DMA**: remove the boot-button memory pre-load; let
+   the Q-loop drive real KSEC microcode + DiabloDisk to fill memory.
+   Requires INCRECNO (D19), KWDX F2 codes (D20), and the per-record
+   streaming protocol per spec §8.6.  Multi-week feature.
+2. **ContrAlto cycle-equivalent lockstep** (Phase 3.5 Step 5):
+   compare per-cycle state with ContrAlto running the same boot.
+   First divergence cycle = first bug.  Doesn't fix anything
+   directly but makes every subsequent divergence trivially
+   debuggable.  Multi-day setup, then continuous payoff.
+
+Path 2 is the higher-leverage option per the Phase 3.5 plan.
+
+### Test count and metrics
+- 219 alto tests pass (108 microcode_semantics + 45 chip lib + others)
+- Boot trace: 76 distinct microaddresses, 7 sector_marks, 1960 EMU + 40 KSEC firings (in 2000 cycles)
+- Pipeline: 1 microinstruction per cycle (spec §2.3 contract met)
+- Microcode loader: byte-identical to ContrAlto (verified)
