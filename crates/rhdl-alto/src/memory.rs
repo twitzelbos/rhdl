@@ -203,8 +203,20 @@ pub fn memory_kernel(cr: ClockReset, i: MemIn, q: Q) -> (MemOut, D) {
     let counter_ge_1: bool = counter >= bits::<3>(1);
     let stall_read: bool =
         i.md_read_this_cycle && counter_ge_1 && counter < bits::<3>(4);
-    let stall_write: bool =
-        i.md_write_this_cycle && counter == bits::<3>(1);
+    // MD<- (write) does NOT stall the microengine.  Per AltoHW §2.3:
+    // "Store happens in the third cycle after MAR<-" — the microcode
+    // can issue MD<- at K+1, K+2, or K+3 and the write commits at K+3
+    // regardless.  The MD<- microinstruction just LATCHES the data;
+    // it doesn't wait for the bus.  Confirmed by canonical
+    // altoIIcode3.mu which does NOVEM (MAR<-) → INXB (MD<-) back-
+    // to-back at MPC 0 → 0x152 (= K, K+1 with 0 intervening cycles).
+    // The earlier "1 minimum intervening" reading of rule (a) was too
+    // strict; the constraint applies to ←MD (read) where the result
+    // must be ready, not to MD<- (write) which the bus completes
+    // asynchronously at K+3.
+    let stall_write: bool = false;
+    let _ = i.md_write_this_cycle;  // accepted for the FSM driver-signal
+                                    // contract but unused here
     let stall_new_mar: bool =
         i.mar_load_this_cycle && counter_ge_1 && counter < bits::<3>(5);
     let stall: bool = stall_read || stall_write || stall_new_mar;
