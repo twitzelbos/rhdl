@@ -356,6 +356,16 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // (RSEL << 3) | BS.  Per ContrAlto's MicroInstruction.cs, both
     // F1 = 7 (SpecialFunction1.Constant) and F2 = 7
     // (SpecialFunction2.Constant) trigger the constant-ROM lookup.
+    //
+    // Per AltoHW §2.2 + spec digest §3.2, the constant ROM is ALSO
+    // gated when BS ≥ 4, AND'd with the BS source (the wired-AND
+    // masking facility for ←MOUSE / ←DISP / ←MD / TaskSpec4).
+    // This is NOT yet implemented — see CHANGELOG entry "BS≥4 AND-
+    // masking deferred" and follow-up tracker.  Most real-microcode
+    // mask values are 0xFFFF (= no-op AND), so this is a quiet
+    // correctness gap rather than an active source of divergence;
+    // when a microinstruction hits a (RSEL, BS≥4) index with a
+    // non-0xFFFF mask, the BUS value will be wrong.
     let bus: Bits<16> = if mi.f1 == F1Function::Constant
         || mi.f2 == F2Function::Constant {
         i.constant_value

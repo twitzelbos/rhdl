@@ -184,3 +184,135 @@ fn f2_bus_to_next_is_applied_one_cycle_later_per_spec_2_3() {
     assert_ne!(trace[3].mpc.raw(), 0x103,
         "cycle 3 must NOT be 0x103 either");
 }
+
+/// **Multi-cycle ALUCY + delayed-pipeline regression test.**
+///
+/// Exercises the interaction between (a) the sticky alu_carry DFF
+/// (latched on L-load per spec §3.4 footnote) and (b) the delayed
+/// F2-NEXT-modifier pipeline (spec digest §2.3).  Uses the chip-level
+/// composition because the standalone-microengine simulator's
+/// combinational-settle artifact masks the cycle boundary (see spec
+/// digest §2.3 "Test-writing note" for details).
+///
+/// Microcode shape:
+///   MPC=0x000: ALU=BusPlusOne(BUS=R[0]=0xFFFF after F1=Constant),
+///              l_load=true.  ALU result = 0; aout.carry = 1.
+///              At cycle edge: d.alu_carry ← 1.  next field = 0x010.
+///   MPC=0x010: F2=AluCarryToNext.  q.alu_carry = true (from prev).
+///              Modifier = 1 latched.  Per delayed pipeline, applied
+///              to NEXT cycle's NEXT field (NOT this cycle's).
+///              next field = 0x020 (bit 0 = 0).
+///              cycle's next_mpc = 0x020 | q.next_modifier_pending(=0)
+///              = 0x020.
+///   MPC=0x020: q.next_modifier_pending = 1 (from prev cycle).
+///              next field = 0x040 (bit 0 = 0).
+///              next_mpc = 0x040 | 1 = 0x041.
+///   MPC=0x041: target — distinguishable from immediate-apply.
+///
+/// Under DELAYED (correct) pipeline:
+///   trace[1].mpc = 0x000 (start)
+///   trace[2].mpc = 0x010
+///   trace[3].mpc = 0x020 (NOT 0x021 — modifier deferred)
+///   trace[4].mpc = 0x041 (= 0x040 | 1, modifier from cycle 2 applied)
+///
+/// Under IMMEDIATE (buggy) pipeline:
+///   trace[3].mpc = 0x021 (modifier applied immediately)
+///   trace[4].mpc = 0x041 OR something else (depends on chain)
+#[test]
+fn alucy_with_sticky_carry_uses_delayed_modifier_chip_level() {
+    let mut microcode = [0u32; MICROCODE_WORDS];
+    let mut constants = [0u16; NUM_CONSTANTS];
+    // Constant ROM at (RSEL=0, BS=ReadR=0) → constants[0] = 0xFFFF.
+    // F1=Constant gates this onto BUS at MPC=0.
+    constants[0] = 0xFFFF;
+
+    // MPC=0x000: F1=Constant (BUS=0xFFFF), aluf=BusPlusOne →
+    //   ALU=0, carry=1.  l_load=true → d.alu_carry ← 1.
+    //   No F2 modifier.  next field = 0x010.
+    microcode[0] = Microinstruction {
+        rsel: b5(0),
+        aluf: AluFunction::BusPlusOne,
+        bs: BusSource::ReadR,
+        f1: F1Function::Constant,
+        f2: F2Function::Nop,
+        t_load: false,
+        l_load: true,
+        next: b10(0x010),
+    }.pack();
+
+    // MPC=0x010: F2=AluCarryToNext.  q.alu_carry = true (from prev).
+    //   Modifier = 1 (latched).  next field = 0x020.
+    //   - DELAYED: cycle 3 starts at 0x020 (no modifier applied here).
+    //   - IMMEDIATE: cycle 3 starts at 0x020 | 1 = 0x021.
+    microcode[0x010] = Microinstruction {
+        rsel: b5(0),
+        aluf: AluFunction::Bus,
+        bs: BusSource::ReadR,
+        f1: F1Function::Nop,
+        f2: F2Function::AluCarryToNext,
+        t_load: false,
+        l_load: false,
+        next: b10(0x020),
+    }.pack();
+
+    // MPC=0x020: NO F2 modifier.  next field = 0x040.
+    //   DELAYED: q.next_modifier_pending = 1 (from cycle 2's ALUCY) →
+    //            next_mpc = 0x040 | 1 = 0x041.
+    //   IMMEDIATE wouldn't reach this MPC anyway.
+    microcode[0x020] = Microinstruction {
+        rsel: b5(0),
+        aluf: AluFunction::Bus,
+        bs: BusSource::ReadR,
+        f1: F1Function::Nop,
+        f2: F2Function::Nop,
+        t_load: false,
+        l_load: false,
+        next: b10(0x040),
+    }.pack();
+
+    // MPC=0x041: target loop.
+    microcode[0x041] = Microinstruction {
+        next: b10(0x041),
+        ..Default::default()
+    }.pack();
+
+    // MPC=0x021: trap-loop for IMMEDIATE-buggy detection.
+    microcode[0x021] = Microinstruction {
+        next: b10(0x021),
+        ..Default::default()
+    }.pack();
+
+    let uut = AltoChip::with_microcode_and_constants(&microcode, &constants);
+    let trace = run(uut, 6);
+
+    eprintln!("ALUCY trace (first 6 cycles):");
+    for (i, t) in trace.iter().enumerate() {
+        eprintln!("  cycle {i}: mpc=0x{:03x}", t.mpc.raw());
+    }
+
+    // Cycle 0: runs MPC=0x000 (constant + BusPlusOne, latches alu_carry).
+    assert_eq!(trace[0].mpc.raw(), 0x000,
+        "cycle 0 should run MPC=0x000");
+    // Cycle 1: runs MPC=0x010 (ALUCY).
+    assert_eq!(trace[1].mpc.raw(), 0x010,
+        "cycle 1 should run MPC=0x010 (the ALUCY instruction)");
+    // Cycle 2: under DELAYED, runs MPC=0x020 (modifier latched, not applied here).
+    assert_eq!(trace[2].mpc.raw(), 0x020,
+        "cycle 2 SHOULD run MPC=0x020 — ALUCY modifier from cycle 1 \
+         is latched but NOT applied to cycle 1's NEXT (delayed pipeline). \
+         If this fails with 0x021, the F2-NEXT-modifier-timing fix has \
+         regressed (immediate-apply behavior).");
+    // Cycle 3: ALUCY's modifier (= 1) now applies to cycle 2's NEXT
+    //   (= 0x040).  next_mpc = 0x041.
+    assert_eq!(trace[3].mpc.raw(), 0x041,
+        "cycle 3 SHOULD run MPC=0x041 — ALUCY modifier from cycle 1 \
+         applied to cycle 2's NEXT (= 0x040 | 1).  Confirms BOTH the \
+         sticky carry (alu_carry latched on cycle 0's L-load is \
+         visible to ALUCY at cycle 1) AND the delayed pipeline \
+         (modifier from cycle 1 lands on cycle 2's NEXT).");
+
+    // Negative assertion: cycle 2 must NOT be 0x021 (immediate-apply).
+    assert_ne!(trace[2].mpc.raw(), 0x021,
+        "cycle 2 must NOT be 0x021 — that's the IMMEDIATE-apply \
+         behavior (the F2-NEXT-modifier-timing bug)");
+}

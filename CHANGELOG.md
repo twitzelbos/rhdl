@@ -31,6 +31,60 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-02 — Tier C #2 Alto: F2-NEXT-modifier follow-ups — multi-cycle ALUCY chip-test + BS≥4 deferred
+
+**Paths:**
+
+- `crates/rhdl-alto/tests/f2_next_modifier_pipeline.rs` — added a second test, `alucy_with_sticky_carry_uses_delayed_modifier_chip_level`, which exercises the interaction between the sticky `alu_carry` DFF (latched on L-load per spec §3.4 footnote) and the delayed F2-NEXT-modifier pipeline (spec digest §2.3).  Three-cycle scenario: cycle 0 latches carry via `BusPlusOne(0xFFFF)+l_load`; cycle 1 reads `q.alu_carry=true` via F2=AluCarryToNext; cycle 2 receives the latched modifier (= 1) OR'd into its NEXT field, producing MPC=0x041 (= 0x040 | 1).  Trace `0x000 → 0x010 → 0x020 → 0x041` confirms BOTH the sticky carry path AND the delayed modifier path land correctly in the chip composition.
+- `crates/rhdl-alto/src/microengine.rs` — added a comment noting that BS≥4 AND-masking per spec §2.2 is NOT yet implemented (deferred follow-up).  No code change.
+
+**Why this, why now:** Step 5b follow-ups #2 and #3 from the F2-NEXT-modifier-timing fix CHANGELOG.
+
+**Multi-cycle ALUCY test (#3):**
+
+The standalone-microengine version of this test couldn't be written because the simulator's combinational-settle artifact made `q.alu_carry` and `q.next_modifier_pending` unreliable across iterations of the same cycle's settle loop (see prior CHANGELOG "Test-writing note").  At the chip-composition level, the outer DFFs propagate through the full clock cycle and settle cleanly, so the three-cycle trace is observable end-to-end.  This is the "canonical pattern" the spec digest's Test-writing note pointed at.
+
+**BS≥4 AND-masking deferred (#2):**
+
+Implemented and reverted within this work session.  Per spec §2.2:
+> "The constant memory is gated to the bus by F1=7, F2=7, **or BS≥4**. ... This works because the processor bus ANDs if more than one source is gated to it. ... The intent in enabling constants with BS≥4 is to provide a masking facility, particularly for the ←MOUSE and ←DISP bus source."
+
+The implementation itself is one new condition in the BUS computation:
+```rust
+let bs_ge_4 = mi.bs == BusSource::TaskSpec4 || ... || BusSource::InstructionRegister;
+let bus = if F1=Constant || F2=Constant { i.constant_value }
+          else if bs_ge_4 { bus_from_bs & i.constant_value }
+          else { bus_from_bs };
+```
+
+But it broke 35 existing tests in `microcode_semantics.rs` because they pass `InCfg::new(instr, 0)` for tests using BS=MemoryData / BS=←DISP / BS=Mouse — the constant arg of `0` becomes the AND mask of `0`, which masks all of BUS to 0.  Fixing each test to pass `InCfg::new(instr, 0xFFFF)` (= no-op AND) is mechanical but invasive; refactoring `InCfg` to default `constant=0xFFFF` would touch all 180 callsites.
+
+**Decision:** defer BS≥4 to a separate focused PR that includes the test-fixture refactor.  Real-microcode masks at BS≥4 indices are mostly 0xFFFF (no-op) per the constant-ROM dump, so the correctness gap is quiet and won't block lockstep alignment work in the meantime.  Scoped on the follow-up tracker.
+
+**Why this is the right deferral:**
+
+The F2-NEXT-modifier timing bug had observable lockstep impact (boot loop took the wrong branch).  BS≥4 AND-masking has no observable lockstep impact in the boot trace we've examined (the (RSEL, BS≥4) indices the boot dance hits all have 0xFFFF masks).  A test-fixture refactor for an unobservable bug isn't worth blocking the rest of the work.
+
+**Surprises and gotchas:**
+
+- The `InCfg::new(instr, constant)` API conflated two purposes: (a) the F1/F2=Constant value, and (b) "irrelevant filler" for tests not using F1/F2=Constant.  After BS≥4 is implemented, the constant arg becomes a THIRD purpose (the AND mask).  The right refactor: split into `InCfg::new(instr)` (default mask 0xFFFF) + `InCfg::with_constant(instr, value)` (explicit).  Out of scope for this commit.
+- The chip-level multi-cycle ALUCY test was straightforward to write once R[] was in ChipOut (follow-up #1) — the test doesn't actually OBSERVE R[] (it observes MPC), but knowing R[] is exposed makes future register-state assertions trivial to add.
+
+**Validation:**
+
+- 234 alto tests pass (added 1 new chip-level ALUCY test).  No regressions.
+
+**Follow-ups:**
+
+- **BS≥4 AND-masking (deferred)** — focused PR including:
+  1. Refactor `InCfg::new(instr, constant)` → `InCfg::new(instr)` (default mask 0xFFFF) + `InCfg::with_constant(instr, value)` (explicit form).
+  2. Update all 180 `InCfg::new` callsites in microcode_semantics.rs.
+  3. Implement BS≥4 AND-masking in microengine kernel.
+  4. Add a chip-level test demonstrating the masking facility (e.g., ←DISP with constants[15]=0xFFF8 mask should produce only the high 13 bits of DISP).
+  5. Document spec digest §3.2 "Wired-AND constants masking" subsection (currently flagged as "on the Phase 4 follow-up list").
+
+---
+
 ## 2026-05-02 — Tier C #2 Alto: F2 NEXT-modifier timing fix (delayed pipeline per spec digest §2.3)
 
 **Paths:**
