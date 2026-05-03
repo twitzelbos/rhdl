@@ -127,6 +127,25 @@ pub struct Memory {
     /// Initialized to 7 (idle) so the first MAR<- can issue
     /// immediately without spurious stall.
     cycles_since_mar: dff::DFF<Bits<3>>,
+    /// **MD register** (Memory Data) — per AltoHW Alto II spec
+    /// (§2.3): "Read result delivered on `←MD` in the fourth cycle.
+    /// Because Alto II latches memory contents, `←MD` can be
+    /// executed any time after the fourth cycle and still obtain
+    /// the read result.  This permits a 'double-word exchange'
+    /// idiom."
+    ///
+    /// MD is a TRUE LATCH — it updates ONLY when a memory read
+    /// cycle COMPLETES (= when `cycles_since_mar` first hits 4
+    /// after a MAR<-).  Until then, MD holds the previous read
+    /// result.  This is distinct from `q.bram` (which is the
+    /// 1-cycle-latency BRAM output that tracks the latest
+    /// presented address).
+    ///
+    /// **Why this matters for lockstep:** without explicit MD
+    /// latching, the engine's ←MD reads `q.bram` directly, which
+    /// can differ from the ContrAlto/spec MD value during the
+    /// cycles between MAR<- and read completion.
+    md_register: dff::DFF<Bits<16>>,
 }
 
 impl Default for Memory {
@@ -134,6 +153,7 @@ impl Default for Memory {
         Self {
             bram: SyncBRAM::default(),
             cycles_since_mar: dff::DFF::new(bits::<3>(7)),
+            md_register: dff::DFF::new(bits::<16>(0)),
         }
     }
 }
@@ -147,6 +167,7 @@ impl Memory {
         Self {
             bram: SyncBRAM::new(initial),
             cycles_since_mar: dff::DFF::new(bits::<3>(7)),
+            md_register: dff::DFF::new(bits::<16>(0)),
         }
     }
 
@@ -267,11 +288,57 @@ pub fn memory_kernel(cr: ClockReset, i: MemIn, q: Q) -> (MemOut, D) {
         },
     };
 
-    o.read_data = q.bram;
+    // ---- MD register latching --------------------------------------
+    //
+    // Per AltoHW Alto II spec: "Read result delivered on `←MD` in the
+    // fourth cycle.  Because Alto II latches memory contents, `←MD`
+    // can be executed any time after the fourth cycle and still obtain
+    // the read result."
+    //
+    // MD updates ONLY when the memory read cycle COMPLETES — at K+4
+    // of the MAR<- (= the cycle when `cycles_since_mar` becomes 4 in
+    // our counter encoding, AFTER advancement).  At any other cycle,
+    // MD holds the previous read result.  This matches Alto II's
+    // "latched memory contents" property and is distinct from the
+    // BRAM's per-cycle output (`q.bram`), which follows the latest
+    // presented address with 1-cycle latency.
+    //
+    // Edge-detect: latch when the counter just transitioned to 4
+    // this cycle (= it was 3 last cycle, now 4 — equivalently, when
+    // counter == 4 AND we'd want to capture).  Practically: the
+    // simplest invariant is "latch q.bram into md_register on any
+    // cycle where counter == 4", since q.bram has stabilized to
+    // mem[MAR] by counter==2 and stays there until next MAR<-.
+    // Output + latch invariants:
+    //   - When counter ≥ 4 (memory cycle complete OR already-completed
+    //     and held), use q.bram directly — q.bram has stabilized to
+    //     mem[MAR] by counter ≥ 2 and reflects the current memory
+    //     cycle's result.  This is the value ←MD reads.
+    //   - When 1 ≤ counter ≤ 3 (memory cycle in-flight, ←MD would
+    //     stall), the engine sees q.md_register = the PREVIOUS
+    //     completed read result (per Alto II "latched memory contents"
+    //     property — until the new cycle completes, MD holds the old
+    //     value).
+    //   - When counter == 7 (idle, no MAR<- has ever fired in this
+    //     cycle stream), pass through q.bram for backward compat with
+    //     standalone-Memory tests that don't drive mar_load_this_cycle.
+    //
+    // The latch updates md_register each cycle when counter ≥ 4 so
+    // q.md_register persistently holds the latest completed read
+    // result for any subsequent in-flight cycles.
+    let counter_ge_4: bool = q.cycles_since_mar >= bits::<3>(4);
+    d.md_register = if counter_ge_4 { q.bram } else { q.md_register };
+    o.read_data = if q.cycles_since_mar == bits::<3>(7) || counter_ge_4 {
+        q.bram
+    } else {
+        q.md_register
+    };
 
-    // Reset semantics: counter goes back to idle sentinel.
+    // Reset semantics: counter goes back to idle sentinel; MD
+    // register clears.
     if cr.reset.any() {
         d.cycles_since_mar = bits::<3>(7);
+        d.md_register = bits::<16>(0);
         o.mem_stall = false;
     }
 

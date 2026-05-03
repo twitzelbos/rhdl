@@ -334,6 +334,29 @@ impl AltoChip {
         for (i, &w) in boot_sector_label.iter().enumerate() {
             mem_init.push((bits::<16>(0o402 + i as u128), bits::<16>(w as u128)));
         }
+        // Memory-mapped I/O initialization (idle-state values).
+        // The Alto's I/O space is 0o177000-0o177777 (= 0xFE00-0xFFFF).
+        // Per AltoHW: when no I/O device responds on the bus, the bus
+        // reads as -1 (all 1s, wired-AND default).  The canonical
+        // altoIIcode3.mu boot microcode (post-KSEC, in the Emulator
+        // boot dance at MPC ~0x13b/0x13c) reads the keyboard at
+        // KBDAD = 0o177034 = 0xfe1c (per AltoHW §3.4) to determine
+        // boot-disk-address from depressed keys.  Spec digest line
+        // 1128: "Depressed keys read as 0; idle keys as 1."  For our
+        // no-keys-pressed default boot, all keyboard words = 0xFFFF.
+        //
+        // Without these initializations, mem[KBDAD] = 0 (default
+        // memory init), which the boot microcode interprets as ALL
+        // keys depressed — taking a wrong dispatch path through
+        // F2=BUSODD (which checks BUS bit 0 of the keyboard read)
+        // and ending up in the wrong boot handler.  Visible in the
+        // lockstep dumper at cycle 92 where OURS goes to MPC=0x138
+        // (no BUSODD merge) but CTR goes to 0x139 (BUSODD merged
+        // because keyboard LSB = 1 in the no-keys-pressed reading).
+        for kbd_addr in 0xfe1c..=0xfe1f { // 4 keyboard words
+            mem_init.push((bits::<16>(kbd_addr as u128), bits::<16>(0xFFFF)));
+        }
+        mem_init.push((bits::<16>(0xfe18), bits::<16>(0xFFFF)));  // UTILIN
 
         Self {
             urom: MicrocodeRom::with_words(microcode_words),
@@ -392,6 +415,29 @@ impl AltoChip {
         for (i, &w) in boot_sector_label.iter().enumerate() {
             mem_init.push((bits::<16>(0o402 + i as u128), bits::<16>(w as u128)));
         }
+        // Memory-mapped I/O initialization (idle-state values).
+        // The Alto's I/O space is 0o177000-0o177777 (= 0xFE00-0xFFFF).
+        // Per AltoHW: when no I/O device responds on the bus, the bus
+        // reads as -1 (all 1s, wired-AND default).  The canonical
+        // altoIIcode3.mu boot microcode (post-KSEC, in the Emulator
+        // boot dance at MPC ~0x13b/0x13c) reads the keyboard at
+        // KBDAD = 0o177034 = 0xfe1c (per AltoHW §3.4) to determine
+        // boot-disk-address from depressed keys.  Spec digest line
+        // 1128: "Depressed keys read as 0; idle keys as 1."  For our
+        // no-keys-pressed default boot, all keyboard words = 0xFFFF.
+        //
+        // Without these initializations, mem[KBDAD] = 0 (default
+        // memory init), which the boot microcode interprets as ALL
+        // keys depressed — taking a wrong dispatch path through
+        // F2=BUSODD (which checks BUS bit 0 of the keyboard read)
+        // and ending up in the wrong boot handler.  Visible in the
+        // lockstep dumper at cycle 92 where OURS goes to MPC=0x138
+        // (no BUSODD merge) but CTR goes to 0x139 (BUSODD merged
+        // because keyboard LSB = 1 in the no-keys-pressed reading).
+        for kbd_addr in 0xfe1c..=0xfe1f { // 4 keyboard words
+            mem_init.push((bits::<16>(kbd_addr as u128), bits::<16>(0xFFFF)));
+        }
+        mem_init.push((bits::<16>(0xfe18), bits::<16>(0xFFFF)));  // UTILIN
         Self {
             urom: MicrocodeRom::with_words(microcode_words),
             crom: ConstantRom::with_constants(constants),
@@ -428,6 +474,29 @@ impl AltoChip {
         for (i, &w) in boot_sector_label.iter().enumerate() {
             mem_init.push((bits::<16>(0o402 + i as u128), bits::<16>(w as u128)));
         }
+        // Memory-mapped I/O initialization (idle-state values).
+        // The Alto's I/O space is 0o177000-0o177777 (= 0xFE00-0xFFFF).
+        // Per AltoHW: when no I/O device responds on the bus, the bus
+        // reads as -1 (all 1s, wired-AND default).  The canonical
+        // altoIIcode3.mu boot microcode (post-KSEC, in the Emulator
+        // boot dance at MPC ~0x13b/0x13c) reads the keyboard at
+        // KBDAD = 0o177034 = 0xfe1c (per AltoHW §3.4) to determine
+        // boot-disk-address from depressed keys.  Spec digest line
+        // 1128: "Depressed keys read as 0; idle keys as 1."  For our
+        // no-keys-pressed default boot, all keyboard words = 0xFFFF.
+        //
+        // Without these initializations, mem[KBDAD] = 0 (default
+        // memory init), which the boot microcode interprets as ALL
+        // keys depressed — taking a wrong dispatch path through
+        // F2=BUSODD (which checks BUS bit 0 of the keyboard read)
+        // and ending up in the wrong boot handler.  Visible in the
+        // lockstep dumper at cycle 92 where OURS goes to MPC=0x138
+        // (no BUSODD merge) but CTR goes to 0x139 (BUSODD merged
+        // because keyboard LSB = 1 in the no-keys-pressed reading).
+        for kbd_addr in 0xfe1c..=0xfe1f { // 4 keyboard words
+            mem_init.push((bits::<16>(kbd_addr as u128), bits::<16>(0xFFFF)));
+        }
+        mem_init.push((bits::<16>(0xfe18), bits::<16>(0xFFFF)));  // UTILIN
         Self {
             urom: MicrocodeRom::with_words(microcode_words),
             crom: ConstantRom::with_constants(constants),

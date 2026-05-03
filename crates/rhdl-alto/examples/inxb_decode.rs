@@ -28,6 +28,7 @@ fn main() {
         (4,  "0x37d StoreMd: rsel=0,bs=4 (TaskSpec4 = ←KDATA in disk)"),
         (41, "0x382 WriteKcomm: rsel=5,bs=1 → KCOM value (bit15=transfer_request)"),
         (113, "0x383 LoadMar: rsel=14,bs=1"),
+        (59, "0x13b LoadMar: rsel=7,bs=3 → MAR target (BS+F2=Constant overrides)"),
     ];
     for &(idx, label) in &probe_indices {
         let v = crom[idx];
