@@ -320,24 +320,64 @@ The `IDISP` F2 (code 15, Emulator only) is the centerpiece of the Nova-emulator 
 
 ### 4.2 R-register file
 
-32 entries × 16 bits, addressed by the 5-bit RSEL field. Read-once, write-once per cycle (single-port). Some R-registers are conventionally named (from `altoIIcode3.mu.txt:40-56` and `altoconsts23.mu.txt`):
+32 entries × 16 bits, addressed by the 5-bit RSEL field. Read-once, write-once per cycle (single-port).
 
-| Index   | Name      | Convention |
-|---------|-----------|-----------|
-| R4      | `NWW`     | State of interrupt system |
-| R20     | `CURX`    | Cursor X coordinate |
-| R21     | `CURDATA` | Cursor data |
-| R22     | `CBA`     | Display Control Block Address |
-| R23     | `AECL`    | Display task auxiliary |
-| R24     | `SLC`     | Scan Line Count |
-| R25     | `MTEMP`   | Public temporary (MRT-shared) |
-| R26     | `HTAB`    | Horizontal tabulation reg |
-| R27     | `YPOS`    | Y position |
-| R30     | `DWA`     | Display Word Address |
-| R37     | `R37`     | MRT, interval timer, EIA |
-| R40     | `M`       | M register alias |
+**Indexing convention.**  AltoHW + the canonical microcode source (`altoIIcode3.mu` / `altoconsts23.mu`) use **OCTAL** register numbers (e.g. `$XH $R10` means R[10 octal] = R[8 decimal]).  Our impl indexes R[] in **decimal** (`q.regs[8]` is XH).  Both columns shown below to prevent confusion.
 
-**Unlike RV32I's hardwired-zero `x0`, R0 is a normal R/W R-register.** This is documented in `src/regfile.rs`.
+**Hardware fact: R[] is just 32 indexed slots; all naming is microcode convention.**  Our impl carries no symbolic aliases — names are resolved by the assembler at microcode-build time and baked into RSEL fields of the loaded microinstructions.  This is correct per spec (no fixup needed).
+
+**Critical Emulator R-aliases** (from `altoIIcode3.mu`):
+
+| dec | octal | Alias       | Notes |
+|-----|-------|-------------|-------|
+| 0   | 0     | `$AC3`      | Nova accumulator AC3.  AC's are "backwards" because hardware XORs the IR field with 3 — see ACDEST/ACSOURCE below. |
+| 1   | 1     | `$AC2`, `$YMUL`, `$RETN` | AC2 + BitBLT scratch. |
+| 2   | 2     | `$AC1`      | AC1. |
+| 3   | 3     | `$AC0`, `$SKEW` | AC0 + BitBLT scratch. |
+| 4   | 4     | `$NWW`      | New Wakeups Waiting (interrupt system state).  Universal. |
+| 5   | 5     | `$SAD`, `$CYRET`, `$TEMP` | NOVEM init scratch (`SAD_ L` zeros the bus); CYRET shares space with SAD. |
+| 6   | 6     | **`$PC`**   | **Program Counter.**  Emulator's PC for the running Nova program.  Comment in source: "USED BY MEMORY INIT". |
+| 7   | 7     | `$XREG`, `$CYCOUT`, `$WIDTH`, `$PLIER` | XREG — Emulator scratch; aliased to BitBLT scratch. |
+| 8   | 10    | **`$XH`**   | **BLT/BLKS loop counter.**  At BLT entry, microcode reads `-count` from a Nova-passed parameter into XH, then decrements per iteration.  If XH enters as 0 (e.g., Nova caller didn't set up parameters), first decrement underflows to 0xFFFF → ~65K iterations → looks like a hang.  This is the canonical Phase 5 bringup symptom. |
+| 9   | 11    | `$CLOCKTEMP`, `$DESTY`, `$WORD2` | MRT clock scratch + BitBLT. |
+
+**Other tasks' R-aliases:**
+
+| dec | octal | Alias       | Task |
+|-----|-------|-------------|------|
+| 10  | 12    | `$ECNTR`    | Ethernet — words remaining in buffer |
+| 11  | 13    | `$EPNTR`    | Ethernet — buffer pointer |
+| 16  | 20    | `$CURX`     | Display — cursor X |
+| 17  | 21    | `$CURDATA`  | Display — cursor data word |
+| 18  | 22    | `$CBA`      | Display — Control Block Address |
+| 19  | 23    | `$AECL`     | Display |
+| 20  | 24    | `$SLC`      | Display — Scan Line Count |
+| 21  | 25    | `$MTEMP`    | Universal temp (MRT-shared) |
+| 22  | 26    | `$HTAB`     | Display — Horizontal Tab register |
+| 23  | 27    | `$YPOS`     | Display — Y position |
+| 24  | 30    | `$DWA`      | Display Word Address |
+| 25  | 31    | `$KWDCT`    | Disk Word — word count |
+| 26  | 32    | `$CKSUMR`   | Disk — checksum |
+| 27  | 33    | `$KNMAR`    | Disk — KNMAR (next-MAR) |
+| 28  | 34    | `$DCBR`     | Disk — DCB pointer |
+| 29  | 35    | `$DWAX`, `$STARTBITSM1` | Display + BitBLT |
+| 30  | 36    | `$MASK`, `$DESTX`, `$SWA` | BitBLT scratch |
+| 31  | 37    | `$R37`      | MRT, interval timer, EIA |
+
+**ACDEST / ACSOURCE RSEL override (Emulator F2=11 / F2=14, per AltoHW §6.6).**  When F2=ACDEST, the low 2 bits of RSEL are replaced with `(IR[3-4] XOR 3)`; when F2=ACSOURCE, with `(IR[1-2] XOR 3)`.  This is what makes `LDA n, ...` and `STA n, ...` route to the right R-slot:
+
+| Nova field value | XOR 3 | R-slot | Alias |
+|---|---|---|---|
+| `IR[3-4]` = 0 (AC0 dest) | 3 | R[3] | `$AC0` |
+| `IR[3-4]` = 1 (AC1 dest) | 2 | R[2] | `$AC1` |
+| `IR[3-4]` = 2 (AC2 dest) | 1 | R[1] | `$AC2` |
+| `IR[3-4]` = 3 (AC3 dest) | 0 | R[0] | `$AC3` |
+
+This is why "AC's are backwards" in the source comment.  Our impl handles this in `microengine.rs` at `effective_rsel` computation.
+
+**M and S registers** (control RAM card, AltoHW §8.7).  When `RSELECT=0` is used to read the S-register bank, the bus returns the current M register (not S0).  R[40 octal] = `$M`.  See §4.3.
+
+**Unlike RV32I's hardwired-zero `x0`, R0 is a normal R/W R-register** (it's `$AC3` in the Emulator).  Don't write x0-style "ignore writes to R0" logic.
 
 ### 4.3 M and S registers (control RAM optional, AltoHW §8.7)
 

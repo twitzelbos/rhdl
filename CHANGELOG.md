@@ -31,6 +31,49 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-02 — Tier C #2 Alto: disk-image audit (REAL boot block) + register-alias completeness in spec digest
+
+**Paths:**
+
+- `crates/rhdl-alto/examples/dump_boot_sector.rs` — new diagnostic that loads the .dsk image, dumps sector 0's header / label / first 32 data words with Nova-instruction classification, and reports a statistical sniff (non-zero density + opcode-class distribution).  Used to verify whether the disk image is a real period image or a stub.
+- `crates/rhdl-alto/alto-processor-and-microcode-spec.md` §4.2 — significantly expanded the R-register alias table.  Was 12 entries (display / interrupt / MRT only); now 28 entries covering all canonical aliases from `altoIIcode3.mu` and `altoconsts23.mu`.  Includes the critical Emulator aliases (`$AC0..$AC3`, `$PC`, `$XH`, `$SAD`, `$XREG`) that were missing.  Added an explicit "indexing convention" subsection clarifying that microcode source uses OCTAL register numbers but our impl indexes in DECIMAL (`q.regs[8]` is XH = R[10 octal]).  Added the ACDEST/ACSOURCE XOR-3 table showing why "AC's are backwards" in the source.
+
+**Why this, why now:** The user pushed back on the prior hypothesis ("are you 100% certain?") and laid out the full 9-step boot-to-first-prompt chain.  Before committing to any of the 15-25-dev-day scope, two cheap audits were worth doing:
+
+(1) **Audit the disk image.**  If our `.dsk` files are stubs, steps 4-9 of the chain (Nova opcode handlers, BLT loop counter, OS image loading) are all moot — there's no real code to execute.  Result: **the image is REAL** (90.6% non-zero data words, Nova LDA/STA/JSR/S-group at the right offsets, file size matches Diablo 31 geometry exactly).  Step 1 of the chain is solid.  The bug isn't in the disk loading — it's downstream.
+
+(2) **Verify register-name aliases match spec.**  My prior diagnoses claimed PC was R[5] and tried to interpret OURS' R[5]=0xff as "PC-related state".  Actually:
+   - **PC is R[6]** per `$PC $R6` in `altoIIcode3.mu`.
+   - **R[5] is `$SAD` / `$CYRET` / `$TEMP`** (NOVEM init scratch).
+   - **R[8] is `$XH`** (BLT loop counter), exactly as the user said — R[10 octal] = R[8 decimal] is the source of the canonical "looks like a hang" symptom.
+   - Our OURS R[6]=8 actually means PC=8, i.e., 8 boot-loop passes happened.  CTR R[6]=0 means PC=0, KSEC ran first.  This re-frames the divergence: we're observing "OURS' Emulator ran more boot-loop passes than CTR's before yielding to KSEC" — which is closer to the original hypothesis but with the right names.
+
+**Verdict on register naming in our impl:**
+
+- Our `q.regs[N]` storage uses bare indexed slots (no symbolic aliases) — **correct**, matches hardware.
+- ACDEST/ACSOURCE RSEL-low-bits-XOR-3 mechanism is implemented correctly.
+- Microcode loaded from PROM carries the right RSEL values (assembled from `$AC0` / `$PC` etc. in the source).
+- **Documentation gap closed**: the spec digest's R-alias table was incomplete (missing AC0-AC3, PC, XH, SAD, XREG, plus the disk-task aliases).  Future readers can now look up what `q.regs[N]` means without grepping the microcode source.  This explicitly fixes my own prior R[5]=PC misreading.
+
+**Surprises and gotchas:**
+
+- **PC = R[6], not R[5].**  My prior CHANGELOG entries said R[5] was PC.  That was wrong.  R[6] is PC.  R[5] is SAD (NOVEM bus-zeroing init scratch).
+- **R-register numbers are OCTAL in the microcode source.**  `$XH $R10` means R[10 octal] = R[8 decimal].  The spec digest now flags this prominently because reading `altoIIcode3.mu` while thinking decimal is a great way to misroute every register access by 25%.
+- **R[0] is `$AC3`, not `$AC0`.**  AC's are XOR-3-mapped into R0-R3.  Our impl handles this correctly via the ACDEST/ACSOURCE override.
+- **Disk image is a REAL period boot block** — `nonprog.dsk` (2.6 MB, 203×2×12×267×2 bytes, 90.6% non-zero data words in sector 0).  The first 16 instructions parse as J-group / M-group / A-group / S-group with sensible ratios.  This rules out "boot block is stub" as a Phase 5 blocker.
+- The 9-step boot chain remains real and ~15-25 dev-days of work.  Audits don't change that — they just confirm that the WORK is in steps 3-9 (Emulator reset path, opcode handlers, parameter setup, BLT loop count, etc.), not in steps 1-2 (disk bytes, register naming).
+
+**Validation:**
+
+- 234 alto tests still pass (no code changes; only spec-digest doc + new diagnostic example).
+
+**Follow-ups:**
+
+- The 9-step boot chain decomposition (per the user's strategic message) should be captured in `tier-c-flagship-cores.md` as the Phase 5 roadmap.  Deferred (separate doc-only commit).
+- Per-cycle R-state side-by-side trace dumper still pending (was the prior follow-up #1).
+
+---
+
 ## 2026-05-02 — Tier C #2 Alto: configurable sector_mark-at-cycle-1 + empirical disproof of "wait loop causes R-divergence" hypothesis
 
 **Paths:**
