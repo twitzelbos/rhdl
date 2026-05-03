@@ -31,6 +31,90 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-02 — Tier C #2 Alto F2 NEXT-modifier timing: spec verification + bug localization (no fix yet)
+
+**Paths:**
+
+- `crates/rhdl-alto/examples/dump_emulator_boot_loop.rs` — decodes the Emulator boot dance microinstructions (MPC 0x000, 0x152..0x156, 0x130, 0x14e, 0x150, 0x151).  Used to understand what the boot loop actually does (it's not a Nova instruction-fetch loop — it's a "wait for KSEC" busy loop that increments R[5] and R[6] each pass).
+- `crates/rhdl-alto/examples/dump_constant_at_disp_index.rs` — dumps the Constant ROM at all (RSEL, BS) indices where BS≥4 (i.e., the BS≥4 AND-masking facility per spec §2.2).  Used to verify whether `constants[7]` (= mask for ←DISP at RSEL=0) was responsible for divergence #2.  It wasn't (constants[7] = 0xFFFF, no mask).
+- No code fix in this commit — pure investigation.  Fix scoped separately.
+
+**Why this, why now:** Continued the lockstep-divergence investigation after the wakeup/BLOCK spec-verification entry (which exonerated that path).  User asked: "where does ContrAlto's Nova bootstrap come from that ours doesn't?"  Answered, plus localized the **real** divergence root cause to F2 NEXT-modifier timing.
+
+**Investigation findings:**
+
+- The Emulator's boot microcode at MPC 0x130 → 0x14e → 0x150 → 0x151 → 0x152 → 0x153 → 0x154 → 0x130 is **not** a Nova instruction-fetch loop.  It's a "wait for KSEC" busy loop that:
+  - Increments R[5] (= PC) each pass via the L-load chain.
+  - Yields via F1=TaskYield at MPC=0x153.
+  - Has F2=BusToNext at MPC=0x153 to modify NEXT based on current ←DISP value.
+  - Eventually exits via the BusToNext modifier producing a non-zero NEXT bit.
+- KSEC's job is just to DMA sector 0 to memory[1..400B] when sector_mark fires.  KSEC does not directly set PC=1 — the Emulator's wait loop does that via its own R-register accumulation.
+- Per spec §3.4: "When the transfer is complete, PC ← 1, and the emulator is started."  The "PC ← 1" is achieved by the boot loop's accumulator math (R[5] becomes 1 after pass 1), not by KSEC writing it.
+
+**The real bug — F2 NEXT-modifier timing:**
+
+Empirical evidence from CTR's trace at the divergence point (cycles 40-42, after Emulator pass 2):
+
+```
+40  mpc=0x154  IR=0x0001  R5=0  R6=1  ← cycle running 0x153 (next field reported in TSV)
+41  mpc=0x131  IR=0x0001  R5=0  R6=1  ← cycle running 0x154
+42  mpc=0x14e  IR=0x0001  R5=0  R6=2  ← cycle running 0x131 (= 0x130 | 1)
+```
+
+- Cycle 40 ran MPC=0x153.  `F2=BusToNext`, `BUS=←DISP=1`, `next field=0x154`.
+- Cycle 41 ran MPC=0x154.  No F2 modifier this cycle, `next field=0x130`.
+- Cycle 42 starts at MPC=**0x131**, NOT 0x130.
+
+So the F2 modifier from cycle 40 (= 1) was applied to cycle 41's NEXT (0x130 | 1 = 0x131), NOT to cycle 40's own NEXT.  **F2 NEXT-modification is delayed by exactly one cycle in ContrAlto.**
+
+ContrAlto's `Tasks/Task.cs` confirms:
+
+```csharp
+// Task.cs:173 — at start of each cycle:
+nextModifier = _nextModifier;
+_nextModifier = 0;
+// ... F1/F2 handling sets _nextModifier |= ... (cumulative for THIS cycle) ...
+// Task.cs:549 — at end of each cycle:
+_mpc = (ushort)(instruction.NEXT | nextModifier);   // <-- uses LAST cycle's modifier
+```
+
+**Our impl applies F2 NEXT modifications immediately** (same cycle).  This is the lockstep divergence root cause.  Every F2 NEXT-modifier opcode is affected: BusToNext, BusEqZero, ShiftLessThanZero, ShiftEqZero, AluCarryToNext, IDispatch, ACSOURCE, BUSODD, IR←, plus the per-task disk codes (INIT, RWC, RECNO, XFRDAT, SWRNRDY, NFER, STROBON).
+
+**Spec verification:**
+
+- AltoHW §2.4: "This successor address may be modified by merging bits into it under control of the function fields of the **current microinstruction**."  The wording is ambiguous about pipeline timing — "current microinstruction" can mean (a) the one currently in MIR (immediate apply) or (b) the one whose F2 just computed in the previous cycle (delayed by 1).
+- AltoHW §3.5: "IR← also merges bus bits 0,5,6 and 7 into NEXT, which does a first level instruction dispatch."  Doesn't disambiguate.
+- May79 manual: searched for "merging | merged into NEXT | next field | delayed.*one cycle | pipeline | MIR.*loaded | address modif" — no explicit pipeline-timing statement.
+
+The spec text is genuinely ambiguous.  The disambiguation comes from:
+1. **Standard microcode behavior** — the boot wait-loop iterates 0x131, 0x132, 0x133 (delayed semantics) AND would NOT exit cleanly with immediate semantics.  Microcode is the ground truth: it's the artifact the spec exists to describe.
+2. **ContrAlto** — implements delayed semantics, and the standard microcode runs correctly under it.
+
+**Verdict: ContrAlto and the spec agree** (the spec is just loosely worded).  Real Alto hardware is delayed-by-one-cycle.  **Our impl has a bug** — applies F2 NEXT modifications immediately.  No bug to file against ContrAlto.
+
+**Adjacent finding (not the divergence cause but worth noting):**
+
+While investigating, found that AltoHW §2.2 specifies a **second** unimplemented feature: "The constant memory is gated to the bus by F1=7, F2=7, **or BS≥4**. ... This works because the processor bus ANDs if more than one source is gated to it."  Neither our impl nor ContrAlto implements the BS≥4 AND-masking facility.  For this divergence it's irrelevant (constants[RSEL=0, BS=7] = 0xFFFF, no mask).  But: there are other (RSEL, BS≥4) indices with non-0xFFFF mask values (e.g., constants[15] = 0xFFF8 for RSEL=1, BS=7), which would matter for some microinstructions.  Filed as a separate spec-conformance gap; unclear how observable it is in the standard microcode without per-cycle tracing.
+
+**Surprises and gotchas:**
+
+- ContrAlto's `BlockTask` admitted a spec deviation in code comment.  Made me suspect ContrAlto might also deviate elsewhere.  Spec-checking the F2 NEXT-modifier timing against the microcode confirmed they agree.  Pattern: when ContrAlto and our impl differ, **check the standard microcode's behavior** to disambiguate the spec — not the spec text alone (which can be loosely worded).
+- The "Nova bootstrap" doesn't come from KSEC writing PC=1 directly.  It comes from the Emulator's boot loop accumulating R[5] via L-load chain.  The user's intuition that "ContrAlto has Nova bootstrap and we don't" was correct in observable terms (CTR runs Nova code, ours doesn't), but the mechanism wasn't "KSEC sets PC" — it was "the boot loop's NEXT-modifier-driven dispatch eventually reaches Nova fetch microcode after enough iterations, AND the iterations only complete correctly with delayed F2-NEXT timing."
+- Our cadence test (231 alto tests pass) was misleadingly clean — sector_mark/BLOCK is one of the few subsystems that doesn't depend on F2-NEXT-modifier timing.  The cadence test couldn't have found this bug.  The lockstep harness COULD (and did) — but only after extending it to dump R-state and decoding microcode at the divergence MPC.
+
+**Validation:**
+
+- No code changes in this commit.  Two new diagnostic examples committed.  CHANGELOG entry documents the findings.
+- 231 alto tests still pass (no regressions).
+
+**Follow-ups:**
+
+- **Fix the F2 NEXT-modifier timing.**  Compiler-adjacent change per CLAUDE.md §11.1.  Add `next_modifier_pending: dff::DFF<Bits<10>>` to `Microengine`; at end of cycle K, latch this cycle's F2 modifier into the DFF; at cycle K+1 start, read `q.next_modifier_pending` and OR it into K+1's NEXT.  Re-bless every widget snapshot (most will change).  PR includes Justification section per §11.1 — guarantee that shifts is "pipeline-timing semantics for F2 NEXT modifications" (from immediate to delayed-by-one-cycle).
+- **Implement BS≥4 AND-masking** (separate fix).  Per spec §2.2, when BS≥4, BUS = (BS source value) AND (constants[RSEL, BS]).  Currently neither our impl nor ContrAlto does this; we should be more spec-conformant than ContrAlto here.  Likely affects fewer microinstructions in practice (most masks are 0xFFFF), but should land before claiming microengine spec-conformance.
+- **Add R[0..32] to ChipOut** to enable cycle-by-cycle register-state lockstep (Step 5b follow-up #1, still open).  After the F2-timing fix, this is the next thing needed to localize remaining divergences.
+
+---
+
 ## 2026-05-02 — Tier C #2 Alto wakeup/BLOCK spec verification: AltoHW §2.4 + §6.0 vs. ContrAlto
 
 **Paths:** No code changes — research/spec-verification entry, written before deciding whether to "fix" rhdl-alto to match ContrAlto.
