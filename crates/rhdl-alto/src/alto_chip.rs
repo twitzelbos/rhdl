@@ -164,48 +164,60 @@ pub struct AltoChip {
     disk: DiabloDisk,
     /// Universal-task microengine.
     engine: Microengine,
-    /// Sticky current-task DFF.  Per the Alto Hardware Manual §2.4,
-    /// task switches happen ONLY when microcode does F1=TASK; until
-    /// then the same task runs.  This DFF latches the priority-encoded
-    /// winning task on engine.task_yield and otherwise holds.
-    ///
-    /// Replaces the previous per-cycle arbitration via task_system's
-    /// last_task — task_system stays as the rhdl-rule showcase but is
-    /// no longer the source of `current_task` (kept for trace
-    /// observability + per-task fire counters).
-    current_task: rhdl_fpga::core::dff::DFF<Bits<4>>,
-    /// Per-task "has started" bitmap (16 bits, one per task).  Bit K
-    /// is set the first time task K runs.  Per *Alto Hardware Manual*
-    /// §2 "Initialization" + ContrAlto's `Task.cs` `Reset()`: each
-    /// task K resets to MPC = K.  Until task K has run, the chip
-    /// substitutes K for `task_mpc[K]` in the engine's MPC lookup,
-    /// matching the real Alto's per-task reset MPC convention without
-    /// requiring a custom reset value in the per-task DFF (which would
-    /// diverge between Rust sim init and Verilog `initial begin`).
-    task_started: rhdl_fpga::core::dff::DFF<Bits<16>>,
+    /// Bundled chip-side state.  Per CLAUDE.md §3.1 (the protocol-PHY
+    /// pattern): five logically-separate DFFs (current_task,
+    /// task_started, task_yield_pending, urom_addr_held, task_mpcs)
+    /// bundled into one struct to keep AltoChip's top-level field
+    /// count under the 12-tuple ceiling for `Synchronous`/SynchronousDQ
+    /// auto-derives.  Each field's purpose is documented on the
+    /// `ChipState` struct definition.
+    state: rhdl_fpga::core::dff::DFF<ChipState>,
+}
+
+/// Bundled chip-side state DFF — see `AltoChip::state` for why this
+/// is bundled rather than five separate DFFs.
+#[derive(Clone, Copy, PartialEq, Debug, Digital, Default)]
+pub struct ChipState {
+    /// Sticky current-task.  Per AltoHW §2.4: task switches happen
+    /// ONLY on F1=TASK; until then the same task runs.  Latches the
+    /// priority-encoded winning task on engine.task_yield + the
+    /// `task_yield_pending` K+2 delay.
+    pub current_task: Bits<4>,
+    /// Per-task "has started" bitmap.  Bit K is set the first time
+    /// task K runs.  Per AltoHW §2 "Initialization": each task K
+    /// resets to MPC=K.  Until task K has run, the chip substitutes
+    /// K for `task_mpcs[K]`, matching the real Alto's per-task reset
+    /// MPC convention without requiring a custom DFF reset value.
+    pub task_started: Bits<16>,
     /// One-cycle task-yield delay latch.  Captures `q.engine.task_yield`
     /// at end of cycle K (when F1=TaskYield runs).  At cycle K+1,
-    /// `q.task_yield_pending = true` gates the `current_task`
-    /// update — so the new task's instruction first executes at
-    /// cycle K+2, matching AltoHW §2.4: "One additional instruction
-    /// is executed before the switch becomes effective."
+    /// `q.state.task_yield_pending = true` gates the `current_task`
+    /// update so the new task's instruction first executes at
+    /// cycle K+2 (AltoHW §2.4 "one additional instruction" rule).
+    pub task_yield_pending: bool,
+    /// URom prefetch address presented in the previous cycle — used
+    /// to hold the URom address during a memory-pipeline stall.  When
+    /// `mem_stall` is asserted, the chip presents the previously-
+    /// presented URom address instead of advancing to `next_mpc`,
+    /// so URom returns the SAME instruction the engine was stalled
+    /// on.  Without this hold, URom would prefetch the post-stall
+    /// instruction and the stalled instruction's effects would be
+    /// silently lost (violating spec-mandated "re-execute on resume").
+    pub urom_addr_held: Bits<10>,
+    /// Per-task MPC tracking — canonical source of truth for "what
+    /// MPC each task should resume at".  Updated EVERY non-stalled
+    /// cycle for the running task (`d.task_mpcs[current_task] =
+    /// engine.next_mpc`), regardless of priority arbitration.
     ///
-    /// See `tests/task_switch_pipeline.rs` for the regression anchor
-    /// and spec digest §5 for the normative timing rule.
-    task_yield_pending: rhdl_fpga::core::dff::DFF<bool>,
-    /// URom prefetch address presented in the previous cycle.  Used
-    /// to **hold the URom address during a memory-pipeline stall**:
-    /// when `q.mem.mem_stall` is asserted, the chip presents the
-    /// previously-presented URom address (instead of advancing to
-    /// `next_mpc`), so the URom returns the SAME instruction the
-    /// engine was stalled on, allowing it to re-execute the
-    /// instruction once the stall releases.  Without this hold, the
-    /// URom would prefetch the post-stall instruction, the engine
-    /// would skip the stalled instruction's effects entirely, and
-    /// the spec-mandated "re-execute on resume" semantics would not
-    /// hold.  See `Memory::mem_stall` doc + spec digest §3 stall
-    /// rules for the broader context.
-    urom_addr_held: rhdl_fpga::core::dff::DFF<Bits<10>>,
+    /// **Why not `task_system.task_mpc[]`:** the task_system rules
+    /// only fire when a task wins priority arbitration.  When higher-
+    /// priority tasks are woken, lower-priority tasks (e.g. Emulator
+    /// during KSEC's disk activity) don't win → their `task_mpc[k]`
+    /// slots never update → after KSEC ends, Emulator resumes at the
+    /// stale MPC (typically 0) instead of the correct saved MPC.
+    /// task_system's task_mpc is now redundant for chip-internal
+    /// MPC tracking but kept for trace observability.
+    pub task_mpcs: [Bits<10>; 16],
 }
 
 impl Default for AltoChip {
@@ -218,10 +230,7 @@ impl Default for AltoChip {
             disk_ctrl: DiskController::default(),
             disk: DiabloDisk::default(),
             engine: Microengine::default(),
-            current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
-            task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
-            task_yield_pending: rhdl_fpga::core::dff::DFF::new(false),
-            urom_addr_held: rhdl_fpga::core::dff::DFF::new(bits::<10>(0)),
+            state: rhdl_fpga::core::dff::DFF::new(ChipState::default()),
         }
     }
 }
@@ -239,10 +248,7 @@ impl AltoChip {
             disk_ctrl: DiskController::default(),
             disk: DiabloDisk::default(),
             engine: Microengine::default(),
-            current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
-            task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
-            task_yield_pending: rhdl_fpga::core::dff::DFF::new(false),
-            urom_addr_held: rhdl_fpga::core::dff::DFF::new(bits::<10>(0)),
+            state: rhdl_fpga::core::dff::DFF::new(ChipState::default()),
         }
     }
 
@@ -260,10 +266,7 @@ impl AltoChip {
             disk_ctrl: DiskController::default(),
             disk: DiabloDisk::default(),
             engine: Microengine::default(),
-            current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
-            task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
-            task_yield_pending: rhdl_fpga::core::dff::DFF::new(false),
-            urom_addr_held: rhdl_fpga::core::dff::DFF::new(bits::<10>(0)),
+            state: rhdl_fpga::core::dff::DFF::new(ChipState::default()),
         }
     }
 
@@ -282,10 +285,7 @@ impl AltoChip {
             disk_ctrl: DiskController::default(),
             disk: DiabloDisk::default(),
             engine: Microengine::default(),
-            current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
-            task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
-            task_yield_pending: rhdl_fpga::core::dff::DFF::new(false),
-            urom_addr_held: rhdl_fpga::core::dff::DFF::new(bits::<10>(0)),
+            state: rhdl_fpga::core::dff::DFF::new(ChipState::default()),
         }
     }
 
@@ -343,10 +343,7 @@ impl AltoChip {
             disk_ctrl: DiskController::default(),
             disk: DiabloDisk::with_sector(boot_sector_data),
             engine: Microengine::default(),
-            current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
-            task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
-            task_yield_pending: rhdl_fpga::core::dff::DFF::new(false),
-            urom_addr_held: rhdl_fpga::core::dff::DFF::new(bits::<10>(0)),
+            state: rhdl_fpga::core::dff::DFF::new(ChipState::default()),
         }
     }
 
@@ -370,10 +367,7 @@ impl AltoChip {
             disk_ctrl: DiskController::default(),
             disk: DiabloDisk::with_test_period(disk_period_cycles),
             engine: Microengine::default(),
-            current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
-            task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
-            task_yield_pending: rhdl_fpga::core::dff::DFF::new(false),
-            urom_addr_held: rhdl_fpga::core::dff::DFF::new(bits::<10>(0)),
+            state: rhdl_fpga::core::dff::DFF::new(ChipState::default()),
         }
     }
 
@@ -408,10 +402,7 @@ impl AltoChip {
                 disk_period_cycles, boot_sector_data,
             ),
             engine: Microengine::default(),
-            current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
-            task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
-            task_yield_pending: rhdl_fpga::core::dff::DFF::new(false),
-            urom_addr_held: rhdl_fpga::core::dff::DFF::new(bits::<10>(0)),
+            state: rhdl_fpga::core::dff::DFF::new(ChipState::default()),
         }
     }
 
@@ -447,10 +438,7 @@ impl AltoChip {
                 disk_period_cycles, boot_sector_data,
             ),
             engine: Microengine::default(),
-            current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
-            task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
-            task_yield_pending: rhdl_fpga::core::dff::DFF::new(false),
-            urom_addr_held: rhdl_fpga::core::dff::DFF::new(bits::<10>(0)),
+            state: rhdl_fpga::core::dff::DFF::new(ChipState::default()),
         }
     }
 }
@@ -466,12 +454,17 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     let mut d = D::dont_care();
     let mut o = ChipOut::dont_care();
 
+    // Mutable copy of the bundled chip state (per CLAUDE.md §3.1).
+    // We read from q.state.* for inputs, mutate fields on this copy
+    // throughout the kernel, then assign d.state = next_state at end.
+    let mut next_state: ChipState = q.state;
+
     // Sticky current task (per Alto Hardware Manual §2.4): same task
     // runs every cycle until microcode does F1=TASK.  This DFF latches
     // the priority-encoded winning task on engine.task_yield; otherwise
     // holds.  task_system's `last_task` is now used only for trace
     // observability + per-task fire counters.
-    let current_task: Bits<4> = q.current_task;
+    let current_task: Bits<4> = q.state.current_task;
     // Look up that task's MPC.  Per *Alto Hardware Manual* §2
     // "Initialization" + ContrAlto's `Task.cs` Reset(): each task K
     // resets to MPC = K.  q.tasks.task_mpc DFFs default to all zeros
@@ -480,9 +473,13 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     // substitute K for task_mpc[K] until task K has run at least once.
     // The task_started bitmap tracks which tasks have run.
     let task_bit: Bits<16> = bits::<16>(1) << current_task.resize::<5>();
-    let task_has_started: bool = (q.task_started & task_bit) != bits::<16>(0);
+    let task_has_started: bool = (q.state.task_started & task_bit) != bits::<16>(0);
+    // Read current_mpc from the chip-side `task_mpcs` (canonical
+    // source of truth — see field rustdoc).  Falls back to the
+    // per-task reset MPC = K until task K has run at least once
+    // (matching the AltoHW §2 Initialization rule).
     let current_mpc: Bits<10> = if task_has_started {
-        q.tasks.task_mpc[current_task]
+        q.state.task_mpcs[current_task]
     } else {
         current_task.resize::<10>()
     };
@@ -642,15 +639,15 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     // spec digest §5 for the normative timing rule.
     // Single-cycle delay latch — see field doc on
     // `task_yield_pending` for the timing rationale.
-    d.task_yield_pending = q.engine.task_yield;
-    let task_yield_for_switch: bool = q.task_yield_pending;
+    next_state.task_yield_pending = q.engine.task_yield;
+    let task_yield_for_switch: bool = q.state.task_yield_pending;
     let next_current_task: Bits<4> =
         if task_yield_for_switch { winning_task } else { current_task };
-    d.current_task = next_current_task;
+    next_state.current_task = next_current_task;
     // Mark current_task as "started" — the next time it's selected by
     // arbitration, the chip will read its accumulated task_mpc rather
     // than the per-task reset MPC = K.
-    d.task_started = q.task_started | task_bit;
+    next_state.task_started = q.state.task_started | task_bit;
 
     // ---- URom prefetch (spec §2.3, MIF || MIE pipeline) ----
     //
@@ -670,12 +667,28 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     //     (combinational this cycle, the engine just computed it
     //     from the instruction it's executing right now).
     let next_task_bit: Bits<16> = bits::<16>(1) << next_current_task.resize::<5>();
-    let next_task_started: bool = (q.task_started & next_task_bit) != bits::<16>(0);
+    let next_task_started: bool = (q.state.task_started & next_task_bit) != bits::<16>(0);
+    // Read new task's saved MPC from chip-side `task_mpcs` (canonical
+    // source).  Falls back to per-task reset MPC = K until task K
+    // has run.
     let next_task_saved_mpc: Bits<10> = if next_task_started {
-        q.tasks.task_mpc[next_current_task]
+        q.state.task_mpcs[next_current_task]
     } else {
         next_current_task.resize::<10>()
     };
+
+    // ---- Chip-side per-task MPC update ----------------------------
+    // Update task_mpcs[current_task] with engine.next_mpc each
+    // non-stalled cycle.  This bypasses task_system's arbitration-
+    // gated rule firing (which only updates task_mpc[K] when task K
+    // wins priority arbitration — broken when higher-priority tasks
+    // are also woken).  See `task_mpcs` field rustdoc for the
+    // architectural rationale.
+    let mut new_task_mpcs = q.state.task_mpcs;
+    if !mem_stall_for_engine {
+        new_task_mpcs[current_task] = next_mpc;
+    }
+    next_state.task_mpcs = new_task_mpcs;
     // URom prefetch must use the SAME delayed task-yield signal —
     // otherwise we'd prefetch the new task's instruction one cycle
     // before the switch becomes effective, leaving stale data in the
@@ -697,11 +710,11 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
         next_mpc
     };
     let urom_addr: Bits<10> = if mem_stall_for_engine {
-        q.urom_addr_held
+        q.state.urom_addr_held
     } else {
         urom_addr_natural
     };
-    d.urom_addr_held = urom_addr;
+    next_state.urom_addr_held = urom_addr;
     d.urom = UromIn { mpc: urom_addr.resize() };
 
     // Outputs
@@ -728,6 +741,9 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     o.regs                    = q.engine.regs;
     o.task_yield              = q.engine.task_yield;
     o.mem_stall               = mem_stall_for_engine;
+
+    // Commit the bundled chip-state DFF (per CLAUDE.md §3.1).
+    d.state = next_state;
 
     (o, d)
 }
@@ -1259,10 +1275,7 @@ mod tests {
             disk_ctrl: DiskController::default(),
             disk: DiabloDisk::with_sector(&sector),
             engine: Microengine::default(),
-            current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
-            task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
-            task_yield_pending: rhdl_fpga::core::dff::DFF::new(false),
-            urom_addr_held: rhdl_fpga::core::dff::DFF::new(bits::<10>(0)),
+            state: rhdl_fpga::core::dff::DFF::new(ChipState::default()),
         };
 
         // Wakeup pattern: Task 4 (Disk Sector) always woken so its
@@ -1972,20 +1985,30 @@ mod tests {
         assert!((6..=10).contains(&sector_events),
             "expected 6..10 sector_mark events (every ~285 cycles in \
              2000 cycles); got {sector_events}");
-        // KSEC handler under delayed F2 + memory-pipeline stalls runs
-        // ~5-7 cycles per sector mark before yielding (each MAR<-+MD
-        // pair adds 2-3 stall cycles).  ~7 marks × ~6 = ~41; allow
-        // 22..50 to absorb mark-aligned edge effects.  Pre-stall
-        // baseline was 29; with stalls the upper-end shifted to ~41.
-        assert!((22..=50).contains(&disk_sector_firings),
-            "Disk Sector should fire 22..50 times (post-stall baseline \
-             = 41); got {disk_sector_firings}");
-        // Emulator owns most cycles between marks.
-        // 2000 - 41 = ~1959.
-        assert!((1940..=1990).contains(&emulator_firings),
-            "Emulator should run 1940..1990 cycles in a 2000-cycle trace \
-             with 7 sector marks (post-stall baseline = 1959); \
-             got {emulator_firings}");
+        // KSEC handler runs the FULL ~22-24 cycles per sector mark
+        // (per AltoHW + canonical altoIIcode3.mu microcode):
+        //   sector mark → wakeup → KSEC PROM-resident microcode runs
+        //   from MPC=4 (KPOQ) through 0x37c..0x376 → F1=Block clears
+        //   wakeup → F1=TaskYield to Emulator (K+2 timing) → done.
+        // ~7 marks × ~23 = ~161; allow 140..200 to absorb mark-
+        // aligned edge effects.
+        //
+        // Pre-chip-state-refactor baseline was 41 — that was the
+        // ARTIFACT of broken per-task MPC tracking (task_mpc[4]
+        // didn't update properly between sector marks, KSEC took
+        // wrong paths that yielded earlier than the canonical
+        // microcode would).  Post-refactor: chip-side `task_mpcs`
+        // updates each non-stalled cycle, KSEC correctly executes
+        // its full microcode loop matching ContrAlto cycle-for-cycle.
+        assert!((140..=200).contains(&disk_sector_firings),
+            "Disk Sector should fire 140..200 times (post-chip-state-\
+             refactor baseline = 166, computed as ~7 marks × ~23 \
+             cycles per visit); got {disk_sector_firings}");
+        // Emulator owns the remaining cycles.  2000 - 166 = ~1834.
+        assert!((1800..=1860).contains(&emulator_firings),
+            "Emulator should run 1800..1860 cycles in a 2000-cycle \
+             trace with 7 sector marks (post-refactor baseline = \
+             1834); got {emulator_firings}");
     }
 
     /// Boot-button-equivalent trace: pre-load memory with disk

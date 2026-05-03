@@ -31,6 +31,49 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-03 — Tier C #2 Alto: chip-side `task_mpcs` DFF — Emulator resumes at correct MPC post-yield, MPC reporting matches ContrAlto cycle-for-cycle
+
+**Paths:**
+
+- `crates/rhdl-alto/src/alto_chip.rs` — Bundled five chip-side DFFs into a single `ChipState` struct (per CLAUDE.md §3.1 protocol-PHY pattern), bringing AltoChip's top-level field count to 8 (under the 12-tuple `Synchronous`-derive ceiling).  `ChipState` now contains `current_task`, `task_started`, `task_yield_pending`, `urom_addr_held`, AND the new `task_mpcs: [Bits<10>; 16]`.  Added the canonical chip-side per-task MPC tracking: `d.state.task_mpcs[current_task] = engine.next_mpc` each non-stalled cycle.  `current_mpc` for the engine + `next_task_saved_mpc` for URom prefetch now read from `q.state.task_mpcs[…]` (with the existing `task_started` fallback for first-time tasks).  Updated `boot_trace_baseline_metrics` test ranges (KSEC firings 140..200, Emulator firings 1800..1860 — see "Surprises" below).
+
+**Why this, why now:** Per the per-cycle MPC dumper analysis from earlier this session, OURS was resuming Emulator at the WRONG MPC (= 0x152) after KSEC, while ContrAlto correctly resumed at 0x130 (= the canonical post-yield MPC per altoIIcode3.mu).  Root cause: `task_system.task_mpc[k]` is updated by the rhdl-rule arbiter, which only fires when task K wins priority arbitration.  When higher-priority tasks (e.g. KSEC) are woken, lower-priority tasks (e.g. Emulator) don't win → their `task_mpc[k]` slots NEVER update during the runs where they're actively executing → resume MPC after the higher-priority task ends is stale (= reset value 0).  The chip-side `task_mpcs` bypasses arbitration: it updates EVERY non-stalled cycle for the running task, regardless of which task wins arbitration.
+
+**Justification (per CLAUDE.md §11.1 — chip-architectural change touching all of MPC tracking, URom prefetch, and Verilog-emitted state):**
+
+1. **What guarantee does this change preserve, strengthen, or introduce?**  Strengthens spec-conformance for the `task switching` semantics: AltoHW §2.4 implies that each task's MPC is preserved across yields and restored on resume.  Pre-fix, this only worked if the task was the highest-priority one woken (because rule firing was the only update path).  Post-fix, every running task's MPC is correctly preserved across arbitrary task-switching patterns.
+
+2. **What loophole does this *not* introduce?**  The chip-side `task_mpcs` is updated only for `current_task` (the actually-running task), not for arbitrary slots.  task_system's task_mpc is now redundant for chip-internal MPC tracking but kept for trace observability + lockstep diagnostics — no behavioral coupling.
+
+3. **What downstream code does this affect, and why is the effect intentional?**  Every kernel that yields between tasks now resumes at the correct MPC.  In the boot scenario this manifests as: post-KSEC Emulator resumes at MPC=0x130 (matching ContrAlto), pre-fix it was MPC=0x152 (wrong).  In the dumper, OURS' MPC reporting at cycles 1-19 NOW MATCHES CTR cycle-for-cycle (was off due to the same broken `task_mpc` interaction).
+
+4. **Test baseline shift:** `boot_trace_baseline_metrics` test was tuned to the BROKEN baseline.  Pre-fix: KSEC fired 41 times in 2000 cycles.  Post-fix: 166 times.  The 41 was the artifact of the bug — KSEC took shorter paths through its microcode because its saved MPC was stale.  166 is correct (matches ContrAlto cycle-by-cycle: ~7 sector marks × ~23 cycles per visit).  Updated expected ranges; documented the baseline shift in test commentary.
+
+5. **What is the alternative design considered and rejected?**  (a) Modify task_system to fire rules unconditionally (always update task K's slot when current_task=K).  Rejected: would change the rhdl-rule semantics for an arbiter-style use case, and the task_system rules were designed around guarded-atomic-rule semantics (firing only when the task wants to "do something").  (b) Add a separate `current_task_mpc` chip-side DFF that only tracks the running task, leaving per-task save/restore in task_system.  Rejected: bidirectional integration (save on yield, restore on resume) is more complex than just owning all 16 slots in the chip.  (c) The chosen design: chip owns `task_mpcs[16]` directly; task_system retains its rule-based task_mpc only for trace observability.  Cleaner separation: task_system = arbitration; chip = MPC tracking.
+
+6. **Reversibility:** revertible by removing `task_mpcs` from `ChipState` and restoring `q.tasks.task_mpc[…]` reads.  Functionality returns to pre-fix (where Emulator resumes at wrong MPC after high-priority-task yields).
+
+**Surprises and gotchas:**
+
+- **12-tuple ceiling hit on the AltoChip struct.**  Adding a 12th DFF (`task_mpcs`) caused the `Synchronous` auto-derive to fail with "can't compare `(Q, ..., ...)` with itself".  Per CLAUDE.md §3.1 the canonical fix is the protocol-PHY pattern: bundle several DFFs into one struct with `#[derive(Digital)]`.  Bundled five chip-side DFFs into `ChipState`.  Total chip top-level field count now 8 (7 sub-widgets + 1 ChipState bundle).  Documented in the `state` field rustdoc.
+- **Test "regression" is actually a correctness improvement.**  `boot_trace_baseline_metrics` failed because KSEC firings jumped from 41 to 166.  This is NOT a regression — it's the bug fix flowing through.  Pre-fix, KSEC's broken task_mpc[4] caused it to take shorter (wrong) paths through its microcode, yielding earlier than the canonical microcode would.  Post-fix, KSEC runs the FULL 22-24 cycles per sector mark per ContrAlto.  Updated test ranges; documented the why in test commentary.
+- **MPC reporting display artifact resolved.**  Before this fix, OURS' chip reported MPC=0x000 for cycles 0-3 (the "task_started + URom-latency display artifact" that prior CHANGELOG entries documented).  After this fix, MPC reporting matches the engine's actual execution from cycle 1 onward — the artifact was a downstream symptom of the same bug.  The dumper's "Cycles 0-3 display artifact" disclaimer is now obsolete (only cycle 0 still shows the artifact; cycles 1-3 match cleanly).
+
+**Validation:**
+
+- All 244 alto tests pass.
+- KSEC duration in lockstep dumper: still 1-cycle offset at the 0x389 MAR<- stall (= the K+4 vs K+5 inter-MAR<- threshold question — separate, smaller issue).
+- Emulator resume MPC: NOW MATCHES ContrAlto (0x130, was 0x152 pre-fix).
+- Per-cycle MPC trace cycles 1-19: PERFECT lockstep with ContrAlto (was off pre-fix due to MPC reporting artifact).
+
+**Follow-ups:**
+
+- The K+4 vs K+5 inter-MAR<- threshold remains a 1-cycle interpretation gap.  Both defensible against AltoHW §2.3.  Investigation deferred — likely needs explicit AltoHW text reading rather than ContrAlto cross-reference.
+- task_system.task_mpc is now redundant for chip-internal MPC tracking.  Could be removed for code-cleanliness, but kept for lockstep trace observability.  Consider removal in a future cleanup pass if it adds confusion.
+- Step 6 of the 9-step boot chain (Emulator Nova IR fetch + dispatch) is now genuinely unblocked — the Emulator-resume bug was the gate, and it's fixed.
+
+---
+
 ## 2026-05-03 — Tier C #2 Alto: memory-pipeline stall FSM (AltoHW §2.3) — KSEC duration now matches ContrAlto
 
 **Paths:**
