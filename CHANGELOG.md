@@ -31,6 +31,41 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-03 — Tier C #2 Alto: per-cycle R-divergence dumper + Phase 3.5 boot-to-OS-loader chain captured in tier-c-flagship-cores.md
+
+**Paths:**
+
+- `crates/rhdl-alto/examples/dump_first_r_divergence.rs` (new) — Per-cycle R-state side-by-side dumper that finds the FIRST cycle where any R[i] diverges between OUR chip and ContrAlto.  Higher-precision than the matched-pair sampler in `tests/contralto_lockstep.rs`.  Also dumps task-transition timelines for both sides + first-MPC-divergence-within-matched-task.
+- `tier-c-flagship-cores.md` §5.5 — Inserted "Phase 3.5 — Boot-to-OS-loader chain (3-5 weeks)" between Phase 3 and Phase 4.  Captures the 9-step boot-to-first-prompt decomposition (microengine + arbiter → PROM init → KSEC → KWD → memory → Emulator IR fetch → BLT/MOVB → OS loader → first framebuffer artifact).  Each step is independently testable in lockstep against ContrAlto, with the win-condition for that step.
+
+**Why this, why now:** Per the user's strategic message about the 9-step boot chain ("the chain is longer than it looks; each arrow is a real implementation gap; ~15-25 dev-days"), capture it in the durable design plan so estimates and PR-scoping accurately reflect the work involved instead of hiding behind Phase 3's one-line "boot the original Alto disk image far enough to get to the operating system loader".  Also commit the diagnostic infrastructure that's needed to investigate cycle-level KSEC duration mismatches en route.
+
+**Design decisions:**
+
+- The 9-step chain is a NEW phase (3.5), not an expansion of Phase 3, because the disk-task scope (Phase 3 proper) is genuinely just "the disk subsystem works".  Steps 4-9 of the chain depend on memory subsystem, Nova IR dispatch, Emulator-task handlers — work that crosses multiple subsystems and warrants its own phase.
+- Estimates reflect "given Phase 3 done" (i.e., the disk subsystem is correct in isolation).  If the disk subsystem ships with bugs, Phase 3.5 absorbs the debugging cost.  Stated explicitly to avoid double-counting.
+- The dumper aligns CTR[k] vs OURS[k] DIRECTLY (not k vs k+1 as I initially assumed).  Both sims report MPC as "MPC about to execute", so direct alignment is correct.  Documented in the dumper's banner.
+- Diagnostic dumper does NOT make assertions — it's a localizer, not a regression test.  Regressions are caught by `tests/contralto_lockstep.rs` and `tests/task_switch_pipeline.rs`.
+
+**Surprises and gotchas:**
+
+- **Cycle alignment for ContrAlto's TSV trace.**  First wrote `ctr[k]` vs `ours[k+1]` thinking off-by-one; rebooted to `ours[k]` after seeing both sides' task transitions match cycle-for-cycle.  Direct k-vs-k alignment is correct.
+- **OURS' MPC reporting is stuck at 0 for cycles 0-3** (display artifact from `task_started` gating + URom 1-cycle latency interaction).  The engine IS executing through NOVEM → 0x152 → 0x153 → 0x154 internally; the `o.mpc` field just lags.  This is orthogonal to actual divergence — by cycle 4 (KSEC start), reporting is consistent.
+- **Real divergence emerges as KSEC duration mismatch:** OURS finishes KSEC in 19 cycles, CTR in 23 (4-cycle gap).  Same KSEC microcode loaded both sides, so the divergence is in F1/F2 dispatch or memory-timing within KSEC's run.  This is the next investigation target — and per the user's directive ("spec supersedes ContrAlto"), the spec is the arbiter, not ContrAlto.
+
+**Validation:**
+
+- 243 alto tests still pass; pure additions (new example + doc-only edit to tier-c-flagship-cores.md).
+- Dumper compiles cleanly + runs end-to-end against the existing ContrAlto trace harness.
+- No snapshot bumps; no widget code touched.
+
+**Follow-ups:**
+
+- Investigate KSEC duration mismatch (OURS 19 vs CTR 23 cycles).  Need per-cycle MPC-within-KSEC dumper as the next iteration on the diagnostic.
+- Step 6 of the 9-step chain (Emulator-task Nova IR fetch + dispatch) is the next major implementation gap once the cycle-level divergence in Phase 3 lockstep is closed.
+
+---
+
 ## 2026-05-03 — Tier C #2 Alto: task-switch K+2 timing fix (AltoHW §2.4 "one additional instruction before switch") + register_aliases module
 
 **Paths:**
