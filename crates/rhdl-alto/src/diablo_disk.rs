@@ -201,6 +201,28 @@ impl DiabloDisk {
             sector_buffer: dff::DFF::new(buf),
         }
     }
+
+    /// Construct a DiabloDisk for the boot scenario: pre-loaded buffer
+    /// PLUS sector_tick=255 so the very first cycle's wrap-check fires
+    /// sector_mark immediately.  Matches ContrAlto's DiskController.cs
+    /// which schedules the first SectorCallback at time 0
+    /// (`_sectorEvent = new Event(0, null, SectorCallback)`).  Without
+    /// this, the chip waits 256 cycles before firing the first
+    /// sector_mark, causing a multi-cycle delay before the boot dance
+    /// can hand off to KSEC.  Verified by ContrAlto lockstep.
+    pub fn with_sector_at_boundary(words: &[u16; 256]) -> Self {
+        let mut buf = [bits::<16>(0); 256];
+        for (i, &w) in words.iter().enumerate() {
+            buf[i] = bits::<16>(w as u128);
+        }
+        Self {
+            sector_tick: dff::DFF::new(bits::<10>(255)),
+            sector_wake: dff::DFF::new(false),
+            transfer_remaining: dff::DFF::new(bits::<10>(0)),
+            current_word_position: dff::DFF::new(bits::<8>(0)),
+            sector_buffer: dff::DFF::new(buf),
+        }
+    }
 }
 
 impl SynchronousIO for DiabloDisk {
