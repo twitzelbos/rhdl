@@ -97,6 +97,14 @@ pub struct ChipOut {
     pub mem_write_observed_data: Bits<16>,
     /// Memory write enable this cycle.
     pub mem_write_observed_en: bool,
+    /// True if the running microinstruction this cycle had F1=Block.
+    /// Echoed from `engine.block_task`.  Per *Alto Hardware Manual*
+    /// §2.4 + spec §5.5: BLOCK is a hardware convention by which the
+    /// running task asks its associated device to deassert that
+    /// device's wakeup signal.  Critical observable for the
+    /// sector_mark/BLOCK-clear cadence test (catches "latch stuck"
+    /// or "BLOCK not clearing latch" bugs).
+    pub block_task: bool,
 }
 
 /// The Alto chip — composition of microengine + microcode RAM +
@@ -574,6 +582,7 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     o.mem_write_observed_addr = q.engine.mem_address;
     o.mem_write_observed_data = q.engine.mem_write_data;
     o.mem_write_observed_en   = q.engine.mem_write_en;
+    o.block_task              = q.engine.block_task;
 
     (o, d)
 }

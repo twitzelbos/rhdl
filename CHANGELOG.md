@@ -31,6 +31,61 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-02 — Tier C #2 Alto sector_mark / BLOCK / wakeup-clear cadence test (§11.1 follow-up)
+
+**Paths:**
+
+- `crates/rhdl-alto/tests/sector_mark_block_cadence.rs` — new self-consistency test that captures the per-cycle tuple `(cycle, current_task, block_task, sector_mark, wakeups[4])` over 5,000 cycles (test disk period = 256) and asserts the spec §5.5 chain: sector_tick wraps → sector_wake high → wakeups[4] high → KSEC fires → KSEC executes F1=Block → sector_wake clears within 1 cycle.  Four discrete tests:
+  - `sector_mark_cadence_matches_test_period`: count rising edges, verify spacing is the configured period ±32.
+  - `sector_mark_drives_wakeup_bit_4`: invariant — every `sector_mark=true` cycle has `wakeups[4]=true`.
+  - `block_in_ksec_clears_sector_wake_within_one_cycle`: every (current_task=4, block_task=true) cycle clears sector_mark on the next cycle.  Asserts equality, not just majority.
+  - `sector_mark_falls_repeatedly_not_stuck`: at least 5 falling edges in 5,000 cycles (catches "fires once, latches forever" regression).
+- `crates/rhdl-alto/src/alto_chip.rs` — added `block_task: bool` to `ChipOut` (echo of `engine.block_task`), wired in the kernel.  Required so the test can capture per-cycle BLOCK assertions.
+
+**Why this, why now:** The prior wakeup-latched / BLOCK-clear chip-kernel change (introduced earlier in Phase 3.5) shipped with only "fired at least once" tests for the disk-sector path.  Per CLAUDE.md §11.1, that's the wrong granularity for compiler-adjacent state-machine logic — "fires at least once" doesn't catch latch-stuck, wrong-cadence, or BLOCK-not-clearing bugs.  When the lockstep against ContrAlto produced cascading divergences (PR #X CHANGELOG, Step 5b), the natural hypothesis was a BLOCK-clear path bug.  This test was written specifically to discriminate "BLOCK-clear bug" from "downstream Nova-emulation cascade" without needing ContrAlto cross-validation.
+
+**Findings:**
+
+The test passes cleanly:
+
+```
+[cadence] 19 sector_mark rising edges in 5000 cycles
+[cadence] first 10 rising-edge cycles: [255, 511, 767, 1023, 1279, 1535, 1791, 2047, 2303, 2559]
+[cadence] inter-edge spacings: min=256, max=256
+[latch]   sector_mark fell 19 times in 5000 cycles
+[block]   19 (current_task=4, block_task=true) events; 19 cleared sector_mark next cycle
+```
+
+Interpretation:
+- Cadence is exact (256-cycle period, every edge, no drift).
+- Every BLOCK in current_task=4 clears the latch on the next cycle (19/19).
+- Latch is not stuck — falls 19 times.
+
+**This disproves the hypothesis that the wakeup-latched / BLOCK-clear path has a bug.**  The chip-kernel logic clears the right bit at the right time, every time.  The remaining lockstep divergence with ContrAlto must therefore come from elsewhere — most likely the BLT-via-bootstrap layer or downstream Nova-emulation cascading effects in the disk sector microcode itself, not the chip-level wakeup plumbing.
+
+**Design decisions:**
+
+- **Self-consistency rather than ContrAlto cross-validation** for the first cut.  ContrAlto-cross-validation would require extending `tools/contralto-trace/Program.cs` to dump per-cycle SectorMark / wakeup state / F1=Block — feasible (ContrAlto's `cpu.IsBlocked(TaskType.DiskSector)` returns wakeup state, `MicroInstruction.F1` is public) but a separate C# change with its own build cycle.  The self-consistency test is independent of ContrAlto availability and catches the same bug class — see Follow-ups for the cross-validation extension.
+- **Test disk period = 256, not the spec-correct 19,608.**  Same reason as the lockstep harness: 5,000 cycles at the spec-correct period would only see 0 sector boundaries.  The test validates *invariants* between cadence/latch/BLOCK; the absolute period is irrelevant to those invariants and a short period makes iteration fast.  Real-hardware spec-correctness is anchored by `tests/diablo_disk.rs::sector_mark_uses_spec_period_by_default`.
+- **Equality, not ≥**, on the BLOCK-clears-latch test.  An "at least one" check would let a regression pass that BLOCKs many times but only clears the latch sometimes.  Equality enforces the spec §5.5 wording exactly.
+
+**Surprises and gotchas:**
+
+- The test is *clean* (19/19 BLOCK→clear, exact 256 spacing).  My initial hypothesis was that the BLOCK-clear path probably has a bug because of the lockstep divergence with ContrAlto.  Wrong.  The test gives strong evidence the divergence is downstream (most likely in the disk task's microcode-driven R-register accumulation, which is where divergence #3 in the lockstep harness localized).  Discipline: don't conflate "we have a divergence somewhere" with "we know where the divergence is."
+
+- Running this test on a CHIP that *did* have the BLOCK-clear bug (e.g., earlier WIP commits during the wakeup-latched fix) would have caught it immediately.  The §11.1 lesson: write the cadence test *with* the chip-kernel state-machine change, not after.  The cost of writing the test alongside is much lower than the cost of being wrong about which subsystem has the bug.
+
+**Validation:**
+
+- 4 new cadence tests pass (231 total alto tests).  No regressions.
+
+**Follow-ups:**
+
+- **Extend `tools/contralto-trace/Program.cs`** to dump `system.CPU.IsBlocked(TaskType.DiskSector)` (= wakeup state) and the executing instruction's F1=Block bit per cycle.  Then add a true cross-validation test that compares cycle-by-cycle (current_task, block_task, sector_mark, wakeups[4]) tuples between OUR chip and ContrAlto.  When that test is written, the *first divergence cycle* localizes any remaining cadence/latch difference exactly.
+- **Investigate the Disk Sector R-register cascade** (lockstep divergence #3, Step 5b CHANGELOG): now that BLOCK-clear is exonerated, the next-most-likely bug is in disk_ctrl + disk task interaction or in the Nova bootstrap memory state.  Adding R[0..32] to ChipOut (Step 5b follow-up #1) is the right enabling work.
+
+---
+
 ## 2026-05-02 — Tier C #2 Alto microcode_semantics.rs: BS=DISP fix + audit-of-tests follow-ups (B.2/B.3/C.1)
 
 **Paths:**
