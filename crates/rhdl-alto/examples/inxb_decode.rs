@@ -6,7 +6,7 @@ fn main() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let rom_dir = manifest_dir.join("assets/rom");
     let microcode = microcode_loader::load_alto_ii_microcode_from_dir(&rom_dir).unwrap();
-    let interesting = [0x000, 0x152, 0x153, 0x154, 0x004, 0x37c, 0x37d, 0x381, 0x382, 0x383, 0x384, 0x385, 0x386, 0x387, 0x388, 0x389, 0x38a, 0x38b, 0x38c];
+    let interesting = [0x000, 0x152, 0x153, 0x154, 0x130, 0x14e, 0x150, 0x151, 0x131, 0x132, 0x133];
     for &mpc in &interesting {
         let word = microcode[mpc];
         let ui = Microinstruction::unpack(word);

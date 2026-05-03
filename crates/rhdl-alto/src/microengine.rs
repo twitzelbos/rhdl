@@ -882,14 +882,31 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         && (mi.f1 == F1Function::WriteKcwa);
 
     // ---- Per-task IR load (Emulator) ------------------------------
-    // F2 = LoadIr + current_task == 0 (Emulator) → IR ← BUS.  Per
-    // spec §6.6 + ContrAlto's EmulatorTask.cs (`_cpu._ir = _busData`),
-    // IR loads from the BUS (the typical microcode is `IR← MD` which
-    // sets BS=MemoryData driving BUS = MD).  In any other task, this
-    // F2 code is a no-op.
+    // F2 = LoadIr + current_task == 0 (Emulator) → IR ← MD.  Per
+    // spec digest §3 entry for F2=14 (`←MD` / `IR←`):
+    //   "Some tasks: IR ← MD (Emulator: latch fetched instruction
+    //    into IR)"
+    // and per AltoHW §6.6 (cited at spec digest line 648):
+    //   "IR← also merges bus bits 0,5,6 and 7 into NEXT, which does a
+    //    first level instruction dispatch."
+    //
+    // So F2=LoadIr does TWO things in Emulator:
+    //   1. IR ← MD (storage) — the actual fetched instruction goes to IR.
+    //   2. NEXT |= bus-bit-merge (dispatch) — first-level Nova decode.
+    //
+    // The two operations are independent: IR storage uses MD; NEXT
+    // dispatch uses BUS bits.  See line ~750 for the NEXT-merge.
+    //
+    // Pre-fix this line said `d.ir = bus` with an implicit assumption
+    // that microcode would always pair F2=LoadIr with BS=MemoryData
+    // (driving BUS = MD).  This is FALSE for the canonical Nova IR
+    // fetch at MPC=0x150 where BS=ReadR (SAD register) and ALU
+    // computes BusPlusT — BUS contains the FETCH ADDRESS, not the
+    // instruction.  Loading IR from BUS in this case put the address
+    // into IR, breaking all downstream Nova dispatch.
     let is_emulator_task: bool = i.current_task == bits::<4>(0);
     let is_load_ir: bool = mi.f2 == F2Function::LoadIr;
-    d.ir = if is_emulator_task && is_load_ir { bus } else { q.ir };
+    d.ir = if is_emulator_task && is_load_ir { i.mem_read_data } else { q.ir };
     o.ir = q.ir;
 
     // SKIP latch update per spec §6.6:
