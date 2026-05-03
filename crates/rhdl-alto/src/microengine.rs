@@ -170,6 +170,10 @@ pub struct Out {
     pub startf: bool,
     /// Instruction Register — current Nova instruction (Emulator task).
     pub ir: Bits<16>,
+    /// R-register file (32 × 16 bits) — exposed for cycle-by-cycle
+    /// register-state lockstep against ContrAlto.  Echoed from
+    /// `q.regs` so consumers see the START-of-cycle (latched) values.
+    pub regs: [Bits<16>; 32],
 }
 
 /// The Alto microengine widget.
@@ -875,6 +879,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     o.l          = q.l;
     o.bus        = bus;
     o.alu_result = aout.result;
+    o.regs       = q.regs;
 
     if cr.reset.any() {
         d.t = bits::<16>(0);
@@ -906,6 +911,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         o.disk_strobe = false;
         o.startf = false;
         o.ir = bits::<16>(0);
+        o.regs = [bits::<16>(0); 32];
     }
     (o, d)
 }

@@ -105,6 +105,12 @@ pub struct ChipOut {
     /// sector_mark/BLOCK-clear cadence test (catches "latch stuck"
     /// or "BLOCK not clearing latch" bugs).
     pub block_task: bool,
+    /// R-register file (32 × 16 bits) — start-of-cycle (latched)
+    /// values.  Echoed from `engine.regs`.  Required for cycle-by-
+    /// cycle register-state lockstep against ContrAlto: the
+    /// `tests/contralto_lockstep.rs` harness compares this field
+    /// against ContrAlto's `cpu.R[]` array each cycle.
+    pub regs: [Bits<16>; 32],
 }
 
 /// The Alto chip — composition of microengine + microcode RAM +
@@ -583,6 +589,7 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     o.mem_write_observed_data = q.engine.mem_write_data;
     o.mem_write_observed_en   = q.engine.mem_write_en;
     o.block_task              = q.engine.block_task;
+    o.regs                    = q.engine.regs;
 
     (o, d)
 }

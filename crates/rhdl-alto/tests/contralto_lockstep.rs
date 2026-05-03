@@ -109,17 +109,24 @@ fn run_rhdl_chip(disk: &str, rom_dir: &str, cycles: usize) -> Vec<CycleState> {
         .map(|s| s.output)
         .collect();
 
-    // ChipOut doesn't currently expose the regfile directly.  For now,
-    // populate r=[0;32] and aluc0=0 — divergence at MPC/task/T/L/IR
-    // will fire long before we need register-level comparison.
-    trace.into_iter().map(|t| CycleState {
-        task: t.current_task.raw() as i32,
-        mpc: t.mpc.raw() as u16,
-        t: t.t.raw() as u16,
-        l: t.l.raw() as u16,
-        ir: t.ir.raw() as u16,
-        aluc0: 0,
-        r: [0u16; 32],
+    // R-state is now exposed via ChipOut.regs — capture per-cycle so
+    // the lockstep harness can compare R[0..32] against ContrAlto.
+    // aluc0 is still not exposed; leave as 0 (lockstep doesn't compare
+    // it currently).
+    trace.into_iter().map(|t| {
+        let mut r = [0u16; 32];
+        for i in 0..32 {
+            r[i] = t.regs[i].raw() as u16;
+        }
+        CycleState {
+            task: t.current_task.raw() as i32,
+            mpc: t.mpc.raw() as u16,
+            t: t.t.raw() as u16,
+            l: t.l.raw() as u16,
+            ir: t.ir.raw() as u16,
+            aluc0: 0,
+            r,
+        }
     }).collect()
 }
 
@@ -210,10 +217,22 @@ fn lockstep_first_divergence() {
     let mut divergences = 0usize;
     let max_divergences = 5;
 
+    let mut r_divergences: Vec<(usize, usize, usize, u16, u16)> = Vec::new();
+    let max_r_divergences_to_report = 5;
     while i_ctr < ctr.len() && i_ours < ours.len() {
         let c = ctr[i_ctr];
         let o = &ours[i_ours];
         if c.task == o.task && c.mpc == o.mpc {
+            // (task, mpc) match — also check R-state.  Per the F2-NEXT-
+            // modifier-timing-fix CHANGELOG entry, the next-most-likely
+            // bug is in disk-task R-register accumulation, which would
+            // show up here as the FIRST cycle where (task, mpc) match
+            // but R[i] differs.
+            for ri in 0..32 {
+                if c.r[ri] != o.r[ri] && r_divergences.len() < max_r_divergences_to_report {
+                    r_divergences.push((i_ctr, i_ours, ri, c.r[ri], o.r[ri]));
+                }
+            }
             matched += 1;
             i_ctr += 1;
             i_ours += 1;
@@ -257,4 +276,17 @@ fn lockstep_first_divergence() {
         }
     }
     eprintln!("\n[lockstep] summary: {matched} matched (task, mpc) pairs, {divergences} divergence events");
+    if !r_divergences.is_empty() {
+        eprintln!("\n[lockstep] R-state divergences (where (task, mpc) match but R[i] differs):");
+        for (i_ctr, i_ours, ri, ctr_v, ours_v) in &r_divergences {
+            eprintln!(
+                "  CTR[{i_ctr}]/OURS[{i_ours}] R[{ri}]: CTR=0x{ctr_v:04x}  OURS=0x{ours_v:04x}",
+            );
+        }
+        if r_divergences.len() == max_r_divergences_to_report {
+            eprintln!("  (capped at {max_r_divergences_to_report}; more may exist)");
+        }
+    } else {
+        eprintln!("\n[lockstep] no R-state divergences observed at any matched (task, mpc) pair.");
+    }
 }
