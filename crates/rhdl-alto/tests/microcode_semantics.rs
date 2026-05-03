@@ -95,6 +95,7 @@ fn observe(prog: Vec<InCfg>) -> Observation {
                 kcwa: bits::<16>(0),
                 kstat: bits::<16>(i.kstat as u128),
                 kdata: bits::<16>(i.kdata as u128),
+                mem_stall: false,
             }))
         },
         100,

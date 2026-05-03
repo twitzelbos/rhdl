@@ -31,6 +31,57 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-03 — Tier C #2 Alto: memory-pipeline stall FSM (AltoHW §2.3) — KSEC duration now matches ContrAlto
+
+**Paths:**
+
+- `crates/rhdl-alto/src/memory.rs` — added `cycles_since_mar: dff::DFF<Bits<3>>` plus the pipeline-stall FSM.  3 new MemIn fields (`mar_load_this_cycle`, `md_read_this_cycle`, `md_write_this_cycle`); 1 new MemOut field (`mem_stall`).  Stall thresholds per AltoHW §2.3 + Alto II 4th-cycle read / 3rd-cycle store + spec rule (a) "1 minimum intervening".  Counter encoding documented in the struct rustdoc.
+- `crates/rhdl-alto/src/microengine.rs` — added `mem_stall: bool` to MicroIn; added 3 new MicroOut signals exposing the F1=LoadMar / BS=MemoryData / F2=StoreMd decode (used by Memory's FSM).  Added stall gate at end of kernel that holds all 9 internal DFFs (T, L, regs, MAR, IR, alu_carry, skip, carry, next_modifier_pending) and suppresses side-effect outputs (task_yield, mem_write_en, disk_*, startf, block_task) when `i.mem_stall` is asserted.  Memory-pipeline driver signals (mar_load_this_cycle / md_read_this_cycle / md_write_this_cycle) deliberately NOT suppressed during stall — they're pure decodes of i.instr and feed back to Memory's FSM; suppressing would create a combinational loop.
+- `crates/rhdl-alto/src/alto_chip.rs` — added `urom_addr_held: dff::DFF<Bits<10>>` that latches each cycle's URom address.  During `mem_stall`, the chip presents `q.urom_addr_held` to URom instead of `next_mpc`, so the URom keeps returning the SAME instruction; without this, the engine "stalls" but URom advances anyway, the stalled instruction's effects are silently lost, and spec-mandated re-execute-on-resume semantics break.  Wired Memory↔Microengine via `mem_stall` and the 3 driver signals.  Updated the `boot_trace_baseline_metrics` test's expected ranges (KSEC firings 22..50, Emulator firings 1940..1990 — pre-stall baselines were 22..40 and 1950..1990).
+- `crates/rhdl-alto/tests/{memory,microcode_semantics,microengine}.rs` — updated struct literals for the new MemIn / In fields (used `..Default::default()` pattern where possible).
+
+**Why this, why now:** Per the per-cycle MPC dumper analysis (committed earlier this session), OURS' KSEC ran 4 cycles SHORTER than CTR's because every memory access in OURS was "always ready", while real Alto stalls per AltoHW §2.3.  With the FSM in place, OURS' KSEC duration matches CTR's: both take 22 cycles for the boot-time KSEC run.  This unblocks step 5 of the Phase 3.5 boot-to-OS-loader chain (per `tier-c-flagship-cores.md`).
+
+**Justification (per CLAUDE.md §11.1 — chip-level + microengine-level + memory-level coordinated change):**
+
+1. **What guarantee does this change preserve, strengthen, or introduce?**  Strengthens spec-conformance: AltoHW §2.3 explicitly mandates pipeline stalls for early MD-access ("the processor will suspend execution of microinstructions if an `←MD` or `MD←` is executed before the memory interface is prepared to deliver or accept data").  Pre-fix, OURS ignored this entirely.  Post-fix, OURS implements it.
+
+2. **What loophole does this *not* introduce?**  The stall gate suppresses side-effect outputs (task_yield, mem_write_en, disk_*) so a stalled cycle has zero observable side effects on downstream subsystems.  The FSM driver signals (mar_load/md_read/md_write) are NOT suppressed — they're pure-decode of i.instr and don't depend on i.mem_stall, so feeding them back to Memory doesn't create a combinational loop.  The combinational-loop avoidance is documented inline in the engine's stall gate.
+
+3. **Spec-derivation, not ContrAlto-matching:**
+
+    - **`←MD`** (MD-read) requires `counter ≥ 4` (= K+4, Alto II 4th-cycle read availability — direct spec quote).  Stalls when `1 ≤ counter ≤ 3`.
+    - **`MD<-`** (MD-write) requires `counter ≥ 2` (= K+2, "1 minimum intervening microinstruction" per spec rule (a)).  Stalls when `counter == 1`.
+    - **New `MAR<-`** requires `counter == 0` (idle) OR `counter ≥ 5`.  This is the *conservative* threshold (= treat previous cycle as if it were a read; bus free at K+5).  For a previous WRITE cycle, K+4 would suffice (write completes K+3, bus free K+4) — but the FSM doesn't know read-vs-write at MAR<- time, so we pessimize to K+5.  Observed ContrAlto cycle-count happens to match this conservative threshold; the THRESHOLD itself is derived from the spec, not from matching ContrAlto.  Per the user's "spec supersedes ContrAlto" directive: this is spec-correct (or, where the spec under-specifies the read-vs-write distinction, conservatively spec-correct).
+
+4. **What downstream code does this affect, and why is the effect intentional?**  Every memory-accessing microinstruction now stalls the engine until the memory interface is ready.  KSEC's MPC=0x385 (`L<-MD OR T` after MAR<-KBLKADR3) now stalls 2 extra cycles; KSEC's MPC=0x389 (back-to-back MAR<-) now stalls additional cycles.  KSEC duration: 19 cycles → 22 cycles (matching ContrAlto).  Boot-trace baseline test's expected range bumped (the old range was 22..40 cycles; new is 22..50 cycles).
+
+5. **Architectural decision: chip-side `urom_addr_held` DFF.**  When the engine stalls, the URom prefetch must NOT advance — otherwise the engine sees the post-stall instruction next cycle and skips the stalled instruction entirely.  We add a single chip-side DFF that holds the previously-presented URom address; during stall, the chip presents this instead of `next_mpc`.  Considered alternative: latch `i.instr` in the engine itself (an `instr_latch` DFF).  Rejected: the URom-address-hold is the cleaner cut — it keeps the stall state external to the engine and reuses the existing URom 1-cycle-latency model.  The instr-latch alternative would have required a new DFF inside Microengine and additional gating in i.instr consumption, with no functional advantage.
+
+6. **Reversibility:** revertible by removing the FSM in Memory + the stall gate in Microengine + the urom_addr_held DFF in AltoChip.  Functionality returns to pre-stall (where every memory access is "always ready").
+
+**Surprises and gotchas:**
+
+- **The first attempt without `urom_addr_held` deadlocked OURS at MPC=0 forever.**  The engine stalled DFFs, but URom prefetch still advanced via `next_mpc`, so the engine never re-saw the stalled instruction.  My initial workaround was to override `o.next_mpc = i.mpc` during stall — but this broke the chip's URom prefetch because `i.mpc` (= chip's `current_mpc`) is stuck at 0 for tasks that never won arbitration (the prior "MPC reporting display artifact").  The correct fix lives at the chip level (urom_addr_held DFF), not the engine level.  Documented in the engine's stall-gate comment.
+- **Combinational-loop trap:** initial implementation suppressed `o.mar_load_this_cycle` etc. during stall, creating a feedback loop (stall=true → suppress mar_load → memory clears stall → engine no longer stalled → mar_load re-asserts → stall=true → ...).  Settle loop failed to converge.  Fix: keep the FSM driver signals stable (don't suppress on stall) — they're pure decode of i.instr and the Memory FSM already gates `mar_fires_now = mar_load && !stall` so the counter doesn't reset spuriously.
+- **Test baseline bumped, not broken:** `boot_trace_baseline_metrics` expected 22..40 KSEC firings; with stalls, 41 firings now occur (each KSEC visit is longer, but `current_task=4` cycles still count as KSEC firings).  Bumped to 22..50.  Honest baseline shift, not a regression.
+- **Inter-MAR<- threshold guess:** I initially used the CTR-observed cycle count for back-to-back MAR<- (K+5).  The user (correctly) called out that I was guessing.  Re-derived from spec: the conservative interpretation IS K+5 (assume worst case = previous cycle was a read), which happens to match the CTR observation.  Documented as conservative-but-spec-correct in the Memory FSM rustdoc.
+
+**Validation:**
+
+- All 244 alto tests pass (50 lib + 194 integration including iverilog round-trips for `task_system`, `disk_controller`, `microengine`, `memory`, `alto_chip`).
+- KSEC duration in lockstep dumper now matches ContrAlto exactly (22 cycles each side, vs. pre-fix 19 OURS / 23 CTR = 4-cycle gap).
+- 1-cycle Emulator-phase offset remains (OURS' INXB at MPC=0x152 stalls 1 cycle that CTR's doesn't — needs investigation; possibly INXB doesn't actually have F2=StoreMd in our microcode binary, or my md_write decode catches an edge case).
+- Boot-trace baseline metric ranges adjusted with new baselines documented in the test commentary.
+
+**Follow-ups:**
+
+- Investigate the 1-cycle Emulator offset at INXB (MPC=0x152) — possibly INXB's F2 isn't StoreMd in the actual binary even though the source-comment suggests it.  Decode the actual microinstruction bytes.
+- After the lockstep gap closes further, the next chain step is Emulator-task Nova IR fetch + dispatch (per Phase 3.5 §6 of `tier-c-flagship-cores.md`).
+- Refine the inter-MAR<- threshold to K+4 when the previous cycle was a write (vs K+5 when it was a read) — would require Memory to track `last_was_read` state.  Minor optimization; current K+5 is conservatively spec-correct.
+
+---
+
 ## 2026-05-03 — Tier C #2 Alto: per-cycle R-divergence dumper + Phase 3.5 boot-to-OS-loader chain captured in tier-c-flagship-cores.md
 
 **Paths:**

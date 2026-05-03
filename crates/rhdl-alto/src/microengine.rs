@@ -89,6 +89,24 @@ pub struct In {
     /// Manual* §2.1 + spec §3.2 + §8.5: in Disk Sector / Disk Word
     /// task, BS=4 reads this onto the bus.
     pub kdata: Bits<16>,
+    /// Memory-pipeline stall signal from the [`crate::memory::Memory`]
+    /// subsystem (combinational this cycle).  When asserted, the
+    /// microengine MUST freeze for this cycle:
+    ///
+    ///   - `o.next_mpc = i.mpc` (MPC doesn't advance — owner won't
+    ///     update task_mpc).
+    ///   - All internal DFFs (T, L, R-writes, MAR, IR, alu_carry, skip,
+    ///     carry, next_modifier_pending) hold their current values.
+    ///   - `o.task_yield = false` (no task switches during a stall).
+    ///   - Memory write_en + DMA outputs hold (write side-effects to
+    ///     the BRAM are still issued via `i.address` / `i.write_en`,
+    ///     idempotent since `i.address` is also held by the engine
+    ///     across the stall).
+    ///
+    /// Per AltoHW §2.3: "the processor will suspend execution of
+    /// microinstructions if an `←MD` or `MD←` is executed before the
+    /// memory interface is prepared to deliver or accept data."
+    pub mem_stall: bool,
 }
 
 /// Outputs from the microengine.
@@ -174,6 +192,22 @@ pub struct Out {
     /// register-state lockstep against ContrAlto.  Echoed from
     /// `q.regs` so consumers see the START-of-cycle (latched) values.
     pub regs: [Bits<16>; 32],
+    /// True when this cycle's microinstruction has F1=LoadMar (= MAR<-).
+    /// Routed by AltoChip to the Memory subsystem's pipeline-stall FSM
+    /// to (a) reset cycles_since_mar to 1 and (b) detect "back-to-back
+    /// MAR<- too soon" stall conditions.  Pure decode of the current
+    /// uinst — visible to the chip without depending on stall state.
+    pub mar_load_this_cycle: bool,
+    /// True when this cycle's microinstruction has BS=MemoryData
+    /// (= ←MD).  Routed by AltoChip to the Memory subsystem to detect
+    /// "←MD too soon after MAR<-" stalls.
+    pub md_read_this_cycle: bool,
+    /// True when this cycle's microinstruction has F2=StoreMd (= MD<-).
+    /// Routed by AltoChip to the Memory subsystem to detect "MD<- too
+    /// soon after MAR<-" stalls.  Note: distinct from `mem_write_en`
+    /// which also fires for DMA from Disk Word task; only the
+    /// microcode-issued MD<- triggers the pipeline-stall FSM.
+    pub md_write_this_cycle: bool,
 }
 
 /// The Alto microengine widget.
@@ -800,6 +834,13 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     o.disk_ctrl_write_data = if is_dma { i.kcwa + bits::<16>(1) } else { bus };
     o.disk_word_consumed   = is_dma;
     o.task_yield           = mi.f1 == F1Function::TaskYield;
+    // Memory-pipeline-stall driver signals — pure decode of current
+    // uinst (no dependence on stall state).  AltoChip routes these
+    // into the Memory subsystem, which combinationally returns
+    // mem_stall.  See `Memory` rustdoc for the FSM.
+    o.mar_load_this_cycle = mi.f1 == F1Function::LoadMar;
+    o.md_read_this_cycle  = mi.bs == BusSource::MemoryData;
+    o.md_write_this_cycle = mi.f2 == F2Function::StoreMd;
     // F1=Block (universal, F1=3): per *Alto Hardware Manual* §2.4
     // and spec §5.5.  Surfaced as a chip-level signal so device
     // widgets (e.g. DiabloDisk) can snoop it together with
@@ -891,6 +932,69 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     o.alu_result = aout.result;
     o.regs       = q.regs;
 
+    // ---- Memory-pipeline stall gate -------------------------------
+    //
+    // Per AltoHW §2.3 + spec digest §3, the microengine must FREEZE
+    // when the Memory subsystem signals `mem_stall`.  When stalled:
+    //   - All internal DFFs hold their q values (T, L, R, MAR, IR,
+    //     alu_carry, skip, carry, next_modifier_pending).
+    //   - `o.next_mpc = i.mpc` (no MPC advance — the chip's owner
+    //     won't update task_mpc).
+    //   - Side-effect outputs (task_yield, mem_write_en, disk_*,
+    //     startf, ...) suppressed so the stalled cycle has no
+    //     visible effect on downstream subsystems.
+    //   - Memory-pipeline driver signals (mar_load_this_cycle,
+    //     md_read_this_cycle, md_write_this_cycle) suppressed too —
+    //     they would re-trigger the FSM otherwise.
+    //
+    // The gate is OR'd with the reset gate below so reset takes
+    // precedence (a reset during a stall is still a reset).
+    if i.mem_stall && !cr.reset.any() {
+        d.t = q.t;
+        d.l = q.l;
+        d.regs = q.regs;
+        d.mar = q.mar;
+        d.ir = q.ir;
+        d.alu_carry = q.alu_carry;
+        d.skip = q.skip;
+        d.carry = q.carry;
+        d.next_modifier_pending = q.next_modifier_pending;
+        // Note: we do NOT override `o.next_mpc` to `i.mpc` here.  The
+        // chip is responsible for holding its URom prefetch address
+        // during a stall (via `urom_addr_held` DFF), so that the same
+        // instruction re-presents to the engine.  If we set
+        // `o.next_mpc = i.mpc`, the chip would prefetch URom @ i.mpc,
+        // and any inconsistency between `i.mpc` and the actual
+        // executing instruction's address (due to the
+        // `task_started`/`task_mpc[]` arbitration interaction) would
+        // cause the engine to jump to MPC=0.  Letting `next_mpc` pass
+        // through as the engine's normal decoded value (the same
+        // value across stall cycles since the same instruction is
+        // re-executed) is correct — the chip's URom-addr holding
+        // prevents the prefetch from advancing.
+        o.task_yield = false;
+        o.block_task = false;
+        // NOTE: o.mar_load_this_cycle / o.md_read_this_cycle /
+        // o.md_write_this_cycle are NOT suppressed here.  They are
+        // pure decodes of i.instr (no dependence on i.mem_stall) and
+        // they feed back into Memory's stall FSM.  Suppressing them
+        // would create a combinational loop:
+        //   stall=true → suppress mar_load → memory sees no MAR<- →
+        //   memory clears stall → engine no longer stalls → mar_load
+        //   re-asserts → stall=true → ... (settle loop fails to
+        //   converge).
+        // Keeping them high during stall is correct: the Memory FSM
+        // gates `mar_fires_now = mar_load && !stall` so the counter
+        // doesn't reset spuriously, and the signals are just "what
+        // the current uinst wants to do" — stable across the stall.
+        o.mem_write_en = false;
+        o.disk_ctrl_write_en = false;
+        o.disk_word_consumed = false;
+        o.disk_strobe = false;
+        o.disk_clr_stat = false;
+        o.startf = false;
+    }
+
     if cr.reset.any() {
         d.t = bits::<16>(0);
         d.l = bits::<16>(0);
@@ -916,6 +1020,9 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         o.disk_ctrl_write_data = bits::<16>(0);
         o.disk_word_consumed = false;
         o.task_yield = false;
+        o.mar_load_this_cycle = false;
+        o.md_read_this_cycle = false;
+        o.md_write_this_cycle = false;
         o.block_task = false;
         o.disk_clr_stat = false;
         o.disk_strobe = false;

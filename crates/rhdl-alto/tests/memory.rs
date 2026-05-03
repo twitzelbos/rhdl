@@ -25,9 +25,9 @@ fn run_inputs(uut: Memory, inputs: Vec<MemIn>) -> Vec<MemOut> {
 fn write_then_read_round_trip() {
     let uut = Memory::default();
     let trace = run_inputs(uut, vec![
-        MemIn { address: b16(0x1000), write_data: b16(0xABCD), write_en: true },
-        MemIn { address: b16(0x1000), write_data: b16(0), write_en: false },
-        MemIn { address: b16(0x1000), write_data: b16(0), write_en: false },
+        MemIn { address: b16(0x1000), write_data: b16(0xABCD), write_en: true, ..Default::default() },
+        MemIn { address: b16(0x1000), write_data: b16(0), write_en: false, ..Default::default() },
+        MemIn { address: b16(0x1000), write_data: b16(0), write_en: false, ..Default::default() },
         MemIn::default(),
     ]);
     // Cycle 0: write committed at end of cycle.
@@ -39,11 +39,11 @@ fn write_then_read_round_trip() {
 fn writes_are_independent_per_address() {
     let uut = Memory::default();
     let trace = run_inputs(uut, vec![
-        MemIn { address: b16(0x1010), write_data: b16(0x10), write_en: true },
-        MemIn { address: b16(0x2020), write_data: b16(0x20), write_en: true },
-        MemIn { address: b16(0x1010), write_data: b16(0), write_en: false },
-        MemIn { address: b16(0x2020), write_data: b16(0), write_en: false },
-        MemIn { address: b16(0x3030), write_data: b16(0), write_en: false }, // unwritten
+        MemIn { address: b16(0x1010), write_data: b16(0x10), write_en: true, ..Default::default() },
+        MemIn { address: b16(0x2020), write_data: b16(0x20), write_en: true, ..Default::default() },
+        MemIn { address: b16(0x1010), write_data: b16(0), write_en: false, ..Default::default() },
+        MemIn { address: b16(0x2020), write_data: b16(0), write_en: false, ..Default::default() },
+        MemIn { address: b16(0x3030), write_data: b16(0), write_en: false, ..Default::default() }, // unwritten
         MemIn::default(),
         MemIn::default(),
     ]);
@@ -57,8 +57,8 @@ fn full_64k_address_space() {
     // Write to top-of-memory (0xFFFF) and read back.
     let uut = Memory::default();
     let trace = run_inputs(uut, vec![
-        MemIn { address: b16(0xFFFF), write_data: b16(0xDEAD), write_en: true },
-        MemIn { address: b16(0xFFFF), write_data: b16(0), write_en: false },
+        MemIn { address: b16(0xFFFF), write_data: b16(0xDEAD), write_en: true, ..Default::default() },
+        MemIn { address: b16(0xFFFF), write_data: b16(0), write_en: false, ..Default::default() },
         MemIn::default(),
         MemIn::default(),
     ]);
@@ -73,10 +73,10 @@ fn preloaded_initial_contents() {
     let boot_block = vec![0o000345, 0o000354, 0o000403, 0o114366];
     let uut = Memory::with_words_at(1, &boot_block);
     let trace = run_inputs(uut, vec![
-        MemIn { address: b16(1), write_data: b16(0), write_en: false },
-        MemIn { address: b16(2), write_data: b16(0), write_en: false },
-        MemIn { address: b16(3), write_data: b16(0), write_en: false },
-        MemIn { address: b16(4), write_data: b16(0), write_en: false },
+        MemIn { address: b16(1), write_data: b16(0), write_en: false, ..Default::default() },
+        MemIn { address: b16(2), write_data: b16(0), write_en: false, ..Default::default() },
+        MemIn { address: b16(3), write_data: b16(0), write_en: false, ..Default::default() },
+        MemIn { address: b16(4), write_data: b16(0), write_en: false, ..Default::default() },
         MemIn::default(),
     ]);
     assert_eq!(trace[1].read_data.raw() as u16, 0o000345, "memory[1] = JMP-345 entrypoint");
@@ -92,6 +92,7 @@ fn memory_iverilog_round_trip() -> Result<(), RHDLError> {
         address: b16(i as u16),
         write_data: b16(0),
         write_en: false,
+        ..Default::default()
     }).collect();
     let stream = inputs.into_iter().with_reset(1).clock_pos_edge(100);
     let test_bench = uut.run(stream).collect::<SynchronousTestBench<_, _>>();

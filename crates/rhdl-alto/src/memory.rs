@@ -28,6 +28,7 @@
 //! - Memory parity / ECC.
 
 use rhdl::prelude::*;
+use rhdl_fpga::core::dff;
 use rhdl_fpga::core::ram::synchronous::{In as BramIn, SyncBRAM, Write as BramWrite};
 
 /// Memory size in words.  Phase 3.5 uses 64K (the real Alto's main
@@ -46,6 +47,23 @@ pub struct MemIn {
     pub write_data: Bits<16>,
     /// Write enable.
     pub write_en: bool,
+    /// True when this cycle's microinstruction has F1=LoadMar (= MAR<-).
+    /// Used by the pipeline-stall FSM to (a) reset cycles_since_mar to
+    /// the "MAR<- cycle" value when allowed and (b) detect "back-to-back
+    /// MAR<- too soon" stall conditions.  Per AltoHW §2.3 + spec digest:
+    /// MAR<- starts a memory cycle.  A new MAR<- before the previous
+    /// memory cycle has cleared the bus stalls the microengine.
+    pub mar_load_this_cycle: bool,
+    /// True when this cycle's microinstruction sources MD onto the bus
+    /// (= BS=MemoryData / `←MD`).  Per Alto II timing: the read result
+    /// is available 4 cycles after MAR<-; ←MD attempted before then
+    /// stalls.
+    pub md_read_this_cycle: bool,
+    /// True when this cycle's microinstruction asserts F2=StoreMd
+    /// (= MD<-).  Per AltoHW §2.3: there must be ≥1 intervening cycle
+    /// between MAR<- and MD<-; MD<- attempted in the immediately-
+    /// adjacent cycle stalls.
+    pub md_write_this_cycle: bool,
 }
 
 /// Outputs from the memory subsystem.
@@ -54,24 +72,66 @@ pub struct MemOut {
     /// Word read from the address presented one cycle ago.  BRAM-style
     /// 1-cycle latency.
     pub read_data: Bits<16>,
+    /// True when the microengine MUST freeze (don't advance MPC, don't
+    /// update DFFs) for this cycle because the requested memory access
+    /// (←MD or MD<-) or new MAR<- conflicts with an in-flight memory
+    /// pipeline.  See [`MemIn`] field comments for the precise rules.
+    pub mem_stall: bool,
 }
 
-/// 64 KW × 16-bit memory subsystem.
+/// 64 KW × 16-bit memory subsystem with the **Alto II memory-pipeline
+/// stall FSM** (per AltoHW §2.3 + spec digest §3 timing rules,
+/// cross-validated against observed ContrAlto cycle counts on KSEC
+/// boot at MPC=0x385 and 0x389).
 ///
-/// Construct with [`Memory::new`] to supply initial contents (boot
-/// image, microcode-fetched data, etc.) or with [`Memory::default`]
-/// for an all-zero memory.
+/// ## Pipeline FSM
+///
+/// `cycles_since_mar` counts elapsed cycles since the most recent
+/// successful MAR<-.  Initial value 7 (a "bus is idle" sentinel — any
+/// value ≥ 5 suffices).  On a successful MAR<- this cycle, the FSM
+/// latches `1` for next cycle (= "MAR<- was 1 cycle ago" at K+1).
+/// Each subsequent non-stalled cycle increments the counter, capped
+/// at 7.
+///
+/// **Stall conditions** (`counter` = `q.cycles_since_mar`):
+///
+/// - `←MD` (read) requires `counter ≥ 4` (Alto II read result
+///   available on the 4th cycle after MAR<-).  Stalls when
+///   `1 ≤ counter ≤ 3`.
+/// - `MD<-` (write) requires `counter ≥ 2` (≥ 1 intervening cycle
+///   per AltoHW §2.3 (a)).  Stalls when `counter == 1`.
+/// - New `MAR<-` requires `counter == 0` (idle, no in-flight cycle)
+///   OR `counter ≥ 5`.  Stalls when `1 ≤ counter ≤ 4`.  This
+///   conservative threshold matches the observed ContrAlto cycle-count
+///   for a back-to-back MAR<- separated by an MD<- (the in-flight
+///   write completes K+3, but the bus + memory hardware needs through
+///   K+4 to be free for a new MAR<-).
+///
+/// When stalled, the FSM **does not freeze** — the memory pipeline
+/// keeps ticking (the in-flight cycle continues to completion in real
+/// hardware); only the microengine freezes via `o.mem_stall`.  When
+/// non-stalled and MAR<- fires this cycle, the counter latches `1`
+/// for next cycle.  Otherwise the counter increments (capped at 7).
 #[derive(Clone, Debug, Synchronous, SynchronousDQ)]
 #[rhdl(dq_no_prefix)]
 pub struct Memory {
     /// 64K × 16-bit BRAM.
     bram: SyncBRAM<Bits<16>, 16>,
+    /// Cycles elapsed since the most recent MAR<- (capped at 7).
+    /// 0 = sentinel "no in-flight memory cycle".
+    /// 1 = MAR<- happened this cycle.
+    /// 2..=4 = in-flight (memory cycle still running).
+    /// 5+ = read result valid (Alto II latches; ←MD allowed any time).
+    /// Initialized to 7 (idle) so the first MAR<- can issue
+    /// immediately without spurious stall.
+    cycles_since_mar: dff::DFF<Bits<3>>,
 }
 
 impl Default for Memory {
     fn default() -> Self {
         Self {
             bram: SyncBRAM::default(),
+            cycles_since_mar: dff::DFF::new(bits::<3>(7)),
         }
     }
 }
@@ -84,6 +144,7 @@ impl Memory {
     pub fn new(initial: impl IntoIterator<Item = (Bits<16>, Bits<16>)>) -> Self {
         Self {
             bram: SyncBRAM::new(initial),
+            cycles_since_mar: dff::DFF::new(bits::<3>(7)),
         }
     }
 
@@ -104,12 +165,77 @@ impl SynchronousIO for Memory {
 }
 
 #[kernel]
-pub fn memory_kernel(_cr: ClockReset, i: MemIn, q: Q) -> (MemOut, D) {
+pub fn memory_kernel(cr: ClockReset, i: MemIn, q: Q) -> (MemOut, D) {
     let mut d = D::dont_care();
     let mut o = MemOut::dont_care();
 
-    // Drive the BRAM's read address from this cycle's input; the
-    // BRAM's output appears one cycle later.
+    // ---- Pipeline-stall FSM (per AltoHW §2.3 + spec digest §3) -----
+    //
+    // `q.cycles_since_mar` ∈ {0..7}.  Sentinel 7 = "bus idle, no
+    // in-flight memory cycle".  After a successful MAR<-, FSM resets
+    // to 1 and increments each non-stalled cycle.
+    //
+    // Stall rules:
+    //   ←MD     stalls when 1 ≤ counter ≤ 4 (read result valid at
+    //           counter ≥ 5 — Alto II 4th-cycle availability).
+    //   MD<-    stalls when counter == 1 (need ≥ 1 intervening cycle
+    //           per spec).
+    //   New MAR<- stalls when 1 ≤ counter ≤ 2 (need ≥ 2 intervening
+    //           cycles for back-to-back MAR<-).
+    // Counter encoding (latches at end of cycle):
+    //   counter ∈ {1,2,3,...} measures "cycles elapsed since the most
+    //   recent successful MAR<-" — counter=1 at K+1 (one cycle after
+    //   MAR<- on cycle K), counter=2 at K+2, etc.  counter=7 is the
+    //   idle sentinel.
+    //
+    // Stall thresholds (per AltoHW §2.3 + spec digest §3 + observed
+    // ContrAlto cycle counts on KSEC boot at MPC=0x385 and 0x389):
+    //   ←MD       requires counter ≥ 4 (= K+4, Alto II 4th-cycle read).
+    //               Stalls when 1 ≤ counter ≤ 3.
+    //   MD<-      requires counter ≥ 2 (= K+2, "1 minimum intervening
+    //               microinstruction" rule).  Stalls when counter == 1.
+    //   New MAR<- requires counter == 0 (idle) OR counter ≥ 5.
+    //               Stalls when 1 ≤ counter ≤ 4.  This is conservative
+    //               (= treat every previous cycle as if it were a read),
+    //               matching observed CTR cycle-count for back-to-back
+    //               MAR<- separated by an MD<-.
+    let counter: Bits<3> = q.cycles_since_mar;
+    let counter_ge_1: bool = counter >= bits::<3>(1);
+    let stall_read: bool =
+        i.md_read_this_cycle && counter_ge_1 && counter < bits::<3>(4);
+    let stall_write: bool =
+        i.md_write_this_cycle && counter == bits::<3>(1);
+    let stall_new_mar: bool =
+        i.mar_load_this_cycle && counter_ge_1 && counter < bits::<3>(5);
+    let stall: bool = stall_read || stall_write || stall_new_mar;
+    o.mem_stall = stall;
+
+    // ---- Counter advancement ---------------------------------------
+    //
+    // Whether stalled or not, the memory pipeline keeps ticking
+    // (the in-flight cycle continues to completion in the real
+    // hardware).  But:
+    //   - When MAR<- successfully fires this cycle (= MAR<- bit is
+    //     set AND not stalled), reset counter to 1.
+    //   - Otherwise, increment counter (capped at 7).
+    let mar_fires_now: bool = i.mar_load_this_cycle && !stall;
+    let next_counter: Bits<3> = if mar_fires_now {
+        bits::<3>(1)
+    } else if counter < bits::<3>(7) {
+        counter + bits::<3>(1)
+    } else {
+        bits::<3>(7)
+    };
+    d.cycles_since_mar = next_counter;
+
+    // ---- BRAM access ------------------------------------------------
+    //
+    // The BRAM read/write are driven from `i.address` / `i.write_en`
+    // unconditionally — the stall only affects the MICROENGINE side.
+    // Memory itself keeps running.  The microengine is responsible for
+    // not advancing its own state when stalled, so its `i.address` and
+    // `i.write_data` remain stable across stall cycles (= same access
+    // re-issued — idempotent against BRAM).
     d.bram = BramIn::<Bits<16>, 16> {
         read_addr: i.address,
         write: BramWrite::<Bits<16>, 16> {
@@ -120,6 +246,12 @@ pub fn memory_kernel(_cr: ClockReset, i: MemIn, q: Q) -> (MemOut, D) {
     };
 
     o.read_data = q.bram;
+
+    // Reset semantics: counter goes back to idle sentinel.
+    if cr.reset.any() {
+        d.cycles_since_mar = bits::<3>(7);
+        o.mem_stall = false;
+    }
 
     (o, d)
 }
@@ -146,12 +278,12 @@ mod tests {
         let uut = Memory::default();
         let trace = run_inputs(uut, vec![
             // Cycle 0: write 0xABCD to addr 0x100.
-            MemIn { address: b16(0x100), write_data: b16(0xABCD), write_en: true },
+            MemIn { address: b16(0x100), write_data: b16(0xABCD), write_en: true, ..Default::default() },
             // Cycle 1: present read addr (write committed at end of cycle 0).
-            MemIn { address: b16(0x100), write_data: b16(0), write_en: false },
+            MemIn { address: b16(0x100), write_data: b16(0), write_en: false, ..Default::default() },
             // Cycle 2: BRAM output reflects the write.
-            MemIn { address: b16(0x100), write_data: b16(0), write_en: false },
-            MemIn { address: b16(0x100), write_data: b16(0), write_en: false },
+            MemIn { address: b16(0x100), write_data: b16(0), write_en: false, ..Default::default() },
+            MemIn { address: b16(0x100), write_data: b16(0), write_en: false, ..Default::default() },
         ]);
         // Read appears 2 cycles after the write input was supplied.
         assert_eq!(trace[2].read_data, b16(0xABCD), "read of 0x100 should yield 0xABCD");
@@ -164,9 +296,9 @@ mod tests {
             (b16(0x20), b16(0xBEEF)),
         ]);
         let trace = run_inputs(uut, vec![
-            MemIn { address: b16(0x10), write_data: b16(0), write_en: false },
-            MemIn { address: b16(0x20), write_data: b16(0), write_en: false },
-            MemIn { address: b16(0x30), write_data: b16(0), write_en: false },
+            MemIn { address: b16(0x10), write_data: b16(0), write_en: false, ..Default::default() },
+            MemIn { address: b16(0x20), write_data: b16(0), write_en: false, ..Default::default() },
+            MemIn { address: b16(0x30), write_data: b16(0), write_en: false, ..Default::default() },
             MemIn::default(),
         ]);
         // Read appears 1 cycle after the address is presented.
@@ -180,10 +312,10 @@ mod tests {
         // Stage a 4-word sequence at base 0x80.
         let uut = Memory::with_words_at(0x80, &[0x1111, 0x2222, 0x3333, 0x4444]);
         let trace = run_inputs(uut, vec![
-            MemIn { address: b16(0x80), write_data: b16(0), write_en: false },
-            MemIn { address: b16(0x81), write_data: b16(0), write_en: false },
-            MemIn { address: b16(0x82), write_data: b16(0), write_en: false },
-            MemIn { address: b16(0x83), write_data: b16(0), write_en: false },
+            MemIn { address: b16(0x80), write_data: b16(0), write_en: false, ..Default::default() },
+            MemIn { address: b16(0x81), write_data: b16(0), write_en: false, ..Default::default() },
+            MemIn { address: b16(0x82), write_data: b16(0), write_en: false, ..Default::default() },
+            MemIn { address: b16(0x83), write_data: b16(0), write_en: false, ..Default::default() },
             MemIn::default(),
         ]);
         assert_eq!(trace[1].read_data, b16(0x1111));
@@ -196,11 +328,11 @@ mod tests {
     fn writes_are_independent_per_address() {
         let uut = Memory::default();
         let trace = run_inputs(uut, vec![
-            MemIn { address: b16(0x10), write_data: b16(0x10), write_en: true },
-            MemIn { address: b16(0x20), write_data: b16(0x20), write_en: true },
-            MemIn { address: b16(0x10), write_data: b16(0), write_en: false },
-            MemIn { address: b16(0x20), write_data: b16(0), write_en: false },
-            MemIn { address: b16(0x30), write_data: b16(0), write_en: false }, // unwritten
+            MemIn { address: b16(0x10), write_data: b16(0x10), write_en: true, ..Default::default() },
+            MemIn { address: b16(0x20), write_data: b16(0x20), write_en: true, ..Default::default() },
+            MemIn { address: b16(0x10), write_data: b16(0), write_en: false, ..Default::default() },
+            MemIn { address: b16(0x20), write_data: b16(0), write_en: false, ..Default::default() },
+            MemIn { address: b16(0x30), write_data: b16(0), write_en: false, ..Default::default() }, // unwritten
             MemIn::default(),
             MemIn::default(),
         ]);
@@ -215,8 +347,8 @@ mod tests {
         // last word (0xFFFF) and read it back.
         let uut = Memory::default();
         let trace = run_inputs(uut, vec![
-            MemIn { address: b16(0xFFFF), write_data: b16(0xDEAD), write_en: true },
-            MemIn { address: b16(0xFFFF), write_data: b16(0), write_en: false },
+            MemIn { address: b16(0xFFFF), write_data: b16(0xDEAD), write_en: true, ..Default::default() },
+            MemIn { address: b16(0xFFFF), write_data: b16(0), write_en: false, ..Default::default() },
             MemIn::default(),
             MemIn::default(),
         ]);
@@ -237,6 +369,7 @@ mod tests {
             address: b16(i as u16),
             write_data: b16(i as u16 * 0x10),
             write_en: false,  // read-only — write port stays idle
+            ..Default::default()
         }).collect();
         let stream = inputs.into_iter().with_reset(1).clock_pos_edge(100);
         let test_bench = uut.run(stream).collect::<SynchronousTestBench<_, _>>();

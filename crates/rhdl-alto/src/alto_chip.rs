@@ -184,6 +184,19 @@ pub struct AltoChip {
     /// See `tests/task_switch_pipeline.rs` for the regression anchor
     /// and spec digest §5 for the normative timing rule.
     task_yield_pending: rhdl_fpga::core::dff::DFF<bool>,
+    /// URom prefetch address presented in the previous cycle.  Used
+    /// to **hold the URom address during a memory-pipeline stall**:
+    /// when `q.mem.mem_stall` is asserted, the chip presents the
+    /// previously-presented URom address (instead of advancing to
+    /// `next_mpc`), so the URom returns the SAME instruction the
+    /// engine was stalled on, allowing it to re-execute the
+    /// instruction once the stall releases.  Without this hold, the
+    /// URom would prefetch the post-stall instruction, the engine
+    /// would skip the stalled instruction's effects entirely, and
+    /// the spec-mandated "re-execute on resume" semantics would not
+    /// hold.  See `Memory::mem_stall` doc + spec digest §3 stall
+    /// rules for the broader context.
+    urom_addr_held: rhdl_fpga::core::dff::DFF<Bits<10>>,
 }
 
 impl Default for AltoChip {
@@ -199,6 +212,7 @@ impl Default for AltoChip {
             current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
             task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
             task_yield_pending: rhdl_fpga::core::dff::DFF::new(false),
+            urom_addr_held: rhdl_fpga::core::dff::DFF::new(bits::<10>(0)),
         }
     }
 }
@@ -219,6 +233,7 @@ impl AltoChip {
             current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
             task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
             task_yield_pending: rhdl_fpga::core::dff::DFF::new(false),
+            urom_addr_held: rhdl_fpga::core::dff::DFF::new(bits::<10>(0)),
         }
     }
 
@@ -239,6 +254,7 @@ impl AltoChip {
             current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
             task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
             task_yield_pending: rhdl_fpga::core::dff::DFF::new(false),
+            urom_addr_held: rhdl_fpga::core::dff::DFF::new(bits::<10>(0)),
         }
     }
 
@@ -260,6 +276,7 @@ impl AltoChip {
             current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
             task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
             task_yield_pending: rhdl_fpga::core::dff::DFF::new(false),
+            urom_addr_held: rhdl_fpga::core::dff::DFF::new(bits::<10>(0)),
         }
     }
 
@@ -320,6 +337,7 @@ impl AltoChip {
             current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
             task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
             task_yield_pending: rhdl_fpga::core::dff::DFF::new(false),
+            urom_addr_held: rhdl_fpga::core::dff::DFF::new(bits::<10>(0)),
         }
     }
 
@@ -346,6 +364,7 @@ impl AltoChip {
             current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
             task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
             task_yield_pending: rhdl_fpga::core::dff::DFF::new(false),
+            urom_addr_held: rhdl_fpga::core::dff::DFF::new(bits::<10>(0)),
         }
     }
 
@@ -383,6 +402,7 @@ impl AltoChip {
             current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
             task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
             task_yield_pending: rhdl_fpga::core::dff::DFF::new(false),
+            urom_addr_held: rhdl_fpga::core::dff::DFF::new(bits::<10>(0)),
         }
     }
 
@@ -421,6 +441,7 @@ impl AltoChip {
             current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
             task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
             task_yield_pending: rhdl_fpga::core::dff::DFF::new(false),
+            urom_addr_held: rhdl_fpga::core::dff::DFF::new(bits::<10>(0)),
         }
     }
 }
@@ -469,8 +490,9 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     d.crom = ConstantIn { index: const_idx };
     let const_value: Bits<16> = q.crom.value;
 
-    // Memory bus.
+    // Memory bus + pipeline-stall signal.
     let mem_data_for_engine: Bits<16> = q.mem.read_data;
+    let mem_stall_for_engine: bool    = q.mem.mem_stall;
 
     // Per the Alto Hardware Manual §2.4: task switches happen ONLY
     // when microcode does F1=TASK.  When engine.task_yield asserts,
@@ -500,11 +522,19 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
         //    DiabloDisk's `current_word_data` exposes that.
         kstat: q.disk_ctrl.kstat_word,
         kdata: q.disk.current_word_data,
+        mem_stall: mem_stall_for_engine,
     };
     d.mem = MemIn {
         address: q.engine.mem_address,
         write_data: q.engine.mem_write_data,
         write_en: q.engine.mem_write_en,
+        // Memory-pipeline stall driver signals — combinationally
+        // decoded by the engine from the current uinst, no
+        // dependence on stall state.  See `Memory` rustdoc for the
+        // FSM semantics and stall rules.
+        mar_load_this_cycle: q.engine.mar_load_this_cycle,
+        md_read_this_cycle:  q.engine.md_read_this_cycle,
+        md_write_this_cycle: q.engine.md_write_this_cycle,
     };
 
     // Engine outputs next_mpc this cycle (combinational from this
@@ -643,11 +673,26 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     // pipeline.
     let task_will_switch: bool =
         task_yield_for_switch && winning_task != current_task;
-    let urom_addr: Bits<10> = if task_will_switch {
+    // URom prefetch address.  When stalled (mem_stall_for_engine),
+    // hold the previously-presented address so the URom keeps
+    // returning the SAME instruction — letting the engine re-execute
+    // it once the stall releases.  Per AltoHW §2.3: a stalled
+    // memory-accessing instruction "re-executes" after the wait, so
+    // its effects must apply once.  Without this hold, URom would
+    // advance to next_mpc, the engine would see the post-stall
+    // instruction, and the stalled instruction's effects would
+    // silently disappear.
+    let urom_addr_natural: Bits<10> = if task_will_switch {
         next_task_saved_mpc
     } else {
         next_mpc
     };
+    let urom_addr: Bits<10> = if mem_stall_for_engine {
+        q.urom_addr_held
+    } else {
+        urom_addr_natural
+    };
+    d.urom_addr_held = urom_addr;
     d.urom = UromIn { mpc: urom_addr.resize() };
 
     // Outputs
@@ -1207,6 +1252,7 @@ mod tests {
             current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
             task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
             task_yield_pending: rhdl_fpga::core::dff::DFF::new(false),
+            urom_addr_held: rhdl_fpga::core::dff::DFF::new(bits::<10>(0)),
         };
 
         // Wakeup pattern: Task 4 (Disk Sector) always woken so its
@@ -1916,16 +1962,19 @@ mod tests {
         assert!((6..=10).contains(&sector_events),
             "expected 6..10 sector_mark events (every ~285 cycles in \
              2000 cycles); got {sector_events}");
-        // KSEC handler under delayed F2 runs ~4-5 microinstructions per
-        // sector mark before yielding back to Emulator.  ~7 marks × ~4
-        // = ~28; allow 22..40 to absorb mark-aligned edge effects.
-        assert!((22..=40).contains(&disk_sector_firings),
-            "Disk Sector should fire 22..40 times (delayed-pipeline \
-             baseline = 29); got {disk_sector_firings}");
-        // Emulator owns most cycles between marks.  2000 - 29 = ~1971.
-        assert!((1950..=1990).contains(&emulator_firings),
-            "Emulator should run 1950..1990 cycles in a 2000-cycle trace \
-             with 7 sector marks (delayed-pipeline baseline = 1971); \
+        // KSEC handler under delayed F2 + memory-pipeline stalls runs
+        // ~5-7 cycles per sector mark before yielding (each MAR<-+MD
+        // pair adds 2-3 stall cycles).  ~7 marks × ~6 = ~41; allow
+        // 22..50 to absorb mark-aligned edge effects.  Pre-stall
+        // baseline was 29; with stalls the upper-end shifted to ~41.
+        assert!((22..=50).contains(&disk_sector_firings),
+            "Disk Sector should fire 22..50 times (post-stall baseline \
+             = 41); got {disk_sector_firings}");
+        // Emulator owns most cycles between marks.
+        // 2000 - 41 = ~1959.
+        assert!((1940..=1990).contains(&emulator_firings),
+            "Emulator should run 1940..1990 cycles in a 2000-cycle trace \
+             with 7 sector marks (post-stall baseline = 1959); \
              got {emulator_firings}");
     }
 
