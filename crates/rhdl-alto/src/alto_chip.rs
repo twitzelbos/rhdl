@@ -360,6 +360,43 @@ impl AltoChip {
             task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
         }
     }
+
+    /// As [`AltoChip::with_microcode_constants_boot_and_test_disk_period`]
+    /// but ALSO starts the disk's `sector_tick` at `period_cycles - 1`,
+    /// so the very FIRST cycle's wrap-check fires sector_mark
+    /// immediately.  Matches ContrAlto's `_sectorEvent = new Event(0,
+    /// ...)` simulation choice — useful for lockstep harnesses that
+    /// want task arbitration to align on cycle 1.
+    pub fn with_microcode_constants_boot_and_test_disk_period_at_boundary(
+        microcode_words: &[u32; crate::microcode_rom::MICROCODE_WORDS],
+        constants: &[u16; crate::constant_rom::NUM_CONSTANTS],
+        boot_sector_data: &[u16; 256],
+        boot_sector_label: &[u16; 8],
+        disk_period_cycles: u32,
+    ) -> Self {
+        let mut mem_init: Vec<(Bits<16>, Bits<16>)> = Vec::with_capacity(266);
+        mem_init.push((bits::<16>(0), bits::<16>(0)));
+        mem_init.push((bits::<16>(2), bits::<16>(0)));
+        for (i, &w) in boot_sector_data.iter().enumerate() {
+            mem_init.push((bits::<16>((i as u128) + 1), bits::<16>(w as u128)));
+        }
+        for (i, &w) in boot_sector_label.iter().enumerate() {
+            mem_init.push((bits::<16>(0o402 + i as u128), bits::<16>(w as u128)));
+        }
+        Self {
+            urom: MicrocodeRom::with_words(microcode_words),
+            crom: ConstantRom::with_constants(constants),
+            mem: Memory::new(mem_init),
+            tasks: AltoTaskSystem::default(),
+            disk_ctrl: DiskController::default(),
+            disk: DiabloDisk::with_test_period_and_sector_at_boundary(
+                disk_period_cycles, boot_sector_data,
+            ),
+            engine: Microengine::default(),
+            current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
+            task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
+        }
+    }
 }
 
 impl SynchronousIO for AltoChip {

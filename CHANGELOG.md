@@ -31,6 +31,56 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-02 — Tier C #2 Alto: configurable sector_mark-at-cycle-1 + empirical disproof of "wait loop causes R-divergence" hypothesis
+
+**Paths:**
+
+- `crates/rhdl-alto/src/diablo_disk.rs` — added `with_test_period_and_sector_at_boundary(period, words)` constructor that combines a SHORT test period (e.g. 256) with `sector_tick = period - 1` (= immediate fire on cycle 1).  Matches ContrAlto's `_sectorEvent = new Event(0, ...)` simulation policy.
+- `crates/rhdl-alto/src/alto_chip.rs` — added `with_microcode_constants_boot_and_test_disk_period_at_boundary(...)` chip-level constructor wrapping the new disk constructor.
+- `crates/rhdl-alto/tests/contralto_lockstep.rs` — switched the harness to the new "_at_boundary" constructor so OUR chip's sector_mark fires on cycle 1, exactly matching ContrAlto.
+
+**Why this, why now:** Per the user's challenge "are you 100% certain CTR is responsible for the R changes" — empirical verification of the prior CHANGELOG's hypothesis that "Emulator wait loop modifies R[] before KSEC fires" was the cause of the R-state divergence at the first matched (task, mpc) pair.
+
+**Verdict: hypothesis was wrong (or incomplete).**
+
+Empirical comparison:
+
+| Config | Matched (task, mpc) pairs | First R-divergence |
+|---|---|---|
+| BEFORE (sector_mark waits 256 cycles) | 19 | R[0]=1, R[4]=0x8000, R[5]=0xff, R[6]=8 at OURS[259]/CTR[3] |
+| AFTER (sector_mark fires on cycle 1) | 4 | R[0]=1, R[4]=0x8000, R[5]=0xff, R[6]=8 at OURS[260]/CTR[19] |
+
+R-divergence VALUES are identical, only the index shifted.  This is conclusive evidence the sector_mark-timing disparity is NOT the (sole) cause of the R-state difference.  The matched-count actually went DOWN (19 → 4) with sector_mark on cycle 1 — the new constructor introduced a different divergence shape.
+
+**Possible alternative causes (now to be investigated):**
+
+1. **Task-switch policy.** Per AltoHW §2.4, task switches happen ONLY on F1=TaskYield.  Our Emulator NOVEM (MPC=0) has `f1=Nop`, so even with a sector_mark wakeup pending on cycle 1, our Emulator runs the boot dance (MPC 0 → 0x152 → 0x153 → 0x154) until reaching MPC=0x153 (which has F1=TaskYield).  ContrAlto's TSV trace shows the task switch at cycle 4 (after Emulator ran 4 instructions).  But OURS reaches CTR[19] at OURS[260] — meaning OURS took 260 cycles to reach a state CTR reached at cycle 19, despite both having sector_mark on cycle 1.  Either OUR task-arbitration or KSEC's microcode is doing something extra.
+
+2. **OURS' R[6]=8 fits "ran ~8 passes of the boot dance before/between KSEC firings"** (each pass increments R[6] via the L-load chain at MPC=0x151).  But CTR's KSEC at the same de-dup index has R[6]=0, suggesting CTR ran KSEC BEFORE Emulator's boot dance cycled enough to set R[6]=8.
+
+3. **R[5]=0xff is suspicious** — much larger than ~8 passes would naturally produce.  Suggests a constant ROM read or a microcode path I haven't traced.
+
+**The intellectually honest answer**: the F2-NEXT-modifier-timing fix changed the boot loop's exit timing, which in turn changed how many passes OUR boot dance runs, which in turn changes R-state at the time KSEC fires.  Even with sector_mark firing on cycle 1, our chip's task-arbitration semantics (no switch until TaskYield) plus the boot dance's iteration count plus KSEC's R-register interactions all combine to produce a different R-state trajectory than ContrAlto's.  Pinpointing the dominant cause requires per-cycle R-state tracing alongside the MPC trace — not just the (task, mpc) matched-pair lockstep.
+
+**Surprises and gotchas:**
+
+- "Are you 100% certain" was the right question.  My prior CHANGELOG asserted a clean cause-and-effect when I was reasoning from the Emulator wait-loop microcode trace alone, without empirically isolating the variable.  The right test is what the user asked for: change the variable, observe whether the symptom disappears.  It didn't.
+- The matched-count going DOWN (19 → 4) is itself informative — it means the prior matched-count-of-19 was an artifact of the `SKIP_WINDOW` resync mechanism finding alignment opportunities at fortuitous (task, mpc) coincidences during KSEC's long execution.  With the chip running KSEC EARLIER, those coincidences shift and the resync window can't bridge them.
+- The lockstep harness in its current form is **necessary but not sufficient** for cycle-by-cycle alignment.  We need either (a) a different alignment metric (R-state checkpoints, memory snapshots), or (b) per-cycle traces dumped side-by-side for manual diff.  The (task, mpc) matched-pair count is a coarse proxy that hides as much as it reveals.
+
+**Validation:**
+
+- 234 alto tests pass (no regressions from the new constructors).
+- Lockstep harness runs to completion with the new constructor; finding documented above.
+
+**Follow-ups:**
+
+- **Per-cycle R-state and BUS trace dumper** — extend `dump_lockstep_traces.rs` to dump R-state at every cycle for both sides, side-by-side, so the FIRST cycle where R[i] diverges can be pinpointed exactly (instead of relying on the matched-pair sampling).
+- **Investigate task-arbitration semantics divergence** — does ContrAlto switch tasks on cycle 1 even without an F1=TaskYield in NOVEM, or does it ALSO wait until cycle 4?  If it switches at cycle 1, we have a real semantics gap.  If it waits until cycle 4, both sims are doing the same thing and the R-divergence comes from inside KSEC.
+- **The original assertion has been retracted in this CHANGELOG entry.**  Future readers: don't trust the prior "Emulator wait loop modifies R[] before KSEC fires" claim — it was an incomplete diagnosis.
+
+---
+
 ## 2026-05-02 — Tier C #2 Alto: F2-NEXT-modifier follow-ups — multi-cycle ALUCY chip-test + BS≥4 deferred
 
 **Paths:**

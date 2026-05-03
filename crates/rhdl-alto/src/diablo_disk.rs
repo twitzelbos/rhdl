@@ -290,6 +290,38 @@ impl DiabloDisk {
         }
     }
 
+    /// As [`DiabloDisk::with_test_period_and_sector`] but ALSO starts
+    /// `sector_tick = period_cycles - 1` so the very first cycle's
+    /// wrap-check fires sector_mark immediately.  Matches ContrAlto's
+    /// `_sectorEvent = new Event(0, ...)` simulation choice — useful
+    /// for lockstep harnesses that want to align task arbitration to
+    /// the first cycle.  Steady-state period is unchanged.
+    pub fn with_test_period_and_sector_at_boundary(
+        period_cycles: u32,
+        words: &[u16; 256],
+    ) -> Self {
+        debug_assert!(period_cycles >= 1, "sector period must be ≥ 1 cycle");
+        debug_assert!(
+            period_cycles <= (1u32 << SECTOR_TICK_W),
+            "sector period exceeds counter width",
+        );
+        let wrap_value = (period_cycles - 1) as u128;
+        let mut buf = [bits::<16>(0); 256];
+        for (i, &w) in words.iter().enumerate() {
+            buf[i] = bits::<16>(w as u128);
+        }
+        Self {
+            sector_tick: dff::DFF::new(bits::<SECTOR_TICK_W>(wrap_value)),
+            sector_period_minus_1: Constant::new(
+                bits::<SECTOR_TICK_W>(wrap_value),
+            ),
+            sector_wake: dff::DFF::new(false),
+            transfer_remaining: dff::DFF::new(bits::<10>(0)),
+            current_word_position: dff::DFF::new(bits::<8>(0)),
+            sector_buffer: dff::DFF::new(buf),
+        }
+    }
+
     /// As [`DiabloDisk::with_test_period`] but additionally pre-loads
     /// the sector buffer with `words`.  Tests use this when they need
     /// both a fast sector cadence AND boot-sector content.

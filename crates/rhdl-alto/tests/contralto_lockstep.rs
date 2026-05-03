@@ -87,15 +87,19 @@ fn run_rhdl_chip(disk: &str, rom_dir: &str, cycles: usize) -> Vec<CycleState> {
     let disk_image = disk_image_loader::load_disk_image_from_file(
         std::path::Path::new(disk)).unwrap();
     let boot_sector = disk_image.sector(0, 0, 0);
-    // For lockstep against ContrAlto we use a SHORT 256-cycle disk
-    // sector period so the chip's first sector_mark fires within a
-    // few hundred cycles.  The spec-correct period (~19,608 cycles)
-    // is the real-hardware cadence (`SECTOR_PERIOD_CYCLES`); using it
-    // here would push the first divergence-or-match point past 20,000
-    // cycles per run and make iteration slow.  ContrAlto schedules
-    // the first SectorCallback at time 0 anyway (a different
-    // simulation shortcut); both choices are simulation policy.
-    let uut = AltoChip::with_microcode_constants_boot_and_test_disk_period(
+    // For lockstep against ContrAlto we want our chip's sector_mark
+    // to fire on cycle 1 — exactly matching ContrAlto's
+    // `_sectorEvent = new Event(0, ...)` simulation policy.  This
+    // eliminates the structural sector_mark-timing divergence that
+    // dominated earlier lockstep runs (where our chip ran ~255 cycles
+    // of Emulator wait loop modifying R-registers before KSEC fired).
+    //
+    // The "_at_boundary" constructor sets `sector_tick = period - 1`
+    // so the very first cycle wraps and sector_mark is asserted.
+    // We still use a short test period (256) for steady-state cadence
+    // because the spec-correct ~19,608 would only allow ~1 sector
+    // boundary per 2000-cycle test run.
+    let uut = AltoChip::with_microcode_constants_boot_and_test_disk_period_at_boundary(
         &microcode, &constants, &boot_sector.data, &boot_sector.label, 256,
     );
     let inputs: Vec<ChipIn> = (0..cycles).map(|_| ChipIn {
