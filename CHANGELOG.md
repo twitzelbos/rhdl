@@ -31,6 +31,35 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4o: per-cycle diagnostic alignment + boot-trace progress diagnosis
+
+**Paths:**
+
+- `crates/rhdl-alto/src/alto_chip.rs` — fixed `boot_trace_per_cycle_chain` pairing.  After Phase 3.5 Step 4i (1-cycle/microinstruction pipeline), `o.mpc` IS the address of the instruction the engine is executing this cycle (`current_mpc = q.task_mpc[T] = last cycle's engine.next_mpc = address fed to URom for this cycle's response`).  So `mpc[k]` and `instruction[k]` are coherently paired in the same cycle.  The previous `mpc[k-1]` pairing was correct for the OLD 2-cycle pipeline only.
+
+**Why this, why now:** Continuing audit cleanup.  The misaligned diagnostic was actively misleading: with the old pairing, the trace showed instructions at addresses one off from where they actually lived in URom, making cross-checking against ContrAlto's disassembly impossible.
+
+**Boot-trace diagnosis (informational, no code fix):**
+
+Per the corrected diagnostic, the boot trace is correctly executing:
+- Q-loop boot dance (microcode 0x000 → 0x152 → 0x153 → 0x154 → 0x130 → 0x14e → 0x150 → 0x151).
+- BLT (Block Transfer) entry chain (0x17e → 0x17f → 0x1fa → 0x1fb).
+- BLT MOVELOOP body (0x1fb test → 0x1fd / 0x1fc → ... → 0x1ee → 0x209 → 0x070 → 0x1e6 → 0x1ed → back to 0x1ff).
+
+Cross-referenced against ContrAlto's `altoIIcode3.mu` disassembly: every visited address matches ContrAlto's expected microcode at that location.  The boot trace's "stuck at 76 distinct microaddresses" is NOT a stuck loop in invalid code — it's the genuine BLT bootstrap loop iterating, with each iteration covering ~10 distinct microaddresses.
+
+The actual bottleneck: the BLT counter `R[8]` (XH) starts at 0 (post-reset default).  At MOVELOOP entry, `R[8]-1 = 0xFFFF` (wrap), so the loop would need ~65K iterations to exit.  This is a downstream Nova-emulation correctness gap (the Nova bootstrap at memory[1..400B] should set R[8] before invoking BLT) — NOT a microengine bug.  The BLT microcode itself executes correctly per ContrAlto.
+
+**Validation:**
+
+- 219 alto tests pass.  No regressions.
+
+**Follow-ups:**
+
+- Diagnose why R[8] (and other R-registers used as Nova accumulators) aren't being initialized by the boot bootstrap.  Likely: the Nova-instruction-fetch + opcode-handler chain doesn't yet reach the LDA/STA Nova instructions that load registers, OR Nova-AC memory mapping (R[3..0] aliases) needs verification.  This is real Nova-emulation work, not audit cleanup.
+
+---
+
 ## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4n: D16 full DNS (Nova SHIFT instruction emulation)
 
 **Paths:**

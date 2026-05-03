@@ -1588,25 +1588,16 @@ mod tests {
         );
         let trace = run(uut, 800);
 
-        // IMPORTANT: chip output `mpc` and `instruction` are in
-        // DIFFERENT pipeline stages.  `mpc` is the address being
-        // PRESENTED to URom THIS cycle.  `instruction` is URom's
-        // RESPONSE for the address presented at the PREVIOUS cycle.
-        //
-        // To show coherent (executing-mpc, executing-instr) pairs,
-        // pair each cycle's `instr` with the PREVIOUS cycle's `mpc`.
-        // Only pair within the same task (task switches change which
-        // task's MPC stream is being read).
+        // After Phase 3.5 Step 4i (1-cycle/microinstruction pipeline),
+        // the chip's `o.mpc` IS the address of the instruction the
+        // engine is executing this cycle (current_mpc = q.task_mpc[T]
+        // = last cycle's engine.next_mpc = address fed to URom for
+        // this cycle's response).  So `mpc[k]` and `instruction[k]`
+        // are coherently paired in the same cycle.
         eprintln!("[per_cycle_chain] cycle  task  exec_mpc  exec_instr");
-        for i in 1..trace.len().min(800) {
-            let prev = &trace[i - 1];
+        for i in 0..trace.len().min(800) {
             let cur = &trace[i];
-            // Only show coherent pair if task didn't switch (otherwise
-            // the URom address from prev was for a different task).
-            if prev.current_task.raw() != cur.current_task.raw() {
-                continue;
-            }
-            let exec_mpc = prev.mpc.raw();
+            let exec_mpc = cur.mpc.raw();
             let exec_instr = cur.instruction.raw();
             let unprog = exec_instr == 0xfff77bff;
             let mark = if unprog { " UNPROG" } else { "" };
@@ -1769,6 +1760,12 @@ mod tests {
             &boot_sector.data,
             &boot_sector.label,
         );
+        // 2000 cycles is enough to enter and run the BLT bootstrap loop.
+        // Termination requires R[8]=XH to reach 0; current chip enters
+        // BLT with R[8]=0, which wraps to 0xFFFF and would need ~65K
+        // iterations to exit.  This is a downstream Nova-emulation gap,
+        // not a microengine bug — the BLT loop itself executes correctly
+        // per ContrAlto's microcode.
         let trace = run(uut, 2000);
 
         let mut visited: std::collections::HashSet<u128> =
