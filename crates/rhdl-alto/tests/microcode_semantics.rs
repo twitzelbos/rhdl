@@ -357,18 +357,76 @@ fn bs_taskspec_returns_zero_in_emulator() {
 }
 
 #[test]
-fn bs_instruction_register_reads_ir() {
-    // Per spec §6.6: IR← latches BUS (typically driven from MD via
-    // BS=MemoryData).  Use IR=0x0DAD instead of 0xDEAD so the IR← NEXT
-    // merge (D17) is 0 (bits 15,10,9,8 all clear: 0x0DAD & 0x8700 = 0).
+fn bs_instruction_register_reads_ir_disp_field_not_full() {
+    // CORRECTED: per spec §3.2 + ContrAlto's Task.cs ReadDisp handler,
+    // BS=7 (`←DISP`) returns ONLY IR's low 8 bits (the displacement
+    // field), NOT the full 16-bit IR.  Earlier this test asserted the
+    // full-IR value and passed because the implementation had the same
+    // bug — both wrong, test "validated" the wrong behavior.  Lockstep
+    // against ContrAlto exposed the discrepancy via spec §3.2 BS=7
+    // table entry (`Low-order 8 bits of IR, sign extended`).
+    //
+    // Pick IR with a NON-ZERO high byte so the bug would manifest:
+    // IR=0x0100, X-field=1 (page-0 addressing), DISP=0x00 → BUS=0x00.
+    // With X=0 (page-0): no sign extension → BUS = IR & 0xFF = 0.
     let out = observe_after(vec![
         InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
             F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
-            .with_md(0x0DAD).with_task(0),
+            .with_md(0x0100).with_task(0),
         InCfg::new(ui(0, AluFunction::Bus, BusSource::InstructionRegister,
             F1Function::Nop, F2Function::Nop, true, false, 0), 0).with_task(0),
     ]);
-    assert_eq!(out.t.raw() as u16, 0x0DAD);
+    assert_eq!(out.t.raw() as u16, 0x0000,
+        "BS=7 returns IR & 0xFF (DISP field) per spec §3.2; \
+         IR=0x0100 → DISP=0x00, X-field=0 (no sign-ext) → BUS=0x0000");
+}
+
+#[test]
+fn bs_disp_returns_low_byte_unextended_for_page_zero() {
+    // X-field = IR bits 9-8 (Alto MSB=0 IR[6-7]) = 0 → page-0 addressing
+    // → no sign extension regardless of DISP sign.  IR=0x0080 has DISP
+    // bit 7 set, X=0 → BUS = 0x0080 (no sign extension).
+    let out = observe_after(vec![
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
+            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
+            .with_md(0x0080).with_task(0),
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::InstructionRegister,
+            F1Function::Nop, F2Function::Nop, true, false, 0), 0).with_task(0),
+    ]);
+    assert_eq!(out.t.raw() as u16, 0x0080,
+        "BS=7 with X=0 (page-0 addressing) returns DISP zero-extended \
+         even when sign bit is set");
+}
+
+#[test]
+fn bs_disp_sign_extends_when_x_field_nonzero_and_sign_bit_set() {
+    // X-field != 0 (PC-relative or base-register) AND sign bit (DISP[7])
+    // set → sign-extend.  IR = 0x0180 (X=1, DISP=0x80 with sign bit set)
+    // → BUS = 0xFF80.
+    let out = observe_after(vec![
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
+            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
+            .with_md(0x0180).with_task(0),
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::InstructionRegister,
+            F1Function::Nop, F2Function::Nop, true, false, 0), 0).with_task(0),
+    ]);
+    assert_eq!(out.t.raw() as u16, 0xFF80,
+        "BS=7 with X!=0 and DISP sign bit set sign-extends to 0xFF80");
+}
+
+#[test]
+fn bs_disp_no_sign_ext_when_x_nonzero_but_sign_bit_clear() {
+    // X != 0 but sign bit (DISP[7]) clear → no sign extension.
+    // IR = 0x0140 (X=1, DISP=0x40, sign bit clear) → BUS = 0x0040.
+    let out = observe_after(vec![
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
+            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
+            .with_md(0x0140).with_task(0),
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::InstructionRegister,
+            F1Function::Nop, F2Function::Nop, true, false, 0), 0).with_task(0),
+    ]);
+    assert_eq!(out.t.raw() as u16, 0x0040,
+        "BS=7 with X!=0 but sign bit clear returns DISP zero-extended");
 }
 
 // =====================================================================

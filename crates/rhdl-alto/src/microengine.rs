@@ -295,7 +295,15 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     //   ACSOURCE/ACDEST need — same-cycle effective_rsel → same-cycle
     //   regfile read, matching real Alto's 1-cycle pipeline.
     // BS = MemoryData         → drive bus from memory[MAR] (1-cycle BRAM-delivered).
-    // BS = InstructionRegister → drive bus from IR (Nova-emulator dispatch).
+    // BS = InstructionRegister (= spec name `←DISP`, the displacement
+    // field of IR, NOT the full IR).  Per spec §3.2 + ContrAlto's
+    // Task.cs ReadDisp handler:
+    //   BUS = IR & 0xFF (low 8 bits = DISP field).
+    //   IF X-field (IR bits 6-7 in Alto MSB=0 = our bits 9-8) != 0
+    //      AND sign bit (IR bit 8 in Alto = our bit 7) is set:
+    //      sign-extend by setting BUS bits 8-15.
+    // Used by Nova memory-reference instructions to compute effective
+    // address from the 8-bit displacement field.
     // Other BS sources drive zero in Phase 3.5.
     let r_read: Bits<16> = q.regs[effective_rsel];
     // Per *Alto Hardware Manual* §2.1 Bus Sources + spec §3.2 + §8.5,
@@ -320,7 +328,16 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         BusSource::TaskSpec4 => if is_disk_task { i.kdata } else { bits::<16>(0) },
         BusSource::MemoryData         => i.mem_read_data,
         BusSource::Mouse              => bits::<16>(0),
-        BusSource::InstructionRegister => q.ir,
+        BusSource::InstructionRegister => {
+            let disp: Bits<16> = q.ir & bits::<16>(0x00FF);
+            let x_nonzero: bool = (q.ir & bits::<16>(0x0300)) != bits::<16>(0);
+            let sign_bit_set: bool = (q.ir & bits::<16>(0x0080)) != bits::<16>(0);
+            if x_nonzero && sign_bit_set {
+                disp | bits::<16>(0xFF00)
+            } else {
+                disp
+            }
+        }
     };
     // F1 = Constant OR F2 = Constant overrides BUS with the constant-ROM
     // lookup the owner provided for this cycle's instruction.  Index =
