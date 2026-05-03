@@ -37,6 +37,10 @@ struct Snap {
     l: u16,
     ir: u16,
     r: [u16; 32],
+    /// True if this cycle was an OURS-side memory-pipeline stall (the
+    /// engine froze and didn't advance MPC).  Always false for CTR
+    /// (ContrAlto's TSV doesn't expose stall state).
+    mem_stall: bool,
 }
 
 fn parse_tsv(stdout: &str) -> Vec<Snap> {
@@ -62,7 +66,7 @@ fn parse_tsv(stdout: &str) -> Vec<Snap> {
             for i in 0..32 {
                 r[i] = parse_hex(p[7 + i])?;
             }
-            Some(Snap { cycle, task, mpc, t, l, ir, r })
+            Some(Snap { cycle, task, mpc, t, l, ir, r, mem_stall: false })
         })
         .collect()
 }
@@ -116,6 +120,7 @@ fn main() {
             l: t.l.raw() as u16,
             ir: t.ir.raw() as u16,
             r,
+            mem_stall: t.mem_stall,
         }
     }).collect();
 
@@ -245,9 +250,10 @@ fn main() {
             (true, false) => format!("    [{ours_yield}]"),
             (false, false) => format!("    [{ctr_yield}; {ours_yield}]"),
         };
+        let stall_marker = if o.mem_stall { " [STALL]" } else { "" };
         println!(
-            "{k:>5}  t{}/0x{:03x}  t{}/0x{:03x}{}{}",
-            c.task, c.mpc, o.task, o.mpc, mark, yields,
+            "{k:>5}  t{}/0x{:03x}  t{}/0x{:03x}{}{}{}",
+            c.task, c.mpc, o.task, o.mpc, mark, stall_marker, yields,
         );
         last_ctr_task = c.task as i32;
         last_ours_task = o.task as i32;

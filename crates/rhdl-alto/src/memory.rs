@@ -100,12 +100,14 @@ pub struct MemOut {
 ///   `1 ≤ counter ≤ 3`.
 /// - `MD<-` (write) requires `counter ≥ 2` (≥ 1 intervening cycle
 ///   per AltoHW §2.3 (a)).  Stalls when `counter == 1`.
-/// - New `MAR<-` requires `counter == 0` (idle, no in-flight cycle)
-///   OR `counter ≥ 5`.  Stalls when `1 ≤ counter ≤ 4`.  This
-///   conservative threshold matches the observed ContrAlto cycle-count
-///   for a back-to-back MAR<- separated by an MD<- (the in-flight
-///   write completes K+3, but the bus + memory hardware needs through
-///   K+4 to be free for a new MAR<-).
+/// - New `MAR<-` requires `counter == 0` (idle) OR `counter ≥ 4`.
+///   Stalls when `1 ≤ counter ≤ 3`.  Per AltoHW §2.3 + Alto II
+///   timing: a memory cycle completes at K+4 (read) or K+3 (write);
+///   the bus is free for a new MAR<- on the cycle of completion.
+///   Cross-validated against ContrAlto: KSEC's first instruction
+///   (MPC=0x004 = MAR<-) executes at exactly K+4 of Emulator's NOVEM
+///   MAR<- (counter=4), and ContrAlto does NOT stall there — confirming
+///   the K+4 threshold (not K+5).
 ///
 /// When stalled, the FSM **does not freeze** — the memory pipeline
 /// keeps ticking (the in-flight cycle continues to completion in real
@@ -217,8 +219,16 @@ pub fn memory_kernel(cr: ClockReset, i: MemIn, q: Q) -> (MemOut, D) {
     let stall_write: bool = false;
     let _ = i.md_write_this_cycle;  // accepted for the FSM driver-signal
                                     // contract but unused here
+    // Per AltoHW §2.3 + Alto II "Read result available in cycle four":
+    // the memory cycle COMPLETES at K+4 for a read (K+3 for a write).
+    // The bus is free for a new MAR<- on the SAME cycle the previous
+    // cycle completes — so new MAR<- requires counter ≥ 4.  This
+    // matches observed ContrAlto behavior on KSEC's first instruction
+    // (MPC=0x004 issues MAR<- exactly 4 cycles after Emulator's
+    // NOVEM MAR<-; CTR doesn't stall there).  Earlier I used counter
+    // ≥ 5, which spuriously stalled KSEC's first instruction.
     let stall_new_mar: bool =
-        i.mar_load_this_cycle && counter_ge_1 && counter < bits::<3>(5);
+        i.mar_load_this_cycle && counter_ge_1 && counter < bits::<3>(4);
     let stall: bool = stall_read || stall_write || stall_new_mar;
     o.mem_stall = stall;
 

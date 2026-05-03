@@ -119,6 +119,15 @@ pub struct ChipOut {
     /// effective" rule).  Required for the
     /// `tests/task_switch_pipeline.rs` regression test.
     pub task_yield: bool,
+    /// True when the Memory subsystem's pipeline-stall FSM is
+    /// asserting `mem_stall` this cycle — meaning the microengine
+    /// is FROZEN (DFFs hold, MPC doesn't advance, side-effect outputs
+    /// suppressed).  Echoed from `q.mem.mem_stall` for cycle-level
+    /// diagnostic / lockstep observation.  Per AltoHW §2.3, a stall
+    /// occurs when `←MD` or `MAR<-` is issued before the previous
+    /// memory cycle has cleared the bus.  See `Memory` struct rustdoc
+    /// for the exact thresholds.
+    pub mem_stall: bool,
 }
 
 /// The Alto chip — composition of microengine + microcode RAM +
@@ -718,6 +727,7 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     o.block_task              = q.engine.block_task;
     o.regs                    = q.engine.regs;
     o.task_yield              = q.engine.task_yield;
+    o.mem_stall               = mem_stall_for_engine;
 
     (o, d)
 }
