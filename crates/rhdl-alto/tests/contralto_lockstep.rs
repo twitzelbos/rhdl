@@ -177,39 +177,70 @@ fn lockstep_first_divergence() {
     // first ctr[0] entry (post-skip).
     let our_skip = 1;
 
-    let n = ctr.len().min(ours.len().saturating_sub(our_skip));
-    eprintln!("[lockstep] comparing {n} microinstructions (ContrAlto stall-collapsed; our_skip={our_skip})");
+    // Two independent indices.  When (task, mpc) match, both advance.
+    // When they diverge, we scan forward in BOTH traces for the next
+    // re-sync point: a (task, mpc) pair that appears in BOTH traces
+    // within the search window.  This lets us skip past simulation-
+    // policy differences (sector_mark timing, memory stalls, task-
+    // arbitration phase) and find the NEXT real divergence.
+    //
+    // Re-sync pattern: when we detect a divergence at (i_ctr, i_ours),
+    // scan forward in `ours` for the first cycle (i_ours_next) where
+    // (task, mpc) matches ctr[i_ctr] (or any of the next K ctr entries).
+    // Report what was skipped.
 
-    for i in 0..n {
-        let c = ctr[i];
-        let o = &ours[i + our_skip];
-        if c.task != o.task || c.mpc != o.mpc {
-            eprintln!("\n[lockstep] DIVERGENCE at microinstruction {i}:");
-            eprintln!("  ContrAlto: task={} mpc=0x{:03x} T=0x{:04x} L=0x{:04x} IR=0x{:04x}",
-                c.task, c.mpc, c.t, c.l, c.ir);
-            eprintln!("  ours:      task={} mpc=0x{:03x} T=0x{:04x} L=0x{:04x} IR=0x{:04x}",
-                o.task, o.mpc, o.t, o.l, o.ir);
-            let ctx_start = i.saturating_sub(8);
-            eprintln!("[lockstep] preceding {} microinstructions:", i - ctx_start);
-            for k in ctx_start..i {
-                eprintln!("  ui={k:3}: CTR  t={} mpc=0x{:03x} T=0x{:04x} L=0x{:04x} | OURS t={} mpc=0x{:03x} T=0x{:04x} L=0x{:04x}",
-                    ctr[k].task, ctr[k].mpc, ctr[k].t, ctr[k].l,
-                    ours[k + our_skip].task, ours[k + our_skip].mpc, ours[k + our_skip].t, ours[k + our_skip].l);
+    const SKIP_WINDOW: usize = 100;
+    let mut i_ctr = 0usize;
+    let mut i_ours = our_skip;
+    let mut matched = 0usize;
+    let mut divergences = 0usize;
+    let max_divergences = 5;
+
+    while i_ctr < ctr.len() && i_ours < ours.len() {
+        let c = ctr[i_ctr];
+        let o = &ours[i_ours];
+        if c.task == o.task && c.mpc == o.mpc {
+            matched += 1;
+            i_ctr += 1;
+            i_ours += 1;
+            continue;
+        }
+        // Divergence — try to re-sync.
+        divergences += 1;
+        eprintln!("\n[lockstep] DIVERGENCE #{divergences} (matched {matched} so far):");
+        eprintln!("  CTR[{i_ctr}]:  task={} mpc=0x{:03x} T=0x{:04x} L=0x{:04x} IR=0x{:04x}",
+            c.task, c.mpc, c.t, c.l, c.ir);
+        eprintln!("  OURS[{i_ours}]: task={} mpc=0x{:03x} T=0x{:04x} L=0x{:04x} IR=0x{:04x}",
+            o.task, o.mpc, o.t, o.l, o.ir);
+
+        // Try to re-sync.  Search forward in `ours` for the first
+        // cycle that matches ctr[i_ctr]'s (task, mpc).  If not found,
+        // try the next ctr entry, etc.
+        let mut resync_found = false;
+        let max_ctr_advance = SKIP_WINDOW.min(ctr.len() - i_ctr);
+        'outer: for ctr_advance in 0..max_ctr_advance {
+            let target = ctr[i_ctr + ctr_advance];
+            let max_ours_advance = SKIP_WINDOW.min(ours.len() - i_ours);
+            for ours_advance in 0..max_ours_advance {
+                let o2 = &ours[i_ours + ours_advance];
+                if o2.task == target.task && o2.mpc == target.mpc {
+                    eprintln!("[lockstep] resync: CTR advanced {ctr_advance}, OURS advanced {ours_advance} → matched at task={} mpc=0x{:03x}",
+                        target.task, target.mpc);
+                    i_ctr += ctr_advance;
+                    i_ours += ours_advance;
+                    resync_found = true;
+                    break 'outer;
+                }
             }
-            return;
+        }
+        if !resync_found {
+            eprintln!("[lockstep] no resync found in {SKIP_WINDOW}-cycle window — stopping comparison");
+            break;
+        }
+        if divergences >= max_divergences {
+            eprintln!("[lockstep] {max_divergences} divergences reported — stopping");
+            break;
         }
     }
-    eprintln!("\n[lockstep] {n} microinstructions match exactly on (task, mpc)!");
-    // Then check T/L/IR for tighter divergence.
-    for i in 0..n {
-        let c = ctr[i];
-        let o = &ours[i + our_skip];
-        if c.t != o.t || c.l != o.l || c.ir != o.ir {
-            eprintln!("[lockstep] register state DIVERGENCE at microinstruction {i}:");
-            eprintln!("  ContrAlto: T=0x{:04x} L=0x{:04x} IR=0x{:04x}", c.t, c.l, c.ir);
-            eprintln!("  ours:      T=0x{:04x} L=0x{:04x} IR=0x{:04x}", o.t, o.l, o.ir);
-            return;
-        }
-    }
-    eprintln!("[lockstep] T, L, IR also match across all {n} microinstructions!");
+    eprintln!("\n[lockstep] summary: {matched} matched (task, mpc) pairs, {divergences} divergence events");
 }
