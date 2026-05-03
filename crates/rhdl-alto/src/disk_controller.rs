@@ -41,6 +41,15 @@ pub struct CtrlIn {
     /// Write enable — when true, `write_data` commits to the
     /// register at `reg_addr`.
     pub write_en: bool,
+    /// CLRSTAT signal per *Alto Hardware Manual* §6 + spec §8.5:
+    /// asserted when current_task is a Disk task and microcode
+    /// issues F1=12 (CLRSTAT).  Clears KSTAT to 0 (and any error
+    /// latches once we model them).  Per ContrAlto's
+    /// `DiskController.cs` `ClearStatus()`: "Causes all error
+    /// latches in disk controller hardware to reset, clears
+    /// KSTAT[13]".  Phase-3.5 simplification: clear the entire
+    /// KSTAT word (we don't yet model individual error bits).
+    pub clr_stat: bool,
 }
 
 /// Outputs from the disk controller (reads to microcode tasks).
@@ -54,8 +63,22 @@ pub struct CtrlOut {
     pub kadr_head: bool,
     pub kadr_sector: Bits<4>,
     pub kdata_word: Bits<16>,
+    /// Full 16-bit KSTAT register, exposed for the microengine's
+    /// per-task BS=3 (ReadKSTAT) source per *Alto Hardware Manual*
+    /// §2.1 Bus Sources + spec §3.2 + §8.5.  In Disk Sector / Disk
+    /// Word task, BS=3 reads this onto the bus.
+    pub kstat_word: Bits<16>,
     pub kcom_op: Bits<3>,
     pub kstat_ready: bool,
+    /// Asserted when KCOM bit 15 is set (the "start transfer" bit
+    /// in the Phase-3.5 simplified KCOM encoding).  Routed to
+    /// DiabloDisk.transfer_request to arm a 256-word transfer.
+    pub transfer_request: bool,
+    /// Current KCWA (memory-write-address-for-DMA) register value.
+    /// The Disk Word DMA path reads this to know where to write the
+    /// next disk word in memory; engine increments it via the
+    /// F2=DiskWordTransfer DMA atomic.
+    pub kcwa_value: Bits<16>,
 }
 
 /// Register addresses (Phase-3 subset; will expand as more disk
@@ -78,6 +101,12 @@ pub struct DiskController {
     kadr:  dff::DFF<Bits<16>>,
     kcwa:  dff::DFF<Bits<16>>,
     kcwd:  dff::DFF<Bits<16>>,
+    /// Previous-cycle latch of KCOM[15], used to edge-detect the
+    /// "start transfer" bit so transfer_request fires for ONE cycle
+    /// when KCOM[15] transitions 0→1, not continuously while the bit
+    /// stays set.  Otherwise the disk would re-arm every cycle and
+    /// never let the transfer countdown progress.
+    prev_kcom_arm: dff::DFF<bool>,
 }
 
 impl SynchronousIO for DiskController {
@@ -91,13 +120,17 @@ pub fn disk_controller_kernel(cr: ClockReset, i: CtrlIn, q: Q) -> (CtrlOut, D) {
     let mut d = D::dont_care();
     let mut o = CtrlOut::dont_care();
 
-    // Default: hold every register.
+    // Default: hold every register.  CLRSTAT (per spec §8.5) clears
+    // KSTAT to 0 — applied as combinational override below the
+    // write-port logic (so a same-cycle KSTAT write-then-clear is
+    // resolved as clear).
     d.kstat = q.kstat;
     d.kdata = q.kdata;
     d.kcom  = q.kcom;
     d.kadr  = q.kadr;
     d.kcwa  = q.kcwa;
     d.kcwd  = q.kcwd;
+    d.prev_kcom_arm = q.prev_kcom_arm;
 
     // Write port — single addressed register per cycle.
     let kstat_a: Bits<3> = bits::<3>(0);
@@ -121,6 +154,17 @@ pub fn disk_controller_kernel(cr: ClockReset, i: CtrlIn, q: Q) -> (CtrlOut, D) {
         } else if i.reg_addr == kcwd_a {
             d.kcwd = i.write_data;
         }
+    }
+
+    // CLRSTAT (per spec §8.5 + ContrAlto's `DiskController.cs`
+    // ClearStatus()): clear KSTAT to 0.  Applied AFTER the write
+    // port so a same-cycle KSTAT-write + CLRSTAT resolves as
+    // cleared (matches real Alto: the F1=12 dispatch in microengine
+    // requires current_task is a Disk task, and the F1=12 KCWA
+    // write path is gated by `is_disk_sector_task`, so they're not
+    // mutually exclusive but the CLRSTAT semantic wins for KSTAT).
+    if i.clr_stat {
+        d.kstat = bits::<16>(0);
     }
 
     // Read port — combinational mux on `reg_addr`.
@@ -150,8 +194,19 @@ pub fn disk_controller_kernel(cr: ClockReset, i: CtrlIn, q: Q) -> (CtrlOut, D) {
     o.kadr_head     = ((q.kadr >> 7) & bits::<16>(1)) != bits::<16>(0);
     o.kadr_sector   = (q.kadr & bits::<16>(0xF)).resize();
     o.kdata_word    = q.kdata;
+    o.kstat_word    = q.kstat;
     o.kcom_op       = (q.kcom & bits::<16>(0x7)).resize();
     o.kstat_ready   = (q.kstat & bits::<16>(1)) != bits::<16>(0);
+    // Phase-3.5 simplification: KCOM bit 15 = "start transfer".
+    // Real Alto uses different KCOM encoding; re-align when boot
+    // trace requires it.  Edge-detect: transfer_request fires for
+    // one cycle when KCOM[15] transitions 0→1, not continuously
+    // while it stays set.  q.prev_kcom_arm holds the previous-cycle
+    // value of KCOM[15] for the comparison.
+    let kcom_arm_now: bool = (q.kcom & bits::<16>(0x8000)) != bits::<16>(0);
+    o.transfer_request = kcom_arm_now && !q.prev_kcom_arm;
+    d.prev_kcom_arm = kcom_arm_now;
+    o.kcwa_value = q.kcwa;
 
     if cr.reset.any() {
         d.kstat = bits::<16>(0);
@@ -160,13 +215,17 @@ pub fn disk_controller_kernel(cr: ClockReset, i: CtrlIn, q: Q) -> (CtrlOut, D) {
         d.kadr  = bits::<16>(0);
         d.kcwa  = bits::<16>(0);
         d.kcwd  = bits::<16>(0);
+        d.prev_kcom_arm = false;
         o.read_data    = bits::<16>(0);
         o.kadr_cylinder = bits::<8>(0);
         o.kadr_head    = false;
         o.kadr_sector  = bits::<4>(0);
         o.kdata_word   = bits::<16>(0);
+        o.kstat_word   = bits::<16>(0);
         o.kcom_op      = bits::<3>(0);
         o.kstat_ready  = false;
+        o.transfer_request = false;
+        o.kcwa_value = bits::<16>(0);
     }
 
     (o, d)

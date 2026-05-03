@@ -20,3 +20,8 @@ Cargo.lock
 # Added by cargo
 
 /target
+
+# Reference assets downloaded from third-party archives
+# (e.g., Xerox Alto microcode/disk images from bitsavers.org).
+# Cached locally for development; not part of the repo.
+/assets/

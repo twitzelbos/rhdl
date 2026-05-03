@@ -1,0 +1,5 @@
+# Asset binaries (microcode PROMs, disk images) are NOT committed.
+# Their copyright/license provenance is separate from RHDL's MIT license.
+# Fetch via the cargo helper described in src/microcode_loader.rs / src/disk_image_loader.rs.
+*
+!.gitignore

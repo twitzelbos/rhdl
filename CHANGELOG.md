@@ -31,6 +31,1440 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-03 — Tier C #2 Alto: F2=LoadIr semantics fix — IR ← MD (was loading from BUS, should load from MD per spec digest §3 entry 14)
+
+**Path:** `crates/rhdl-alto/src/microengine.rs` (single line change + extensive comment).
+
+**Why this, why now:** Step 6 of the Phase 3.5 boot chain (Emulator Nova IR fetch + dispatch) requires that the IR register is loaded with the FETCHED INSTRUCTION, not the fetch address.  Pre-fix, `d.ir = bus` was loading IR from the BUS — which carries the address being computed for the new memory fetch (= SAD + T at the canonical Nova-fetch MPC=0x150), NOT the instruction from the previous memory fetch.  This silently corrupted IR with addresses; all subsequent F2=IDispatch decisions saw garbage instead of opcodes.
+
+**Spec correctness:**
+
+- Spec digest §3 entry for F2=14: *"Some tasks: IR ← MD (Emulator: latch fetched instruction into IR)"*.
+- Spec digest line 648 (citing AltoHW §6.6): *"IR← also merges bus bits 0,5,6 and 7 into NEXT, which does a first level instruction dispatch."*
+
+So F2=LoadIr does TWO independent things in Emulator:
+
+1. **IR ← MD** (storage): the instruction fetched from memory by the previous cycle goes into IR.
+2. **NEXT |= bus-bit-merge** (dispatch): first-level Nova decode based on BUS bits.
+
+Both are fired by the same F2 code, but they use DIFFERENT data paths.  The bus-bit merge (at line ~750) was already correct.  The IR storage path was wrong.
+
+**The trigger that surfaced the bug:** decoded the actual canonical-microcode microinstruction at MPC=0x150 (= the standard Nova IR-fetch instruction):
+
+```
+MPC=0x150: rsel=5  alu=BusPlusT  bs=ReadR  f1=LoadMar  f2=LoadIr  next=0x151
+```
+
+BS=ReadR with rsel=5 reads SAD register; ALU computes SAD+T (= effective fetch address); F1=LoadMar latches MAR ← BUS for the new memory cycle; F2=LoadIr is supposed to load IR from MD (= the result of the PREVIOUS memory cycle).  The pre-fix `d.ir = bus` was loading IR with SAD+T instead of MD.
+
+**Validation:**
+
+- All 244 alto tests pass (no test was specifically checking IR contents — would have caught this if anyone had written one).
+- Lockstep dumper post-fix: OURS' Emulator now follows the EXACT same MPC sequence as ContrAlto throughout the Emulator boot loop (cycles 27-59), including the Nova IR dispatch transitions at cycles 40, 47, 54 where the loop exit MPC depends on the fetched instruction.
+- 1-cycle offset between OURS and CTR remains (inherited from the K+4 vs K+5 inter-MAR<- threshold question — separate issue).
+
+**Surprises and gotchas:**
+
+- The pre-fix comment was *misleading*: it claimed "the typical microcode is `IR← MD` which sets BS=MemoryData driving BUS = MD".  This is FALSE for the canonical Nova IR fetch at MPC=0x150 — that instruction uses BS=ReadR, not BS=MemoryData.  The comment was an incorrect reverse-engineering of the original implementation rather than a spec-derived statement.
+- Bug was spec-verifiable but never showed in tests because:
+  - All Tier-1 / Tier-2 microengine tests use synthetic microcode that doesn't fully exercise the Nova IR fetch sequence.
+  - All Tier-4 iverilog tests verify Verilog matches Rust simulation but don't validate against an external reference.
+  - Lockstep against ContrAlto is what surfaced it (and only after the chip-side `task_mpcs` fix unblocked accurate Emulator-resume behavior).
+
+**Follow-ups:**
+
+- `examples/inxb_decode.rs` extended to dump the Emulator main fetch loop instructions (0x130, 0x14e, 0x150, 0x151, 0x131, 0x132, 0x133).  Useful for future "what does this microinstruction actually do" investigations.
+- The R[6]=PC initialization is the next likely Step-6 unblocker.  ContrAlto's PC=1 at the start of Emulator execution; OURS' PC=0 (DFF default).  Likely needs a chip-level "boot button" simulation that initializes R[6] before the boot microcode runs.
+
+---
+
+## 2026-05-03 — Tier C #2 Alto: chip-side `task_mpcs` DFF — Emulator resumes at correct MPC post-yield, MPC reporting matches ContrAlto cycle-for-cycle
+
+**Paths:**
+
+- `crates/rhdl-alto/src/alto_chip.rs` — Bundled five chip-side DFFs into a single `ChipState` struct (per CLAUDE.md §3.1 protocol-PHY pattern), bringing AltoChip's top-level field count to 8 (under the 12-tuple `Synchronous`-derive ceiling).  `ChipState` now contains `current_task`, `task_started`, `task_yield_pending`, `urom_addr_held`, AND the new `task_mpcs: [Bits<10>; 16]`.  Added the canonical chip-side per-task MPC tracking: `d.state.task_mpcs[current_task] = engine.next_mpc` each non-stalled cycle.  `current_mpc` for the engine + `next_task_saved_mpc` for URom prefetch now read from `q.state.task_mpcs[…]` (with the existing `task_started` fallback for first-time tasks).  Updated `boot_trace_baseline_metrics` test ranges (KSEC firings 140..200, Emulator firings 1800..1860 — see "Surprises" below).
+
+**Why this, why now:** Per the per-cycle MPC dumper analysis from earlier this session, OURS was resuming Emulator at the WRONG MPC (= 0x152) after KSEC, while ContrAlto correctly resumed at 0x130 (= the canonical post-yield MPC per altoIIcode3.mu).  Root cause: `task_system.task_mpc[k]` is updated by the rhdl-rule arbiter, which only fires when task K wins priority arbitration.  When higher-priority tasks (e.g. KSEC) are woken, lower-priority tasks (e.g. Emulator) don't win → their `task_mpc[k]` slots NEVER update during the runs where they're actively executing → resume MPC after the higher-priority task ends is stale (= reset value 0).  The chip-side `task_mpcs` bypasses arbitration: it updates EVERY non-stalled cycle for the running task, regardless of which task wins arbitration.
+
+**Justification (per CLAUDE.md §11.1 — chip-architectural change touching all of MPC tracking, URom prefetch, and Verilog-emitted state):**
+
+1. **What guarantee does this change preserve, strengthen, or introduce?**  Strengthens spec-conformance for the `task switching` semantics: AltoHW §2.4 implies that each task's MPC is preserved across yields and restored on resume.  Pre-fix, this only worked if the task was the highest-priority one woken (because rule firing was the only update path).  Post-fix, every running task's MPC is correctly preserved across arbitrary task-switching patterns.
+
+2. **What loophole does this *not* introduce?**  The chip-side `task_mpcs` is updated only for `current_task` (the actually-running task), not for arbitrary slots.  task_system's task_mpc is now redundant for chip-internal MPC tracking but kept for trace observability + lockstep diagnostics — no behavioral coupling.
+
+3. **What downstream code does this affect, and why is the effect intentional?**  Every kernel that yields between tasks now resumes at the correct MPC.  In the boot scenario this manifests as: post-KSEC Emulator resumes at MPC=0x130 (matching ContrAlto), pre-fix it was MPC=0x152 (wrong).  In the dumper, OURS' MPC reporting at cycles 1-19 NOW MATCHES CTR cycle-for-cycle (was off due to the same broken `task_mpc` interaction).
+
+4. **Test baseline shift:** `boot_trace_baseline_metrics` test was tuned to the BROKEN baseline.  Pre-fix: KSEC fired 41 times in 2000 cycles.  Post-fix: 166 times.  The 41 was the artifact of the bug — KSEC took shorter paths through its microcode because its saved MPC was stale.  166 is correct (matches ContrAlto cycle-by-cycle: ~7 sector marks × ~23 cycles per visit).  Updated expected ranges; documented the baseline shift in test commentary.
+
+5. **What is the alternative design considered and rejected?**  (a) Modify task_system to fire rules unconditionally (always update task K's slot when current_task=K).  Rejected: would change the rhdl-rule semantics for an arbiter-style use case, and the task_system rules were designed around guarded-atomic-rule semantics (firing only when the task wants to "do something").  (b) Add a separate `current_task_mpc` chip-side DFF that only tracks the running task, leaving per-task save/restore in task_system.  Rejected: bidirectional integration (save on yield, restore on resume) is more complex than just owning all 16 slots in the chip.  (c) The chosen design: chip owns `task_mpcs[16]` directly; task_system retains its rule-based task_mpc only for trace observability.  Cleaner separation: task_system = arbitration; chip = MPC tracking.
+
+6. **Reversibility:** revertible by removing `task_mpcs` from `ChipState` and restoring `q.tasks.task_mpc[…]` reads.  Functionality returns to pre-fix (where Emulator resumes at wrong MPC after high-priority-task yields).
+
+**Surprises and gotchas:**
+
+- **12-tuple ceiling hit on the AltoChip struct.**  Adding a 12th DFF (`task_mpcs`) caused the `Synchronous` auto-derive to fail with "can't compare `(Q, ..., ...)` with itself".  Per CLAUDE.md §3.1 the canonical fix is the protocol-PHY pattern: bundle several DFFs into one struct with `#[derive(Digital)]`.  Bundled five chip-side DFFs into `ChipState`.  Total chip top-level field count now 8 (7 sub-widgets + 1 ChipState bundle).  Documented in the `state` field rustdoc.
+- **Test "regression" is actually a correctness improvement.**  `boot_trace_baseline_metrics` failed because KSEC firings jumped from 41 to 166.  This is NOT a regression — it's the bug fix flowing through.  Pre-fix, KSEC's broken task_mpc[4] caused it to take shorter (wrong) paths through its microcode, yielding earlier than the canonical microcode would.  Post-fix, KSEC runs the FULL 22-24 cycles per sector mark per ContrAlto.  Updated test ranges; documented the why in test commentary.
+- **MPC reporting display artifact resolved.**  Before this fix, OURS' chip reported MPC=0x000 for cycles 0-3 (the "task_started + URom-latency display artifact" that prior CHANGELOG entries documented).  After this fix, MPC reporting matches the engine's actual execution from cycle 1 onward — the artifact was a downstream symptom of the same bug.  The dumper's "Cycles 0-3 display artifact" disclaimer is now obsolete (only cycle 0 still shows the artifact; cycles 1-3 match cleanly).
+
+**Validation:**
+
+- All 244 alto tests pass.
+- KSEC duration in lockstep dumper: still 1-cycle offset at the 0x389 MAR<- stall (= the K+4 vs K+5 inter-MAR<- threshold question — separate, smaller issue).
+- Emulator resume MPC: NOW MATCHES ContrAlto (0x130, was 0x152 pre-fix).
+- Per-cycle MPC trace cycles 1-19: PERFECT lockstep with ContrAlto (was off pre-fix due to MPC reporting artifact).
+
+**Follow-ups:**
+
+- The K+4 vs K+5 inter-MAR<- threshold remains a 1-cycle interpretation gap.  Both defensible against AltoHW §2.3.  Investigation deferred — likely needs explicit AltoHW text reading rather than ContrAlto cross-reference.
+- task_system.task_mpc is now redundant for chip-internal MPC tracking.  Could be removed for code-cleanliness, but kept for lockstep trace observability.  Consider removal in a future cleanup pass if it adds confusion.
+- Step 6 of the 9-step boot chain (Emulator Nova IR fetch + dispatch) is now genuinely unblocked — the Emulator-resume bug was the gate, and it's fixed.
+
+---
+
+## 2026-05-03 — Tier C #2 Alto: memory-pipeline stall FSM (AltoHW §2.3) — KSEC duration now matches ContrAlto
+
+**Paths:**
+
+- `crates/rhdl-alto/src/memory.rs` — added `cycles_since_mar: dff::DFF<Bits<3>>` plus the pipeline-stall FSM.  3 new MemIn fields (`mar_load_this_cycle`, `md_read_this_cycle`, `md_write_this_cycle`); 1 new MemOut field (`mem_stall`).  Stall thresholds per AltoHW §2.3 + Alto II 4th-cycle read / 3rd-cycle store + spec rule (a) "1 minimum intervening".  Counter encoding documented in the struct rustdoc.
+- `crates/rhdl-alto/src/microengine.rs` — added `mem_stall: bool` to MicroIn; added 3 new MicroOut signals exposing the F1=LoadMar / BS=MemoryData / F2=StoreMd decode (used by Memory's FSM).  Added stall gate at end of kernel that holds all 9 internal DFFs (T, L, regs, MAR, IR, alu_carry, skip, carry, next_modifier_pending) and suppresses side-effect outputs (task_yield, mem_write_en, disk_*, startf, block_task) when `i.mem_stall` is asserted.  Memory-pipeline driver signals (mar_load_this_cycle / md_read_this_cycle / md_write_this_cycle) deliberately NOT suppressed during stall — they're pure decodes of i.instr and feed back to Memory's FSM; suppressing would create a combinational loop.
+- `crates/rhdl-alto/src/alto_chip.rs` — added `urom_addr_held: dff::DFF<Bits<10>>` that latches each cycle's URom address.  During `mem_stall`, the chip presents `q.urom_addr_held` to URom instead of `next_mpc`, so the URom keeps returning the SAME instruction; without this, the engine "stalls" but URom advances anyway, the stalled instruction's effects are silently lost, and spec-mandated re-execute-on-resume semantics break.  Wired Memory↔Microengine via `mem_stall` and the 3 driver signals.  Updated the `boot_trace_baseline_metrics` test's expected ranges (KSEC firings 22..50, Emulator firings 1940..1990 — pre-stall baselines were 22..40 and 1950..1990).
+- `crates/rhdl-alto/tests/{memory,microcode_semantics,microengine}.rs` — updated struct literals for the new MemIn / In fields (used `..Default::default()` pattern where possible).
+
+**Why this, why now:** Per the per-cycle MPC dumper analysis (committed earlier this session), OURS' KSEC ran 4 cycles SHORTER than CTR's because every memory access in OURS was "always ready", while real Alto stalls per AltoHW §2.3.  With the FSM in place, OURS' KSEC duration matches CTR's: both take 22 cycles for the boot-time KSEC run.  This unblocks step 5 of the Phase 3.5 boot-to-OS-loader chain (per `tier-c-flagship-cores.md`).
+
+**Justification (per CLAUDE.md §11.1 — chip-level + microengine-level + memory-level coordinated change):**
+
+1. **What guarantee does this change preserve, strengthen, or introduce?**  Strengthens spec-conformance: AltoHW §2.3 explicitly mandates pipeline stalls for early MD-access ("the processor will suspend execution of microinstructions if an `←MD` or `MD←` is executed before the memory interface is prepared to deliver or accept data").  Pre-fix, OURS ignored this entirely.  Post-fix, OURS implements it.
+
+2. **What loophole does this *not* introduce?**  The stall gate suppresses side-effect outputs (task_yield, mem_write_en, disk_*) so a stalled cycle has zero observable side effects on downstream subsystems.  The FSM driver signals (mar_load/md_read/md_write) are NOT suppressed — they're pure-decode of i.instr and don't depend on i.mem_stall, so feeding them back to Memory doesn't create a combinational loop.  The combinational-loop avoidance is documented inline in the engine's stall gate.
+
+3. **Spec-derivation, not ContrAlto-matching:**
+
+    - **`←MD`** (MD-read) requires `counter ≥ 4` (= K+4, Alto II 4th-cycle read availability — direct spec quote).  Stalls when `1 ≤ counter ≤ 3`.
+    - **`MD<-`** (MD-write) requires `counter ≥ 2` (= K+2, "1 minimum intervening microinstruction" per spec rule (a)).  Stalls when `counter == 1`.
+    - **New `MAR<-`** requires `counter == 0` (idle) OR `counter ≥ 5`.  This is the *conservative* threshold (= treat previous cycle as if it were a read; bus free at K+5).  For a previous WRITE cycle, K+4 would suffice (write completes K+3, bus free K+4) — but the FSM doesn't know read-vs-write at MAR<- time, so we pessimize to K+5.  Observed ContrAlto cycle-count happens to match this conservative threshold; the THRESHOLD itself is derived from the spec, not from matching ContrAlto.  Per the user's "spec supersedes ContrAlto" directive: this is spec-correct (or, where the spec under-specifies the read-vs-write distinction, conservatively spec-correct).
+
+4. **What downstream code does this affect, and why is the effect intentional?**  Every memory-accessing microinstruction now stalls the engine until the memory interface is ready.  KSEC's MPC=0x385 (`L<-MD OR T` after MAR<-KBLKADR3) now stalls 2 extra cycles; KSEC's MPC=0x389 (back-to-back MAR<-) now stalls additional cycles.  KSEC duration: 19 cycles → 22 cycles (matching ContrAlto).  Boot-trace baseline test's expected range bumped (the old range was 22..40 cycles; new is 22..50 cycles).
+
+5. **Architectural decision: chip-side `urom_addr_held` DFF.**  When the engine stalls, the URom prefetch must NOT advance — otherwise the engine sees the post-stall instruction next cycle and skips the stalled instruction entirely.  We add a single chip-side DFF that holds the previously-presented URom address; during stall, the chip presents this instead of `next_mpc`.  Considered alternative: latch `i.instr` in the engine itself (an `instr_latch` DFF).  Rejected: the URom-address-hold is the cleaner cut — it keeps the stall state external to the engine and reuses the existing URom 1-cycle-latency model.  The instr-latch alternative would have required a new DFF inside Microengine and additional gating in i.instr consumption, with no functional advantage.
+
+6. **Reversibility:** revertible by removing the FSM in Memory + the stall gate in Microengine + the urom_addr_held DFF in AltoChip.  Functionality returns to pre-stall (where every memory access is "always ready").
+
+**Surprises and gotchas:**
+
+- **The first attempt without `urom_addr_held` deadlocked OURS at MPC=0 forever.**  The engine stalled DFFs, but URom prefetch still advanced via `next_mpc`, so the engine never re-saw the stalled instruction.  My initial workaround was to override `o.next_mpc = i.mpc` during stall — but this broke the chip's URom prefetch because `i.mpc` (= chip's `current_mpc`) is stuck at 0 for tasks that never won arbitration (the prior "MPC reporting display artifact").  The correct fix lives at the chip level (urom_addr_held DFF), not the engine level.  Documented in the engine's stall-gate comment.
+- **Combinational-loop trap:** initial implementation suppressed `o.mar_load_this_cycle` etc. during stall, creating a feedback loop (stall=true → suppress mar_load → memory clears stall → engine no longer stalled → mar_load re-asserts → stall=true → ...).  Settle loop failed to converge.  Fix: keep the FSM driver signals stable (don't suppress on stall) — they're pure decode of i.instr and the Memory FSM already gates `mar_fires_now = mar_load && !stall` so the counter doesn't reset spuriously.
+- **Test baseline bumped, not broken:** `boot_trace_baseline_metrics` expected 22..40 KSEC firings; with stalls, 41 firings now occur (each KSEC visit is longer, but `current_task=4` cycles still count as KSEC firings).  Bumped to 22..50.  Honest baseline shift, not a regression.
+- **Inter-MAR<- threshold guess:** I initially used the CTR-observed cycle count for back-to-back MAR<- (K+5).  The user (correctly) called out that I was guessing.  Re-derived from spec: the conservative interpretation IS K+5 (assume worst case = previous cycle was a read), which happens to match the CTR observation.  Documented as conservative-but-spec-correct in the Memory FSM rustdoc.
+
+**Validation:**
+
+- All 244 alto tests pass (50 lib + 194 integration including iverilog round-trips for `task_system`, `disk_controller`, `microengine`, `memory`, `alto_chip`).
+- KSEC duration in lockstep dumper now matches ContrAlto exactly (22 cycles each side, vs. pre-fix 19 OURS / 23 CTR = 4-cycle gap).
+- 1-cycle Emulator-phase offset remains (OURS' INXB at MPC=0x152 stalls 1 cycle that CTR's doesn't — needs investigation; possibly INXB doesn't actually have F2=StoreMd in our microcode binary, or my md_write decode catches an edge case).
+- Boot-trace baseline metric ranges adjusted with new baselines documented in the test commentary.
+
+**Follow-ups:**
+
+- Investigate the 1-cycle Emulator offset at INXB (MPC=0x152) — possibly INXB's F2 isn't StoreMd in the actual binary even though the source-comment suggests it.  Decode the actual microinstruction bytes.
+- After the lockstep gap closes further, the next chain step is Emulator-task Nova IR fetch + dispatch (per Phase 3.5 §6 of `tier-c-flagship-cores.md`).
+- Refine the inter-MAR<- threshold to K+4 when the previous cycle was a write (vs K+5 when it was a read) — would require Memory to track `last_was_read` state.  Minor optimization; current K+5 is conservatively spec-correct.
+
+---
+
+## 2026-05-03 — Tier C #2 Alto: per-cycle R-divergence dumper + Phase 3.5 boot-to-OS-loader chain captured in tier-c-flagship-cores.md
+
+**Paths:**
+
+- `crates/rhdl-alto/examples/dump_first_r_divergence.rs` (new) — Per-cycle R-state side-by-side dumper that finds the FIRST cycle where any R[i] diverges between OUR chip and ContrAlto.  Higher-precision than the matched-pair sampler in `tests/contralto_lockstep.rs`.  Also dumps task-transition timelines for both sides + first-MPC-divergence-within-matched-task.
+- `tier-c-flagship-cores.md` §5.5 — Inserted "Phase 3.5 — Boot-to-OS-loader chain (3-5 weeks)" between Phase 3 and Phase 4.  Captures the 9-step boot-to-first-prompt decomposition (microengine + arbiter → PROM init → KSEC → KWD → memory → Emulator IR fetch → BLT/MOVB → OS loader → first framebuffer artifact).  Each step is independently testable in lockstep against ContrAlto, with the win-condition for that step.
+
+**Why this, why now:** Per the user's strategic message about the 9-step boot chain ("the chain is longer than it looks; each arrow is a real implementation gap; ~15-25 dev-days"), capture it in the durable design plan so estimates and PR-scoping accurately reflect the work involved instead of hiding behind Phase 3's one-line "boot the original Alto disk image far enough to get to the operating system loader".  Also commit the diagnostic infrastructure that's needed to investigate cycle-level KSEC duration mismatches en route.
+
+**Design decisions:**
+
+- The 9-step chain is a NEW phase (3.5), not an expansion of Phase 3, because the disk-task scope (Phase 3 proper) is genuinely just "the disk subsystem works".  Steps 4-9 of the chain depend on memory subsystem, Nova IR dispatch, Emulator-task handlers — work that crosses multiple subsystems and warrants its own phase.
+- Estimates reflect "given Phase 3 done" (i.e., the disk subsystem is correct in isolation).  If the disk subsystem ships with bugs, Phase 3.5 absorbs the debugging cost.  Stated explicitly to avoid double-counting.
+- The dumper aligns CTR[k] vs OURS[k] DIRECTLY (not k vs k+1 as I initially assumed).  Both sims report MPC as "MPC about to execute", so direct alignment is correct.  Documented in the dumper's banner.
+- Diagnostic dumper does NOT make assertions — it's a localizer, not a regression test.  Regressions are caught by `tests/contralto_lockstep.rs` and `tests/task_switch_pipeline.rs`.
+
+**Surprises and gotchas:**
+
+- **Cycle alignment for ContrAlto's TSV trace.**  First wrote `ctr[k]` vs `ours[k+1]` thinking off-by-one; rebooted to `ours[k]` after seeing both sides' task transitions match cycle-for-cycle.  Direct k-vs-k alignment is correct.
+- **OURS' MPC reporting is stuck at 0 for cycles 0-3** (display artifact from `task_started` gating + URom 1-cycle latency interaction).  The engine IS executing through NOVEM → 0x152 → 0x153 → 0x154 internally; the `o.mpc` field just lags.  This is orthogonal to actual divergence — by cycle 4 (KSEC start), reporting is consistent.
+- **Real divergence emerges as KSEC duration mismatch:** OURS finishes KSEC in 19 cycles, CTR in 23 (4-cycle gap).  Same KSEC microcode loaded both sides, so the divergence is in F1/F2 dispatch or memory-timing within KSEC's run.  This is the next investigation target — and per the user's directive ("spec supersedes ContrAlto"), the spec is the arbiter, not ContrAlto.
+
+**Validation:**
+
+- 243 alto tests still pass; pure additions (new example + doc-only edit to tier-c-flagship-cores.md).
+- Dumper compiles cleanly + runs end-to-end against the existing ContrAlto trace harness.
+- No snapshot bumps; no widget code touched.
+
+**Follow-ups:**
+
+- Investigate KSEC duration mismatch (OURS 19 vs CTR 23 cycles).  Need per-cycle MPC-within-KSEC dumper as the next iteration on the diagnostic.
+- Step 6 of the 9-step chain (Emulator-task Nova IR fetch + dispatch) is the next major implementation gap once the cycle-level divergence in Phase 3 lockstep is closed.
+
+---
+
+## 2026-05-03 — Tier C #2 Alto: task-switch K+2 timing fix (AltoHW §2.4 "one additional instruction before switch") + register_aliases module
+
+**Paths:**
+
+- `crates/rhdl-alto/src/alto_chip.rs` — added `task_yield_pending: dff::DFF<bool>` field to `AltoChip`.  Kernel latches `q.engine.task_yield` into it each cycle; the previous cycle's value gates `current_task` updates AND URom prefetch.  Updated all 9 chip constructors to initialize the new DFF to `false`.  Added `task_yield: bool` to `ChipOut` (echoed from `q.engine.task_yield`) so tests can observe TaskYield pulses.
+- `crates/rhdl-alto/tests/task_switch_pipeline.rs` — new chip-level regression test pinning the K → K+1 (still old) → K+2 (NEW) pipeline.  Pre-fix: K+1 timing.  Post-fix: K+2 (spec-correct).
+- `crates/rhdl-alto/src/register_aliases.rs` (new module) + spec digest §4.2/§4.2.1 update — addressed the "Our reader knows all the aliases?" question.  Diagnostic dumpers + lockstep harness now report `$PC` / `$XH` / `$AC0..AC3` / etc. with task-aware resolution + cross-task fallback.
+- `crates/rhdl-alto/tests/contralto_lockstep.rs` — uses the alias resolver in R-divergence reports.
+- `crates/rhdl-alto/examples/dump_boot_sector.rs` (new) — disk-image audit confirming `nonprog.dsk` is real period boot (90.6% non-zero, recognizable Nova opcodes).
+
+**Why this, why now:** Per the user's strategic message about the 9-step boot-to-first-prompt chain, this addresses two of the load-bearing prerequisites (disk image is real bytes; task-switch timing matches spec).  The task-switch fix specifically unblocks correct cycle alignment when KSEC needs to fire at the right moment relative to Emulator's boot dance.
+
+**Justification (per §11.1 — compiler-adjacent change to chip-level scheduling):**
+
+1. **What guarantee does this change preserve, strengthen, or introduce?**  Strengthens spec-conformance: AltoHW §2.4 explicitly states "**One additional instruction is executed before the switch becomes effective**" — i.e., task switches happen at cycle K+2 where K is the F1=TaskYield instruction.  Our impl was switching at K+1 (one cycle too early); this fix delays by one cycle to match.
+
+2. **What loophole does this *not* introduce?**  The DFF can only DELAY task switches; it can't INTRODUCE them.  No new path where wakeups bypass F1=TaskYield.  Same gating logic, just one cycle later.  The existing `current_task` sticky-DFF semantics are preserved.
+
+3. **What downstream code does this affect, and why is the effect intentional?**  Every kernel that does F1=TaskYield now sees a 1-cycle additional delay before the new task starts.  This affects boot timing, KSEC dispatch cadence, and cross-task data races.  All shifts are expected — and four chip-level tests passed without re-baselining (the TaskYield events in those tests didn't depend on K+1 vs K+2 timing because no immediate data race existed).
+
+4. **What is the alternative design considered and rejected?**  (a) "Capture task_yield in the engine itself, expose `o.task_yield_delayed`": rejected — adds engine-side state for a chip-side scheduling concern.  (b) "Two-stage DFF chain in the chip": rejected after experimentation — gave K+3 timing (one cycle too many).  (c) "Use `q.engine.task_yield` directly with no DFF": this is what we had; gave K+1 timing (one cycle too few).  Single DFF gives the spec-correct K+2.
+
+5. **Is this change reversible?**  Yes.  Removing `task_yield_pending` and reverting kernel to `if q.engine.task_yield { ... }` restores prior behavior.  But would re-introduce the bug.
+
+**Surprises and gotchas:**
+
+- **The "RHDL settle loop swallows DFF delays" hypothesis (from the F2-NEXT-modifier debugging) was wrong.**  Each DFF in series DOES add a real cycle of delay — confirmed empirically by trying 1-stage (K+2, correct) and 2-stage (K+3, overshoot).  My earlier hypothesis was a misdiagnosis; the F2 fix worked because of the timing semantics it INTENDED, not despite them.
+- **The chip's `o.mpc` reports the START-of-cycle MPC presented to URom**, not the MPC of the instruction currently being executed (off by one due to URom 1-cycle BRAM latency + task_started latch interaction).  Tests anchored to `o.mpc` are tricky; tests anchored to `o.current_task` and `o.task_yield` work cleanly.  Documented in the test's commentary.
+- **Lockstep R-divergences didn't change post-fix.**  Same R[0,4,5,6] values diverge at the first matched (task, mpc) pair.  This confirms the user's prior observation: the task-switch bug is necessary-but-not-sufficient for full lockstep alignment.  Other cascading bugs in the boot dance (per the 9-step chain analysis) remain the dominant cause.
+
+**Validation:**
+
+- 243 alto tests pass (added 1 new task-switch pipeline test, no regressions in any existing test).
+- Iverilog round-trip tests still pass (the new DFF emits cleanly).
+- Lockstep harness runs to completion; behavior is similar to pre-fix (R-divergences in the same values, suggesting other cascading bugs dominate at this point in the boot dance).
+
+**Follow-ups:**
+
+- The 9-step boot-to-first-prompt chain decomposition (per the user's strategic message) should be captured in `tier-c-flagship-cores.md` as the Phase 5 roadmap.  Deferred (separate doc-only commit).
+- Per-cycle R-state side-by-side trace dumper still pending — would let us see the FIRST cycle where R[i] diverges (vs. relying on matched-pair sampling).
+- The next bug in the cascade is likely in step 4 (per-Nova-opcode handlers) or step 5 (boot-block parameter setup).  Use the per-cycle dumper above to localize.
+
+---
+
+## 2026-05-02 — Tier C #2 Alto: disk-image audit (REAL boot block) + register-alias completeness in spec digest
+
+**Paths:**
+
+- `crates/rhdl-alto/examples/dump_boot_sector.rs` — new diagnostic that loads the .dsk image, dumps sector 0's header / label / first 32 data words with Nova-instruction classification, and reports a statistical sniff (non-zero density + opcode-class distribution).  Used to verify whether the disk image is a real period image or a stub.
+- `crates/rhdl-alto/alto-processor-and-microcode-spec.md` §4.2 — significantly expanded the R-register alias table.  Was 12 entries (display / interrupt / MRT only); now 28 entries covering all canonical aliases from `altoIIcode3.mu` and `altoconsts23.mu`.  Includes the critical Emulator aliases (`$AC0..$AC3`, `$PC`, `$XH`, `$SAD`, `$XREG`) that were missing.  Added an explicit "indexing convention" subsection clarifying that microcode source uses OCTAL register numbers but our impl indexes in DECIMAL (`q.regs[8]` is XH = R[10 octal]).  Added the ACDEST/ACSOURCE XOR-3 table showing why "AC's are backwards" in the source.
+
+**Why this, why now:** The user pushed back on the prior hypothesis ("are you 100% certain?") and laid out the full 9-step boot-to-first-prompt chain.  Before committing to any of the 15-25-dev-day scope, two cheap audits were worth doing:
+
+(1) **Audit the disk image.**  If our `.dsk` files are stubs, steps 4-9 of the chain (Nova opcode handlers, BLT loop counter, OS image loading) are all moot — there's no real code to execute.  Result: **the image is REAL** (90.6% non-zero data words, Nova LDA/STA/JSR/S-group at the right offsets, file size matches Diablo 31 geometry exactly).  Step 1 of the chain is solid.  The bug isn't in the disk loading — it's downstream.
+
+(2) **Verify register-name aliases match spec.**  My prior diagnoses claimed PC was R[5] and tried to interpret OURS' R[5]=0xff as "PC-related state".  Actually:
+   - **PC is R[6]** per `$PC $R6` in `altoIIcode3.mu`.
+   - **R[5] is `$SAD` / `$CYRET` / `$TEMP`** (NOVEM init scratch).
+   - **R[8] is `$XH`** (BLT loop counter), exactly as the user said — R[10 octal] = R[8 decimal] is the source of the canonical "looks like a hang" symptom.
+   - Our OURS R[6]=8 actually means PC=8, i.e., 8 boot-loop passes happened.  CTR R[6]=0 means PC=0, KSEC ran first.  This re-frames the divergence: we're observing "OURS' Emulator ran more boot-loop passes than CTR's before yielding to KSEC" — which is closer to the original hypothesis but with the right names.
+
+**Verdict on register naming in our impl:**
+
+- Our `q.regs[N]` storage uses bare indexed slots (no symbolic aliases) — **correct**, matches hardware.
+- ACDEST/ACSOURCE RSEL-low-bits-XOR-3 mechanism is implemented correctly.
+- Microcode loaded from PROM carries the right RSEL values (assembled from `$AC0` / `$PC` etc. in the source).
+- **Documentation gap closed**: the spec digest's R-alias table was incomplete (missing AC0-AC3, PC, XH, SAD, XREG, plus the disk-task aliases).  Future readers can now look up what `q.regs[N]` means without grepping the microcode source.  This explicitly fixes my own prior R[5]=PC misreading.
+
+**Surprises and gotchas:**
+
+- **PC = R[6], not R[5].**  My prior CHANGELOG entries said R[5] was PC.  That was wrong.  R[6] is PC.  R[5] is SAD (NOVEM bus-zeroing init scratch).
+- **R-register numbers are OCTAL in the microcode source.**  `$XH $R10` means R[10 octal] = R[8 decimal].  The spec digest now flags this prominently because reading `altoIIcode3.mu` while thinking decimal is a great way to misroute every register access by 25%.
+- **R[0] is `$AC3`, not `$AC0`.**  AC's are XOR-3-mapped into R0-R3.  Our impl handles this correctly via the ACDEST/ACSOURCE override.
+- **Disk image is a REAL period boot block** — `nonprog.dsk` (2.6 MB, 203×2×12×267×2 bytes, 90.6% non-zero data words in sector 0).  The first 16 instructions parse as J-group / M-group / A-group / S-group with sensible ratios.  This rules out "boot block is stub" as a Phase 5 blocker.
+- The 9-step boot chain remains real and ~15-25 dev-days of work.  Audits don't change that — they just confirm that the WORK is in steps 3-9 (Emulator reset path, opcode handlers, parameter setup, BLT loop count, etc.), not in steps 1-2 (disk bytes, register naming).
+
+**Validation:**
+
+- 234 alto tests still pass (no code changes; only spec-digest doc + new diagnostic example).
+
+**Follow-ups:**
+
+- The 9-step boot chain decomposition (per the user's strategic message) should be captured in `tier-c-flagship-cores.md` as the Phase 5 roadmap.  Deferred (separate doc-only commit).
+- Per-cycle R-state side-by-side trace dumper still pending (was the prior follow-up #1).
+
+---
+
+## 2026-05-02 — Tier C #2 Alto: configurable sector_mark-at-cycle-1 + empirical disproof of "wait loop causes R-divergence" hypothesis
+
+**Paths:**
+
+- `crates/rhdl-alto/src/diablo_disk.rs` — added `with_test_period_and_sector_at_boundary(period, words)` constructor that combines a SHORT test period (e.g. 256) with `sector_tick = period - 1` (= immediate fire on cycle 1).  Matches ContrAlto's `_sectorEvent = new Event(0, ...)` simulation policy.
+- `crates/rhdl-alto/src/alto_chip.rs` — added `with_microcode_constants_boot_and_test_disk_period_at_boundary(...)` chip-level constructor wrapping the new disk constructor.
+- `crates/rhdl-alto/tests/contralto_lockstep.rs` — switched the harness to the new "_at_boundary" constructor so OUR chip's sector_mark fires on cycle 1, exactly matching ContrAlto.
+
+**Why this, why now:** Per the user's challenge "are you 100% certain CTR is responsible for the R changes" — empirical verification of the prior CHANGELOG's hypothesis that "Emulator wait loop modifies R[] before KSEC fires" was the cause of the R-state divergence at the first matched (task, mpc) pair.
+
+**Verdict: hypothesis was wrong (or incomplete).**
+
+Empirical comparison:
+
+| Config | Matched (task, mpc) pairs | First R-divergence |
+|---|---|---|
+| BEFORE (sector_mark waits 256 cycles) | 19 | R[0]=1, R[4]=0x8000, R[5]=0xff, R[6]=8 at OURS[259]/CTR[3] |
+| AFTER (sector_mark fires on cycle 1) | 4 | R[0]=1, R[4]=0x8000, R[5]=0xff, R[6]=8 at OURS[260]/CTR[19] |
+
+R-divergence VALUES are identical, only the index shifted.  This is conclusive evidence the sector_mark-timing disparity is NOT the (sole) cause of the R-state difference.  The matched-count actually went DOWN (19 → 4) with sector_mark on cycle 1 — the new constructor introduced a different divergence shape.
+
+**Possible alternative causes (now to be investigated):**
+
+1. **Task-switch policy.** Per AltoHW §2.4, task switches happen ONLY on F1=TaskYield.  Our Emulator NOVEM (MPC=0) has `f1=Nop`, so even with a sector_mark wakeup pending on cycle 1, our Emulator runs the boot dance (MPC 0 → 0x152 → 0x153 → 0x154) until reaching MPC=0x153 (which has F1=TaskYield).  ContrAlto's TSV trace shows the task switch at cycle 4 (after Emulator ran 4 instructions).  But OURS reaches CTR[19] at OURS[260] — meaning OURS took 260 cycles to reach a state CTR reached at cycle 19, despite both having sector_mark on cycle 1.  Either OUR task-arbitration or KSEC's microcode is doing something extra.
+
+2. **OURS' R[6]=8 fits "ran ~8 passes of the boot dance before/between KSEC firings"** (each pass increments R[6] via the L-load chain at MPC=0x151).  But CTR's KSEC at the same de-dup index has R[6]=0, suggesting CTR ran KSEC BEFORE Emulator's boot dance cycled enough to set R[6]=8.
+
+3. **R[5]=0xff is suspicious** — much larger than ~8 passes would naturally produce.  Suggests a constant ROM read or a microcode path I haven't traced.
+
+**The intellectually honest answer**: the F2-NEXT-modifier-timing fix changed the boot loop's exit timing, which in turn changed how many passes OUR boot dance runs, which in turn changes R-state at the time KSEC fires.  Even with sector_mark firing on cycle 1, our chip's task-arbitration semantics (no switch until TaskYield) plus the boot dance's iteration count plus KSEC's R-register interactions all combine to produce a different R-state trajectory than ContrAlto's.  Pinpointing the dominant cause requires per-cycle R-state tracing alongside the MPC trace — not just the (task, mpc) matched-pair lockstep.
+
+**Surprises and gotchas:**
+
+- "Are you 100% certain" was the right question.  My prior CHANGELOG asserted a clean cause-and-effect when I was reasoning from the Emulator wait-loop microcode trace alone, without empirically isolating the variable.  The right test is what the user asked for: change the variable, observe whether the symptom disappears.  It didn't.
+- The matched-count going DOWN (19 → 4) is itself informative — it means the prior matched-count-of-19 was an artifact of the `SKIP_WINDOW` resync mechanism finding alignment opportunities at fortuitous (task, mpc) coincidences during KSEC's long execution.  With the chip running KSEC EARLIER, those coincidences shift and the resync window can't bridge them.
+- The lockstep harness in its current form is **necessary but not sufficient** for cycle-by-cycle alignment.  We need either (a) a different alignment metric (R-state checkpoints, memory snapshots), or (b) per-cycle traces dumped side-by-side for manual diff.  The (task, mpc) matched-pair count is a coarse proxy that hides as much as it reveals.
+
+**Validation:**
+
+- 234 alto tests pass (no regressions from the new constructors).
+- Lockstep harness runs to completion with the new constructor; finding documented above.
+
+**Follow-ups:**
+
+- **Per-cycle R-state and BUS trace dumper** — extend `dump_lockstep_traces.rs` to dump R-state at every cycle for both sides, side-by-side, so the FIRST cycle where R[i] diverges can be pinpointed exactly (instead of relying on the matched-pair sampling).
+- **Investigate task-arbitration semantics divergence** — does ContrAlto switch tasks on cycle 1 even without an F1=TaskYield in NOVEM, or does it ALSO wait until cycle 4?  If it switches at cycle 1, we have a real semantics gap.  If it waits until cycle 4, both sims are doing the same thing and the R-divergence comes from inside KSEC.
+- **The original assertion has been retracted in this CHANGELOG entry.**  Future readers: don't trust the prior "Emulator wait loop modifies R[] before KSEC fires" claim — it was an incomplete diagnosis.
+
+---
+
+## 2026-05-02 — Tier C #2 Alto: F2-NEXT-modifier follow-ups — multi-cycle ALUCY chip-test + BS≥4 deferred
+
+**Paths:**
+
+- `crates/rhdl-alto/tests/f2_next_modifier_pipeline.rs` — added a second test, `alucy_with_sticky_carry_uses_delayed_modifier_chip_level`, which exercises the interaction between the sticky `alu_carry` DFF (latched on L-load per spec §3.4 footnote) and the delayed F2-NEXT-modifier pipeline (spec digest §2.3).  Three-cycle scenario: cycle 0 latches carry via `BusPlusOne(0xFFFF)+l_load`; cycle 1 reads `q.alu_carry=true` via F2=AluCarryToNext; cycle 2 receives the latched modifier (= 1) OR'd into its NEXT field, producing MPC=0x041 (= 0x040 | 1).  Trace `0x000 → 0x010 → 0x020 → 0x041` confirms BOTH the sticky carry path AND the delayed modifier path land correctly in the chip composition.
+- `crates/rhdl-alto/src/microengine.rs` — added a comment noting that BS≥4 AND-masking per spec §2.2 is NOT yet implemented (deferred follow-up).  No code change.
+
+**Why this, why now:** Step 5b follow-ups #2 and #3 from the F2-NEXT-modifier-timing fix CHANGELOG.
+
+**Multi-cycle ALUCY test (#3):**
+
+The standalone-microengine version of this test couldn't be written because the simulator's combinational-settle artifact made `q.alu_carry` and `q.next_modifier_pending` unreliable across iterations of the same cycle's settle loop (see prior CHANGELOG "Test-writing note").  At the chip-composition level, the outer DFFs propagate through the full clock cycle and settle cleanly, so the three-cycle trace is observable end-to-end.  This is the "canonical pattern" the spec digest's Test-writing note pointed at.
+
+**BS≥4 AND-masking deferred (#2):**
+
+Implemented and reverted within this work session.  Per spec §2.2:
+> "The constant memory is gated to the bus by F1=7, F2=7, **or BS≥4**. ... This works because the processor bus ANDs if more than one source is gated to it. ... The intent in enabling constants with BS≥4 is to provide a masking facility, particularly for the ←MOUSE and ←DISP bus source."
+
+The implementation itself is one new condition in the BUS computation:
+```rust
+let bs_ge_4 = mi.bs == BusSource::TaskSpec4 || ... || BusSource::InstructionRegister;
+let bus = if F1=Constant || F2=Constant { i.constant_value }
+          else if bs_ge_4 { bus_from_bs & i.constant_value }
+          else { bus_from_bs };
+```
+
+But it broke 35 existing tests in `microcode_semantics.rs` because they pass `InCfg::new(instr, 0)` for tests using BS=MemoryData / BS=←DISP / BS=Mouse — the constant arg of `0` becomes the AND mask of `0`, which masks all of BUS to 0.  Fixing each test to pass `InCfg::new(instr, 0xFFFF)` (= no-op AND) is mechanical but invasive; refactoring `InCfg` to default `constant=0xFFFF` would touch all 180 callsites.
+
+**Decision:** defer BS≥4 to a separate focused PR that includes the test-fixture refactor.  Real-microcode masks at BS≥4 indices are mostly 0xFFFF (no-op) per the constant-ROM dump, so the correctness gap is quiet and won't block lockstep alignment work in the meantime.  Scoped on the follow-up tracker.
+
+**Why this is the right deferral:**
+
+The F2-NEXT-modifier timing bug had observable lockstep impact (boot loop took the wrong branch).  BS≥4 AND-masking has no observable lockstep impact in the boot trace we've examined (the (RSEL, BS≥4) indices the boot dance hits all have 0xFFFF masks).  A test-fixture refactor for an unobservable bug isn't worth blocking the rest of the work.
+
+**Surprises and gotchas:**
+
+- The `InCfg::new(instr, constant)` API conflated two purposes: (a) the F1/F2=Constant value, and (b) "irrelevant filler" for tests not using F1/F2=Constant.  After BS≥4 is implemented, the constant arg becomes a THIRD purpose (the AND mask).  The right refactor: split into `InCfg::new(instr)` (default mask 0xFFFF) + `InCfg::with_constant(instr, value)` (explicit).  Out of scope for this commit.
+- The chip-level multi-cycle ALUCY test was straightforward to write once R[] was in ChipOut (follow-up #1) — the test doesn't actually OBSERVE R[] (it observes MPC), but knowing R[] is exposed makes future register-state assertions trivial to add.
+
+**Validation:**
+
+- 234 alto tests pass (added 1 new chip-level ALUCY test).  No regressions.
+
+**Follow-ups:**
+
+- **BS≥4 AND-masking (deferred)** — focused PR including:
+  1. Refactor `InCfg::new(instr, constant)` → `InCfg::new(instr)` (default mask 0xFFFF) + `InCfg::with_constant(instr, value)` (explicit form).
+  2. Update all 180 `InCfg::new` callsites in microcode_semantics.rs.
+  3. Implement BS≥4 AND-masking in microengine kernel.
+  4. Add a chip-level test demonstrating the masking facility (e.g., ←DISP with constants[15]=0xFFF8 mask should produce only the high 13 bits of DISP).
+  5. Document spec digest §3.2 "Wired-AND constants masking" subsection (currently flagged as "on the Phase 4 follow-up list").
+
+---
+
+## 2026-05-02 — Tier C #2 Alto: F2 NEXT-modifier timing fix (delayed pipeline per spec digest §2.3)
+
+**Paths:**
+
+- `crates/rhdl-alto/src/microengine.rs` — added `next_modifier_pending: dff::DFF<Bits<10>>` field to `Microengine`; refactored the next-MPC computation to (1) compute `next_modifier_this_cycle` separately from `next_addr`, (2) set `next_addr = mi.next | q.next_modifier_pending` (apply LAST cycle's modifier), (3) set `d.next_modifier_pending = next_modifier_this_cycle` (latch for next cycle).  Reset clears `d.next_modifier_pending` to 0.
+- `crates/rhdl-alto/tests/f2_next_modifier_pipeline.rs` — removed `#[ignore]` from the regression test.  It now passes.  MPC sequence `0x000 → 0x100 → 0x102 → 0x109 → 0x109` confirms delayed semantics.
+- `crates/rhdl-alto/src/alto_chip.rs` — re-anchored 4 tests that observed F2-modifier-driven MPC dispatch:
+  - `boot_branches_to_addr_3_via_bus_eq_zero`: added an absorb-cycle at MPC=2 that picks up cycle 0's latched modifier (cycle 0 latches; cycle 1 applies → MPC=3).
+  - `f2_idispatch_routes_via_ir_low_byte`: added an absorb-cycle at MPC=0x100 that picks up cycle 3's latched IDISP modifier (cycle 3 latches; cycle 4 applies → MPC=0x105).
+  - `boot_trace_baseline_metrics`: re-baselined to delayed-pipeline numbers (visited 56 was 76; sector firings 29 was 40; emulator firings 1971 was 1960).
+  - `boot_trace_with_boot_button`: floor lowered to 50 (was 76).
+- `crates/rhdl-alto/tests/microcode_semantics.rs` — replaced the single-cycle ALUCY test that exploited the simulator's combinational-settle artifact with a spec-correct version that asserts no-modifier when there's no prior L-load.  Added a docstring explaining why a multi-cycle DFF-based test isn't viable at the standalone-microengine level.
+- `crates/rhdl-alto/alto-processor-and-microcode-spec.md` §2.3 — updated to reflect the implementation status (the bug is fixed) plus a new "Test-writing note" subsection warning future contributors about the standalone-microengine settle artifact.
+
+**Why this, why now:** Per CLAUDE.md §11.1 and the prior PR's regression test, this is the focused fix for the F2-NEXT-modifier-timing bug discovered via lockstep against ContrAlto.  Spec digest §2.3 normatively disambiguates AltoHW §2.4's loose prose (delayed by one cycle, anchored by ContrAlto's `Tasks/Task.cs:173,549` and the standard microcode's wait-loop pattern at MPC 0x130-0x154).
+
+**Justification (per §11.1):**
+
+1. **What guarantee does this change preserve, strengthen, or introduce?**  Strengthens the "Verilog through the AST, never strings" guarantee by making the microengine's pipeline timing match real Alto hardware.  Introduces a normative subsection in spec digest §2.3 that disambiguates AltoHW §2.4's loosely-worded "current microinstruction" wording.
+
+2. **What loophole does this *not* introduce?**  The fix is structural: a single new DFF + threading.  No escape hatch added; no test-only behavior; no kernel-language change.  The new DFF cannot be observed except through `o.next_mpc`, which is what consumers already use.
+
+3. **What downstream code does this affect, and why is the effect intentional?**  Four chip-level tests had to be re-anchored because they were testing F2-modifier dispatch (correctly testing the WRONG semantics).  The boot-trace metrics shifted (56 vs 76 distinct microaddresses) because delayed semantics changes which microaddresses the boot dance visits in 2000 cycles.  All shifts are documented and intentional.
+
+4. **What is the alternative design considered and rejected?**  (a) "Apply modifier immediately" — rejected as the ORIGINAL bug.  (b) "Two-cycle latency" — rejected; spec evidence is exactly one cycle.  (c) "Per-F2-code application timing" — rejected; spec is uniform: ALL F2 NEXT modifiers are delayed by one cycle.
+
+5. **Is this change reversible?**  Yes.  The DFF + indirection is contained in `Microengine`; reverting the kernel back to immediate-apply restores prior behavior.  But reverting would re-introduce the bug, so this is "reversible in mechanism but not in intent."
+
+**Surprises and gotchas:**
+
+- **Simulator settle artifact.**  RHDL's `#[derive(Synchronous)]` macro generates a `for _ in 0..MAX_ITERS` settle loop in the parent's `sim` method.  For a kernel where `q.X` is read after `d.X` is computed via a child DFF, the settle loop converges to a fixed-point where `q.X` reflects `d.X` from the first iteration's latching.  This made the OLD `f2_alu_carry_to_next_sets_bit_on_carry` test pass with `if q.alu_carry { 1 }` even though `q.alu_carry` is initially false from reset — by iteration 2, the DFF had latched the new carry and the test "saw" it.  This is **not** real-hardware behavior; real DFFs hold their value for the entire clock cycle.  Multi-cycle delayed-pipeline behavior MUST be tested at the chip level, not the standalone-microengine level.  Documented in spec digest §2.3 + the standalone test's docstring + the chip-level regression test's framing.
+
+- **Re-anchored tests, not re-blessed snapshots.**  No HDL snapshot tests changed format-wise; the changes were to chip-level integration tests that observed cycle-counted behavior.
+
+- **Lockstep against ContrAlto: still diverges, just at different points.**  After the F2 fix, divergence #2 moved from MPC 0x38c/0x38d to MPC 0x37c/0x37d (= shifted into a different microinstruction).  The dominant divergence is still the sector_mark timing structural one (ContrAlto fires immediately, ours waits 256 test-cycles or 19,608 spec cycles).  The F2 fix is necessary-but-not-sufficient for full lockstep alignment.  Other follow-ups (R[0..32] in ChipOut, BS≥4 AND-masking) still pending.
+
+**Validation:**
+
+- 233 alto tests pass (the previously-`#[ignore]`-tagged regression test now passes; 4 chip-level tests re-anchored to delayed-pipeline expectations).
+- Iverilog round-trip tests pass (no HDL emission changes that break compilation).
+- Lockstep against ContrAlto runs to completion; structural divergence pattern shifted post-fix as expected.
+
+**Follow-ups:**
+
+- **Implement BS≥4 AND-masking** (separate spec-conformance gap, §2.2).  Lower priority since most masks are 0xFFFF.
+- **Add R[0..32] to ChipOut** for cycle-by-cycle register-state lockstep.  Highest leverage for further lockstep alignment.
+- **Bring back a multi-cycle ALUCY semantics test** at the chip level once R-state observation lands.
+
+---
+
+## 2026-05-02 — Tier C #2 Alto F2 NEXT-modifier timing: spec verification + bug localization (no fix yet)
+
+**Paths:**
+
+- `crates/rhdl-alto/examples/dump_emulator_boot_loop.rs` — decodes the Emulator boot dance microinstructions (MPC 0x000, 0x152..0x156, 0x130, 0x14e, 0x150, 0x151).  Used to understand what the boot loop actually does (it's not a Nova instruction-fetch loop — it's a "wait for KSEC" busy loop that increments R[5] and R[6] each pass).
+- `crates/rhdl-alto/examples/dump_constant_at_disp_index.rs` — dumps the Constant ROM at all (RSEL, BS) indices where BS≥4 (i.e., the BS≥4 AND-masking facility per spec §2.2).  Used to verify whether `constants[7]` (= mask for ←DISP at RSEL=0) was responsible for divergence #2.  It wasn't (constants[7] = 0xFFFF, no mask).
+- No code fix in this commit — pure investigation.  Fix scoped separately.
+
+**Why this, why now:** Continued the lockstep-divergence investigation after the wakeup/BLOCK spec-verification entry (which exonerated that path).  User asked: "where does ContrAlto's Nova bootstrap come from that ours doesn't?"  Answered, plus localized the **real** divergence root cause to F2 NEXT-modifier timing.
+
+**Investigation findings:**
+
+- The Emulator's boot microcode at MPC 0x130 → 0x14e → 0x150 → 0x151 → 0x152 → 0x153 → 0x154 → 0x130 is **not** a Nova instruction-fetch loop.  It's a "wait for KSEC" busy loop that:
+  - Increments R[5] (= PC) each pass via the L-load chain.
+  - Yields via F1=TaskYield at MPC=0x153.
+  - Has F2=BusToNext at MPC=0x153 to modify NEXT based on current ←DISP value.
+  - Eventually exits via the BusToNext modifier producing a non-zero NEXT bit.
+- KSEC's job is just to DMA sector 0 to memory[1..400B] when sector_mark fires.  KSEC does not directly set PC=1 — the Emulator's wait loop does that via its own R-register accumulation.
+- Per spec §3.4: "When the transfer is complete, PC ← 1, and the emulator is started."  The "PC ← 1" is achieved by the boot loop's accumulator math (R[5] becomes 1 after pass 1), not by KSEC writing it.
+
+**The real bug — F2 NEXT-modifier timing:**
+
+Empirical evidence from CTR's trace at the divergence point (cycles 40-42, after Emulator pass 2):
+
+```
+40  mpc=0x154  IR=0x0001  R5=0  R6=1  ← cycle running 0x153 (next field reported in TSV)
+41  mpc=0x131  IR=0x0001  R5=0  R6=1  ← cycle running 0x154
+42  mpc=0x14e  IR=0x0001  R5=0  R6=2  ← cycle running 0x131 (= 0x130 | 1)
+```
+
+- Cycle 40 ran MPC=0x153.  `F2=BusToNext`, `BUS=←DISP=1`, `next field=0x154`.
+- Cycle 41 ran MPC=0x154.  No F2 modifier this cycle, `next field=0x130`.
+- Cycle 42 starts at MPC=**0x131**, NOT 0x130.
+
+So the F2 modifier from cycle 40 (= 1) was applied to cycle 41's NEXT (0x130 | 1 = 0x131), NOT to cycle 40's own NEXT.  **F2 NEXT-modification is delayed by exactly one cycle in ContrAlto.**
+
+ContrAlto's `Tasks/Task.cs` confirms:
+
+```csharp
+// Task.cs:173 — at start of each cycle:
+nextModifier = _nextModifier;
+_nextModifier = 0;
+// ... F1/F2 handling sets _nextModifier |= ... (cumulative for THIS cycle) ...
+// Task.cs:549 — at end of each cycle:
+_mpc = (ushort)(instruction.NEXT | nextModifier);   // <-- uses LAST cycle's modifier
+```
+
+**Our impl applies F2 NEXT modifications immediately** (same cycle).  This is the lockstep divergence root cause.  Every F2 NEXT-modifier opcode is affected: BusToNext, BusEqZero, ShiftLessThanZero, ShiftEqZero, AluCarryToNext, IDispatch, ACSOURCE, BUSODD, IR←, plus the per-task disk codes (INIT, RWC, RECNO, XFRDAT, SWRNRDY, NFER, STROBON).
+
+**Spec verification:**
+
+- AltoHW §2.4: "This successor address may be modified by merging bits into it under control of the function fields of the **current microinstruction**."  The wording is ambiguous about pipeline timing — "current microinstruction" can mean (a) the one currently in MIR (immediate apply) or (b) the one whose F2 just computed in the previous cycle (delayed by 1).
+- AltoHW §3.5: "IR← also merges bus bits 0,5,6 and 7 into NEXT, which does a first level instruction dispatch."  Doesn't disambiguate.
+- May79 manual: searched for "merging | merged into NEXT | next field | delayed.*one cycle | pipeline | MIR.*loaded | address modif" — no explicit pipeline-timing statement.
+
+The spec text is genuinely ambiguous.  The disambiguation comes from:
+1. **Standard microcode behavior** — the boot wait-loop iterates 0x131, 0x132, 0x133 (delayed semantics) AND would NOT exit cleanly with immediate semantics.  Microcode is the ground truth: it's the artifact the spec exists to describe.
+2. **ContrAlto** — implements delayed semantics, and the standard microcode runs correctly under it.
+
+**Verdict: ContrAlto and the spec agree** (the spec is just loosely worded).  Real Alto hardware is delayed-by-one-cycle.  **Our impl has a bug** — applies F2 NEXT modifications immediately.  No bug to file against ContrAlto.
+
+**Adjacent finding (not the divergence cause but worth noting):**
+
+While investigating, found that AltoHW §2.2 specifies a **second** unimplemented feature: "The constant memory is gated to the bus by F1=7, F2=7, **or BS≥4**. ... This works because the processor bus ANDs if more than one source is gated to it."  Neither our impl nor ContrAlto implements the BS≥4 AND-masking facility.  For this divergence it's irrelevant (constants[RSEL=0, BS=7] = 0xFFFF, no mask).  But: there are other (RSEL, BS≥4) indices with non-0xFFFF mask values (e.g., constants[15] = 0xFFF8 for RSEL=1, BS=7), which would matter for some microinstructions.  Filed as a separate spec-conformance gap; unclear how observable it is in the standard microcode without per-cycle tracing.
+
+**Surprises and gotchas:**
+
+- ContrAlto's `BlockTask` admitted a spec deviation in code comment.  Made me suspect ContrAlto might also deviate elsewhere.  Spec-checking the F2 NEXT-modifier timing against the microcode confirmed they agree.  Pattern: when ContrAlto and our impl differ, **check the standard microcode's behavior** to disambiguate the spec — not the spec text alone (which can be loosely worded).
+- The "Nova bootstrap" doesn't come from KSEC writing PC=1 directly.  It comes from the Emulator's boot loop accumulating R[5] via L-load chain.  The user's intuition that "ContrAlto has Nova bootstrap and we don't" was correct in observable terms (CTR runs Nova code, ours doesn't), but the mechanism wasn't "KSEC sets PC" — it was "the boot loop's NEXT-modifier-driven dispatch eventually reaches Nova fetch microcode after enough iterations, AND the iterations only complete correctly with delayed F2-NEXT timing."
+- Our cadence test (231 alto tests pass) was misleadingly clean — sector_mark/BLOCK is one of the few subsystems that doesn't depend on F2-NEXT-modifier timing.  The cadence test couldn't have found this bug.  The lockstep harness COULD (and did) — but only after extending it to dump R-state and decoding microcode at the divergence MPC.
+
+**Validation:**
+
+- No code changes in this commit.  Two new diagnostic examples committed.  CHANGELOG entry documents the findings.
+- 231 alto tests still pass (no regressions).
+
+**Follow-ups:**
+
+- **Fix the F2 NEXT-modifier timing.**  Compiler-adjacent change per CLAUDE.md §11.1.  Add `next_modifier_pending: dff::DFF<Bits<10>>` to `Microengine`; at end of cycle K, latch this cycle's F2 modifier into the DFF; at cycle K+1 start, read `q.next_modifier_pending` and OR it into K+1's NEXT.  Re-bless every widget snapshot (most will change).  PR includes Justification section per §11.1 — guarantee that shifts is "pipeline-timing semantics for F2 NEXT modifications" (from immediate to delayed-by-one-cycle).
+- **Implement BS≥4 AND-masking** (separate fix).  Per spec §2.2, when BS≥4, BUS = (BS source value) AND (constants[RSEL, BS]).  Currently neither our impl nor ContrAlto does this; we should be more spec-conformant than ContrAlto here.  Likely affects fewer microinstructions in practice (most masks are 0xFFFF), but should land before claiming microengine spec-conformance.
+- **Add R[0..32] to ChipOut** to enable cycle-by-cycle register-state lockstep (Step 5b follow-up #1, still open).  After the F2-timing fix, this is the next thing needed to localize remaining divergences.
+
+---
+
+## 2026-05-02 — Tier C #2 Alto wakeup/BLOCK spec verification: AltoHW §2.4 + §6.0 vs. ContrAlto
+
+**Paths:** No code changes — research/spec-verification entry, written before deciding whether to "fix" rhdl-alto to match ContrAlto.
+
+**Why this, why now:** After the cadence test exonerated the chip-kernel BLOCK-clear path, the natural next step would be "match ContrAlto's behavior pixel-for-pixel."  Per the user's correction: **before "fixing" rhdl-alto to match ContrAlto, verify that ContrAlto and the spec actually agree.**  If ContrAlto deviates from spec, the right move is to file a bug against ContrAlto and decide which side to match — not to silently follow ContrAlto.
+
+**What the spec actually says:**
+
+- **AltoHW Aug76 §2.4 (Microprocessor Control), on BLOCK:**
+  > "The BLOCK function (F1=3) is used, by convention, to **signal a hardware device** associated with the currently running task to remove its wakeup signal. **This function is not accomplished by the Alto microprocessor, but rather by the individual device interfaces.**"
+
+- **AltoHW Aug76 §2.4, on wakeup signals:**
+  > "The 'wakeup signals' which drive the priority encoder are **hardware-generated** and are not accessible to the microprogram."
+
+- **AltoHW Aug76 §6.0 (Disk and Controller):**
+  > "The disk controller hardware communicates with the microprocessor in four ways: first, by **task wakeup signals for the sector and word tasks**..."
+  > "The sector task is awakened by a **sector signal from the disk**."
+
+The spec is unambiguous about (1) wakeups are hardware-driven; (2) BLOCK is a signal to the device, not a CPU-side write to the wakeup; (3) the device interface decides when/how to deassert.  The spec is **silent on the exact deassertion timing** (1-cycle vs. multi-cycle).
+
+**What ContrAlto actually does (cross-checked source):**
+
+- `Tasks/Task.cs:343-348` — BLOCK handler with an explicit "I deviate from spec" comment:
+  ```csharp
+  case SpecialFunction1.Block:
+      // Technically this is to be invoked by the hardware device associated with a task.
+      // That logic would be circuituous and unless there's a good reason not to that is
+      // discovered later, I'm just going to directly block the current task here.
+      _cpu.BlockTask(this._taskType);
+      break;
+  ```
+  ContrAlto admits it bypasses the device interface and clears wakeup directly via CPU.  Observable result is functionally equivalent to a faithful device-interface implementation.
+
+- `IO/DiskController.cs:753` — sector cadence:
+  ```csharp
+  private static ulong _sectorDuration = (ulong)((40.0 / 12.0) * Conversion.MsecToNsec * _scale);
+  ```
+  Exactly the spec §8.1 math: 40 ms rotation / 12 sectors = 3.333 ms per sector.  Identical to our `SECTOR_PERIOD_CYCLES = 19608` (= 3.333 ms / 170 ns).
+
+- `IO/DiskController.cs:303-360` (SectorCallback) — sector wakeup is edge-triggered (set once at SectorCallback fire); subsequent SectorCallbacks chained from the last WordCallback at fixed sector cadence.
+
+**Verdict: spec and ContrAlto agree** on observable behavior:
+
+- Wakeup periodically asserted at sector cadence (~3.333 ms / 19,608 cycles).
+- BLOCK clears wakeup on the cycle after the running task asserts it.
+- Stays cleared until the next sector signal.
+
+ContrAlto's CPU-direct-BLOCK deviation is admitted in code and doesn't change observable behavior.  **No bug to file against ContrAlto.**
+
+**Verdict for rhdl-alto:**
+
+Our impl follows spec §2.4 *more literally* than ContrAlto: `DiabloDisk` has its own `sector_wake` DFF, set when `sector_tick` wraps, cleared when `current_task=4 AND block_task=true` — that IS the "device interface clears its own wakeup on seeing BLOCK from its task" per §2.4.  We model the device-interface BLOCK clear path the spec describes; ContrAlto skips it.  Cadence test (`tests/sector_mark_block_cadence.rs`) confirms 19/19 BLOCK→clear, exact 256-cycle spacing, no drift, no stuck-latch.
+
+**No fix is needed in rhdl-alto's wakeup/BLOCK path.**
+
+**What this means for the lockstep divergence:**
+
+The lockstep divergence at MPC 0x38c vs 0x38d in the Disk Sector task (Step 5b CHANGELOG, divergence #2) is **downstream of the wakeup mechanism**.  The dump tool showed the divergent instruction at MPC=0x38b uses `BS=ReadR rsel=28 + F2=BusEqZero`, which dispatches NEXT[0] based on whether R[28]==0.  R[28]'s value is determined by whatever Disk Sector microcode wrote to it earlier in the boot sequence — an R-register accumulation cascade in the microcode itself, not in the chip's wakeup plumbing.
+
+Discipline: **don't conflate "we have a divergence somewhere" with "we know where the divergence is."**  The cadence test gave strong evidence the wakeup/BLOCK path is correct; the spec verification confirms we're spec-conformant; the divergence localizes elsewhere.
+
+**Surprises and gotchas:**
+
+- ContrAlto admits a spec deviation in BLOCK handling, in a code comment, with the qualifier "unless there's a good reason not to that is discovered later."  That deviation **is harmless** in normal operation but could be discriminative under racy scheduling — e.g., if a SectorCallback fires in the same nanosecond as a BLOCK, the order in ContrAlto depends on scheduler implementation; in our DFF-based latch, BLOCK and `wraps` in the same cycle cause `block_clears_sector` to win (sector_wake = false) and we'd lose a sector_mark event.  This corner case requires KSEC to take ≥ sector duration to execute, which doesn't happen in normal operation — but is the kind of scenario the cadence test would catch if it ever did.
+- The pattern "investigate what spec says before fixing impl to match a reference implementation" is exactly the §11.1 + spec-first discipline.  Without checking the spec, the natural reaction to "lockstep diverges" would be "let me look at how ContrAlto handles BLOCK and copy that."  That would have been wrong: ContrAlto deviates from spec, and our spec-correct impl produces the same observable behavior.
+
+**Validation:**
+
+- No code changes; this entry is the verification evidence + decision rationale.
+- 231 alto tests still pass (no regressions from prior commits in this PR).
+
+**Follow-ups:**
+
+- Investigate the actual source of the lockstep divergence: the Disk Sector task's R-register cascade.  Add `R[0..32]` to `ChipOut` (Step 5b follow-up #1), extend `tools/contralto-trace/Program.cs` to dump R-state per cycle, then compare cycle-by-cycle to localize which microinstruction wrote R[28] differently.
+- The "ContrAlto's CPU-direct BLOCK might cause divergence under same-cycle race" hypothesis is worth a deliberate test in the future.  Right now neither sim exercises this path under normal operation.
+
+---
+
+## 2026-05-02 — Tier C #2 Alto sector_mark / BLOCK / wakeup-clear cadence test (§11.1 follow-up)
+
+**Paths:**
+
+- `crates/rhdl-alto/tests/sector_mark_block_cadence.rs` — new self-consistency test that captures the per-cycle tuple `(cycle, current_task, block_task, sector_mark, wakeups[4])` over 5,000 cycles (test disk period = 256) and asserts the spec §5.5 chain: sector_tick wraps → sector_wake high → wakeups[4] high → KSEC fires → KSEC executes F1=Block → sector_wake clears within 1 cycle.  Four discrete tests:
+  - `sector_mark_cadence_matches_test_period`: count rising edges, verify spacing is the configured period ±32.
+  - `sector_mark_drives_wakeup_bit_4`: invariant — every `sector_mark=true` cycle has `wakeups[4]=true`.
+  - `block_in_ksec_clears_sector_wake_within_one_cycle`: every (current_task=4, block_task=true) cycle clears sector_mark on the next cycle.  Asserts equality, not just majority.
+  - `sector_mark_falls_repeatedly_not_stuck`: at least 5 falling edges in 5,000 cycles (catches "fires once, latches forever" regression).
+- `crates/rhdl-alto/src/alto_chip.rs` — added `block_task: bool` to `ChipOut` (echo of `engine.block_task`), wired in the kernel.  Required so the test can capture per-cycle BLOCK assertions.
+
+**Why this, why now:** The prior wakeup-latched / BLOCK-clear chip-kernel change (introduced earlier in Phase 3.5) shipped with only "fired at least once" tests for the disk-sector path.  Per CLAUDE.md §11.1, that's the wrong granularity for compiler-adjacent state-machine logic — "fires at least once" doesn't catch latch-stuck, wrong-cadence, or BLOCK-not-clearing bugs.  When the lockstep against ContrAlto produced cascading divergences (PR #X CHANGELOG, Step 5b), the natural hypothesis was a BLOCK-clear path bug.  This test was written specifically to discriminate "BLOCK-clear bug" from "downstream Nova-emulation cascade" without needing ContrAlto cross-validation.
+
+**Findings:**
+
+The test passes cleanly:
+
+```
+[cadence] 19 sector_mark rising edges in 5000 cycles
+[cadence] first 10 rising-edge cycles: [255, 511, 767, 1023, 1279, 1535, 1791, 2047, 2303, 2559]
+[cadence] inter-edge spacings: min=256, max=256
+[latch]   sector_mark fell 19 times in 5000 cycles
+[block]   19 (current_task=4, block_task=true) events; 19 cleared sector_mark next cycle
+```
+
+Interpretation:
+- Cadence is exact (256-cycle period, every edge, no drift).
+- Every BLOCK in current_task=4 clears the latch on the next cycle (19/19).
+- Latch is not stuck — falls 19 times.
+
+**This disproves the hypothesis that the wakeup-latched / BLOCK-clear path has a bug.**  The chip-kernel logic clears the right bit at the right time, every time.  The remaining lockstep divergence with ContrAlto must therefore come from elsewhere — most likely the BLT-via-bootstrap layer or downstream Nova-emulation cascading effects in the disk sector microcode itself, not the chip-level wakeup plumbing.
+
+**Design decisions:**
+
+- **Self-consistency rather than ContrAlto cross-validation** for the first cut.  ContrAlto-cross-validation would require extending `tools/contralto-trace/Program.cs` to dump per-cycle SectorMark / wakeup state / F1=Block — feasible (ContrAlto's `cpu.IsBlocked(TaskType.DiskSector)` returns wakeup state, `MicroInstruction.F1` is public) but a separate C# change with its own build cycle.  The self-consistency test is independent of ContrAlto availability and catches the same bug class — see Follow-ups for the cross-validation extension.
+- **Test disk period = 256, not the spec-correct 19,608.**  Same reason as the lockstep harness: 5,000 cycles at the spec-correct period would only see 0 sector boundaries.  The test validates *invariants* between cadence/latch/BLOCK; the absolute period is irrelevant to those invariants and a short period makes iteration fast.  Real-hardware spec-correctness is anchored by `tests/diablo_disk.rs::sector_mark_uses_spec_period_by_default`.
+- **Equality, not ≥**, on the BLOCK-clears-latch test.  An "at least one" check would let a regression pass that BLOCKs many times but only clears the latch sometimes.  Equality enforces the spec §5.5 wording exactly.
+
+**Surprises and gotchas:**
+
+- The test is *clean* (19/19 BLOCK→clear, exact 256 spacing).  My initial hypothesis was that the BLOCK-clear path probably has a bug because of the lockstep divergence with ContrAlto.  Wrong.  The test gives strong evidence the divergence is downstream (most likely in the disk task's microcode-driven R-register accumulation, which is where divergence #3 in the lockstep harness localized).  Discipline: don't conflate "we have a divergence somewhere" with "we know where the divergence is."
+
+- Running this test on a CHIP that *did* have the BLOCK-clear bug (e.g., earlier WIP commits during the wakeup-latched fix) would have caught it immediately.  The §11.1 lesson: write the cadence test *with* the chip-kernel state-machine change, not after.  The cost of writing the test alongside is much lower than the cost of being wrong about which subsystem has the bug.
+
+**Validation:**
+
+- 4 new cadence tests pass (231 total alto tests).  No regressions.
+
+**Follow-ups:**
+
+- **Extend `tools/contralto-trace/Program.cs`** to dump `system.CPU.IsBlocked(TaskType.DiskSector)` (= wakeup state) and the executing instruction's F1=Block bit per cycle.  Then add a true cross-validation test that compares cycle-by-cycle (current_task, block_task, sector_mark, wakeups[4]) tuples between OUR chip and ContrAlto.  When that test is written, the *first divergence cycle* localizes any remaining cadence/latch difference exactly.
+- **Investigate the Disk Sector R-register cascade** (lockstep divergence #3, Step 5b CHANGELOG): now that BLOCK-clear is exonerated, the next-most-likely bug is in disk_ctrl + disk task interaction or in the Nova bootstrap memory state.  Adding R[0..32] to ChipOut (Step 5b follow-up #1) is the right enabling work.
+
+---
+
+## 2026-05-02 — Tier C #2 Alto microcode_semantics.rs: BS=DISP fix + audit-of-tests follow-ups (B.2/B.3/C.1)
+
+**Paths:**
+
+- `crates/rhdl-alto/src/microengine.rs` — fixed `BusSource::InstructionRegister` (BS=7, ←DISP).  Was returning the full IR; should return `IR & 0xFF` with conditional sign-extension when X-field nonzero AND IR[8] (sign bit) is set.  Found via lockstep against ContrAlto.
+- `crates/rhdl-alto/tests/microcode_semantics.rs` — replaced one wrong test with 4 spec-derived tests covering the X-field × sign-bit matrix (DISP for IR=0x0100 with X=0 → 0x0000, etc.); added 3 asterisked-ALUF tests (BusMinusOne, BusPlusTPlusOne, BusAndTAlt); added DNS Nova-op carry-invert test (`dns_carry_inverts_when_nova_op_is_arith_and_alu_carries_out`) for the previously-untested invert-on-carry path.
+- `crates/rhdl-alto/alto-processor-and-microcode-spec.md` — added two missing rows in the IDISP table (§6.6): `IR[0]=1 → 3-IR[8-9]` and `IR[4-7]=16B → 6`, both implemented in our chip and in ContrAlto but not previously in the spec digest.
+
+**Why this, why now:** While running the lockstep harness against ContrAlto, divergence #2's predecessor was a `BS=InstructionRegister` instruction.  Cross-reference against the spec showed our impl was returning full IR but the spec defined ←DISP as the low 8 bits with conditional sign-ext.  Fixing it surfaced a meta-failure: the test I had for BS=7 was *also wrong* — it had been written by running the broken impl and copying its output as the expected value, so it asserted the same wrong behavior.  This triggered an agent audit of every other test in `microcode_semantics.rs` against the spec text, looking for the same anti-pattern and for input choices that don't distinguish wrong impls.
+
+**Design decisions:**
+
+- **Replace, don't patch, the bad BS=DISP test.**  The fix value (DISP-with-sign-ext) needs four input choices to nail down: X-field zero vs nonzero × IR[8] zero vs nonzero.  One test per quadrant, with input values chosen so DISP *differs* from the previously-asserted "full IR" output.  An impl that returns full IR fails at least one test; an impl that drops sign-ext fails the X≠0/IR[8]=1 test; etc.
+- **Add tests for asterisked-ALUF coverage.**  Original tests covered only BusOrT and BusPlusOne.  An impl that hardcoded only those two as asterisked (= T←ALU even with t_load=0) would pass.  Added three more (BusMinusOne, BusPlusTPlusOne, BusAndTAlt) with T/BUS values where ALU output ≠ BUS, so the spec's T←ALU-when-asterisked semantics is distinguished.
+- **Add DNS Nova-op carry-invert test.**  Existing DNS tests all used Nova op=0 (COM), which doesn't take the invert-on-carry path.  An impl that omitted the `if op∈{1,3,4,5,6} AND aout.carry → invert dns_carry` logic would pass every existing test.  New test uses IR=0x0600 (Nova ADD) and forces ALU carry-out via BusPlusOne(0xFFFF).
+- **Patch the spec doc, not the impl.**  The two missing IDISP rows are present in ContrAlto and our impl; only the spec digest in `alto-processor-and-microcode-spec.md` was incomplete.  Per the spec preamble, ContrAlto is the gold reference where the digest is missing detail.
+
+**Surprises and gotchas:**
+
+- **The exact bug pattern I had cataloged in the audit was present in my own test.**  Wrote a test by reading impl output and copying it as expected; the test then "passed" while the impl was wrong.  Mitigation pattern (now permanent): derive expected values from spec text *before* writing the assertion; pick input values that distinguish the spec from common wrong impls.
+- **DNS overrides effective_rsel via ACDEST**: in the carry-invert test, BS=ReadR with mi.rsel=N does NOT read R[N] in DNS context — it reads R[(IR[3-4] XOR 3)] (= R[3] for IR=0x0600).  First two attempts at the test failed because I pre-loaded the wrong R-register.  Documented in the test for future readers.
+- The agent audit found *no other* wrong-assertion bugs across ~110 tests.  The systematic risk is real but doesn't appear pervasive in this file.
+
+**Validation:**
+
+- 226 alto tests pass (up from 222 — added 4 new tests, replaced 1 bad test with 4 better ones).
+- All 4 audit-driven items addressed: B.2 (asterisked ALUFs), B.3 (DNS carry-invert), C.1 (spec doc gap), and the doc bug in the BS=DISP test comment.
+
+**Follow-ups:**
+
+- Apply the same "derive from spec, distinguish inputs" discipline to other test files in the alto crate as time permits.  The current audit was scoped to `microcode_semantics.rs`.
+
+---
+
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 5b: lockstep follow-up — diagnostic infra + cascading-divergence root cause
+
+**Paths:**
+
+- `crates/rhdl-alto/examples/dump_lockstep_divergence_mpcs.rs` — new example that decodes the microinstructions at and around any MPC, plus dumps the predecessors that point to a given target MPC pair.  Turns "MPC 0x154 vs 0x155 — what does that mean?" into "here's the predecessor microcode + its NEXT field + its F2 NEXT-modifier potentially responsible".  Used to nail down the BS=DISP bug (already fixed) and to investigate the disk-task R-register divergences (still open).
+- `crates/rhdl-alto/examples/dump_lockstep_traces.rs` — new example that prints both OUR and CTR's first 30 cycles in a parallel-table format with task/MPC/T/L/IR/BUS/ALU all visible.  Eliminates guessing about which side did what when.
+- `crates/rhdl-alto/examples/dump_disk_sector_div.rs` — narrow tool dumping the Disk Sector divergence neighborhood (MPC 0x388-0x390) once the harness pointed there.
+- `crates/rhdl-alto/tests/contralto_lockstep.rs` — bumped `cycles` from 200 to 2000 (so our 256-cycle sector_mark wait clears and Disk Sector actually fires) and `SKIP_WINDOW` from 100 to 500 (so the harness can resync past the long Disk Sector cycle range).
+
+**Why this, why now:** After the BS=DISP fix, re-ran the lockstep harness to see if divergences shifted.  They didn't — still 17 matched (task, mpc) pairs out of the first 200 cycles, with the same 3 divergence pattern.  Investigation revealed that the divergences are *cascading consequences* of one structural disparity (sector_mark timing), not independent microengine bugs.  The diagnostic infrastructure here is what made that diagnosis possible.
+
+**Design decisions:**
+
+- **Bump cycles to 2000, window to 500**: this is the smallest configuration that lets our chip complete its 256-cycle sector_mark wait and execute the Disk Sector boot DMA, then resync with CTR's earlier-but-architecturally-equivalent disk-task execution.  With 2000/500 we now reach 19 matched (task, mpc) pairs across two runs of the boot loop.
+- **Three new diagnostic examples instead of one mega-script**: each does one focused job — decode microcode at MPCs, dump parallel traces, focus on a specific divergence neighborhood.  Easy to throw away or repurpose.
+- **Don't ship a "make sector_mark fire on cycle 1" policy change**: the user's prior course-correction (rejecting `sector_tick=255`) holds.  Real Alto fires sector_mark every ~19,600 cycles per spec; both 0 (ContrAlto) and 256 (us) are simulation shortcuts.  The right way to validate microengine semantics is endpoint state validation (Phase 3.5 Step 4), not forcing both simulators into the same start-up timing fiction.
+
+**Investigation findings (logged for the next agent):**
+
+- **Divergence #1 (cycle 4)**: ContrAlto fires sector_mark on cycle 1 → KSEC task at MPC=0x004; we wait until cycle 256.  Structural, by design.  Resync at task=4 mpc=0x004 once we catch up.
+- **Divergence #2 (Emulator MPC 0x154 vs 0x155)**: predecessor MPC=0x153 has `bs=InstructionRegister + f2=BusToNext + next=0x154`.  When IR=0x01 (the boot instruction byte), DISP=0x01, BusToNext OR's bit 0 → next becomes 0x155.  CTR's 0x154 means CTR's IR was 0 *at this point* (= one Emulator-loop pass earlier in CTR than in ours).  Root cause: CTR's R[5] (boot-bus-address) was already populated by the earlier-fired Disk Sector task, so CTR's first instruction-fetch in 0x150 read a real instruction; ours read R[5]=0 → MAR=0 → MD=0 → IR=0 for two extra Emulator passes.  This is a downstream consequence of divergence #1, not a separate bug.
+- **Divergence #3 (Disk Sector MPC 0x38c vs 0x38d)**: predecessor MPC=0x38b has `aluf=Bus bs=ReadR rsel=28 + f2=BusEqZero (universal F2=1)`.  BusEqZero sets NEXT bit 0 if BUS == 0 — here BUS=R[28].  We went to 0x38d (R[28]==0); CTR went to 0x38c (R[28]!=0).  Different R[28] = a register-file cascade from earlier in the Disk Sector boot run, where some microinstruction wrote R[28] (or some upstream R-register feeding it) with a different value than CTR.  The exact root cause requires per-cycle R-register diff capability that `ChipOut` doesn't currently expose.
+
+**Surprises and gotchas:**
+
+- The "off-by-one MPC with same T/L/IR" pattern feels at first like a NEXT-modifier bug, but isn't.  It's an upstream **register-state cascade** that only manifests at the next conditional-dispatch microinstruction (BusEqZero, BusToNext, ShiftEqZero, etc.).  Without per-cycle R-register tracking the actual divergence point hides one or two boot loops earlier than where the harness reports.
+- A single live test against the actual artifact (`cargo test ... --include-ignored`) gives a far better picture of where the chip is than any amount of synthetic spec-conformance testing.  Preserving this lockstep harness as `#[ignore]`-but-runnable is high-leverage even when it's not yet "passing".
+- **Don't conflate divergence count with bug count**: 3 divergences here are 1 structural disparity + 2 cascades.  Reporting "3 bugs found" would be wrong.
+
+**Validation:**
+
+- 226 alto tests still pass.  Lockstep harness reaches 19 matched (task, mpc) pairs (up from 17) with 2000-cycle / 500-window config.
+- Diagnostic infra committed and runnable via `cargo run --example <name> --package rhdl-alto`.
+
+**Follow-ups (in priority order):**
+
+1. **Add R[0..32] + ALUC0 to ChipOut** so the lockstep harness can compare register-file state and find the actual divergence point one or two boot loops earlier than current.  This is the highest-leverage next step and unblocks all cascading-divergence investigations.
+2. **Phase 3.5 Step 4 (boot-trace endpoint validation)** as a complementary validation track that doesn't depend on cycle-by-cycle alignment — verifies the chip eventually reaches a known good post-boot state, regardless of sector-timing simulation choices.
+3. Once #1 lands, retire the synthetic-MPC-only divergence reports and bring back per-cycle assertions.
+4. **Don't switch the sector_mark policy** without explicit user agreement — the user's prior course-correction (preserving spec-correctness over lockstep-passability) holds.
+
+---
+
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 5: ContrAlto cycle-equivalent lockstep harness
+
+**Paths:**
+
+- `crates/rhdl-alto/tools/contralto-trace/` — new .NET 8 console tool that uses ContraltoLib directly to boot a disk image and dump per-cycle CPU state (cycle, task, mpc, T, L, IR, ALUC0, R[0..32]) as TSV to stdout.  Uses RollForward=Major so the .NET 10 runtime can run net8.0-targeted ContraltoLib.
+- `crates/rhdl-alto/tests/contralto_lockstep.rs` — Rust test harness that runs ContrAlto via subprocess and our chip side-by-side, then reports the first cycle of divergence in (task, mpc) and (T, L, IR).  Marked `#[ignore]` because it needs the contralto-trace tool built.  Handles ContrAlto's cycle-numbering convention (reports MPC about-to-execute, +1 from our convention) and §4.4 memory-suspend stalls (collapses duplicate ContrAlto cycles).
+- `crates/rhdl-alto/src/diablo_disk.rs` — added `DiabloDisk::with_sector_at_boundary(words)` constructor (sector_tick=255 so first sector_mark fires on cycle 0, matching ContrAlto's `_sectorEvent = new Event(0, ...)` simulation choice).  Not yet wired into the chip's boot constructor — switching to it changes boot_trace metrics in a way that isn't strictly an improvement.
+
+**Why this, why now:** Phase 3.5 Step 5 per the Tier C #2 plan.  Lockstep against ContrAlto gives one-cycle-precise divergence detection — every future fix's payoff is immediately measurable.
+
+**Design decisions:**
+
+- **Subprocess + TSV protocol over in-process FFI**: simpler, no .NET-Rust interop machinery.  ContrAlto runs to completion (or N cycles), Rust parses stdout, we compare.
+- **Cycle-numbering convention reconciliation**: ContrAlto's `_currentTask.MPC` reports "MPC of the instruction about to execute" (post-prefetch).  Our chip's `o.mpc` is "MPC of the instruction currently executing".  These differ by one cycle.  Harness compensates with `our_skip=1`.
+- **Memory-stall collapse**: ContrAlto models §4.4(a/b) memory-suspend stalls (which our chip doesn't yet — D2/D3 audit follow-up).  These show up as duplicated consecutive ContrAlto cycles.  Harness filters them out so we compare microinstruction-to-microinstruction, not cycle-to-cycle.
+
+**First lockstep findings:**
+
+After alignment + stall-collapse:
+- **3 microinstructions match exactly**: NOVEM at MPC=0 → 0x152 → 0x153 → 0x154.  Both simulators execute the same microcode chain through the boot dance start.
+- **First real divergence at microinstruction 3**: ContrAlto switches to task 4 (KSEC) at MPC=0x004; our chip continues Emulator at MPC=0x130 (Q0).
+- **Root cause**: ContrAlto's `DiskController.SectorCallback` is scheduled at time 0 (immediate), so sector_mark wakes KSEC by cycle 4.  Our chip's `DiabloDisk::default()` starts sector_tick=0 and waits 256 cycles before firing sector_mark.  Per spec §8.7 + AltoHW §6.0, the real disk fires sector_mark every ~3.33ms (≈19,600 microcycles) — neither simulator matches real timing; both are shortcuts.  Neither is "wrong" per spec.
+
+**Surprises and gotchas:**
+
+- The `o.mpc` chip output appears stuck at 0x000 immediately after a wakeup-driven task switch because of the per-task `task_started` substitution: until task K has run at least once, `current_mpc = K` (= 0 for Emulator).  This is correct behavior; was confusing during debugging.
+- ContrAlto's PressBootKeys does NOT immediately set Emulator's MPC to a non-zero value — both simulators start Emulator at MPC=0 (NOVEM).  ContrAlto's first reported MPC=0x152 is just NOVEM's NEXT field, post-prefetch.
+- The microcode loader's byte-for-byte equivalence with ContrAlto (verified during Step 4h) is what makes the lockstep meaningful: when the simulators diverge, it's NOT a microcode encoding difference.
+
+**Validation:**
+
+- 219 alto tests still pass (no regressions from the diablo_disk constructor addition).
+- Lockstep harness reports a structured divergence report with surrounding context — exactly the diagnostic shape needed for cycle-precise debugging.
+
+**Follow-ups:**
+
+- **Sector_mark timing alignment**: switching the boot constructor to `with_sector_at_boundary` makes our chip match ContrAlto's choice but changes boot_trace metrics (76 → 59 distinct microaddresses in 2000 cycles).  The metric shift isn't a clear improvement (Q-loop "wait for sector" exploration shrinks); warrants further analysis before committing.
+- **§4.4 memory-suspend modeling** (D2/D3 audit): until our chip stalls on bad MAR/MD timing, ContrAlto and our chip will desync on every memory-reference instruction.  Currently mitigated by the harness's stall-collapse, but adding the suspend would let us compare cycle-by-cycle.
+- **Regfile + ALUC0 in chip output**: lockstep currently can't compare R[] or ALUC0 because our `ChipOut` doesn't expose them.  Adding those would let lockstep find register-state divergences.
+- **Per-task MPC stream alignment**: ContrAlto's TaskSwitch is scheduled to fire AFTER the next instruction (one-cycle delay); our chip switches at cycle edge.  May matter once we get past the sector_mark timing divergence.
+
+---
+
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4o: per-cycle diagnostic alignment + boot-trace progress diagnosis
+
+**Paths:**
+
+- `crates/rhdl-alto/src/alto_chip.rs` — fixed `boot_trace_per_cycle_chain` pairing.  After Phase 3.5 Step 4i (1-cycle/microinstruction pipeline), `o.mpc` IS the address of the instruction the engine is executing this cycle (`current_mpc = q.task_mpc[T] = last cycle's engine.next_mpc = address fed to URom for this cycle's response`).  So `mpc[k]` and `instruction[k]` are coherently paired in the same cycle.  The previous `mpc[k-1]` pairing was correct for the OLD 2-cycle pipeline only.
+
+**Why this, why now:** Continuing audit cleanup.  The misaligned diagnostic was actively misleading: with the old pairing, the trace showed instructions at addresses one off from where they actually lived in URom, making cross-checking against ContrAlto's disassembly impossible.
+
+**Boot-trace diagnosis (informational, no code fix):**
+
+Per the corrected diagnostic, the boot trace is correctly executing:
+- Q-loop boot dance (microcode 0x000 → 0x152 → 0x153 → 0x154 → 0x130 → 0x14e → 0x150 → 0x151).
+- BLT (Block Transfer) entry chain (0x17e → 0x17f → 0x1fa → 0x1fb).
+- BLT MOVELOOP body (0x1fb test → 0x1fd / 0x1fc → ... → 0x1ee → 0x209 → 0x070 → 0x1e6 → 0x1ed → back to 0x1ff).
+
+Cross-referenced against ContrAlto's `altoIIcode3.mu` disassembly: every visited address matches ContrAlto's expected microcode at that location.  The boot trace's "stuck at 76 distinct microaddresses" is NOT a stuck loop in invalid code — it's the genuine BLT bootstrap loop iterating, with each iteration covering ~10 distinct microaddresses.
+
+The actual bottleneck: the BLT counter `R[8]` (XH) starts at 0 (post-reset default).  At MOVELOOP entry, `R[8]-1 = 0xFFFF` (wrap), so the loop would need ~65K iterations to exit.  This is a downstream Nova-emulation correctness gap (the Nova bootstrap at memory[1..400B] should set R[8] before invoking BLT) — NOT a microengine bug.  The BLT microcode itself executes correctly per ContrAlto.
+
+**Validation:**
+
+- 219 alto tests pass.  No regressions.
+
+**Follow-ups:**
+
+- Diagnose why R[8] (and other R-registers used as Nova accumulators) aren't being initialized by the boot bootstrap.  Likely: the Nova-instruction-fetch + opcode-handler chain doesn't yet reach the LDA/STA Nova instructions that load registers, OR Nova-AC memory mapping (R[3..0] aliases) needs verification.  This is real Nova-emulation work, not audit cleanup.
+
+---
+
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4n: D16 full DNS (Nova SHIFT instruction emulation)
+
+**Paths:**
+
+- `crates/rhdl-alto/src/microengine.rs` — full D16 DNS implementation per spec §6.6 + ContrAlto's `EmulatorTask.cs` LoadDNS handlers + `Shifter.cs` DNS modifier:
+  - Added `carry: dff::DFF<bool>` (Nova CARRY flip-flop).
+  - F2=Code10 (LoadDNS) extends the effective_rsel ACDEST-style override (uses IR[3-4] XOR 3 same as ACDEST).
+  - DNS shifter modifier on LSH/RSH: 17-bit Nova rotate with `dns_carry_in` (computed from q.carry + IR[5-4] carry-control + ALU C0 + Nova arith op IR[10-8]).
+  - Nova carry-control modes: 0=hold, 1=Z (zero), 2=O (one), 3=C (complement).
+  - Nova arith-op carry adjustment: invert dns_carry on NEG/INC/ADC/SUB/ADD if ALU produced a carry-out.
+  - R-write suppression when DNS + IR[12] (= our bit 3) is set, per Nova "no-load" bit.
+  - SKIP-mode setting (IR low 3 bits): SKP / SZC / SNC / SZR / SNR / SEZ / SBN modes per Nova SKP encoding.
+  - CARRY DFF latches dns_carry_out IFF R-write is enabled.
+- `crates/rhdl-alto/tests/microcode_semantics.rs` — added 7 DNS tests covering: LSH carry-injection, RSH carry-injection, Z carry-control, SKP-always, SZR (zero/nonzero), IR[12] R-write suppression.
+
+**Why this, why now:** D16 was the largest remaining audit item.  Nova SHIFT instructions are pervasive in the OS loader — without DNS, every emulator handler that sets CARRY/SKIP from a shift result silently misbehaves.  The SKIP DFF infrastructure was already in place from Step 4l.
+
+**Design decisions:**
+
+- **Single-cycle implementation, no early/late split.**  ContrAlto separates the DNS work into "early" (pre-shifter: carry input, modifier-set, RSEL override, R-write enable) and "late" (post-shifter: SKIP-from-result, CARRY latch).  Our microengine kernel runs the whole instruction in one combinational pass, so all the work happens in sequence in one cycle.  The Nova carry/skip semantics are equivalent.
+
+- **`dns_carry_out` reads pre-shift L.**  Tricky: `d.l` gets overwritten by the shift result, so I capture `l_pre_shift = d.l` before the shifter to read the bit being rotated out.  For a non-shift DNS, `dns_carry_out = dns_carry_in` (passes through).
+
+- **DNS overrides BS=LoadR R-write.**  Per ContrAlto: if `IR[12]=1` AND DNS, R-write is suppressed even with BS=LoadR.  Our existing `r_wen = mi.bs == BusSource::LoadR` is now `&& !dns_suppress_r`.
+
+- **SKIP cleared on next IR←** (per spec §6.6, already implemented in Step 4l).  So a SKIP set by DNS lasts for exactly one macroinstruction window — until the Nova fetch loop's next IR← clears it.  This is the correct Nova "skip the next instruction" semantics.
+
+**Validation:**
+
+- 219 alto tests pass (up from 212 — added 7 DNS tests).  No regressions.
+- Boot trace metrics unchanged (76 unique microaddresses); the Emulator's tight loop in 2000 cycles doesn't yet reach Nova SHIFT instruction handlers in measurable volume.  DNS impact will be visible once boot reaches OS-loader code that uses shifts heavily.
+
+**Follow-ups:**
+
+- D19 INCRECNO; D20 KWDX F2 codes — disk-state model needed.
+- D2/D3 §4.4(b) memory-suspend modeling.
+- D4/D5 §4.4(d/e) refresh + MAR-after-MD hazard.
+
+---
+
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4m: E2 + E3 + E5 (tighten weak assertions)
+
+**Paths:**
+
+- `crates/rhdl-alto/src/alto_chip.rs` — E2: tightened `disk_sector_count` from bare `>=4` to measured-pipeline-exact range `140..=145` (5-cycle setup + ~140 post-DMA cycles in the 400-cycle test).  E3: tightened `boot_trace_baseline_metrics` from loose floors (`visited >= 30`, `disk_sector_firings >= sector_events`, `emulator_firings > 0`) to tight ranges anchored to the measured 1-cycle/microinstruction pipeline (`visited 70..90`, `sector_events 6..10`, `disk_sector_firings 30..60`, `emulator_firings 1900..1980`).  Significant deviations from these ranges now break tests and force a deliberate update — catching regressions or new features earlier.
+- `crates/rhdl-alto/tests/disk_dma_integration.rs` — E5: tightened `disk_sector_mark_drives_disk_sector_task` from loose `>=expected_min` to tight `expected ±2` range.
+
+**Why this, why now:** Audit identified weak `>=` assertions that pass even when behavior is half-correct.  Tightening them locks in the current-pipeline-exact behavior so any subsequent regression or improvement is immediately visible.
+
+**Validation:**
+
+- 212 alto tests pass; tightened bounds match current measured behavior.
+
+**Follow-ups:**
+
+- E4 / E6 / E7 / E8: remaining weak assertions are minor (snapshot floors, hardcoded indices in test harnesses).  Lower priority.
+- Major remaining audit items (D16 full DNS, D19 INCRECNO, D20 KWDX F2 codes, D2/D3 memory-suspend modeling, D4/D5 refresh + MAR-after-MD hazard) are substantial features each warranting their own scoped work, not bundled into audit-cleanup commits.
+
+---
+
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4l: D15 (MAGIC) + D16 partial (SKIP latch) + D2/D3 (memory timing tests) + E1 (tighten DMA assertion)
+
+**Paths:**
+
+- `crates/rhdl-alto/src/microengine.rs` — D15: implemented MAGIC modifier (F2=9 in Emulator).  Modifies LSH (left shift bit 0 ← T's MSB) and RSH (right shift bit 15 ← T's LSB) per spec §6.6 + ContrAlto's `Shifter.cs`.  Used for Nova double-length shifts.
+- `crates/rhdl-alto/src/microengine.rs` — D16 partial: replaced the SKIP placeholder (`skip = q.l & 0x8000`) with a proper `skip: dff::DFF<bool>`.  Cleared by F2=LoadIr per spec §6.6 ("IR← clears SKIP").  Read by ALUF=11 (BUS+SKIP).  The setter (F2=LoadDNS) is the substantial DNS work and remains a follow-up; for now SKIP stays at the post-reset/post-IR-clear false state.
+- `crates/rhdl-alto/tests/microcode_semantics.rs` — added 7 new tests: 5 MAGIC tests (LSH+T-injection on/off, RSH+T-injection on/off, MAGIC inactive in disk task), 2 SKIP latch tests (post-reset state, IR← clear).
+- `crates/rhdl-alto/tests/microcode_semantics.rs` — added 2 §4.4 memory timing tests (well-formed read with intervening cycle, well-formed write with intervening cycle).  Spec §4.4(b) suspend-on-bad-timing remains a follow-up (requires modeling memory-busy state).
+- `crates/rhdl-alto/src/alto_chip.rs` — E1 tightened: `disk_word_count` bound from `>=256 && <=280` to `==256 || ==257` matching spec §8.6 exact-256-DMA semantics.  Old slack would have masked re-arm bugs for many extra firings.
+
+**Why this, why now:** Continuing audit cleanup.  MAGIC is the immediate D15 fix; the SKIP latch removes a long-standing placeholder that only worked by coincidence (`skip = L's MSB`) and lays the groundwork for D16's full DNS implementation.
+
+**Design decisions:**
+
+- **MAGIC is per-task (Emulator only).**  F2=9 in Disk task is RWC (NEXT-modify), not MAGIC.  The disk-task negative test (`magic_inactive_in_disk_task`) verifies LSH in disk task with F2=Code9 produces plain shift, no T injection.
+- **SKIP DFF default = false.**  Post-reset SKIP is false.  Initial behavior is therefore identical to the previous placeholder for the common case.
+- **DNS deferred.**  DNS is a large feature (Nova-style 17-bit rotates with carry; per-IR-bit conditional R-write and SKIP setting; new CARRY DFF).  Setting up the SKIP DFF + IR← clear path now is preparation; the DNS setter will plug into the same DFF.
+
+**Validation:**
+
+- 212 alto tests pass (up from 203 — added 9 new tests for D15 + D16-SKIP + D2/D3).
+- Boot trace metrics unchanged (76 distinct microaddresses); the Emulator's tight loop in 2000 cycles doesn't yet reach Nova SHIFT or memory-MAR/MD-using opcode handlers in significant volume.
+
+**Follow-ups:**
+
+- D16 full DNS implementation (Nova SHIFT instruction emulation: shifter modifier, CARRY DFF, conditional R-write, SKIP setting from shift result).
+- D19 F1=11 INCRECNO (KSEC uses; needs DiabloDisk to track records).
+- D20 KWDX F2 codes 8-12, 14 (currently no-op stubs; need disk-state model).
+- D2/D3 spec §4.4(b) memory-suspend-on-bad-timing (would need memory-busy state in the chip).
+- D4/D5 §4.4(d/e) refresh + MAR-after-MD hazard.
+- E2-E8 remaining weak assertions.
+
+---
+
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4k: D11 + D12 + D13 + D25 (IDISP completeness, ACSOURCE late dispatch, PART task numbering)
+
+**Paths:**
+
+- `crates/rhdl-alto/src/microengine.rs` — D12: completed the IDISP PROM table with the missing IR[0]=1 (complement-of-SH-field) and IR[4-7]=14 branches per spec §6.6 + ContrAlto's `EmulatorTask.cs`.  D13: implemented ACSOURCE late dispatch (the second of ACSOURCE's two roles per spec §6.6) — IR[0]=1 → 3-IR[8-9]; else PROM-equivalent dispatch on IR[3-7] (CYCLE / RAMTRAP / NOPAR / JSRII / CONVERT / SWAT / ROMTRAP cases) plus optional IR[5] OR if IR[1-2] != 3.
+- `crates/rhdl-alto/tests/microcode_semantics.rs` — added 19 new tests: 1 BUSODD negative case (D11), 9 IDISP coverage tests (D12, all branches), 9 ACSOURCE late-dispatch tests (D13, including disk-task negative test).
+- `crates/rhdl-alto/alto-processor-and-microcode-spec.md` — D25: corrected the §5.1/§5.2 task numbering text/table to reflect real Alto II microcode (PART at task 13, KWDX at task 14) instead of the generic AltoHW §2.3 wording (which says "task 15").  Added explanatory note that the implementation follows the real-microcode convention and ContrAlto's `CPU.cs` enum.
+
+**Why this, why now:** Continuing audit cleanup.  Each of these is a real implementation/spec-doc gap that would manifest under realistic microcode — IDISP is the Nova fetch loop's first-level dispatch; ACSOURCE is used by virtually every Nova instruction's emulator handler; PART task numbering was a documented contradiction between the generic HW manual and the as-shipped microcode.
+
+**Design decisions:**
+
+- **D12: PROM equivalent in if-else chain.**  ContrAlto uses an actual lookup PROM for IDISP/ACSOURCE.  Our microengine uses an if-else chain that semantically matches the PROM contents.  Slower in real silicon but correct; can swap for a lookup BRAM later if perf matters.
+
+- **D13: ACSOURCE late dispatch is intricate** — IR[5] is structurally part of IR[3-7] (overlapping bit positions per Alto MSB=0 numbering: IR[5] = our bit 10, IR[3-7] = our bits 12-8 which includes bit 10).  This makes the spec's "OR IR[5]" rule observable only in cases where the IR[3-7] dispatch's bit 0 is clear AND IR[5]=1 AND IR[1-2] != 3.  Test `acsource_ir12_not_3_ors_indirect_bit_into_dispatch` exercises this corner with IR=0x0500.
+
+- **D25: implementation wins; spec-doc was wrong.**  Real Alto II microcode (`altoIIcode3.mu`) places PART at task 13 via the `!17,20,...,PART,KWDX,;` directive.  ContrAlto's enum agrees.  The "task 15 = PART" text in the AltoHW §2.3 footnote describes a generic capability ("the highest-priority task is the parity error task") rather than a specific microcode-binary slot assignment.  Real Alto II shipped with task 15 unused.
+
+**Surprises and gotchas:**
+
+- IR bit numbering is consistently MSB=0 (Alto convention) in spec text but LSB=0 in our code — every dispatch table required careful translation.  Wrote it out in comments next to each implementation to make audit easier.
+
+- ACSOURCE's PROM is 128 entries (7-bit index = `(IR & 0x7f00) >> 8`), but most entries follow the simple "if IR[3-7]=N → dispatch=K" rule.  Our if-else chain captures this with O(11) comparisons; for a real silicon implementation, a lookup BRAM would be the right shape.
+
+**Validation:**
+
+- 203 alto tests pass (up from 182 — added 19 new spec-rule tests).
+- Boot trace metrics unchanged (76 unique microaddresses) — the IDISP/ACSOURCE additions don't unblock more progress in the 2000-cycle window because the Emulator's current loop doesn't yet reach opcode handlers using these dispatches.  Will be measurable progress once the boot trace gets past the early Nova fetch chain.
+
+**Follow-ups:**
+
+- D15 MAGIC bit injection on shifts (T-bit↔R-bit during LSH/RSH) — needed for Nova double-length shift instructions.
+- D16 DNS (Do Nova Shift) + SKIP latch — needed for Nova SHIFT instruction emulation; depends on a SKIP DFF.
+- D19 F1=11 INCRECNO; D20 KWDX F2 codes 8-12, 14 — disk task codes (currently stubbed).
+- D2/D3/D4/D5 §4.4 memory timing rules — spec-correctness requires modeling memory-busy stalls.
+- E-class: tighten weak assertions.
+
+---
+
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4j: 5 spec-correctness bugs from audit (D1, D6, D9, D10, D17) + 5 microcode-placement test fixes (C2-C6)
+
+**Paths:**
+
+- `crates/rhdl-alto/src/microengine.rs` — five spec-correctness bugs fixed:
+  - **D1**: T-LOAD with asterisked ALUFs (2 BusOrT, 5 BusPlusOne, 6 BusMinusOne, 10 BusPlusTPlusOne, 12 BusAndTAlt) now loads T from ALU output instead of BUS, per spec §3.1 footnote.  This is what makes `T← BUS OR T` and other accumulator patterns work.
+  - **D6**: `BusSource::None` (BS=2) now reads as 0xFFFF (-1) per spec §3.2 wired-AND default.  Was returning 0.  `Mouse` (BS=6, not implemented) returns 0.  TaskSpec3/4 in non-disk tasks remain 0 (S-register access stub; not yet implemented).
+  - **D9**: `F2=ALUCY` now uses sticky-from-last-L-load carry per spec §3.4 footnote.  Added `alu_carry: dff::DFF<bool>` to the Microengine struct; latched from current ALU's carry whenever L_LOAD fires; read by AluCarryToNext.  Was using current cycle's carry directly.
+  - **D10**: `F2=SH<0` (ShiftLessThanZero) inversion fixed: now sets NEXT bit 0 when L's MSB is SET (negative).  Was inverted (set when MSB clear).  Microcode using SH<0 was branching the opposite way.
+  - **D17**: `IR←` (F2=LoadIr in Emulator) now (a) latches IR from BUS instead of bypassing to MD, and (b) merges BUS bits 15,10,9,8 into NEXT bits 3,2,1,0 per spec §6.6 + ContrAlto's EmulatorTask.cs.  This is the FIRST-LEVEL Nova instruction dispatch — without the merge, the Emulator's fetch loop can't dispatch to opcode handlers.
+- `crates/rhdl-alto/tests/microcode_semantics.rs` — added 9 new tests:
+  - 3 for D1 (T←ALU asterisk: BusOrT, BusPlusOne, plus negative test for non-asterisked BusMinusT)
+  - 1 for D6 (BS=None reads -1)
+  - 1 for D9 (ALUCY uses sticky carry across cycles)
+  - 2 for D10 (SH<0 sets bit when negative; clears when non-negative)
+  - 3 for D17 (IR← merges BUS bit 15; merges bits 10,9,8; merge inactive in disk task)
+- `crates/rhdl-alto/tests/microcode_semantics.rs` — fixed 4 existing tests (`bs_instruction_register_reads_ir`, `acdest_overrides_low_2_rsel_from_ir`, `acsource_overrides_low_2_rsel_from_ir_src`, `f2_loadir_in_emulator`, `f2_idisp_uses_prom_dispatch`, `f2_bus_to_next_ors_low_bus_bits`) that used `BS=ReadR + F2=LoadIr` expecting MD but D17's fix loads from BUS — switched to `BS=MemoryData`, chose IR values clear in bits 15/10/9/8 to keep merge=0 where the test cares about IDISP/BusToNext.
+- `crates/rhdl-alto/src/alto_chip.rs` — fixed 2 chip-level tests broken by D17 (`f2_load_ir_only_active_under_emulator_task`, `f2_idispatch_routes_via_ir_low_byte`) — same pattern: switched LoadIr microcode to `BS=MemoryData`, used `IR=0x4000` instead of `0xCAFE` for IDISP test.
+- `crates/rhdl-alto/src/alto_chip.rs` — fixed 5 chip tests with microcode-placement bugs (C2-C6 from audit): `multi_task_arbitration_picks_higher_priority`, `f1_write_kadr_only_active_under_disk_sector_task`, `kcom_write_arms_disk_and_fires_disk_word_task`, `disk_sector_mark_fires_disk_sector_task`, `f1_strobe_in_disk_sector_arms_transfer`.  Each placed real microcode at MPC=0..N but used wakeups that selected task 4 (whose reset MPC = 4 per spec §2.4).  Tests passed by accidental fall-through from MPC=4 (NOP) to MPC=0 via the chip's per-task-MPC substitution logic.  Now place real microcode at the correct per-task reset MPC.
+
+**Why this, why now:** User asked to fix all bugs found in the test-suite audit.  The 5 implementation bugs (D1, D6, D9, D10, D17) silently corrupted real Alto microcode behavior — Nova accumulator patterns, signed comparisons, sticky carry, wired-AND defaults, and first-level instruction dispatch.  Chip output was still "valid Verilog" but didn't match spec semantics.  These class of bug only surfaces under real microcode (synthetic-PC tests don't exercise the patterns), which is why the test suite missed them.
+
+**Design decisions:**
+
+- **D9 needs new state.**  Sticky carry requires a register that persists across cycles (latched on L-load, read by ALUCY in any future cycle).  Added as `alu_carry: dff::DFF<bool>` per the §3.1 protocol-PHY pattern (CLAUDE.md): each spec-required register gets its own DFF in the Microengine struct.
+
+- **D17 is two changes**: (a) IR latches from BUS instead of bypassing to MD (matches ContrAlto's `_cpu._ir = _busData`), (b) NEXT-merge per spec §6.6.  Both required because the bypass meant BUS routing was untested for IR← — and any test using `BS=ReadR + LoadIr` worked by accident.  The combined fix forces all such tests to use the spec-correct `BS=MemoryData`.
+
+- **C2-C6 microcode placement**: per spec §2.4 task K resets to MPC=K.  Synthetic-microcode tests must place task K's first instruction at microcode[K], not microcode[0].  The previous tests passed because microcode[K]=0 (NOP NEXT=0) fell through to microcode[0] via the chip's "task hasn't started yet" substitution at `alto_chip.rs:316-320`.  If anyone touches that substitution logic, all 5 break at once.  Now placed at the correct per-task reset MPCs.
+
+**Surprises and gotchas:**
+
+- D17's effect was bigger than expected: 6 existing semantic tests broke because they had `BS=ReadR + F2=LoadIr` with `with_md(...)` — relying on the pre-fix bypass that loaded IR directly from MD.  The fix forced spec-correct usage (BS=MemoryData drives BUS=MD, then LoadIr latches from BUS).  This validates the audit's call-out: tests passing for the wrong reason.
+
+- Some tests had assertions encoding the OLD wrong-spec values (e.g., `IR == 0xCAFE` after a setup that should produce 0).  After fixing the implementation, these assertions still expected the old value because they were never actually testing what they claimed.
+
+- D9 (sticky carry) is a true semantic correctness bug not visible until microcode does multi-cycle ALU sequences with intermediate non-L-loading operations.  All prior single-cycle ALUCY tests passed because current-cycle and last-L-load-cycle coincided.
+
+**Validation:**
+
+- 182 alto tests pass (up from 172 — added 9 new spec-correctness tests + 1 throughput test from earlier; 5 chip tests rewritten with correct per-task placement; 6 semantic tests updated for spec-correct BS usage).
+- No boot trace regression — still visits 76 distinct microaddresses (same as before, the boot trace is not yet bottlenecked by any of the D-bugs in this 2000-cycle window; the impact is on real microcode that uses these patterns more deeply, e.g. Nova accumulator ops in the OS loader).
+
+**Follow-ups:**
+
+- D11/D12 IDISP PROM table coverage: only 1 of 7 branches tested; add tests for `IR[1-2]=0`, `=1`, `IR[4-7]=0`, `=1`, `=6`, fallthrough, and the `IR[0]=1` complement-of-SH branch (which is also missing from the implementation).
+- D13 ACSOURCE second role (NEXT-modify dispatch table) not implemented; only RSEL-override tested.
+- D15 MAGIC bit injection on shifts (T-bit↔R-bit during LSH/RSH).
+- D16 DNS (Do Nova Shift) + SKIP latch.
+- D19 F1=11 INCRECNO; D20 KWDX F2 codes 8-12, 14 (currently stubbed).
+- D2/D3/D4/D5 §4.4 memory timing rules (MAR/MD intervening cycle, refresh, etc.).
+- D25 PART task numbering divergence (impl=13, spec §5.2=15).  Decision needed: match spec or match ContrAlto convention.
+- E-class: tighten weak assertions (`disk_word_count <= 280` to exact value, `disk_sector_firings >= sector_events` to a tighter range, etc.).
+
+---
+
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4i: 1-cycle/microinstruction pipeline (spec §2.3)
+
+**Paths:**
+
+- `crates/rhdl-alto/src/alto_chip.rs` — feed `q.engine.next_mpc` (combinational, this cycle's engine output) directly to URom address with task-switch override, replacing the previous `q.tasks.task_mpc[current_task]` (Q-stale) routing.  Each microinstruction now completes in 1 cycle per spec §2.3 (MIF || MIE 2-stage pipeline).
+- `crates/rhdl-alto/src/alto_chip.rs` — fixed `end_to_end_256_word_dma` test microcode: previously placed mi0..mi6 at MPC=0..6 and relied on the OLD 2-cycle pipeline's stuttering execution to "double-fire" `KCOM<-R[1]` so R[1] would be loaded by the second firing.  Now placed at the per-task reset MPCs (microcode[4]..[9] for Disk Sector starting at task 4's reset MPC, microcode[14] for Disk Word).  Added `mi_emu_bootstrap` at MPC=0 (TaskYield) so Emulator can yield out to Disk Sector.
+- `crates/rhdl-alto/src/alto_chip.rs` — corrected `boot_trace_baseline_metrics` assertion from `disk_sector_firings >= 100` (which was passing because KSEC was getting STUCK dispatching into uninitialized PROM, a bug) to `>= sector_events` (which matches the spec'd behavior: KSEC handles each sector mark with ~5-10 microinstructions then yields back).
+- `crates/rhdl-alto/src/alto_chip.rs` — tightened `boot_trace_with_boot_button` floor from 62 → 76 distinct microaddresses (achieved by 2× throughput).
+- `crates/rhdl-alto/src/alto_chip.rs` — updated `chip_runs_at_known_cycles_per_microinstruction` to assert ZERO duplicate consecutive MPC pairs (spec contract met).
+
+**Why this, why now:** User asked "now fix it" after we identified that the chip was running at 2 cycles per microinstruction in violation of spec §2.3.  The fix was a small change with large blast radius — both upstream (test microcode that relied on pipeline accidents broke) and downstream (boot trace progress doubled).
+
+**Spec on pipelining (the contract being met):**
+
+- §2.3: 2-stage pipeline (MIF Microinstruction Fetch || MIE Microinstruction Execute) overlapped — 1 microinstruction completes per cycle.
+- Line 26: *"the microengine executes a 32-bit horizontal microinstruction every 170 ns"*.
+
+**Design decisions:**
+
+- **`q.engine.next_mpc` is combinational**, contrary to the previous chip code's comment ("we can't read engine.next_mpc combinationally from the chip — it's Q-register-delayed").  Confirmed by reading `crates/rhdl-fpga/src/fifo/synchronous.rs:130` (`d.read_logic.write_address = q.write_logic.write_address` — sub-circuit's CURRENT output flows into another sub-circuit's CURRENT input within the same cycle).  This is RHDL's standard composition pattern.
+
+- **Task-switch override**: when `q.engine.task_yield && winning_task != current_task`, present the new task's saved MPC (= `q.tasks.task_mpc[winning_task]` if that task has run before, else `winning_task` per spec §2.4 reset).  Otherwise present `engine.next_mpc` (continuing same task).  Both branches feed URom in the same cycle as the engine produces them.
+
+- **Bootstrap**: chip `current_task` defaults to 0 (Emulator).  If task 0 isn't woken AND microcode[0] doesn't assert task_yield, the chip never escapes task 0.  In real Alto this isn't an issue because Emulator's microcode at MPC=0 starts the Nova fetch loop which yields naturally.  Synthetic-microcode tests must include a TaskYield at MPC=0 to bootstrap.
+
+**Surprises and gotchas:**
+
+- The `end_to_end_256_word_dma` test had been PASSING in the OLD pipeline because the 2-cycle stutter caused `mi4` (KCOM<-R[1]) to execute TWICE — once with R[1]=0 (no transfer arm), then later with R[1]=0x8000 (transfer armed).  The microcode was placed at MPC=0..6, but task 4 starts at MPC=4 per spec, so the constant-load instructions at MPC=1, 2 were SKIPPED.  In the OLD pipeline, `task_mpc[4]` got polluted with the previous instruction's NEXT during the stuttering, eventually causing mi4 to re-execute after the loaders ran.  The "test passing" was 100% pipeline-accident-dependent.  This is the canonical example of why throughput tests matter — without quantifying execution rate, hidden timing dependencies are silent.
+
+- `boot_trace_baseline_metrics` asserted `disk_sector_firings >= 100`, which it satisfied by KSEC dispatching into uninitialized PROM and looping forever in task 4.  Once dispatch was correct, KSEC properly yielded back after handling each sector mark, and Emulator (correctly) dominated the cycle budget.  Updated assertion to match the spec'd behavior (KSEC must fire ≥ once per sector_mark).
+
+**Validation:**
+
+- 172 alto tests pass (45 lib unit + 127 integration, no regressions).  The throughput test now enforces the spec contract: 0 duplicate consecutive MPC pairs.
+- Boot trace progression: 35 → 62 → **76 distinct microaddresses** (Step 4g's NEXT-mask fix + Step 4i's pipeline fix together doubled progress).
+- Throughput now matches spec §2.3: 1 microinstruction per cycle.
+
+**Follow-ups:**
+
+- Boot trace currently runs 2000 cycles and visits 76 unique microaddresses (most cycles are repetitive Emulator loops at the same handful of addresses).  Reaching the OS loader checkpoint will need many more cycles AND likely additional missing F1/F2 codes the boot Nova bootstrap exercises.
+- Phase 3.5 Step 5: ContrAlto cycle-equivalent lockstep is now MUCH more tractable since the chip runs at the spec'd rate.  Each chip cycle = 1 microinstruction = 1 ContrAlto step, so direct cycle-by-cycle comparison works without rate-adjustment.
+
+---
+
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4h+: throughput test + spec violation lock-in
+
+**Paths:**
+
+- `crates/rhdl-alto/src/alto_chip.rs` — added `chip_runs_at_known_cycles_per_microinstruction` test that drives a 4-instruction chain (0→1→2→3→0...) and counts consecutive-MPC duplicates.  Currently asserts ~half the consecutive pairs are duplicates (= 2 cycles per microinstruction).  When a future commit collapses the pipeline to 1 cycle/microinstruction (matching spec §2.3), this test breaks and gets updated to expect zero duplicates.
+
+**Why this, why now:** User asked "why wasn't this caught in tests?" after the Step 4h analysis.  The honest answer: every prior chip-level test was either a single-instruction loop (MPC never advances), a 2-step settle-on-final-state test (doesn't measure rate), or a microengine-only test (bypasses the chip pipeline).  None of them quantified cycles per microinstruction.  Worse, the comment in `boot_with_loop_at_zero` *acknowledged* the pipeline ("BRAM 1-cycle fetch latency + microengine 1-cycle observation lag") — we knew about it, accepted it, but never enforced the spec contract via a test.
+
+**Spec on pipelining — alto-processor-and-microcode-spec.md §2.3:**
+
+> The microengine is a **2-stage pipeline**:
+> - Stage MIF (Microinstruction Fetch): `inst ← microcode_RAM[MPC_of_winning_task]`
+> - Stage MIE (Microinstruction Execute): `bus ← ...; alu_out ← ...; next_mpc ← inst.next | f2_modifier; MPC_of_winning_task ← next_mpc (at edge)`
+
+And spec line 26: *"the microengine executes a 32-bit horizontal microinstruction every 170 ns"*.
+
+The spec is unambiguous: **1 microinstruction per 170-ns cycle**, achieved via overlapped MIF || MIE — classic prefetch where while executing instruction k, the chip fetches k+1 in parallel.  Our chip currently runs MIF and MIE *serially* (cycle k fetches, cycle k+1 executes), violating the spec's throughput contract.
+
+**Design decisions:**
+
+- **Lock in the current behavior with a quantified assertion**, not just a comment.  The throughput test asserts the duplicate-MPC count.  When the pipeline is fixed, the test expectation flips from "expect duplicates" to "expect zero duplicates."  This is the test we should have had from day one.
+- **Don't fix the pipeline in this commit** — the fix is a structural chip refactor (Phase 3.5 Step 4i) that needs its own PR per CLAUDE.md §11.1 ("one feature per PR").
+
+**Lessons learned:**
+
+- For protocol/processor cores, write THROUGHPUT tests (cycles-per-instruction) alongside FUNCTIONAL tests (correct output value).  Spec violations on throughput are silent because output values are still right.
+- A test that "settles on a final state" is insufficient when the spec describes a per-cycle contract.  Need per-cycle-progression tests.
+- Comments that acknowledge a known limitation are not a substitute for a test that enforces the limitation.  "We know about it, just accept it" → no test → silent regression-or-improvement risk.
+
+**Validation:**
+
+- 172 alto tests pass (45 lib unit + 127 integration tests, +1 new throughput test, no regressions).
+
+**Follow-ups:**
+
+- Phase 3.5 Step 4i: collapse the chip's 2-cycle pipeline to 1 cycle per microinstruction per spec §2.3.  Approach: feed engine.next_mpc combinationally to URom in the same cycle (require RHDL combinational sub-circuit output access OR fold URom into the Microengine widget).  Update the throughput test to expect zero duplicates once landed.
+
+---
+
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4h: pipeline-display correction + 2-cycle-per-instruction analysis
+
+**Paths:**
+
+- `crates/rhdl-alto/src/alto_chip.rs` — corrected `boot_trace_per_cycle_chain` to pair `instruction[k]` with `mpc[k-1]` instead of with `mpc[k]`.  The chip's `o.mpc` is the address being PRESENTED to URom this cycle; `o.instruction` is URom's response from the address presented LAST cycle (URom is a 1-cycle BRAM).
+
+**Why this, why now:** While debugging the Step 4g "boot trace stall at 62 unique microaddresses with KSEC dispatch landing in uninitialized PROM," the per-cycle diagnostic appeared to show that at MPC=0x388 our chip read `0x280241e8` but ContrAlto's disassembly says address 0o1610 (= 0x388) is `MD←KSTAT`.  This looked like a per-task decode bug or a microcode-encoding bug.
+
+It was neither.  Cross-checking with a Python re-implementation of ContrAlto's microcode loader (identical PROM bytes — verified byte-for-byte match against ContrAlto's `ROM/AltoII/U*` files) showed:
+
+- ContrAlto says URom[0x004] = `0x7001737c`, URom[0x070] = `0x381001e6`, URom[0x1e6] = `0x280241e8`, URom[0x388] = `0x00306389` (= `MD←KSTAT`).
+- Our chip's "(mpc=0x004, instr=0x381001e6)" pair reports a `mpc` (0x004) that is being *fetched* this cycle, paired with an `instr` (0x381001e6 = URom[0x070]) that is the *previous* cycle's URom output.  Both values are correct — they just describe different pipeline stages.
+
+After fixing the diagnostic to pair `instruction[k]` with `mpc[k-1]`, the trace shows every MPC **executes twice** before advancing — `0x1e6, 0x1e6, 0x1ed, 0x1ed, 0x1ff, 0x1ff, ...`.  This is a real **2-cycle-per-microinstruction pipeline** in our chip.
+
+**Design observation (NOT a fix yet):**
+
+The 2-cycle stall is because the URom address is fed from `q.tasks.task_mpc[T]` (Q-registered).  When the engine computes `next_mpc` in cycle N:
+1. End of cycle N: `task_mpc[T] := next_mpc`.
+2. Cycle N+1: `current_mpc = q.task_mpc[T] = next_mpc`.  Address sent to URom.
+3. Cycle N+2: URom returns `URom[next_mpc]`.  Engine processes it.  But during cycle N+1, the engine processes URom[stale-address] — re-running the same instruction.
+
+Real Alto runs at 1 microinstruction per cycle.  Our chip runs at 1 microinstruction per 2 cycles, so 2000 chip-cycles = ~1000 microinstructions executed.  62 distinct microaddresses in 2000 cycles is consistent with ~1000 microinstructions of KSEC + Emulator activity, not a stall.  The chip is FUNCTIONALLY CORRECT; it's just slower than real Alto.
+
+**Implications:**
+
+- Step 4g's NEXT-mask fix was real (BusToNext was silently dropping BUS LSB), but the "boot trace stall" framing was wrong.  Boot trace progress isn't stalled by missing dispatch — it's gated on the half-speed pipeline.
+- Cycle-equivalent lockstep against ContrAlto (Phase 3.5 Step 5) requires fixing the 2-cycle pipeline first, OR comparing every-other-cycle to ContrAlto's every-cycle.
+- Comprehensive tests in `tests/microcode_semantics.rs` (Step 4g, 61 tests) are still valid — they isolate spec rules and verify the engine implements them correctly.  None of them depend on the chip-level URom pipeline.
+
+**The fix path (deferred, separate PR):**
+
+To get 1-cycle-per-microinstruction:
+- Option A: feed `engine.next_mpc` (combinational from this cycle's instruction) directly to `d.urom.mpc`, so URom returns `URom[next_mpc]` at cycle N+1.  Requires combinational access to engine.next_mpc from the chip — currently blocked by `q.engine.*` being Q-registered.
+- Option B: combine the engine's URom fetch into a single sub-circuit (Microengine internalizes URom).  Cleaner architecture; bigger refactor.
+
+Either path is a Phase 3.5 Step 4i / Step 5-prep effort.  Not landed in this commit.
+
+**Validation:**
+
+- All 171 alto tests still pass (no regressions).
+- Manual verification: Python loader produces ContrAlto-identical microcode words; our Rust loader is byte-equivalent at known MPCs (0x004, 0x070, 0x1e6, 0x388).
+- Corrected diagnostic shows real KSEC microcode chain: `0x004` (KSEC entry) → `0x37c` (KPOQ:CLRSTAT) → `0x37d` (MD←L←ALLONES+1) → `0x381` (GCOM2) → ... → `0x388` (MD←KSTAT).  This is correct KSEC execution.
+
+**Follow-ups:**
+
+- Phase 3.5 Step 4i: collapse the chip's 2-cycle pipeline to 1 cycle per microinstruction (Option A or B above).  Probably needed before any meaningful ContrAlto lockstep.
+- Phase 3.5 Step 5: ContrAlto cycle-equivalent lockstep — once the pipeline is fixed.
+- Update `notes/alto-phase-3-5-progress.md` with this correct understanding (the prior R[5]-corruption diagnosis is wrong).
+
+---
+
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4g: comprehensive microcode semantics test suite + NEXT-mask bugfix
+
+**Paths:**
+
+- `crates/rhdl-alto/tests/microcode_semantics.rs` — NEW.  61 per-spec-rule semantic tests organized by spec section: §2.7 R-register (3 tests), §3.1 ALU (10), §3.2 Bus sources (8), §3.3 F1 universal (8) + per-task Disk (10), §3.4 F2 universal (7) + Emulator (5) + Disk (1), §4.4 memory timing (2), §6.6 ACDEST/ACSOURCE (2), T_LOAD/L_LOAD (4), and constant-ROM gating (1).  Every test isolates exactly one spec rule; failures fingerprint the bug to a specific spec section.
+- `crates/rhdl-alto/src/microengine.rs` — fixed NEXT bit-0 mask bug discovered by the new suite.  Old code: `next_addr = (next_addr_or_bus & 0x3FE) | bit0` — this forcibly cleared bit 0 of NEXT before OR'ing the F2-conditional bit0, which silently dropped the BUS LSB whenever F2=BusToNext sourced an odd-valued bus.  New code: `next_addr = next_addr_or_bus | bit0` — bit0 contributors OR-merge per spec §3.4, never mask.
+
+**Why this, why now:** User directive: "We shouldn't grow it later, we should do COMPREHENSIVE test suite now."  The boot trace had been stalling, and the previous discovery of the R-from-L vs R-from-ALU bug (Step 4f) showed that silent semantic divergences from spec are the dominant failure mode at this phase.  Per-spec-rule isolation tests catch divergences immediately AND fingerprint them to a single line of the spec.
+
+**Design decisions:**
+
+- **One test per spec rule, not per scenario.**  The naming convention `<section>_<rule>_<expected>` (e.g., `f2_bus_to_next_ors_low_bus_bits`) makes the trace from failure → spec line trivial.  Future microcode features add tests by spec section, not by widget composition.
+
+- **`Observation { comb, after }` helper.**  The microengine's outputs split into REGISTERED (`t`, `l`, `ir`, `mar`) and COMBINATIONAL (`next_mpc`, `task_yield`, `block_task`, `startf`, `disk_*`, `mem_*`).  The helper runs `prog + 1 NOP` and exposes BOTH: `comb` is the action's combinational output, `after` is the post-edge registered state.  Each test picks the right view.  Without this split, 22 of the 61 tests would have silently passed for the wrong reason (the NOP cycle's combinational output, which has no F1/F2 effect).
+
+- **OR-merge for NEXT modifications.**  The spec is explicit: F2 modifications OR into NEXT.  The old `(x & 0x3FE) | bit0` pattern was an accidental REPLACE — only safe when F2 is a bit0-conditional code (ShiftEqZero, AluCarryToNext, etc.) AND the microcode NEXT field has bit 0 = 0.  For F2=BusToNext, where the BUS provides bit 0, the mask silently corrupted dispatch.  The fix matches ContrAlto's CPU.cs (`NextAddress |= ...`).
+
+**Surprises and gotchas:**
+
+- The NEXT-mask bug existed since the BusToNext F2 was first wired.  None of the existing iterator-based tests exercised an odd-LSB BusToNext, so the bug had been latent.  This is exactly the value of per-spec-rule isolation testing: a single explicit assertion (`f2_bus_to_next_ors_low_bus_bits` expecting 0x107) caught a class of dispatch corruption that would have manifested as opaque wrong-microaddress jumps in real microcode.
+
+- `run_fn`'s callback receives the output AFTER the previous step's input has been processed.  Observing the action's REGISTERED state needs an additional NOP cycle to propagate past the action's edge, but the action's COMBINATIONAL state is in the *previous* callback invocation.  `Observation` makes both available so each test reads the right view.
+
+**Validation:**
+
+- 61 new tests pass + 110 pre-existing alto tests still pass (171 total, no regressions).
+- Bug-catching demonstrated: the NEXT-mask fix was discovered via a single failing test (`f2_bus_to_next_ors_low_bus_bits`) and validated by the full suite with no other tests breaking.
+
+**Follow-ups:**
+
+- Add coverage for F2=ConstantB (constant-ROM bank B) once that path is wired.
+- Add coverage for F1=11 (INCRECNO), F2=8/9/10/11/12/14 (KWDX disk codes) as those land.
+- Consider extracting the `Observation` helper into a shared test utility module if a second test file needs it.
+
+---
+
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4f: F1=STROBE protocol (per spec §8.5)
+
+**Paths:**
+
+- `crates/rhdl-alto/src/microengine.rs` — added `disk_strobe: bool` output, asserted when `current_task` is a Disk task (4 or 14) and `mi.f1 == F1Function::Code9` (binary 9, F1=11B/STROBE per spec §8.5).  Cleared in reset path.
+- `crates/rhdl-alto/src/alto_chip.rs` — `disk_in.transfer_request = q.disk_ctrl.transfer_request || q.engine.disk_strobe`.  STROBE is the spec-correct transfer-arm path (matches real KSEC microcode); the existing KCOM-bit-15 path is retained for the Phase-3 legacy DMA test.  Routed engine.kdata = `q.disk.current_word_data` (per spec §8.5: BS=4 reads "Disk input data register" — the disk's serial-to-parallel converter output, NOT the controller's output-side KDATA register set by F1=15 LoadKDATA).
+- `crates/rhdl-alto/src/alto_chip.rs` — new test `f1_strobe_in_disk_sector_arms_transfer` validates the spec path: KSEC microcode with F1=Code9 (STROBE) → engine.disk_strobe → disk.transfer_request → disk asserts word_strobe.
+
+**Why this, why now:** Per Alto Hardware Manual §6.0 + spec §8.5: F1=11B (binary 9) STROBE "Initiates a disk seek operation. KDATA must be loaded previously, and SENDADR bit of KCOM register set to 1."  Per §8.6: after KSEC sets up KCOM/KADR and issues STROBE, the disk hardware auto-streams sector words.  For boot (sector 0/head 0/no seek needed), STROBE effectively initiates the read transfer.  Real KSEC microcode uses STROBE — without it, real microcode can't arm transfers in our chip (only the Phase-3 KCOM-bit-15 simplification works).
+
+**Design decisions:**
+
+- **STROBE OR'd with KCOM-bit-15 trigger.**  Both paths arm the transfer.  STROBE is spec-correct for real microcode; KCOM-bit-15 was the Phase-3 simplification used by `end_to_end_256_word_dma`.  Keep both for backward compatibility.
+
+- **engine.kdata routed from disk.current_word_data, not disk_ctrl.kdata_word.**  Per spec §8.5: "←KDATA: Disk input data register on bus" — the disk's serial-to-parallel converter output as it streams sector bits.  Distinct from the controller's output-side KDATA register set by F1=15 (LoadKDATA, used for write paths).  Our DiabloDisk's `current_word_data` exposes the input register; route directly to engine for BS=4 reads.
+
+**Validation:**
+
+- 106/106 alto tests pass (added `f1_strobe_in_disk_sector_arms_transfer`).
+- Boot trace metrics unchanged (KSEC's microcode path doesn't yet visit STROBE in our 2000-cycle window — needs more setup before reaching it; the STROBE dispatch is in place for when it does).
+
+**Follow-ups:**
+
+- F1=11 (INCRECNO) — increment disk record number.  Needs DiabloDisk to track records.
+- F2=8 (INIT), F2=9 (RWC), F2=10 (RECNO), F2=11 (XFRDAT), F2=12 (SWRNRDY), F2=13 (NFER), F2=14 (STROBON) — KWDX uses these per-task F2 NEXT-modify codes per spec §8.5.  Substantial work.
+- DiabloDisk per-word streaming protocol: real Alto streams sector bits through a serial-to-parallel converter that pulses word_strobe per word completion.  Current sustained word_strobe is a Phase-3.5 simplification — close to right for boot DMA but doesn't match real per-word timing.
+
+---
+
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4e: per-task BS=3/4, F1=10 (LoadKSTAT), F1=12 (CLRSTAT) (per spec §3.2/§3.3/§8.5)
+
+**Paths:**
+
+- `crates/rhdl-alto/src/disk_controller.rs` — exposed full 16-bit `kstat_word` (in addition to existing `kstat_ready: bool`).  Added `clr_stat: bool` input on `CtrlIn`; the kernel clears KSTAT to 0 when asserted (per spec §8.5 + ContrAlto's `DiskController.cs` `ClearStatus()`).
+- `crates/rhdl-alto/src/microengine.rs` — added `kstat: Bits<16>` and `kdata: Bits<16>` to `In` struct.  `bus_from_bs` dispatches BS=TaskSpec3 to `i.kstat` and BS=TaskSpec4 to `i.kdata` when `current_task` is a Disk task (4 or 14).  Added per-task disk-controller write paths: F1=10 (Code10) → REG_KSTAT (LoadKSTAT semantics).  Added `disk_clr_stat: bool` output: asserted when `current_task` is a Disk task and `mi.f1 == WriteKcwa` (binary 12 — real spec name CLRSTAT).
+- `crates/rhdl-alto/src/alto_chip.rs` — wired `q.disk_ctrl.kstat_word` / `kdata_word` to `d.engine.kstat/kdata`; wired `q.engine.disk_clr_stat` to `d.disk_ctrl.clr_stat`.
+- `crates/rhdl-alto/tests/disk_controller.rs` — 14 test sites updated for new `clr_stat: false` field on `CtrlIn`.
+- `crates/rhdl-alto/tests/microengine.rs` — 2 test sites updated for new `kstat: bits::<16>(0)` and `kdata: bits::<16>(0)` fields on `In`.
+
+**Why this, why now:** With the per-task URom alignment fix (Step 4d), KSEC executes its real microcode at MPC=4 → 0x37c chain.  The boot trace decoder shows KSEC at MPC=0x37c uses F1=WriteKcwa (binary 12, real Alto spec §8.5: CLRSTAT); at MPC=0x37d it uses BS=TaskSpec4 (real spec: ReadKDATA); at 0x388 BS=TaskSpec3 (ReadKSTAT); at 0x38a F1=Code10 (LoadKSTAT).  Without per-task semantics, all of these were no-ops or wrong, so KSEC's branch decisions on KSTAT/KDATA reads were based on stale 0 values.
+
+This commit lands the spec-required per-task dispatch surface for all four codes, putting the chip in a position where future disk-protocol implementation (read/write per-word with real STROBE/STROBON timing) will produce meaningful values that KSEC's microcode actually reads.
+
+**Design decisions:**
+
+- **F1=12 (WriteKcwa) is dual-named for Phase 3.5 simplification.**  Spec §3.3 + §8.5 says F1=12 in Disk task is CLRSTAT.  Our pre-existing `WriteKcwa` (Phase 3.5 internal name) is at the same binary slot.  Rather than renaming + breaking the legacy DMA test, this commit ALSO clears KSTAT when F1=12 fires in a Disk task — additive on top of the existing KCWA-write path.  Future commit will rename `WriteKcwa` → `ClrStat` once the legacy DMA test migrates to a non-microcode-driven KCWA setup mechanism.
+
+- **BS=TaskSpec3/4 default to 0 outside Disk tasks.**  In Emulator (task 0), BS=3 is `ReadSLocation` (S-register read) and BS=4 is `LoadSLocation` per spec §3.2 footnote.  Not yet implemented (S-registers are a Phase 5 feature per spec §13).  Returns 0 for now, which is at minimum harmless for boot semantics.
+
+- **F1=10 is recognized as Code10 enum variant.**  Could rename to `LoadKstat` for clarity, but the variant index (binary 10) is what matters for the dispatch.  Renaming is a follow-up.
+
+**Validation:**
+
+- 105/105 alto tests pass (`cargo test -p rhdl-alto`).
+- `boot_trace_baseline_metrics`: 35 distinct microaddresses, 2 sector_mark events — unchanged from Step 4d.  KSEC writes KSTAT via F1=10 + clears via F1=12, but its branch decisions based on BS=KSTAT/KDATA reads still see 0 (no real disk-read protocol yet).  The behavioral change will appear once the disk-word-DMA STROBE/STROBON protocol lands and starts writing meaningful values.
+
+**Follow-ups:**
+
+- F1=11 (INCRECNO) — increment disk record number.  Needs DiabloDisk to track records.
+- F1=9 (STROBE) — start sector strobe (arms transfer).  Needs decoupling from existing KCOM-bit-15 trigger.
+- F1=15 (STARTF) for Emulator — used by SIO instruction to dispatch I/O commands.  Not on critical boot path.
+- Real disk-word-DMA protocol (multi-cycle STROBE/STROBON/NFER per spec §8.5) — the path that actually feeds meaningful values into KDATA for KSEC to read.  This is the next architectural unblock for boot progress beyond the current 35-address ceiling.
+- Rename `F1Function::WriteKcwa` → `ClrStat` once the legacy DMA test migrates.
+
+---
+
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4d: per-task URom MPC stream alignment (per spec §5.4)
+
+**Paths:**
+
+- `crates/rhdl-alto/src/alto_chip.rs` — single-line change with comprehensive comment.  `d.urom = UromIn { mpc: current_mpc.resize() }` instead of `d.urom = UromIn { mpc: next_mpc.resize() }` (where `next_mpc = q.engine.next_mpc`).  Plus updated `boot_trace_baseline_metrics` assertions: distinct microaddresses ≥ 30 (was 8), sector_mark events ≥ 2 (KSEC reaches F1=Block which clears the sustained sector_mark, allowing the next sector tick to re-fire).
+- `notes/alto-phase-3-5-progress.md` — detailed analysis of the URom-fetch-on-task-switch problem, the spec §5.4 task-switch pipeline table, and the three architectural paths considered.
+
+**Why this, why now:** Per *Alto Hardware Manual* §2.4 + spec §5.4: each task fetches from its **own** saved MPC stream.  When TASK fires and the chip switches to K2, the URom must immediately start fetching from K2's saved MPC — not continue with K1's residue.
+
+The pre-fix model presented `d.urom.mpc = q.engine.next_mpc` (engine's previous-cycle output) to URom.  That was K1's continuation address even after current_task switched to K2.  Result: KSEC at MPC=4 never actually fetched its `0x7001737c` instruction; it executed Emulator's residue stream (the 8 addresses 0x000, 0x130, 0x14e, 0x150-0x154 we'd been seeing).
+
+The fix presents `current_mpc` (the chip's task-aware MPC lookup) to URom.  `current_mpc = task_mpc[current_task]` (or task_number fallback if not started).  When current_task switches K1→K2, current_mpc immediately becomes K2's MPC, URom fetches from K2's stream, and the new task's instructions execute at the next BRAM-output cycle.
+
+**Design decisions:**
+
+- **Use `current_mpc`, not a redirect-on-yield latch.**  Considered three architectural paths (documented in progress notes): (1) move URom inside Microengine widget, (2) combinational redirect from chip kernel, (3) extra "task_switch_pending" DFF.  The simpler observation: `current_mpc` already encodes the task-aware MPC, and `task_mpc[current_task]` is updated each cycle from `engine.next_mpc` via the arbiter rule.  Within a single task's stream, presenting `current_mpc` to URom is functionally equivalent to presenting `q.engine.next_mpc` (just routed through a different DFF).  At task switch, `current_mpc` immediately reflects the new task — exactly what the spec needs.
+
+- **Result: KSEC visits 35 unique microaddresses, reaches F1=Block.**  Pre-fix: 8 addresses (Emulator's tight loop in K2 context).  Post-fix: 35 addresses including KSEC's real entry chain (0x37c → 0x37d → 0x381 → 0x382 → 0x383 → 0x384 → 0x385 → 0x368 → 0x36a → 0x37a → ...).  The fact that sector_mark events went from 1 to 2 in the same 2000-cycle window means KSEC's microcode actually reached F1=Block, cleared sector_mark, ran Emulator briefly, then the next sector tick re-fired sector_mark.  Real boot semantics, finally.
+
+- **Pipeline depth: still 2 cycles per instruction.**  This change doesn't address the 2-cycle-per-instruction throughput (URom 1-cycle BRAM + engine output Q-register 1-cycle).  Real Alto's 1-cycle pipeline would require either pulling URom inside Microengine or breaking the Q-register barrier — both substantial refactors.  The 2-cycle pipeline is functionally correct; only timing diverges from real Alto, which matters for cycle-equivalent ContrAlto lockstep but not for boot-progress validation.  Documented as a follow-up.
+
+**Surprises and gotchas:**
+
+- **The fix is a single line.**  `d.urom = UromIn { mpc: current_mpc.resize() }`.  The architectural reasoning (spec §5.4 mandate) and downstream impact (KSEC starts running real microcode!) is enormous; the diff is tiny.  Encodes a generally-useful pattern: when a sub-widget's output is delayed by Q-register but you need a per-task / per-context fork, route the address through the chip-level state instead.
+
+- **Per-task arbiter rule firing matters.**  `task_mpc[K]` is updated by the arbiter rule for task K when bit K is set in `effective_wakeups`.  With sustained sector_mark + Emulator's bit 0 always set, both rules want to fire — but rhdl-rule's priority scheduler picks ONE rule per cycle.  Task 4 (priority 8) outranks Task 0 (priority 9), so when both bits are set Task 4's rule fires and Task 0's task_mpc[0] doesn't update.  This means `task_mpc[0]` stays "frozen" at whatever it was last set to during Emulator's cycles — which is fine because the engine isn't running Emulator's stream anyway during that time.  Worth documenting as the next observation if Emulator doesn't resume cleanly after Disk Sector yields back.
+
+- **Trace's `instruction` column is off-by-one with `mpc` column.**  `t.instruction` is `q.urom.instruction` — the BRAM output for the address presented LAST cycle.  `t.mpc` is `current_mpc` THIS cycle.  So the trace shows mpc=X with instr=("instruction at the address we presented last cycle"), not "instruction at X".  This is a trace observability artifact, not a chip behavior bug.  Future work: relabel trace columns to make this explicit.
+
+**Validation:**
+
+- 105/105 alto tests pass (`cargo test -p rhdl-alto`).
+- `boot_trace_baseline_metrics`: 35 distinct microaddresses (was 9), 2 sector_mark events (was 1), confirming KSEC reaches F1=Block.
+- `boot_trace_decode_diagnostic`: shows KSEC visits 0x004, 0x368, 0x36a, 0x37a, 0x37c, 0x37d, 0x381..0x38a — the real KSEC entry/setup chain per spec §8 disk subsystem.
+
+**Follow-ups:**
+
+- Per-task F1=8-15 dispatch (Emulator: SWMODE/STARTF; Disk: STROBE/LoadKSTAT/INCRECNO/CLRSTAT).  KSEC reaches F1=Block now, but its full setup likely needs these codes to actually progress through the disk-controller register-write chain (LoadKADR + INCRECNO + STROBE + ...) per spec §8.5.
+- 1-cycle pipeline (URom inside Microengine).  Would match real Alto's pipeline depth for ContrAlto lockstep parity.  Substantial refactor; defer to lockstep harness step.
+
+---
+
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4c: F1=Block + sustained device wakeup (per spec §5.5)
+
+**Paths:**
+
+- `crates/rhdl-alto/alto-processor-and-microcode-spec.md` (new, ~1300 lines) — comprehensive Alto processor + microcode reference, distilled from `assets/bitsavers/Alto_Hardware_Manual_Aug76.pdf`, `AltoHWRef.part1/2.pdf`, `AltoSubsystems_Oct79.pdf`, `AltoIICode3.mu.txt`, `AltoConsts23.mu.txt`, the PROM dumps, and ContrAlto2 source.  Sections marked "✓ verified against AltoHW (Aug76) §X" are reconciled against the canonical PDFs.  Authoritative reference for any future Alto core work.
+- `crates/rhdl-alto/src/microengine.rs` — added `block_task: bool` to `Out` struct, set on `mi.f1 == F1Function::Block`, cleared in reset path.
+- `crates/rhdl-alto/src/diablo_disk.rs` — added `block_task: bool` and `current_task: Bits<4>` to `DiskIn`.  Added `sector_wake: dff::DFF<bool>` field that latches sustained sector wakeup.  `o.sector_mark` is now `q.sector_wake` (sustained), set when sector_tick wraps and cleared when current_task=4 issues F1=Block.  `o.word_strobe` is `(transfer_remaining > 0) && !block_clears_word` (sustained while transfer active, momentarily zero on Block from current_task=14).
+- `crates/rhdl-alto/src/alto_chip.rs` — wired `q.engine.block_task` and `current_task` through to `disk_in.block_task` / `disk_in.current_task`.  Updated `boot_trace_baseline_metrics` assertions: count sector_mark *rising edges* (not cycles where high), assert Disk Sector dominates (since KSEC's microcode loops without F1=Block until per-task F1 codes implemented).
+- `crates/rhdl-alto/tests/diablo_disk.rs` — `sector_mark_fires_at_position_255` and `sector_mark_fires_every_words_per_sector_cycles` updated to count rising edges + verify the sustained-high property.
+- `crates/rhdl-alto/tests/disk_dma_integration.rs` — `disk_sector_mark_drives_disk_sector_task` updated: standalone disk has only one rising edge in 778 cycles (no F1=Block to clear); arbiter fires task 4 every cycle from 255 onward (sustained wakeup); assertion adjusted to `firings ≥ cycles - 255 - 2`.
+
+**Why this, why now:** Per *Alto Hardware Manual* §2.4 + the new `alto-processor-and-microcode-spec.md` §5.5 (verified against the manual): "BLOCK function (F1=3) is used, by convention, to signal a hardware device associated with the currently running task to remove its wakeup signal.  This function is **not** accomplished by the Alto microprocessor, but rather by the individual device interfaces."  And: "the wakeup signals which drive the priority encoder are hardware-generated" — they are **sustained**, not pulsed.
+
+The pre-fix model had `o.sector_mark = wraps` (1-cycle pulse).  Combined with sticky `current_task` (Step 3) and correct F1/F2 encoding (Step 4a), this meant most sector_marks were missed: the 1-cycle window had to coincide with Emulator's TaskYield at MPC=0x153.  The previous boot-trace baseline observed 7 sector_marks → 7 Disk Sector "firings" — but the trace dump revealed all 7 were consecutive cycles after a single coincident yield, not 7 separate handoffs.
+
+The fix matches the spec exactly: device wakeups are sustained, F1=Block clears the device's wakeup.
+
+**Design decisions:**
+
+- **Device-side cooperation, not chip-side latching.**  The user explicitly asked to verify with specs before implementing.  The spec § 5.5 makes the architecture clear: "the **device** widget must snoop F1 and gate its wakeup output on (~~F1==BLOCK while this task active~~)".  An earlier attempt at chip-side latching (a `wakeup_latched: dff::DFF<Bits<16>>` in AltoChip) was reverted because it can't terminate sustained signals (Block clears the latch but sustained word_strobe immediately re-OR's it back).  Device-side cooperation is the only design that satisfies the spec.
+
+- **`sector_wake` DFF, not pulse-pass-through.**  DiabloDisk's `sector_mark` was a 1-cycle pulse; the spec says it should be sustained.  Changed the output to `q.sector_wake`, a DFF latched true when sector_tick wraps and cleared when current_task=4 issues F1=Block.
+
+- **`word_strobe` sustained-with-Block-mask.**  word_strobe was already sustained while `transfer_remaining > 0`; just added an `&& !block_clears_word` mask so a Block from current_task=14 momentarily deasserts it (per the same one-cycle handshake pattern).  Block doesn't permanently clear word_strobe — `transfer_remaining` is the underlying state.  This matches real Alto's per-word-strobe model where the disk hardware re-asserts the strobe each word-time.
+
+- **Standalone disk tests: count rising edges, not cycles-high.**  Without a chip wrapping it, `DiskIn::default()` leaves `block_task = false` forever, so once sector_mark fires it stays high for the rest of the trace.  Tests count rising edges and verify the sustained-high property explicitly.
+
+- **`boot_trace_baseline_metrics`: asserts Disk Sector dominates.**  Once the first sector_mark fires (~cycle 255), KSEC's microcode runs from MPC=4 through `LoadMar + Constant + jump to 0x37c` and onward.  KSEC's setup needs per-task F1 codes (STARTF, INCRECNO, CLRSTAT, STROBE) to reach F1=Block.  Until those land, KSEC loops without yielding back to Emulator.  Net result: 262 Emulator cycles (boot before first sector_mark) + 1738 Disk Sector cycles.  This is *correct architectural behavior* under the spec; documented in the test's relaxed assertions.
+
+**Surprises and gotchas:**
+
+- **Spec verification was load-bearing.**  The user's interrupt of the implementation ("before implementing verify with specs and docs") was exactly right.  Quick-greppable confirmation in ContrAlto's `Task.cs:343` (`_cpu.BlockTask(this._taskType)`) and the verbatim spec quote ("the BLOCK function ... is *not* accomplished by the Alto microprocessor, but rather by the individual device interfaces") let me distinguish device-side from chip-side architectures and pick the right one.
+
+- **Updated tests reveal architectural correctness.**  Pre-fix `disk_sector_mark_drives_disk_sector_task` expected `mark_cycles == [255, 511, 767]` — three pulses.  Post-fix shows only one rising edge at 255, with the signal sustained.  This isn't a regression — it's the spec-compliant behavior the test should have expressed all along.
+
+- **`boot_trace_baseline_metrics` reverses dominant task.**  Pre-fix: Emulator dominates (1993 cycles), Disk Sector blips (7 cycles).  Post-fix: Disk Sector dominates (1738 cycles), Emulator gets the boot prefix (262 cycles).  This is correct per spec: KSEC hasn't been given the F1 codes it needs to reach Block, so it stays running.  The next phase (per-task F1=8-15 dispatch) will let KSEC complete its loop and yield back, restoring Emulator's "background" role.
+
+**Validation:**
+
+- 105/105 alto tests pass across 9 test files (`cargo test -p rhdl-alto`):
+  alto_chip 42, alu 20, diablo_disk 8, disk_controller 4, disk_dma_integration 3, memory 5, microengine 6, regfile 4, task_system 16, plus 1 ignored diagnostic.
+- iverilog round-trip on DiabloDisk + AltoChip with the new sustained-wakeup signals confirmed.
+- Boot trace: 1 sector_mark rising edge in 2000 cycles + Disk Sector dominates (1738 firings) — both spec-compliant.
+
+**Follow-ups:**
+
+- Per-task F1=8-15 dispatch (Emulator: SWMODE, STARTF; Disk: STROBE, LoadKSTAT, INCRECNO, CLRSTAT, LoadKCOMM, LoadKADR, LoadKDATA).  Without these, KSEC's microcode at MPC=4 → 0x37c can't reach F1=Block.  This is the next architectural unblock for boot trace progress.
+- Per-task BS=3/4 sources (`ReadKSTAT`/`ReadKDATA` for disk tasks vs `ReadSLocation`/`LoadSLocation` for Emulator) per spec §3.2.
+- Constants-ROM `BS≥4` wired-AND mask path (spec §7).
+- Disk word-DMA's full multi-cycle STROBE/KFER/STROBE2 protocol per spec §8.5 (currently collapsed to single-cycle `DiskWordTransfer`).
+
+---
+
+## 2026-05-01 — Tier C #2 Alto Phase 3.5 Step 4b: per-task reset MPCs (chip-level via task_started)
+
+**Paths:**
+
+- `crates/rhdl-alto/src/alto_chip.rs` — added `task_started: dff::DFF<Bits<16>>` field (16-bit bitmap, one bit per task).  Chip kernel uses `task_mpc[K] if task K has started, else K` for the engine's MPC lookup; sets `task_started` bit for `current_task` each cycle so subsequent runs use the accumulated MPC.  Added the new field to all four AltoChip constructors.
+- `crates/rhdl-alto/src/task_system.rs` — kept the `Default` derive on `AltoTaskSystem` (reverted the manual `Default` impl) so the per-task DFFs reset to `[0; 16]` in both Rust sim and Verilog (which avoids a Rust-sim-vs-Verilog initial-state divergence that the manual init would have introduced).  Documented the reason in the field doc comment.
+
+**Why this, why now:** Per *Alto Hardware Manual* §2 "Initialization" and ContrAlto's `Task.cs` `Reset()` method, each task K resets to MPC = K.  Without per-task reset MPCs, when the chip first switches from Emulator (task 0) to Disk Sector (task 4), Disk Sector would execute from MPC=0 — which is the universal init instruction (a jump to 0x152 in real microcode), not KSEC's setup code at MPC=4.  Boot semantics fail because KSEC never gets to its actual setup.
+
+**Design decisions:**
+
+- **Chip-level `task_started` bitmap, not per-task DFF reset value.**  The natural fix is to construct each `dff::DFF<Bits<10>>` per-task with `dff::DFF::new(K)` so it resets to K.  Tried it; the iverilog round-trip test fails because the dff's `init()` returns `Self::S::dont_care()` (initial Rust sim state captures dont_care, displayed as 0), but the synthesized Verilog has `initial begin o = K` (so Verilog reports K at time 0).  The mismatch is at the very first sample, before any reset cycle.  This is a `dff::DFF` upstream issue (dont_care init vs Verilog initial begin) — workable around at the chip level by tracking "has task K started" and substituting K for `task_mpc[K]` until then.  Rust sim and Verilog agree because both DFFs start at 0 (default) and the chip's substitution logic is identical in both paths.
+
+- **`task_started` is sticky-set, never cleared.**  Once set, it stays set for the life of the chip.  Reset clears it back to 0, at which point the per-task reset MPCs apply again.  Matches real Alto's behaviour where reset re-applies the per-task reset MPCs.
+
+- **`task_started` is set for `current_task` every cycle, not just on task-switch.**  Even within a single sticky-task run (when current_task doesn't change), the bit is set every cycle.  Idempotent — harmless re-OR-ing of the same bit.  Simpler than gating on "first cycle of this task's run."
+
+- **Reverted `AltoTaskSystem` manual Default impl** (intermediate from this PR).  The right place to express per-task reset MPCs is at the *chip composition layer*, not the *task arbiter widget*.  The widget is a generic 16-task arbiter; per-Alto reset MPCs are an Alto-CPU-spec property that belongs in the chip kernel.  This separation also keeps `AltoTaskSystem`'s tests simple and its iverilog round-trip clean.
+
+**Surprises and gotchas:**
+
+- **`dff::DFF::new(initial)` produces a Rust-sim-vs-Verilog initial-state mismatch.**  Setting a non-default initial value via `dff::DFF::new` correctly synthesizes `initial begin o = init` in Verilog but doesn't initialise the Rust sim's `state.current` (which stays at `dont_care()`).  The first sample captured at time 0 differs.  Workaround: use `dff::DFF::default()` and apply the initial value via combinational logic at the consuming site.  Alternative future fix: `dff::DFF::init()` could return `Self::S { current: self.reset, ... }` instead of `dont_care()`.
+
+- **Boot trace baseline went from 8 → 9 distinct addresses visited.**  Disk Sector now visits MPC=4 (its reset) as a new address.  The other 8 addresses (Emulator's tight boot loop) are unchanged.
+
+**Validation:**
+
+- 42/42 alto tests pass (`cargo test -p rhdl-alto`).
+- `boot_trace_baseline_metrics`: distinct microaddresses 8 → 9 (Disk Sector now reaches MPC=4); fire counts unchanged.
+- `boot_trace_decode_diagnostic`: Disk Sector at MPC=4 is filtered (microcode is a self-loop NOP at this address — instruction == MPC).  Future Phase 3.5 steps will get Disk Sector advancing through real KSEC microcode.
+
+**Follow-ups:**
+
+- Disk Sector at MPC=4 hits a self-loop NOP in the real microcode (filtered by the diagnostic).  Need to verify that Disk Sector eventually reaches its real setup code and exercises the KSEC F1 codes (LoadKCOMM, LoadKADR, LoadKDATA, INCRECNO, CLRSTAT, STROBE) — pending per-task F1=8-15 dispatch.
+- `dff::DFF::init()` returning `dont_care()` instead of `self.reset` is an upstream issue worth opening a focused PR for in `rhdl-fpga` once the Alto core is more complete.
+
+---
+
+## 2026-05-01 — Tier C #2 Alto Phase 3.5 Step 4a: F1/F2 binary encoding aligned with real Alto
+
+**Paths:**
+
+- `crates/rhdl-alto/src/isa.rs` — F1Function and F2Function variants renumbered to match real Alto / ContrAlto's `MicroInstruction.cs` `SpecialFunction1` and `SpecialFunction2` enums.  Added `F1Function::LoadMar` (binary 1, universal).  Added `F2Function::StoreMd` (binary 6, universal) and `F2Function::Constant` (binary 7, universal — constant ROM lookup, mirror of F1=Constant).  Removed `F2Function::LoadMar` and `F2Function::WriteMd` (their semantics moved to F1=LoadMar and F2=StoreMd respectively).  Renamed `F1Function::Reserved8/9/10/11` → `EmuSwMode/Code9/Code10/Code11`, and `F2Function::Reserved9/10/11/14/15` → `Code9/Code10/Code11/Code14/Code15`.  Per-task variant naming uses Disk-task semantic names (LoadKCOMM/LoadKADR/LoadKDATA — already named WriteKcomm/WriteKadr/WriteKdata in our code, kept) since those are the codes Phase 3.5 actively implements.
+- `crates/rhdl-alto/src/microengine.rs` — moved `LoadMar` dispatch from F2 to F1.  Added `F2=Constant` → constant ROM lookup (same path as `F1=Constant`).  Renamed `WriteMd` → `StoreMd` in dispatch.  Updated `f1_from_index`/`f2_from_index` to the corrected mapping.
+- `crates/rhdl-alto/src/alto_chip.rs` — five test-microcode sites updated: `f1: F1Function::Constant, f2: F2Function::LoadMar` → `f1: F1Function::LoadMar, f2: F2Function::Constant` (functionally equivalent — F2=Constant is a real Alto code that triggers the same constant-ROM path as F1=Constant).  One site updated to `f1: F1Function::Constant, f2: F2Function::StoreMd` (which works because F1=Constant sets BUS while F2=StoreMd writes BUS to memory — orthogonal codes).  `boot_trace_baseline_metrics` re-adds the "Disk Sector firings ≥ sector_marks" assertion that I had to relax in Step 3 — under correct encoding the assertion holds (7 firings = 7 sector_marks).
+
+**Why this, why now:** Phase 3 and the early Phase 3.5 work used a different binary encoding for F1 and F2 than the real Alto's.  Our encoding was internally consistent (pack/unpack symmetric, hand-written test microcode used enum names not binary values, so tests passed), but **loading real Alto microcode silently produced wrong instructions**.  Specifically: real Alto F1=1 is `LoadMAR` but we mapped binary 1 to `LeftShift1`; real F1=7 is `Constant` but we mapped binary 7 to `Reserved7` and noped it.  The boot trace's tight 8-instruction loop included an `F1=Constant` (silently noped) and an `F1=TaskYield` (binary 2, which we mapped to `RightShift1` and treated as a shift — never asserted task_yield), so the Emulator's TaskYield never fired and Disk Sector never won arbitration.  Step 3's sticky-`current_task` fix was necessary but not sufficient; this encoding fix is the second half.
+
+The bug surfaced when re-running the boot trace diagnostic after the Step 3 architectural fix: we still saw zero Disk Sector firings despite the priority arbiter being correct.  Decoding instruction `0x00724154` at MPC=0x153 with the correct encoding revealed `f1=TaskYield` (binary 2) — the Emulator's idle loop *does* yield, we just weren't recognizing the yield.
+
+This fits the §0 pattern exactly: an internally-consistent simplification ("our F1/F2 encoding") that worked against synthetic tests but produced silently wrong behaviour against the real artifact (real Alto microcode).  Validation against the actual artifact — running real PROMs through the chip — is the only thing that surfaces this class of bug.
+
+**Design decisions:**
+
+- **Encoding-fix only — variant names mostly preserved.**  Since hand-written test microcode references enum variants by name (`F1Function::Constant`), changing the binary index doesn't break those tests as long as the chip dispatches on the variant.  Tests pass unchanged for the universal F1/F2 codes (NOP, shifts, Constant, TaskYield, Block, BusEqZero, etc.).  Only the moved `LoadMar` (F2 → F1) and the renamed `WriteMd` → `StoreMd` required test edits.
+
+- **`F2=Constant` (binary 7) treated as identical to `F1=Constant`.**  Per ContrAlto's `MicroInstruction.cs`, both `SpecialFunction1.Constant = 7` and `SpecialFunction2.Constant = 7` trigger the constant-ROM lookup.  This lets a single instruction do both `BUS ← constant` and a F1-coded operation (e.g., `LoadMar` from F1).  Implemented as `mi.f1 == Constant || mi.f2 == Constant` in the BUS computation.
+
+- **Per-task F1 codes 8-15 named after Disk-task semantics.**  Same binary code means different things in different tasks (e.g., F1=13 is `LoadESRB` in Emulator but `LoadKCOMM` in Disk Sector).  We picked the Disk-task name for the variant since Phase 3.5 actively implements Disk semantics; Emulator per-task codes (SWMODE, STARTF, etc.) are still no-ops pending boot-path requirement.  Future per-task dispatch will check `current_task` to decide which semantics to apply for the same enum variant.
+
+- **`F1Function::EmuSwMode` is a placeholder name.**  Binary 8 is SWMODE in Emulator; the variant carries the Emulator name even though it'll be dispatched per-task.  Rename if it becomes confusing once Disk task adds its own F1=8 semantics (currently Disk leaves F1=8 undefined).
+
+**Surprises and gotchas:**
+
+- **The boot trace baseline went from "0 Disk Sector firings" to "exactly 7 Disk Sector firings" with no other changes.**  7 sector_marks in 2000 cycles → 7 Disk Sector firings.  This is the strongest possible validation that the chip is now correctly running the real microcode's task-yield/arbitration cycle.
+
+- **Hand-written test microcode survived unchanged because tests use enum names, not binary values.**  All 42 alto tests passed without any test-side changes for the universal codes — a clean indication that the abstraction (typed enum → binary) has the right shape for evolving the encoding without breaking client code.  The 5 sites that *did* need editing were only because `LoadMar` moved from F2 to F1 (a structural change, not just a renumber).
+
+- **`F1=Constant + F2=LoadMar` doesn't work in real Alto (and now doesn't compile in our chip).**  The combination "load constant onto BUS, then MAR ← BUS" requires F1=LoadMar (so BUS goes to MAR) AND F2=Constant (so BUS comes from constant ROM).  This is the real Alto idiom — `MAR← CONSTANT` is a single-instruction action achievable only via the F2=Constant trick.  Test microcode updated accordingly.
+
+**Validation:**
+
+- 42/42 alto tests pass (`cargo test -p rhdl-alto`).
+- `boot_trace_baseline_metrics`: 1993 Emulator firings + 7 Disk Sector firings (one per sector_mark) — both assertions pass.
+- `boot_trace_decode_diagnostic`: now correctly identifies F1=LoadMar at MPC=0x000, F1=Constant at 0x130/0x14e, F1=TaskYield at 0x153 (was Reserved/wrong/wrong before).
+
+**Follow-ups:**
+
+- Per-task F1=8-15 / F2=8-15 dispatch.  Many real-Alto codes (Emulator: SWMODE, STARTF; Disk: STROBE, LoadKSTAT, INCRECNO, CLRSTAT) are still no-ops.  As the boot path advances past its initial Emulator loop into KSEC's setup code, more codes will need real semantics.
+- Per-task BS=3/4 sources (`ReadSLocation`/`LoadSLocation` for Emulator, `ReadKSTAT`/`ReadKDATA` for Disk).  Currently TaskSpec3/TaskSpec4 are noped.
+- Per-task reset MPCs.  Per ContrAlto's `Task.cs` Reset(), `_mpc = (ushort)_taskType` — task K resets to MPC=K.  Our current behaviour (all task MPCs default to 0) is wrong but only matters for tasks that don't immediately get their MPC set by Emulator's TaskYield → arbitration → first instruction.
+
+---
+
+## 2026-05-01 — Tier C #2 Alto Phase 3.5 Step 3: sticky `current_task` + arbitration on F1=TaskYield
+
+**Paths:**
+
+- `crates/rhdl-alto/src/microengine.rs` — added `task_yield: bool` to `Out`; set in kernel from `mi.f1 == F1Function::TaskYield`; cleared in reset path.
+- `crates/rhdl-alto/src/alto_chip.rs` — replaced the per-cycle priority arbiter (which mutated `current_task` every cycle from the wakeup vector) with a sticky `current_task` DFF + combinational priority encoder gated by `q.engine.task_yield`.  The DFF replaces the prior `prev_task: dff::DFF<Bits<4>>` field; renamed in place.  Five hand-written-microcode tests rewritten to issue `F1=TaskYield` at the points where they intend the arbiter to run (`multi_task_arbitration_picks_higher_priority`, `f1_write_kadr_only_active_under_disk_sector_task`, `end_to_end_256_word_dma`, `kcom_write_arms_disk_and_fires_disk_word_task`, `disk_sector_mark_fires_disk_sector_task`).  `boot_trace_baseline_metrics` relaxed to drop the "Disk Sector firings ≥ sector_marks" assertion (which was an artefact of the old per-cycle arbitration model — under sticky semantics the count depends on whether the real Emulator boot path reaches a TaskYield, which depends on F1/F2 codes not yet implemented).
+- `.gitignore` — `assets/` added; the local Bitsavers mirror (currently ~57 MB across `assets/bitsavers/`) is reference material, not part of the repo.
+
+**Why this, why now:** Phase 3 (PR #44 / commit `9994f309`) shipped a per-cycle priority arbiter — every cycle the chip re-arbitrated, walking the wakeup vector and picking the highest-priority woken task.  This was structurally wrong.  Per *Alto Hardware Manual* §2.4 the real Alto pipeline has **one** global MIR pipeline register; task switches happen **only** when microcode issues `F1=TASK`; in between, the same task runs every cycle even if a higher-priority task is waking.  The bug was masked by the Phase-3 hand-written test microcode (which didn't depend on multi-cycle task continuity) but surfaced immediately when running real Alto microcode against Phase 3.5 boot wiring — the chip was scheduling the wrong task on the wrong cycles, with task switches happening on every wakeup-vector edge.
+
+**Design decisions:**
+
+- **Sticky `current_task` DFF** — the chip latches the priority-encoder winner into `current_task` exactly when the engine asserts `task_yield` (i.e., the running microinstruction has `F1=TaskYield`).  Otherwise `current_task` holds.  This matches the *Alto Hardware Manual* §2.4 description of the TASK function.  Confirmed by reading ContrAlto2's `CPU.cs` and `Tasks/Task.cs` — same architecture, with the priority encoder as a cascade of `if`/`else` over the 16 task wakeup bits, gated by the current instruction's `F1==TASK`.
+
+- **`task_yield` as a microengine output, not a hidden internal signal.**  The microengine surfaces it on `Out` so the chip-level kernel composes the gating combinationally without reaching into the engine's internals.  Makes the architectural contract visible at the `AltoChip`-vs-`Microengine` boundary.
+
+- **Test microcode updated, NOT the kernel relaxed.**  The five Phase-3 tests that depended on per-cycle arbitration were updated to issue `F1=TaskYield` where they intended an arbiter step.  Refusing the alternative — making the kernel "smart" about when to arbitrate (e.g., switching whenever the current task isn't waking) — keeps the architectural semantics exactly aligned with the real Alto.  The tests are now real-Alto-shaped; future microcode written for the real Alto will run unmodified.
+
+- **`boot_trace_baseline_metrics` assertion relaxation, not removal.**  The "Disk Sector firings ≥ sector_marks" assertion held under per-cycle arbitration (Disk Sector won immediately when `sector_mark` fired) but no longer holds under sticky arbitration (the running Emulator must reach a `TaskYield` first).  The full real-Alto boot path *does* eventually reach `TaskYield`s, but it depends on F1/F2 codes that are still unimplemented in Phase 3.5; until those land, the Emulator can stay in Task 0 across the entire 2000-cycle window.  The assertion would constrain future per-task-code implementations to also reach `TaskYield` quickly, which is a downstream constraint, not the chip-level invariant being tested here.  Replaced with a printed metric and the (still-correct) "Emulator dominates" assertion.
+
+- **`assets/` gitignored.**  The Bitsavers mirror under `assets/bitsavers/` (Xerox-era PDFs + microcode dumps + Alto disk images, currently ~57 MB) is reference material consulted during development, not redistributable source.  Kept locally; not in the repo.
+
+**Surprises and gotchas:**
+
+- **Per-cycle arbitration was confidently wrong, not obviously wrong.**  The Phase-3 tests passed cleanly because they didn't span enough cycles for sticky-vs-non-sticky to diverge.  The bug only emerged when running the real microcode through enough cycles that a task continuity assumption failed.  **Lesson:** when implementing well-documented vintage hardware, read the architectural reference (§2.4 of the Hardware Manual in this case) *before* deciding the simulation model — even when the per-cycle simplification "obviously works" against your synthetic tests.
+
+- **The DFF default-value isn't a hardware reset path.**  `current_task` defaults to `Bits<4>(0)` (Emulator).  That means after reset, the chip runs Task 0 until microcode reaches a `TaskYield` — which is the Alto's actual boot semantics (TaskTask at task 14 is loaded by external means and the boot rom is the first thing that runs).  We don't model the boot rom's role here; the convention "tests start with Emulator running, microcode TaskYields to switch" is the operational contract.
+
+- **F1 is a single-slot field — `TaskYield` and `WriteKadr` etc. are mutually exclusive.**  Tests that wanted "yield then immediately do KADR write" needed two microinstruction slots, not one.  Updated test microcode walks an extra address through this two-step sequence.
+
+- **The Emulator's idle loop in real microcode is not a NOP loop, it's a `TaskYield` loop.**  The Phase-3 NOP-loop test microcode was wrong for sticky semantics: the Emulator never yields from a literal NOP.  Real Alto Emulator loops are dispatch loops where every other instruction has `F1=TASK` so I/O tasks can preempt.  Updated `disk_sector_mark_fires_disk_sector_task` to use a `TaskYield`-loop, which is closer to real microcode shape.
+
+**Validation:**
+
+- 42/42 alto tests pass (`cargo test -p rhdl-alto`).  No regressions in the broader workspace from this change (3 unrelated pre-existing `code` crate failures depend on the local IceStorm toolchain installation).
+- `cargo build -p rhdl-alto` clean.
+- The five fixed tests now exercise the sticky-task path AND the F1=TaskYield arbitration path, which gives this commit better coverage of the real Alto pipeline contract than Phase 3 had.
+
+**Follow-ups:**
+
+- Phase 3.5 Step 4: implement the per-task F1/F2 codes the boot path requires (per-task `BS=3`/`BS=4` sources, `F1=STARTF`, `ACSOURCE`/`ACDEST←`, `SWMODE` for bank switching, `MRT` gating of `MAR←`/`MD←`) so the real Emulator microcode can advance past its initial loop and reach its first `TaskYield`.  Once it does, `boot_trace_baseline_metrics` should see Disk Sector firings ≥ sector_marks again, at which point reinstate that assertion.
+- Phase 3.5 Step 4 (cont.): realistic disk rotation timing in `DiabloDisk`; per-task body real DMA in `AltoTaskSystem` rules; boot trace until Nova PC = 0o345.
+- Phase 3.5 Step 5: ContrAlto2 CSV trace patch + cycle-equivalent lockstep harness.
+
+---
+
 ## 2026-05-01 — Tier C #2 Alto Phase 3: disk subsystem foundation + first per-task body divergence
 
 **Paths:**
