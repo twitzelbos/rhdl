@@ -437,7 +437,13 @@ impl AltoChip {
             disk: DiabloDisk::with_test_period_and_sector_at_boundary(
                 disk_period_cycles, boot_sector_data,
             ),
-            engine: Microengine::default(),
+            // Per AltoHW §3.4 (Bootstrapping): "When the transfer is
+            // complete, PC ← 1, and the emulator is started."  The
+            // boot button performs this hardware-level initialization;
+            // we match by initializing R[6]=PC to 1 here.  Without
+            // this, OURS' Emulator fetches Nova instructions from
+            // mem[0] (= 0 = NOP-ish) and ends up in an I/O-poll loop.
+            engine: Microengine::with_initial_pc(1),
             state: rhdl_fpga::core::dff::DFF::new(ChipState::default()),
         }
     }

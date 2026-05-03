@@ -274,6 +274,25 @@ pub struct Microengine {
     next_modifier_pending: dff::DFF<Bits<10>>,
 }
 
+impl Microengine {
+    /// Construct a Microengine with R[6] (= `$PC`, Emulator's program
+    /// counter) initialized to a specific value.  Per AltoHW §3.4
+    /// (Bootstrapping): "When the transfer is complete, PC ← 1, and
+    /// the emulator is started."  The boot button performs this
+    /// initialization at the hardware level — our chip's boot
+    /// constructor calls this to match.  All other R-registers
+    /// initialize to 0 (matching the DFF default + the real Alto's
+    /// power-on state).
+    pub fn with_initial_pc(pc: u16) -> Self {
+        let mut regs = [bits::<16>(0); 32];
+        regs[6] = bits::<16>(pc as u128);
+        Self {
+            regs: dff::DFF::new(regs),
+            ..Default::default()
+        }
+    }
+}
+
 impl SynchronousIO for Microengine {
     type I = In;
     type O = Out;
