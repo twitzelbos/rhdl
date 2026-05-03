@@ -16,7 +16,7 @@ fn main() {
     let microcode = microcode_loader::load_alto_ii_microcode_from_dir(&dir).unwrap();
     let constants = microcode_loader::load_alto_ii_constant_rom_from_dir(&dir).unwrap();
     let uut = AltoChip::with_microcode_and_constants(&microcode, &constants);
-    let inputs: Vec<ChipIn> = (0..2000).map(|_| ChipIn { wakeups: bits::<16>(0x0001) }).collect();
+    let inputs: Vec<ChipIn> = (0..200).map(|_| ChipIn { wakeups: bits::<16>(0x0001) }).collect();
     let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
     let trace: Vec<_> = uut
         .run(stream)
@@ -41,32 +41,29 @@ fn main() {
         }
     }
 
-    // Dump first 12 cycles where current_task = 4 (Disk Sector).
-    let mut shown = 0;
-    println!("\nFirst Disk Sector (task=4) cycles:");
-    for (i, t) in trace.iter().enumerate() {
+    // Dump every distinct (task, mpc) pair Disk Sector visits, decoded.
+    use rhdl_alto::isa::Microinstruction;
+    use std::collections::BTreeMap;
+    let mut seen: BTreeMap<(u128, u128), u128> = BTreeMap::new();
+    for t in trace.iter() {
         if t.current_task.raw() == 4 {
-            let lo = i.saturating_sub(1);
-            let hi = (i + 4).min(trace.len());
-            for j in lo..hi {
-                let s = &trace[j];
-                let marker = if j == i { " *" } else { "  " };
-                println!(
-                    "{marker} cycle={j:4} task={} mpc=0x{:03x} instr=0x{:08x} sm={} ws={} wake=0x{:04x} ir=0x{:04x}",
-                    s.current_task.raw(),
-                    s.mpc.raw(),
-                    s.instruction.raw(),
-                    s.disk_sector_mark as u8,
-                    s.disk_word_strobe as u8,
-                    s.wakeups.raw(),
-                    s.ir.raw(),
-                );
-            }
-            println!("---");
-            shown += 1;
-            if shown >= 5 {
-                break;
-            }
+            seen.insert((t.current_task.raw(), t.mpc.raw()), t.instruction.raw());
         }
+    }
+    println!("\n{} unique (task=4, mpc) pairs in trace:", seen.len());
+    for ((task, mpc), &instr) in seen.iter() {
+        let mi = Microinstruction::unpack(instr as u32);
+        println!("  task={task:2} mpc=0x{mpc:03x} instr=0x{instr:08x}");
+        println!(
+            "    rsel={:>2} aluf={:?} bs={:?} f1={:?} f2={:?} t={} l={} next={:#05x}",
+            mi.rsel.raw(),
+            mi.aluf,
+            mi.bs,
+            mi.f1,
+            mi.f2,
+            mi.t_load,
+            mi.l_load,
+            mi.next.raw()
+        );
     }
 }

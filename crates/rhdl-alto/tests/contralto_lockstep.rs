@@ -130,7 +130,13 @@ fn lockstep_first_divergence() {
         return;
     }
 
-    let cycles = 200;
+    // 2000 cycles: enough for our chip's Disk Sector task to fire (at
+    // cycle 256, per the 256-cycle sector_tick we use as a stand-in
+    // for the real Alto's ~19,600-cycle inter-sector period) and for
+    // the boot DMA to populate enough of memory that the Emulator can
+    // make real progress.  Before cycle 256, divergences are dominated
+    // by ContrAlto's "fire sector_mark on cycle 1" simulation shortcut.
+    let cycles = 2000;
     let ctr_full = run_contralto(disk.to_str().unwrap(), rom_dir.to_str().unwrap(), cycles);
     let ours = run_rhdl_chip(disk.to_str().unwrap(), rom_dir.to_str().unwrap(), cycles);
 
@@ -189,7 +195,7 @@ fn lockstep_first_divergence() {
     // (task, mpc) matches ctr[i_ctr] (or any of the next K ctr entries).
     // Report what was skipped.
 
-    const SKIP_WINDOW: usize = 100;
+    const SKIP_WINDOW: usize = 500;
     let mut i_ctr = 0usize;
     let mut i_ours = our_skip;
     let mut matched = 0usize;

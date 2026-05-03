@@ -31,6 +31,83 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-02 — Tier C #2 Alto microcode_semantics.rs: BS=DISP fix + audit-of-tests follow-ups (B.2/B.3/C.1)
+
+**Paths:**
+
+- `crates/rhdl-alto/src/microengine.rs` — fixed `BusSource::InstructionRegister` (BS=7, ←DISP).  Was returning the full IR; should return `IR & 0xFF` with conditional sign-extension when X-field nonzero AND IR[8] (sign bit) is set.  Found via lockstep against ContrAlto.
+- `crates/rhdl-alto/tests/microcode_semantics.rs` — replaced one wrong test with 4 spec-derived tests covering the X-field × sign-bit matrix (DISP for IR=0x0100 with X=0 → 0x0000, etc.); added 3 asterisked-ALUF tests (BusMinusOne, BusPlusTPlusOne, BusAndTAlt); added DNS Nova-op carry-invert test (`dns_carry_inverts_when_nova_op_is_arith_and_alu_carries_out`) for the previously-untested invert-on-carry path.
+- `crates/rhdl-alto/alto-processor-and-microcode-spec.md` — added two missing rows in the IDISP table (§6.6): `IR[0]=1 → 3-IR[8-9]` and `IR[4-7]=16B → 6`, both implemented in our chip and in ContrAlto but not previously in the spec digest.
+
+**Why this, why now:** While running the lockstep harness against ContrAlto, divergence #2's predecessor was a `BS=InstructionRegister` instruction.  Cross-reference against the spec showed our impl was returning full IR but the spec defined ←DISP as the low 8 bits with conditional sign-ext.  Fixing it surfaced a meta-failure: the test I had for BS=7 was *also wrong* — it had been written by running the broken impl and copying its output as the expected value, so it asserted the same wrong behavior.  This triggered an agent audit of every other test in `microcode_semantics.rs` against the spec text, looking for the same anti-pattern and for input choices that don't distinguish wrong impls.
+
+**Design decisions:**
+
+- **Replace, don't patch, the bad BS=DISP test.**  The fix value (DISP-with-sign-ext) needs four input choices to nail down: X-field zero vs nonzero × IR[8] zero vs nonzero.  One test per quadrant, with input values chosen so DISP *differs* from the previously-asserted "full IR" output.  An impl that returns full IR fails at least one test; an impl that drops sign-ext fails the X≠0/IR[8]=1 test; etc.
+- **Add tests for asterisked-ALUF coverage.**  Original tests covered only BusOrT and BusPlusOne.  An impl that hardcoded only those two as asterisked (= T←ALU even with t_load=0) would pass.  Added three more (BusMinusOne, BusPlusTPlusOne, BusAndTAlt) with T/BUS values where ALU output ≠ BUS, so the spec's T←ALU-when-asterisked semantics is distinguished.
+- **Add DNS Nova-op carry-invert test.**  Existing DNS tests all used Nova op=0 (COM), which doesn't take the invert-on-carry path.  An impl that omitted the `if op∈{1,3,4,5,6} AND aout.carry → invert dns_carry` logic would pass every existing test.  New test uses IR=0x0600 (Nova ADD) and forces ALU carry-out via BusPlusOne(0xFFFF).
+- **Patch the spec doc, not the impl.**  The two missing IDISP rows are present in ContrAlto and our impl; only the spec digest in `alto-processor-and-microcode-spec.md` was incomplete.  Per the spec preamble, ContrAlto is the gold reference where the digest is missing detail.
+
+**Surprises and gotchas:**
+
+- **The exact bug pattern I had cataloged in the audit was present in my own test.**  Wrote a test by reading impl output and copying it as expected; the test then "passed" while the impl was wrong.  Mitigation pattern (now permanent): derive expected values from spec text *before* writing the assertion; pick input values that distinguish the spec from common wrong impls.
+- **DNS overrides effective_rsel via ACDEST**: in the carry-invert test, BS=ReadR with mi.rsel=N does NOT read R[N] in DNS context — it reads R[(IR[3-4] XOR 3)] (= R[3] for IR=0x0600).  First two attempts at the test failed because I pre-loaded the wrong R-register.  Documented in the test for future readers.
+- The agent audit found *no other* wrong-assertion bugs across ~110 tests.  The systematic risk is real but doesn't appear pervasive in this file.
+
+**Validation:**
+
+- 226 alto tests pass (up from 222 — added 4 new tests, replaced 1 bad test with 4 better ones).
+- All 4 audit-driven items addressed: B.2 (asterisked ALUFs), B.3 (DNS carry-invert), C.1 (spec doc gap), and the doc bug in the BS=DISP test comment.
+
+**Follow-ups:**
+
+- Apply the same "derive from spec, distinguish inputs" discipline to other test files in the alto crate as time permits.  The current audit was scoped to `microcode_semantics.rs`.
+
+---
+
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 5b: lockstep follow-up — diagnostic infra + cascading-divergence root cause
+
+**Paths:**
+
+- `crates/rhdl-alto/examples/dump_lockstep_divergence_mpcs.rs` — new example that decodes the microinstructions at and around any MPC, plus dumps the predecessors that point to a given target MPC pair.  Turns "MPC 0x154 vs 0x155 — what does that mean?" into "here's the predecessor microcode + its NEXT field + its F2 NEXT-modifier potentially responsible".  Used to nail down the BS=DISP bug (already fixed) and to investigate the disk-task R-register divergences (still open).
+- `crates/rhdl-alto/examples/dump_lockstep_traces.rs` — new example that prints both OUR and CTR's first 30 cycles in a parallel-table format with task/MPC/T/L/IR/BUS/ALU all visible.  Eliminates guessing about which side did what when.
+- `crates/rhdl-alto/examples/dump_disk_sector_div.rs` — narrow tool dumping the Disk Sector divergence neighborhood (MPC 0x388-0x390) once the harness pointed there.
+- `crates/rhdl-alto/tests/contralto_lockstep.rs` — bumped `cycles` from 200 to 2000 (so our 256-cycle sector_mark wait clears and Disk Sector actually fires) and `SKIP_WINDOW` from 100 to 500 (so the harness can resync past the long Disk Sector cycle range).
+
+**Why this, why now:** After the BS=DISP fix, re-ran the lockstep harness to see if divergences shifted.  They didn't — still 17 matched (task, mpc) pairs out of the first 200 cycles, with the same 3 divergence pattern.  Investigation revealed that the divergences are *cascading consequences* of one structural disparity (sector_mark timing), not independent microengine bugs.  The diagnostic infrastructure here is what made that diagnosis possible.
+
+**Design decisions:**
+
+- **Bump cycles to 2000, window to 500**: this is the smallest configuration that lets our chip complete its 256-cycle sector_mark wait and execute the Disk Sector boot DMA, then resync with CTR's earlier-but-architecturally-equivalent disk-task execution.  With 2000/500 we now reach 19 matched (task, mpc) pairs across two runs of the boot loop.
+- **Three new diagnostic examples instead of one mega-script**: each does one focused job — decode microcode at MPCs, dump parallel traces, focus on a specific divergence neighborhood.  Easy to throw away or repurpose.
+- **Don't ship a "make sector_mark fire on cycle 1" policy change**: the user's prior course-correction (rejecting `sector_tick=255`) holds.  Real Alto fires sector_mark every ~19,600 cycles per spec; both 0 (ContrAlto) and 256 (us) are simulation shortcuts.  The right way to validate microengine semantics is endpoint state validation (Phase 3.5 Step 4), not forcing both simulators into the same start-up timing fiction.
+
+**Investigation findings (logged for the next agent):**
+
+- **Divergence #1 (cycle 4)**: ContrAlto fires sector_mark on cycle 1 → KSEC task at MPC=0x004; we wait until cycle 256.  Structural, by design.  Resync at task=4 mpc=0x004 once we catch up.
+- **Divergence #2 (Emulator MPC 0x154 vs 0x155)**: predecessor MPC=0x153 has `bs=InstructionRegister + f2=BusToNext + next=0x154`.  When IR=0x01 (the boot instruction byte), DISP=0x01, BusToNext OR's bit 0 → next becomes 0x155.  CTR's 0x154 means CTR's IR was 0 *at this point* (= one Emulator-loop pass earlier in CTR than in ours).  Root cause: CTR's R[5] (boot-bus-address) was already populated by the earlier-fired Disk Sector task, so CTR's first instruction-fetch in 0x150 read a real instruction; ours read R[5]=0 → MAR=0 → MD=0 → IR=0 for two extra Emulator passes.  This is a downstream consequence of divergence #1, not a separate bug.
+- **Divergence #3 (Disk Sector MPC 0x38c vs 0x38d)**: predecessor MPC=0x38b has `aluf=Bus bs=ReadR rsel=28 + f2=BusEqZero (universal F2=1)`.  BusEqZero sets NEXT bit 0 if BUS == 0 — here BUS=R[28].  We went to 0x38d (R[28]==0); CTR went to 0x38c (R[28]!=0).  Different R[28] = a register-file cascade from earlier in the Disk Sector boot run, where some microinstruction wrote R[28] (or some upstream R-register feeding it) with a different value than CTR.  The exact root cause requires per-cycle R-register diff capability that `ChipOut` doesn't currently expose.
+
+**Surprises and gotchas:**
+
+- The "off-by-one MPC with same T/L/IR" pattern feels at first like a NEXT-modifier bug, but isn't.  It's an upstream **register-state cascade** that only manifests at the next conditional-dispatch microinstruction (BusEqZero, BusToNext, ShiftEqZero, etc.).  Without per-cycle R-register tracking the actual divergence point hides one or two boot loops earlier than where the harness reports.
+- A single live test against the actual artifact (`cargo test ... --include-ignored`) gives a far better picture of where the chip is than any amount of synthetic spec-conformance testing.  Preserving this lockstep harness as `#[ignore]`-but-runnable is high-leverage even when it's not yet "passing".
+- **Don't conflate divergence count with bug count**: 3 divergences here are 1 structural disparity + 2 cascades.  Reporting "3 bugs found" would be wrong.
+
+**Validation:**
+
+- 226 alto tests still pass.  Lockstep harness reaches 19 matched (task, mpc) pairs (up from 17) with 2000-cycle / 500-window config.
+- Diagnostic infra committed and runnable via `cargo run --example <name> --package rhdl-alto`.
+
+**Follow-ups (in priority order):**
+
+1. **Add R[0..32] + ALUC0 to ChipOut** so the lockstep harness can compare register-file state and find the actual divergence point one or two boot loops earlier than current.  This is the highest-leverage next step and unblocks all cascading-divergence investigations.
+2. **Phase 3.5 Step 4 (boot-trace endpoint validation)** as a complementary validation track that doesn't depend on cycle-by-cycle alignment — verifies the chip eventually reaches a known good post-boot state, regardless of sector-timing simulation choices.
+3. Once #1 lands, retire the synthetic-MPC-only divergence reports and bring back per-cycle assertions.
+4. **Don't switch the sector_mark policy** without explicit user agreement — the user's prior course-correction (preserving spec-correctness over lockstep-passability) holds.
+
+---
+
 ## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 5: ContrAlto cycle-equivalent lockstep harness
 
 **Paths:**
