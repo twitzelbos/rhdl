@@ -31,6 +31,49 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 5: ContrAlto cycle-equivalent lockstep harness
+
+**Paths:**
+
+- `crates/rhdl-alto/tools/contralto-trace/` — new .NET 8 console tool that uses ContraltoLib directly to boot a disk image and dump per-cycle CPU state (cycle, task, mpc, T, L, IR, ALUC0, R[0..32]) as TSV to stdout.  Uses RollForward=Major so the .NET 10 runtime can run net8.0-targeted ContraltoLib.
+- `crates/rhdl-alto/tests/contralto_lockstep.rs` — Rust test harness that runs ContrAlto via subprocess and our chip side-by-side, then reports the first cycle of divergence in (task, mpc) and (T, L, IR).  Marked `#[ignore]` because it needs the contralto-trace tool built.  Handles ContrAlto's cycle-numbering convention (reports MPC about-to-execute, +1 from our convention) and §4.4 memory-suspend stalls (collapses duplicate ContrAlto cycles).
+- `crates/rhdl-alto/src/diablo_disk.rs` — added `DiabloDisk::with_sector_at_boundary(words)` constructor (sector_tick=255 so first sector_mark fires on cycle 0, matching ContrAlto's `_sectorEvent = new Event(0, ...)` simulation choice).  Not yet wired into the chip's boot constructor — switching to it changes boot_trace metrics in a way that isn't strictly an improvement.
+
+**Why this, why now:** Phase 3.5 Step 5 per the Tier C #2 plan.  Lockstep against ContrAlto gives one-cycle-precise divergence detection — every future fix's payoff is immediately measurable.
+
+**Design decisions:**
+
+- **Subprocess + TSV protocol over in-process FFI**: simpler, no .NET-Rust interop machinery.  ContrAlto runs to completion (or N cycles), Rust parses stdout, we compare.
+- **Cycle-numbering convention reconciliation**: ContrAlto's `_currentTask.MPC` reports "MPC of the instruction about to execute" (post-prefetch).  Our chip's `o.mpc` is "MPC of the instruction currently executing".  These differ by one cycle.  Harness compensates with `our_skip=1`.
+- **Memory-stall collapse**: ContrAlto models §4.4(a/b) memory-suspend stalls (which our chip doesn't yet — D2/D3 audit follow-up).  These show up as duplicated consecutive ContrAlto cycles.  Harness filters them out so we compare microinstruction-to-microinstruction, not cycle-to-cycle.
+
+**First lockstep findings:**
+
+After alignment + stall-collapse:
+- **3 microinstructions match exactly**: NOVEM at MPC=0 → 0x152 → 0x153 → 0x154.  Both simulators execute the same microcode chain through the boot dance start.
+- **First real divergence at microinstruction 3**: ContrAlto switches to task 4 (KSEC) at MPC=0x004; our chip continues Emulator at MPC=0x130 (Q0).
+- **Root cause**: ContrAlto's `DiskController.SectorCallback` is scheduled at time 0 (immediate), so sector_mark wakes KSEC by cycle 4.  Our chip's `DiabloDisk::default()` starts sector_tick=0 and waits 256 cycles before firing sector_mark.  Per spec §8.7 + AltoHW §6.0, the real disk fires sector_mark every ~3.33ms (≈19,600 microcycles) — neither simulator matches real timing; both are shortcuts.  Neither is "wrong" per spec.
+
+**Surprises and gotchas:**
+
+- The `o.mpc` chip output appears stuck at 0x000 immediately after a wakeup-driven task switch because of the per-task `task_started` substitution: until task K has run at least once, `current_mpc = K` (= 0 for Emulator).  This is correct behavior; was confusing during debugging.
+- ContrAlto's PressBootKeys does NOT immediately set Emulator's MPC to a non-zero value — both simulators start Emulator at MPC=0 (NOVEM).  ContrAlto's first reported MPC=0x152 is just NOVEM's NEXT field, post-prefetch.
+- The microcode loader's byte-for-byte equivalence with ContrAlto (verified during Step 4h) is what makes the lockstep meaningful: when the simulators diverge, it's NOT a microcode encoding difference.
+
+**Validation:**
+
+- 219 alto tests still pass (no regressions from the diablo_disk constructor addition).
+- Lockstep harness reports a structured divergence report with surrounding context — exactly the diagnostic shape needed for cycle-precise debugging.
+
+**Follow-ups:**
+
+- **Sector_mark timing alignment**: switching the boot constructor to `with_sector_at_boundary` makes our chip match ContrAlto's choice but changes boot_trace metrics (76 → 59 distinct microaddresses in 2000 cycles).  The metric shift isn't a clear improvement (Q-loop "wait for sector" exploration shrinks); warrants further analysis before committing.
+- **§4.4 memory-suspend modeling** (D2/D3 audit): until our chip stalls on bad MAR/MD timing, ContrAlto and our chip will desync on every memory-reference instruction.  Currently mitigated by the harness's stall-collapse, but adding the suspend would let us compare cycle-by-cycle.
+- **Regfile + ALUC0 in chip output**: lockstep currently can't compare R[] or ALUC0 because our `ChipOut` doesn't expose them.  Adding those would let lockstep find register-state divergences.
+- **Per-task MPC stream alignment**: ContrAlto's TaskSwitch is scheduled to fire AFTER the next instruction (one-cycle delay); our chip switches at cycle edge.  May matter once we get past the sector_mark timing divergence.
+
+---
+
 ## 2026-05-02 — Tier C #2 Alto Phase 3.5 Step 4o: per-cycle diagnostic alignment + boot-trace progress diagnosis
 
 **Paths:**
