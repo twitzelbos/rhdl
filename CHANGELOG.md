@@ -31,6 +31,50 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-03 — RCStream Phase 1.1 + 1.3: canonical typed streaming bus + Carloni relay
+
+**Paths:**
+
+- `crates/rhdl-fpga/src/stream/bus.rs` (new) — `Item<T, F>` and `RCStream<T, F>` types + kernel-callable construction helpers (`idle`, `send`, `item`, `item_unframed`).
+- `crates/rhdl-fpga/src/stream/relay.rs` (new) — `RCStreamRelay<T, F>` widget wrapping the existing `lid::carloni::Carloni` skid-buffer with the typed `RCStream` interface.
+- `crates/rhdl-fpga/src/stream/mod.rs` — register new modules + convenience re-exports of `Item`, `RCStream`, `RCStreamRelay`.
+- `doc/book/src/stream/bus.md` (new) — book chapter (user-facing reference).
+- `doc/book/src/SUMMARY.md` — link to new chapter.
+
+**Why this, why now:** First incremental ship of the RCStream design plan (`stream-bus-architecture.md` Phase 1).  This PR establishes the foundational type so subsequent PRs can migrate the existing `stream::*` widgets one by one without breaking changes.  The full Phase 1 (migration of all ~12 stream widgets + AXI4-Stream interop) is multiple PRs of work; landing the type + relay first lets parallel migration work proceed.
+
+**Design decisions:**
+
+- **Type signature `RCStream<T: Digital, F: Digital>`** with `T` = payload type, `F` = framing-marker type.  No clock-domain `D` parameter at the Synchronous-widget level (clock domain is implicit in Synchronous widgets); the Async-widget cross-domain variant `AsyncRCStream<T, F, D>` is deferred to a future iteration when an actual cross-domain use case materializes.
+- **`Item<T, F>` carries both payload and frame** as a Digital struct — single struct rather than a tuple so the `data`/`frame` field names are part of the type's API.
+- **Validity is `Option<Item<T, F>>::is_some()`** — no separate `valid` signal.  The wire encoding is one Option-typed signal source→sink and one bool ready signal sink→source.
+- **`RCStreamRelay<T, F>` is a thin wrapper around `Carloni<Item<T, F>>`** — the existing LID-paper-faithful skid-buffer continues to exist unchanged; the relay only adds the typed encoding bridge (`Option<Item>` ↔ `(data, void)` and `bool ready` ↔ `bool stop`).
+- **Kernel attribute `#[kernel(allow_weak_partial)]`** on the relay kernel — required so RHDL's kernel-coverage tracker accepts the don't-care leaves of `Item<T, F>` in the None arm of the unpack match.  Same pattern the existing `stream_buffer::option_carloni_kernel` already uses.
+- **Convenience re-exports at `crates/rhdl-fpga/src/stream/mod.rs`** so downstream code can `use rhdl_fpga::stream::{Item, RCStream, RCStreamRelay}` without spelling sub-module paths.
+- **Migration of existing `stream::*` widgets DEFERRED to follow-up PRs.**  Each widget gets its own PR per CLAUDE.md "one feature per PR" rule.  The two types coexist during the migration window; per the design plan §9 / §17 the old `StreamIO<T, S>` becomes a deprecated alias once all widgets migrate.
+- **AXI4-Stream interop translation widgets DEFERRED to follow-up PRs.**  Per the design plan §10, the translation widgets (`AxiStreamToRCStream<T, F>` and `RCStreamToAxiStream<T, F>`) are ~80 LOC each and merit their own PR with the schema documentation that external IP consumers will rely on.
+- **`CreditRCStream<T, F, CREDIT_W>` (Phase 3) NOT in this PR.**  Lands when a long-path / multi-source-aggregation design hits the Ready/Valid timing wall.
+
+**Surprises and gotchas:**
+
+- **Generic-type kernel coverage.**  Without `#[kernel(allow_weak_partial)]`, RHDL's kernel-coverage tracker rejects struct literals like `Item::<T, F> { data: T::dont_care(), frame: F::dont_care() }` in match arms with the error "Path .1.inner.data_in.data is not covered" — even though every leaf is explicitly initialized.  The existing `stream_buffer::option_carloni_kernel` solves this with `allow_weak_partial`; we do the same.  Worth noting for future kernel authors who hit the same.
+- **`is_none()` and `is_some()` aren't kernel-callable.**  Use `match opt { Some(_) => true, None => false }` or the `core::option::is_some` helper.  This bit me on the first compile.
+
+**Validation:**
+
+- All 7 new relay tests pass (Tier-1 direct kernel + Tier-2 stream + Tier-3 descriptor smoke + Tier-4 iverilog round-trip with `F = ()` AND `F = bool`).
+- All 4 new bus-type tests pass (construction + framing-flow-through).
+- All 32 pre-existing stream-widget tests still pass — type addition is additive, no behavior change.
+
+**Follow-ups:**
+
+- Migrate `stream::*` widgets to `RCStream<T, F>` one PR at a time per the design plan §9.  Start with the simplest (e.g. `stream::tee`, `stream::map`).
+- Add `AxiStreamToRCStream<T, F>` + `RCStreamToAxiStream<T, F>` translation widgets per design plan §10.
+- Add `AsyncRCStream<T, F, D>` for cross-clock-domain typing when a use case materializes.
+- Document the `RCStream`-as-preferred-cut-point story in `auto-pipelining-plan.md` once that track ships Phase 1.
+
+---
+
 ## 2026-05-03 — Tier C #2 Alto: F2=LoadIr semantics fix — IR ← MD (was loading from BUS, should load from MD per spec digest §3 entry 14)
 
 **Path:** `crates/rhdl-alto/src/microengine.rs` (single line change + extensive comment).

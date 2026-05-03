@@ -80,6 +80,7 @@
 	- [Kernels](synchronous/kernels.md)
 	- [Simulation](synchronous/simulation.md)
 	- [Synthesis](synchronous/synthesis.md)
+- [Streaming Bus](stream/bus.md)
 - [Finite State Machines](fsm/summary.md)
 	- [Derive Macros](fsm/derive.md)
 	- [Transition Extraction](fsm/extraction.md)

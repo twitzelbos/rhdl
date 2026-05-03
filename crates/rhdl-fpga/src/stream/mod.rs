@@ -20,6 +20,7 @@ use std::marker::PhantomData;
 
 use badascii_doc::badascii;
 use rhdl::prelude::{kernel, Digital};
+pub mod bus;
 pub mod chunked;
 pub mod fifo_to_stream;
 pub mod filter;
@@ -27,12 +28,19 @@ pub mod filter_map;
 pub mod flatten;
 pub mod map;
 pub mod pipe_wrapper;
+pub mod relay;
 pub mod stream_buffer;
 pub mod stream_to_fifo;
 pub mod tee;
 pub mod testing;
 pub mod xfer;
 pub mod zip;
+
+// Convenience re-exports of the canonical RCStream bus types so that
+// downstream code can `use rhdl_fpga::stream::{RCStream, Item,
+// RCStreamRelay}` without spelling out the sub-module path.
+pub use bus::{Item, RCStream};
+pub use relay::RCStreamRelay;
 #[derive(PartialEq, Clone, Copy, Digital)]
 /// A generic Stream IO type that holds a data and ready
 /// signal.  Note that in a Stream interface, these
