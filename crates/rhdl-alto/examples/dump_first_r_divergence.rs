@@ -85,7 +85,7 @@ fn main() {
         return;
     }
 
-    const CYCLES: usize = 60;
+    const CYCLES: usize = 300;
 
     // ---- our chip ----
     let microcode =
