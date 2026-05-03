@@ -76,4 +76,5 @@ pub mod microcode_rom;
 pub mod microcycle;
 pub mod microengine;
 pub mod regfile;
+pub mod register_aliases;
 pub mod task_system;

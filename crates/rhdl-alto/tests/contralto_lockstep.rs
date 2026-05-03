@@ -282,9 +282,12 @@ fn lockstep_first_divergence() {
     eprintln!("\n[lockstep] summary: {matched} matched (task, mpc) pairs, {divergences} divergence events");
     if !r_divergences.is_empty() {
         eprintln!("\n[lockstep] R-state divergences (where (task, mpc) match but R[i] differs):");
+        eprintln!("  (alias names per spec digest §4.2.1; @Emul = Emulator-context alias for cross-task diagnosis)");
         for (i_ctr, i_ours, ri, ctr_v, ours_v) in &r_divergences {
+            let task = ours[*i_ours].task as u8;
+            let alias = rhdl_alto::register_aliases::r_alias_with_emulator_fallback(task, *ri);
             eprintln!(
-                "  CTR[{i_ctr}]/OURS[{i_ours}] R[{ri}]: CTR=0x{ctr_v:04x}  OURS=0x{ours_v:04x}",
+                "  CTR[{i_ctr}]/OURS[{i_ours}] {alias} (R[{ri}], task={task}): CTR=0x{ctr_v:04x}  OURS=0x{ours_v:04x}",
             );
         }
         if r_divergences.len() == max_r_divergences_to_report {
