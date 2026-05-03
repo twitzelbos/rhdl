@@ -137,11 +137,46 @@ The microengine is a 2-stage pipeline:
    if inst.bs == LOAD_R or various F1/F2 codes:
        R[inst.rsel] ← bus                   (at edge)
    memory / MAR / MD ← per F2 function      (at edge)
-   next_mpc          ← inst.next | f2_modifier
-   MPC_of_winning_task ← next_mpc           (at edge)
+   f2_modifier_pending ← inst.next_modifier_bits  (at edge — see ↓)
+   MPC_of_winning_task ← inst.next | f2_modifier_pending_FROM_PRIOR_CYCLE (at edge)
 ```
 
 Every register write happens at the cycle edge. Reads see the previous cycle's values. A canonical microcode line like `T_ MD, EVENFIELD` translates to: `T ← MD` (bus comes from memory data, T_LOAD set, ALUF = 1 / pass-T which writes the bus value to T), and the `EVENFIELD` is an F2 modifier that sets a bit of NEXT. Multiple side effects per cycle is the whole point of horizontal microcode.
+
+**F2 NEXT-modifier pipeline timing — DELAYED by one cycle.** This is the most important subtlety in the cycle structure and the one most likely to bite implementations. AltoHW §2.4 is loosely worded:
+
+> "The microinstruction memory produces an instruction and the address of its successor NEXT[0-n]. This successor address may be modified by merging bits into it under control of the function fields of the **current microinstruction**."
+
+"Current microinstruction" can be read as either (a) the one currently in MIR (= immediate apply: F2 in cycle K modifies cycle K's NEXT) or (b) the one that just completed (= delayed by one cycle: F2 in cycle K modifies cycle K+1's NEXT).  AltoHW does NOT disambiguate.  The May79 manual revision adds no new timing language either.
+
+**Empirically, the hardware is DELAYED.** Two independent lines of evidence:
+
+1. **Standard microcode behavior.**  The Emulator boot wait-loop iterates through MPC `0x130 → 0x14e → 0x150 → 0x151 → 0x152 → 0x153 → 0x154 → 0x131 → 0x14e → ... → 0x132 → ...` — each pass increments R[5]/R[6] via L-load chain, and the F2=BusToNext at MPC=0x153 causes the loop's exit MPC to advance by one each iteration.  This pattern only works if the modifier from cycle K (BusToNext at 0x153) is applied to cycle K+1's NEXT field (the unmodified `next=0x130` of MPC=0x154 → 0x130|1 = **0x131**).  Under immediate-apply semantics the loop would exit on its first non-zero iteration to MPC=0x155 instead, never reaching `0x131, 0x132, 0x133, ...`.  Captured live in the boot trace at CTR cycles 40-42:
+
+   ```
+   cycle 40: mpc=0x154 IR=0x0001 R5=0 R6=1   ← cycle running 0x153 (F2=BusToNext, BUS=←DISP=1)
+   cycle 41: mpc=0x131 IR=0x0001 R5=0 R6=1   ← cycle running 0x154 (next=0x130, OR'd with deferred 1)
+   cycle 42: mpc=0x14e IR=0x0001 R5=0 R6=2   ← cycle running 0x131 (= 0x130 | 1)
+   ```
+
+   Cycle 41's MPC is **0x131**, not 0x130 (no modifier) and not 0x155 (immediate).  The F2 modifier from cycle 40's microinstruction (= BUS bit 0 = 1) applied to cycle 41's NEXT field, exactly as the delayed model predicts.
+
+2. **ContrAlto cross-check.**  ContrAlto's `Tasks/Task.cs` implements delayed semantics explicitly:
+
+   ```csharp
+   // Task.cs:173 — at start of each cycle:
+   nextModifier = _nextModifier;
+   _nextModifier = 0;
+   // ... F1/F2 handling sets _nextModifier |= ... (cumulative for THIS cycle's modifier) ...
+   // Task.cs:549 — at end of each cycle:
+   _mpc = (ushort)(instruction.NEXT | nextModifier);   // <-- uses last cycle's modifier
+   ```
+
+   ContrAlto and the standard microcode are consistent.  Spec digest (this document) and ContrAlto **agree** that F2 NEXT-modifier timing is delayed by exactly one cycle.
+
+**RHDL implementation status (as of writing).**  `src/microengine.rs` currently applies F2 NEXT modifications **immediately** (same cycle).  This is a bug; the regression test `tests/f2_next_modifier_pipeline.rs` (marked `#[ignore]`) is the minimal failing scenario distilled from the trace above.  The fix is scoped as a separate compiler-adjacent PR per CLAUDE.md §11.1: add `next_modifier_pending: dff::DFF<Bits<10>>` to `Microengine`; latch the cycle's F2 modifier to the DFF at end of cycle K; OR `q.next_modifier_pending` into K+1's NEXT field.  Re-bless every widget snapshot.
+
+This subsection is the **normative disambiguation** of AltoHW §2.4's loose prose.  Future contributors writing kernels that emit F2 NEXT modifiers (BusToNext, BusEqZero, ShiftLessThanZero, ShiftEqZero, AluCarryToNext, IDispatch, ACSOURCE, BUSODD, IR←, plus the per-task disk codes INIT/RWC/RECNO/XFRDAT/SWRNRDY/NFER/STROBON) MUST assume delayed semantics; tests that observe `next_mpc` for these opcodes MUST anchor against this rule.
 
 ---
 
