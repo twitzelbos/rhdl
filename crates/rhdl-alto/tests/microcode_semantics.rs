@@ -367,8 +367,11 @@ fn bs_instruction_register_reads_ir_disp_field_not_full() {
     // table entry (`Low-order 8 bits of IR, sign extended`).
     //
     // Pick IR with a NON-ZERO high byte so the bug would manifest:
-    // IR=0x0100, X-field=1 (page-0 addressing), DISP=0x00 → BUS=0x00.
-    // With X=0 (page-0): no sign extension → BUS = IR & 0xFF = 0.
+    // IR=0x0100 → DISP=0x00 (low 8 bits), X-field = bits 9-8 = 01
+    // (PC-relative).  Sign bit (DISP[7]) clear → no sign extension
+    // even though X != 0.  Final BUS = 0x0000.  This distinguishes
+    // the spec'd DISP-only behavior from the wrong "return full IR"
+    // behavior that would give BUS = 0x0100.
     let out = observe_after(vec![
         InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
             F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
@@ -956,6 +959,49 @@ fn t_load_with_non_asterisked_aluf_loads_bus() {
          not ALU result.  BUS=0x100, T should be 0x100 not ALU=0xF0.");
 }
 
+#[test]
+fn t_load_with_bus_minus_one_loads_alu_result() {
+    // ALUF=6 (BusMinusOne) is asterisked.  T_LOAD with BUS=5 → ALU=4.
+    // T should load from ALU=4, not BUS=5.
+    let out = observe_after(vec![
+        InCfg::new(ui(0, AluFunction::BusMinusOne, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, true, false, 0), 5),
+    ]);
+    assert_eq!(out.t.raw() as u16, 4,
+        "T← with asterisked ALUF=BusMinusOne loads ALU result (BUS-1=4), not BUS=5");
+}
+
+#[test]
+fn t_load_with_bus_plus_t_plus_one_loads_alu_result() {
+    // ALUF=10 (BusPlusTPlusOne) is asterisked.  Pre-load T=3, BUS=5 →
+    // ALU=BUS+T+1=9.  T should load from ALU=9, not BUS=5.
+    let out = observe_after(vec![
+        // Pre-load T=3 via non-asterisked path.
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, true, false, 0), 3),
+        // Now T_LOAD + BusPlusTPlusOne with BUS=5 → ALU=5+3+1=9.
+        InCfg::new(ui(0, AluFunction::BusPlusTPlusOne, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, true, false, 0), 5),
+    ]);
+    assert_eq!(out.t.raw() as u16, 9,
+        "T← with asterisked ALUF=BusPlusTPlusOne loads ALU result (5+3+1=9), not BUS=5");
+}
+
+#[test]
+fn t_load_with_bus_and_t_alt_loads_alu_result() {
+    // ALUF=12 (BusAndTAlt) is asterisked AND.  Pre-load T=0xFF00, BUS=
+    // 0xF0F0 → ALU=BUS&T=0xF000.  T should load from ALU=0xF000, not
+    // BUS=0xF0F0.
+    let out = observe_after(vec![
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, true, false, 0), 0xFF00),
+        InCfg::new(ui(0, AluFunction::BusAndTAlt, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, true, false, 0), 0xF0F0),
+    ]);
+    assert_eq!(out.t.raw() as u16, 0xF000,
+        "T← with asterisked ALUF=BusAndTAlt loads ALU result (BUS&T=0xF000), not BUS=0xF0F0");
+}
+
 // =====================================================================
 // §3.2 — BusSource::None reads as -1 (wired-AND default)
 // =====================================================================
@@ -1332,6 +1378,49 @@ fn dns_carry_control_z_forces_zero_carry_in() {
             F1Function::LeftShift1, F2Function::Code10, false, false, 0), 0),
     ]);
     assert_eq!(out.l.raw() as u16, 0x0084, "DNS carry-control=Z forces carry_in=0");
+}
+
+#[test]
+fn dns_carry_inverts_when_nova_op_is_arith_and_alu_carries_out() {
+    // Per ContrAlto's LoadDNS handler (and impl): if the Nova arith op
+    // is one of NEG/INC/ADC/SUB/ADD (= IR bits 8-10 in {1,3,4,5,6})
+    // AND the ALU produced a carry-out, the dns_carry_in gets inverted.
+    //
+    // Setup gotcha: DNS in Emulator OVERRIDES effective_rsel with
+    // ACDEST semantics (= rsel_high | (IR[3-4] XOR 3)).  For IR=0x0600
+    // (bits 12-11 = 00), IR[3-4]=0, XOR 3=3, so effective_rsel = 3
+    // regardless of mi.rsel.  Therefore the BUS read in the DNS cycle
+    // gets R[3], not R[mi.rsel].  Pre-load R[3]=0xFFFF accordingly.
+    //
+    // Then DNS+LSH+ALUF=BusPlusOne with BUS=R[3]=0xFFFF → ALU=0,
+    // carry=1.  q.carry=0 (post-reset, cc=0=hold).  Op=ADD + carry →
+    // invert base → carry_in=1.  L_pre_shift = q.l = 0x42.  LSH+DNS
+    // → (0x42 << 1) | 1 = 0x85.  Without the invert, 0x84.
+    let out = observe_after(vec![
+        // Cycle 0: load L=0xFFFF via constant.
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, false, true, 0), 0xFFFF),
+        // Cycle 1: write R[3]=L=0xFFFF (BS=LoadR + RSEL=3).
+        InCfg::new(ui(3, AluFunction::Bus, BusSource::LoadR,
+            F1Function::Nop, F2Function::Nop, false, false, 0), 0),
+        // Cycle 2: load L=0x0042 via constant.
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
+            F1Function::Constant, F2Function::Nop, false, true, 0), 0x0042),
+        // Cycle 3: load IR with op=ADD (0x0600), carry-control=0.
+        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
+            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
+            .with_md(0x0600).with_task(0),
+        // Cycle 4: DNS+LSH+ALUF=BusPlusOne.  Effective rsel = 3 (via
+        // ACDEST-style override for DNS), so BUS = R[3] = 0xFFFF.
+        // ALU = 0, carry = 1.  L_LOAD=false → q.l (=0x42) stays as
+        // shifter input.  DNS+ADD+carry → invert → carry_in = 1.
+        InCfg::new(ui(0, AluFunction::BusPlusOne, BusSource::ReadR,
+            F1Function::LeftShift1, F2Function::Code10, false, false, 0), 0)
+            .with_task(0),
+    ]);
+    assert_eq!(out.l.raw() as u16, 0x0085,
+        "DNS with Nova ADD op + ALU carry → carry_in inverted from 0 to 1; \
+         (0x0042 << 1) | 1 = 0x0085");
 }
 
 #[test]

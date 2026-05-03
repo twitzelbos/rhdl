@@ -522,15 +522,17 @@ So `IR←` has a *side effect of OR'ing IR[0,5,6,7] into NEXT* — that's the fi
 
 **IDISP (F2=15B): 16-way dispatch.** Per AltoHW §3.5, "The IDISP function (F2=15B) does a 16 way dispatch under control of a 256x4 PROM. The values are tabulated below:"
 
-| Conditions          | OR'ed onto NEXT |
-|---------------------|-----------------|
-| if `IR[1-2] = 0`    | `IR[3-4]`       |
-| elseif `IR[1-2] = 1`| 4               |
-| elseif `IR[1-2] = 2`| 5               |
-| elseif `IR[4-7] = 0`| 1               |
-| elseif `IR[4-7] = 1`| 0               |
-| elseif `IR[4-7] = 6`| 16B             |
-| else                | `IR[4-7]`       |
+| Conditions               | OR'ed onto NEXT       |
+|--------------------------|-----------------------|
+| if `IR[0] = 1`           | `3 - IR[8-9]`         |
+| elseif `IR[1-2] = 0`     | `IR[3-4]`             |
+| elseif `IR[1-2] = 1`     | 4                     |
+| elseif `IR[1-2] = 2`     | 5                     |
+| elseif `IR[4-7] = 0`     | 1                     |
+| elseif `IR[4-7] = 1`     | 0                     |
+| elseif `IR[4-7] = 6`     | 16B                   |
+| elseif `IR[4-7] = 16B`   | 6                     |
+| else                     | `IR[4-7]`             |
 
 (Recall MSB=0 numbering: IR[1-2] are the two highest bits selecting M/J/A/S group; IR[4-7] is the AFunc field for A-group.)
 
