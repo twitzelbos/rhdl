@@ -673,13 +673,36 @@ fn f2_bus_to_next_ors_low_bus_bits() {
 }
 
 #[test]
-fn f2_alu_carry_to_next_sets_bit_on_carry() {
+fn f2_alu_carry_to_next_no_modifier_when_no_prior_l_load() {
+    // Per AltoHW §3.4 footnote (cross-checked with ContrAlto's
+    // SpecialFunction2.ALUCY handler comment): "the carry [used by
+    // F2=ALUCY] is that produced by the ALU function which last
+    // loaded the L register" — i.e., the STICKY carry, not this
+    // cycle's ALU carry.  In a single-cycle test from a fresh reset,
+    // q.alu_carry = false (no prior L-load), so F2=AluCarryToNext
+    // contributes NO modifier to NEXT — even if THIS cycle's ALU
+    // produces a carry.
+    //
+    // Per spec digest §2.3, the modifier (which would be 0 here
+    // anyway) is also delayed by one cycle.
     let out = observe_comb(vec![
         InCfg::new(ui(0, AluFunction::BusPlusOne, BusSource::ReadR,
             F1Function::Constant, F2Function::AluCarryToNext, false, true, 0x200), 0xFFFF),
     ]);
-    assert_eq!(out.next_mpc.raw() as u16, 0x201);
+    assert_eq!(out.next_mpc.raw() as u16, 0x200,
+        "single-cycle ALUCY from reset: q.alu_carry=false → no modifier; \
+         delayed pipeline: modifier (= 0) latched for next cycle");
 }
+
+// NOTE: a multi-cycle sticky-carry + delayed-pipeline test was
+// considered here, but the `Microengine` standalone simulator's
+// combinational-settle loop (rhdl-macro Synchronous derive,
+// `for _ in 0..MAX_ITERS` settle) makes per-cycle DFF observations
+// unreliable for tests that read q.X after writing d.X within the
+// same cycle.  The end-to-end delayed-pipeline assertion lives in
+// `crates/rhdl-alto/tests/f2_next_modifier_pipeline.rs` (chip-level,
+// settles cleanly because the chip's outer DFFs propagate through
+// the full clock cycle).
 
 #[test]
 fn f2_constant_drives_bus_same_as_f1() {

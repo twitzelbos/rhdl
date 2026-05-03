@@ -174,9 +174,11 @@ Every register write happens at the cycle edge. Reads see the previous cycle's v
 
    ContrAlto and the standard microcode are consistent.  Spec digest (this document) and ContrAlto **agree** that F2 NEXT-modifier timing is delayed by exactly one cycle.
 
-**RHDL implementation status (as of writing).**  `src/microengine.rs` currently applies F2 NEXT modifications **immediately** (same cycle).  This is a bug; the regression test `tests/f2_next_modifier_pipeline.rs` (marked `#[ignore]`) is the minimal failing scenario distilled from the trace above.  The fix is scoped as a separate compiler-adjacent PR per CLAUDE.md §11.1: add `next_modifier_pending: dff::DFF<Bits<10>>` to `Microengine`; latch the cycle's F2 modifier to the DFF at end of cycle K; OR `q.next_modifier_pending` into K+1's NEXT field.  Re-bless every widget snapshot.
+**RHDL implementation status.**  `src/microengine.rs` implements the delayed pipeline via the `next_modifier_pending: dff::DFF<Bits<10>>` field — at end of cycle K the kernel latches `next_modifier_this_cycle` into the DFF; at cycle K+1's start, the DFF's value is OR'd into K+1's NEXT field.  Anchored by the regression test `tests/f2_next_modifier_pipeline.rs` (chip-level, runs the minimal scenario from the boot trace).
 
 This subsection is the **normative disambiguation** of AltoHW §2.4's loose prose.  Future contributors writing kernels that emit F2 NEXT modifiers (BusToNext, BusEqZero, ShiftLessThanZero, ShiftEqZero, AluCarryToNext, IDispatch, ACSOURCE, BUSODD, IR←, plus the per-task disk codes INIT/RWC/RECNO/XFRDAT/SWRNRDY/NFER/STROBON) MUST assume delayed semantics; tests that observe `next_mpc` for these opcodes MUST anchor against this rule.
+
+**Test-writing note.**  The standalone `Microengine` simulator's combinational-settle loop (rhdl-macro Synchronous derive, `for _ in 0..MAX_ITERS`) makes per-cycle DFF observations *unreliable* for tests that read `q.X` after writing `d.X` within the same cycle — the settle loop converges to a fixed-point where `q.X` reflects the just-latched `d.X`, masking the cycle boundary.  This is **not** how real hardware behaves.  Multi-cycle delayed-pipeline behavior MUST be tested at the **chip level** (where DFF outputs propagate through the full clock cycle and settle cleanly), not at the standalone-microengine level.  See the regression test in `tests/f2_next_modifier_pipeline.rs` for the canonical pattern.
 
 ---
 

@@ -691,9 +691,13 @@ mod tests {
 
     #[test]
     fn boot_branches_to_addr_3_via_bus_eq_zero() {
-        // Microcode at addr 0: F2=BusEqZero with NEXT=2, ALUF=BusPlusOne, L_LOAD=1.
-        //   bus = R[0] = 0 → F2 sets bit 0 of NEXT → next = 3.
-        // Microcode at addr 3: NOP loop (NEXT=3).
+        // Per spec digest §2.3 (DELAYED F2 NEXT-modifier pipeline):
+        //   Cycle 0 — addr 0 has F2=BusEqZero, BUS=R[0]=0, NEXT=2.
+        //             Modifier latched = 1.  next_mpc = 2 | 0 = 2.
+        //   Cycle 1 — addr 2 (the absorb-cycle), NEXT=2.
+        //             Modifier from cycle 0 (= 1) applies.
+        //             next_mpc = 2 | 1 = 3.
+        //   Cycle 2 — addr 3, NEXT=3 (loop).  Stays at 3.
         let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
         let mi0 = Microinstruction {
             rsel: bits::<5>(0),
@@ -705,13 +709,17 @@ mod tests {
             next: bits::<10>(2),
         };
         microcode[0] = mi0.pack();
+        // addr 2: absorb-cycle that picks up cycle 0's latched modifier.
+        // NEXT field bit 0 = 0; OR'd with 1 produces 3.
+        microcode[2] = ui(0, AluFunction::Bus, BusSource::None, false, false, 2);
+        // addr 3: target loop.
         microcode[3] = ui(0, AluFunction::Bus, BusSource::None, false, false, 3);
 
         let uut = AltoChip::with_microcode(&microcode);
         let trace = run(uut, 8);
 
-        // MPC should reach 3 and stay there.
-        // Allow a few cycles of pipeline settling.
+        // MPC should reach 3 and stay there after the 2-cycle delayed-apply
+        // pipeline (cycle 0 latches; cycle 1 applies; cycle 2+ at 3).
         let final_mpc = trace.last().unwrap().mpc.raw();
         assert_eq!(final_mpc, 3, "should branch to addr 3 and loop there");
     }
@@ -1327,10 +1335,24 @@ mod tests {
         // addr 3: F2=IDispatch with NEXT=0x100.  IR=0x4000.
         // Per spec §6.6 IDISP PROM: IR[1-2] = (0x4000 >> 13) & 3 =
         // (0x2) & 3 = 2 → dispatch_value = 5.
-        // next_mpc = 0x100 | 5 = 0x105.  Handler at 0x105.
+        // Per spec digest §2.3 (DELAYED F2 NEXT-modifier pipeline),
+        // the modifier (= 5) is latched at end of cycle running addr 3
+        // and applied to the NEXT cycle's NEXT field.  So:
+        //   Cycle running 3   → next_mpc = 0x100 | 0 = 0x100 (modifier latched)
+        //   Cycle running 0x100 → next_mpc = 0x100 | 5 = 0x105 (modifier applied)
+        //   Cycle running 0x105 → handler runs.
         let mi3 = Microinstruction {
             rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
             f1: F1Function::Nop, f2: F2Function::IDispatch,
+            t_load: false, l_load: false, next: bits::<10>(0x100),
+        };
+        // addr 0x100: absorb-cycle that picks up cycle-3's latched
+        // IDISP modifier.  NEXT=0x100 (self-loop) so OR'ing the modifier
+        // (= 5) produces 0x100 | 5 = 0x105.  l_load=false so L isn't
+        // disturbed before the handler runs.
+        let mi_absorb = Microinstruction {
+            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
+            f1: F1Function::Nop, f2: F2Function::Nop,
             t_load: false, l_load: false, next: bits::<10>(0x100),
         };
         // addr 0x105: handler — BUS+1 → L = 1, loop.
@@ -1347,6 +1369,7 @@ mod tests {
         microcode[1] = mi1.pack();
         microcode[2] = mi2.pack();
         microcode[3] = mi3.pack();
+        microcode[0x100] = mi_absorb.pack();
         microcode[0x105] = mi_target.pack();
 
         let mut constants = [0u16; crate::constant_rom::NUM_CONSTANTS];
@@ -1784,27 +1807,35 @@ mod tests {
         // E3 tightening: replaced loose floors with measured-pipeline-
         // exact ranges anchored to the 2000-cycle / 1-cycle-per-µinst
         // pipeline.  Current measurements: 76 distinct microaddresses,
-        // 7 sector_mark events, 1960 Emulator firings, 40 Disk Sector
-        // firings.  Allow ±10% slack for any subsequent semantic fix
-        // that legitimately moves the numbers; bigger swings break
-        // the test and force a deliberate floor update.
-        assert!(visited.len() >= 70 && visited.len() <= 90,
-            "expected 70..90 distinct microaddresses in 2000-cycle boot \
-             trace; got {} — significant deviation suggests a regression \
-             or new feature unblocking more dispatch", visited.len());
+        // After the F2-NEXT-modifier-timing fix (delayed pipeline per
+        // spec digest §2.3), the boot trace measurements shifted —
+        // delayed-apply means dispatch lands one cycle later, so the
+        // Emulator and KSEC visit a different (and smaller) set of
+        // distinct microaddresses in 2000 cycles.  Re-baselined:
+        //   distinct microaddresses: 56 (was 76 with immediate-apply)
+        //   sector_mark events:     7 (unchanged — disk cadence)
+        //   Disk Sector firings:    29 (was 40)
+        //   Emulator firings:       1971 (was 1960)
+        // Allow ±10% slack as before.
+        assert!(visited.len() >= 50 && visited.len() <= 65,
+            "expected 50..65 distinct microaddresses in 2000-cycle boot \
+             trace (delayed-pipeline baseline = 56); got {} — significant \
+             deviation suggests a regression or new feature unblocking \
+             more dispatch", visited.len());
         assert!((6..=10).contains(&sector_events),
             "expected 6..10 sector_mark events (every ~285 cycles in \
              2000 cycles); got {sector_events}");
-        // KSEC handler runs ~5-6 microinstructions per sector mark
-        // before yielding back to Emulator.  ~7 marks × ~6 = ~42; allow
-        // 30..60 to absorb mark-aligned vs. start-of-trace edge effects.
-        assert!((30..=60).contains(&disk_sector_firings),
-            "Disk Sector should fire 30..60 times (~6 µinst per sector \
-             mark × ~7 marks); got {disk_sector_firings}");
-        // Emulator owns most cycles between marks.  ~2000 - 40 = ~1960.
-        assert!((1900..=1980).contains(&emulator_firings),
-            "Emulator should run 1900..1980 cycles in a 2000-cycle trace \
-             with 7 sector marks; got {emulator_firings}");
+        // KSEC handler under delayed F2 runs ~4-5 microinstructions per
+        // sector mark before yielding back to Emulator.  ~7 marks × ~4
+        // = ~28; allow 22..40 to absorb mark-aligned edge effects.
+        assert!((22..=40).contains(&disk_sector_firings),
+            "Disk Sector should fire 22..40 times (delayed-pipeline \
+             baseline = 29); got {disk_sector_firings}");
+        // Emulator owns most cycles between marks.  2000 - 29 = ~1971.
+        assert!((1950..=1990).contains(&emulator_firings),
+            "Emulator should run 1950..1990 cycles in a 2000-cycle trace \
+             with 7 sector marks (delayed-pipeline baseline = 1971); \
+             got {emulator_firings}");
     }
 
     /// Boot-button-equivalent trace: pre-load memory with disk
@@ -1885,16 +1916,16 @@ mod tests {
         // real instructions.  Spec §3.4: "PC ← 1, and the emulator is
         // started" — Emulator now executes the boot bootstrap.
         //
-        // Floor: 76 distinct microaddresses.  Achieved after the
-        // 1-cycle/microinstruction pipeline fix (Phase 3.5 Step 4i) on
-        // top of the NEXT-mask bugfix (Step 4g).  With 2x-faster
-        // microinstruction execution, KSEC's real microcode visits more
-        // of its handler chain per wall-cycle, AND Emulator now reaches
-        // more Nova fetch handlers between sector marks.
-        assert!(visited.len() >= 76,
-            "boot trace should visit at least 76 distinct microaddresses; \
-             got {} — likely a regression in dispatch, throughput, or \
-             per-task F1/F2/BS",
+        // Floor: 50 distinct microaddresses (post-F2-NEXT-modifier-
+        // timing fix per spec digest §2.3).  Was 76 with immediate-
+        // apply semantics; the delayed pipeline lands dispatches one
+        // cycle later, which subtly shifts the microaddress visit set.
+        // Re-baseline measured at 56 distinct microaddresses; 50 floor
+        // gives ±10% slack.
+        assert!(visited.len() >= 50,
+            "boot trace should visit at least 50 distinct microaddresses \
+             (delayed-pipeline baseline = 56); got {} — likely a \
+             regression in dispatch, throughput, or per-task F1/F2/BS",
             visited.len());
     }
 }

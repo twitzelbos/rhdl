@@ -130,21 +130,16 @@ fn run(uut: AltoChip, cycles: usize) -> Vec<ChipOut> {
         .collect()
 }
 
-/// **Failing regression test.**  Demonstrates the F2 NEXT-modifier
-/// timing bug.  Marked `#[ignore]` until the fix lands.
+/// **Regression test.**  Pins the F2 NEXT-modifier delayed-pipeline
+/// semantics per spec digest §2.3.  Originally written as a
+/// `#[ignore]`-tagged failing test in the prior PR; now passing
+/// after the F2-NEXT-modifier-timing fix in this PR.
 ///
 /// The minimal scenario is distilled from the boot-trace divergence at
 /// CTR cycles 40-42 (MPC 0x153 → 0x154 → 0x131): F2=BusToNext at one
 /// MPC must apply its modifier to the NEXT instruction's NEXT field,
 /// not its own.  See `alto-processor-and-microcode-spec.md` §2.3.
-///
-/// When the fix lands:
-/// 1. Remove `#[ignore]` and update its message to point at the merged PR.
-/// 2. The test should pass with the delayed-pipeline assertion.
-/// 3. Add a positive assertion (cycle K+2's MPC = 0x109) and a negative
-///    assertion (cycle K+2's MPC must NOT be 0x103).
 #[test]
-#[ignore = "F2-NEXT-modifier-timing bug — fix in PR #X (TODO: update PR # when filed)"]
 fn f2_bus_to_next_is_applied_one_cycle_later_per_spec_2_3() {
     let (microcode, constants) = build_microcode_and_constants();
     let uut = AltoChip::with_microcode_and_constants(&microcode, &constants);

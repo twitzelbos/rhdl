@@ -226,6 +226,14 @@ pub struct Microengine {
     /// Cleared by reset; updated by LoadDNS late phase based on the
     /// shifter result and the Nova arithmetic op's carry semantics.
     carry: dff::DFF<bool>,
+    /// Pending F2 NEXT-modifier from the PREVIOUS cycle, OR'd into
+    /// THIS cycle's NEXT field.  Per spec digest §2.3 ("F2 NEXT-
+    /// modifier pipeline timing — DELAYED by one cycle"), F2
+    /// modifications are latched at the end of cycle K and applied
+    /// to cycle K+1's NEXT.  This is the AltoHW disambiguation
+    /// established by the standard microcode behavior + ContrAlto's
+    /// `Tasks/Task.cs:173,549`.  Cleared by reset.
+    next_modifier_pending: dff::DFF<Bits<10>>,
 }
 
 impl SynchronousIO for Microengine {
@@ -492,38 +500,47 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     }
     d.regs = next_regs;
 
-    // ---- Next MPC ------------------------------------------------
-    // Default: take the NEXT field from the microinstruction.
-    // F2 may modify low bits based on conditions:
-    //   BusEqZero          — set bit 0 if bus == 0
-    //   ShiftLessThanZero  — set bit 0 if d.l[15] == 0 (post-shift)
-    //   ShiftEqZero        — set bit 0 if d.l == 0 (post-shift)
-    //   BusToNext          — OR low bits of bus into NEXT (computed-go-to)
-    //   AluCarryToNext     — set bit 0 if ALU carry-out
-    let mut next_addr: Bits<10> = mi.next;
-    let mut bit0: Bits<10> = next_addr & bits::<10>(0x1);
-    bit0 = match mi.f2 {
-        F2Function::BusEqZero          => if bus == bits::<16>(0)             { bit0 | bits::<10>(0x1) } else { bit0 },
+    // ---- Next MPC + F2 NEXT-modifier (DELAYED pipeline) ---------
+    //
+    // Per spec digest §2.3 ("F2 NEXT-modifier pipeline timing —
+    // DELAYED by one cycle"), F2 contributions to NEXT are latched
+    // at the end of cycle K and applied to cycle K+1's NEXT field.
+    // This matches the standard microcode (boot wait-loop iterates
+    // 0x131, 0x132, 0x133 — only works with delayed semantics) and
+    // ContrAlto's `Tasks/Task.cs:173-174 + 549`.
+    //
+    // Implementation pattern:
+    //   1. Compute THIS cycle's F2 modifier `next_modifier_this_cycle`
+    //      (the OR-bits to apply to the NEXT cycle's NEXT field).
+    //   2. Set `next_addr = mi.next | q.next_modifier_pending`
+    //      (use LAST cycle's latched modifier).
+    //   3. Latch `d.next_modifier_pending = next_modifier_this_cycle`.
+    //
+    // F2 codes that contribute modifier bits (all OR'd, never replace):
+    //   BusEqZero          — bit 0 if bus == 0
+    //   ShiftLessThanZero  — bit 0 if l_after_f1[15] == 1
+    //   ShiftEqZero        — bit 0 if l_after_f1 == 0
+    //   AluCarryToNext     — bit 0 from sticky alu_carry (last L-load)
+    //   BusToNext          — bus low 10 bits
+    //   IDispatch (Emul)   — 4-bit PROM dispatch (16-way)
+    //   IDispatch (Disk)   — bit 0 (NFER stub: no-error path)
+    //   ACSOURCE (Emul)    — IR-derived dispatch + indirect bit
+    //   LoadIr (Emul)      — bus bits 0,5,6,7 merged into NEXT[0-3]
+    //   BUSODD (Emul)      — bus bit 0 → NEXT bit 0
+    let mut next_modifier_this_cycle: Bits<10> = bits::<10>(0);
+    next_modifier_this_cycle = next_modifier_this_cycle | match mi.f2 {
+        F2Function::BusEqZero          => if bus == bits::<16>(0)             { bits::<10>(0x1) } else { bits::<10>(0) },
         // Spec §3.4: SH<0 sets NEXT bit 0 if Shifter Output is negative
         // (MSB SET).  Previous code had this inverted (== 0 instead of != 0),
         // making the engine branch the wrong way on signed comparisons.
-        F2Function::ShiftLessThanZero  => if (l_after_f1 & bits::<16>(0x8000)) != bits::<16>(0) { bit0 | bits::<10>(0x1) } else { bit0 },
-        F2Function::ShiftEqZero        => if l_after_f1 == bits::<16>(0)      { bit0 | bits::<10>(0x1) } else { bit0 },
+        F2Function::ShiftLessThanZero  => if (l_after_f1 & bits::<16>(0x8000)) != bits::<16>(0) { bits::<10>(0x1) } else { bits::<10>(0) },
+        F2Function::ShiftEqZero        => if l_after_f1 == bits::<16>(0)      { bits::<10>(0x1) } else { bits::<10>(0) },
         // ALUCY uses the STICKY carry from the last cycle that loaded L,
         // NOT this cycle's carry.  Per spec §3.4 footnote.
-        F2Function::AluCarryToNext     => if q.alu_carry                      { bit0 | bits::<10>(0x1) } else { bit0 },
-        _                              => bit0,
+        F2Function::AluCarryToNext     => if q.alu_carry                      { bits::<10>(0x1) } else { bits::<10>(0) },
+        F2Function::BusToNext          => bus.resize() & bits::<10>(0x3FF),
+        _                              => bits::<10>(0),
     };
-    let next_addr_or_bus: Bits<10> = match mi.f2 {
-        F2Function::BusToNext => next_addr | (bus.resize() & bits::<10>(0x3FF)),
-        _                     => next_addr,
-    };
-    // OR-merge bit0 (from conditional F2s like ShiftEqZero, AluCarryToNext)
-    // with the dispatch.  Bit 0 of the microcode NEXT field is preserved if
-    // set, and bit 0 from BusToNext (BUS<15>) is preserved.  This matches
-    // the Alto hardware spec §3.4: F2 contributions OR into NEXT, never
-    // mask it.  Masking would silently drop the BUS LSB in BusToNext.
-    next_addr = next_addr_or_bus | bit0;
     // F2=IDispatch (Emulator only, F2=15B = binary 13): the 16-way
     // PROM dispatch per *Alto Hardware Manual* §3.5 + spec §6.6.
     // Full table per ContrAlto's EmulatorTask.cs (verified against
@@ -566,7 +583,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
             else if ir_4_7 == bits::<10>(6)     { bits::<10>(0o16) }
             else if ir_4_7 == bits::<10>(0o16)  { bits::<10>(6) }
             else                                { ir_4_7 };
-        next_addr = next_addr | dispatch_value;
+        next_modifier_this_cycle = next_modifier_this_cycle | dispatch_value;
     }
 
     // Per-task F2 NEXT-modify codes for Disk tasks per *Alto Hardware
@@ -609,7 +626,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         // above (the Emulator-vs-Disk dispatch is gated by
         // current_task, so the two never collide).
         if mi.f2 == F2Function::IDispatch {
-            next_addr = next_addr | bits::<10>(1);
+            next_modifier_this_cycle = next_modifier_this_cycle | bits::<10>(1);
         }
         // Other F2 disk codes: stub 0 → no modification → no-op.
         // F2=DiskWordTransfer (= INIT in spec §8.5) gets the existing
@@ -670,7 +687,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
                 else                                { bits::<10>(14) };
             ind_bit | dispatch
         };
-        next_addr = next_addr | acs_dispatch;
+        next_modifier_this_cycle = next_modifier_this_cycle | acs_dispatch;
     }
 
     // F2=LoadIr (Emulator only, F2=12 binary, real spec name IR←):
@@ -685,7 +702,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     if is_emulator_for_idisp && mi.f2 == F2Function::LoadIr {
         let merge_hi: Bits<10> = ((bus & bits::<16>(0x8000)) >> 12).resize();
         let merge_lo: Bits<10> = ((bus & bits::<16>(0x0700)) >>  8).resize();
-        next_addr = next_addr | merge_hi | merge_lo;
+        next_modifier_this_cycle = next_modifier_this_cycle | merge_hi | merge_lo;
     }
 
     // F2=BUSODD (Emulator-only, F2=10B/binary 8 per spec §6.6):
@@ -700,8 +717,14 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let is_busodd: bool = mi.f2 == F2Function::DiskWordTransfer;
     if is_emulator_for_busodd && is_busodd {
         let bus_lsb: Bits<10> = (bus & bits::<16>(1)).resize();
-        next_addr = next_addr | bus_lsb;
+        next_modifier_this_cycle = next_modifier_this_cycle | bus_lsb;
     }
+
+    // Apply LAST cycle's pending modifier to THIS cycle's NEXT field,
+    // and latch THIS cycle's modifier for NEXT cycle.  See spec
+    // digest §2.3 for the disambiguation evidence.
+    let next_addr: Bits<10> = mi.next | q.next_modifier_pending;
+    d.next_modifier_pending = next_modifier_this_cycle;
     o.next_mpc = next_addr;
 
     // ---- DMA detection (Disk Word task) --------------------------
@@ -862,6 +885,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         d.alu_carry = false;
         d.skip = false;
         d.carry = false;
+        d.next_modifier_pending = bits::<10>(0);
         o.mpc = bits::<10>(0);
         o.current_task = bits::<4>(0);
         o.next_mpc = bits::<10>(0);

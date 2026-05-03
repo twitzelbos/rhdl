@@ -31,6 +31,56 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-02 — Tier C #2 Alto: F2 NEXT-modifier timing fix (delayed pipeline per spec digest §2.3)
+
+**Paths:**
+
+- `crates/rhdl-alto/src/microengine.rs` — added `next_modifier_pending: dff::DFF<Bits<10>>` field to `Microengine`; refactored the next-MPC computation to (1) compute `next_modifier_this_cycle` separately from `next_addr`, (2) set `next_addr = mi.next | q.next_modifier_pending` (apply LAST cycle's modifier), (3) set `d.next_modifier_pending = next_modifier_this_cycle` (latch for next cycle).  Reset clears `d.next_modifier_pending` to 0.
+- `crates/rhdl-alto/tests/f2_next_modifier_pipeline.rs` — removed `#[ignore]` from the regression test.  It now passes.  MPC sequence `0x000 → 0x100 → 0x102 → 0x109 → 0x109` confirms delayed semantics.
+- `crates/rhdl-alto/src/alto_chip.rs` — re-anchored 4 tests that observed F2-modifier-driven MPC dispatch:
+  - `boot_branches_to_addr_3_via_bus_eq_zero`: added an absorb-cycle at MPC=2 that picks up cycle 0's latched modifier (cycle 0 latches; cycle 1 applies → MPC=3).
+  - `f2_idispatch_routes_via_ir_low_byte`: added an absorb-cycle at MPC=0x100 that picks up cycle 3's latched IDISP modifier (cycle 3 latches; cycle 4 applies → MPC=0x105).
+  - `boot_trace_baseline_metrics`: re-baselined to delayed-pipeline numbers (visited 56 was 76; sector firings 29 was 40; emulator firings 1971 was 1960).
+  - `boot_trace_with_boot_button`: floor lowered to 50 (was 76).
+- `crates/rhdl-alto/tests/microcode_semantics.rs` — replaced the single-cycle ALUCY test that exploited the simulator's combinational-settle artifact with a spec-correct version that asserts no-modifier when there's no prior L-load.  Added a docstring explaining why a multi-cycle DFF-based test isn't viable at the standalone-microengine level.
+- `crates/rhdl-alto/alto-processor-and-microcode-spec.md` §2.3 — updated to reflect the implementation status (the bug is fixed) plus a new "Test-writing note" subsection warning future contributors about the standalone-microengine settle artifact.
+
+**Why this, why now:** Per CLAUDE.md §11.1 and the prior PR's regression test, this is the focused fix for the F2-NEXT-modifier-timing bug discovered via lockstep against ContrAlto.  Spec digest §2.3 normatively disambiguates AltoHW §2.4's loose prose (delayed by one cycle, anchored by ContrAlto's `Tasks/Task.cs:173,549` and the standard microcode's wait-loop pattern at MPC 0x130-0x154).
+
+**Justification (per §11.1):**
+
+1. **What guarantee does this change preserve, strengthen, or introduce?**  Strengthens the "Verilog through the AST, never strings" guarantee by making the microengine's pipeline timing match real Alto hardware.  Introduces a normative subsection in spec digest §2.3 that disambiguates AltoHW §2.4's loosely-worded "current microinstruction" wording.
+
+2. **What loophole does this *not* introduce?**  The fix is structural: a single new DFF + threading.  No escape hatch added; no test-only behavior; no kernel-language change.  The new DFF cannot be observed except through `o.next_mpc`, which is what consumers already use.
+
+3. **What downstream code does this affect, and why is the effect intentional?**  Four chip-level tests had to be re-anchored because they were testing F2-modifier dispatch (correctly testing the WRONG semantics).  The boot-trace metrics shifted (56 vs 76 distinct microaddresses) because delayed semantics changes which microaddresses the boot dance visits in 2000 cycles.  All shifts are documented and intentional.
+
+4. **What is the alternative design considered and rejected?**  (a) "Apply modifier immediately" — rejected as the ORIGINAL bug.  (b) "Two-cycle latency" — rejected; spec evidence is exactly one cycle.  (c) "Per-F2-code application timing" — rejected; spec is uniform: ALL F2 NEXT modifiers are delayed by one cycle.
+
+5. **Is this change reversible?**  Yes.  The DFF + indirection is contained in `Microengine`; reverting the kernel back to immediate-apply restores prior behavior.  But reverting would re-introduce the bug, so this is "reversible in mechanism but not in intent."
+
+**Surprises and gotchas:**
+
+- **Simulator settle artifact.**  RHDL's `#[derive(Synchronous)]` macro generates a `for _ in 0..MAX_ITERS` settle loop in the parent's `sim` method.  For a kernel where `q.X` is read after `d.X` is computed via a child DFF, the settle loop converges to a fixed-point where `q.X` reflects `d.X` from the first iteration's latching.  This made the OLD `f2_alu_carry_to_next_sets_bit_on_carry` test pass with `if q.alu_carry { 1 }` even though `q.alu_carry` is initially false from reset — by iteration 2, the DFF had latched the new carry and the test "saw" it.  This is **not** real-hardware behavior; real DFFs hold their value for the entire clock cycle.  Multi-cycle delayed-pipeline behavior MUST be tested at the chip level, not the standalone-microengine level.  Documented in spec digest §2.3 + the standalone test's docstring + the chip-level regression test's framing.
+
+- **Re-anchored tests, not re-blessed snapshots.**  No HDL snapshot tests changed format-wise; the changes were to chip-level integration tests that observed cycle-counted behavior.
+
+- **Lockstep against ContrAlto: still diverges, just at different points.**  After the F2 fix, divergence #2 moved from MPC 0x38c/0x38d to MPC 0x37c/0x37d (= shifted into a different microinstruction).  The dominant divergence is still the sector_mark timing structural one (ContrAlto fires immediately, ours waits 256 test-cycles or 19,608 spec cycles).  The F2 fix is necessary-but-not-sufficient for full lockstep alignment.  Other follow-ups (R[0..32] in ChipOut, BS≥4 AND-masking) still pending.
+
+**Validation:**
+
+- 233 alto tests pass (the previously-`#[ignore]`-tagged regression test now passes; 4 chip-level tests re-anchored to delayed-pipeline expectations).
+- Iverilog round-trip tests pass (no HDL emission changes that break compilation).
+- Lockstep against ContrAlto runs to completion; structural divergence pattern shifted post-fix as expected.
+
+**Follow-ups:**
+
+- **Implement BS≥4 AND-masking** (separate spec-conformance gap, §2.2).  Lower priority since most masks are 0xFFFF.
+- **Add R[0..32] to ChipOut** for cycle-by-cycle register-state lockstep.  Highest leverage for further lockstep alignment.
+- **Bring back a multi-cycle ALUCY semantics test** at the chip level once R-state observation lands.
+
+---
+
 ## 2026-05-02 — Tier C #2 Alto F2 NEXT-modifier timing: spec verification + bug localization (no fix yet)
 
 **Paths:**
