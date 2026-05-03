@@ -272,6 +272,77 @@ pub struct Microengine {
     /// established by the standard microcode behavior + ContrAlto's
     /// `Tasks/Task.cs:173,549`.  Cleared by reset.
     next_modifier_pending: dff::DFF<Bits<10>>,
+    /// Bundled control-RAM state (M register + S-register file +
+    /// S-bank).  Per CLAUDE.md §3.1 (protocol-PHY pattern): bundle
+    /// to keep Microengine field count manageable + because these
+    /// are logically one unit (the AltoHW §8.7 "control RAM card").
+    /// See `ControlRam` struct rustdoc for per-field semantics.
+    cram: dff::DFF<ControlRam>,
+}
+
+/// Bundled control-RAM state (per AltoHW §8.7 + spec digest §4.3).
+///
+/// On a standard Alto, the **control RAM card** provides:
+///
+/// - The **M register** (16 bits) — analog of the basic Alto's L
+///   register.  Loaded from ALU output **only when the
+///   highest-priority RAM-related task is executing AND L_LOAD is
+///   set**.  On standard Alto, "RAM-related task" = Emulator only.
+///   Provides data for S-register writes.
+///
+/// - 31 **S-registers** (S1..S31, indexed 1..31 within a bank;
+///   index 0 reads as M instead of S0).  In **8 banks of 32**
+///   (256 entries total), addressed by RSELECT after a per-task
+///   bank-select operation.  Used by Emulator for opcode-handler
+///   scratch, BITBLT for source/dest block parameters, and
+///   user-loadable microcode for arbitrary working storage.
+///
+/// - The **bank** register (3 bits, 0..7) — Emulator's S-bank
+///   select.  Set by ESRB (Emulator's Set Register Bank, F1=15B
+///   = our F1=13 in Emulator) which loads bank from BUS[2:0].
+///
+/// **Critical asymmetries from L/R analog (per spec digest §4.3):**
+///
+/// - The data path from M to the S registers contains **no shifter**
+///   (unlike L→R, where the shifter is part of the L→R path).  So
+///   when L is loaded with a shifted value, M and L still get the
+///   same ALU output (we shadow them at the L_LOAD gate).
+/// - ACSOURCE and ACDEST F2's have **no effect on S register
+///   addressing** (they only affect R selection).
+/// - When reading S registers onto the bus (BS=ReadSLocation in
+///   Emulator), **RSELECT=0 returns the current value of M**, not
+///   S0.  This is why there are only 31 useful S-registers.
+///
+/// **Access pattern (Emulator BS=3/4 codes):**
+///
+/// - **BS=3 ReadSLocation**: BUS = `if rselect==0 { M } else
+///   { s_regs[(bank<<5)|rselect] }`.
+/// - **BS=4 LoadSLocation**: BUS = 0xFFFF (undefined), and at the
+///   end of the cycle `s_regs[(bank<<5)|rselect] = M` (using the
+///   newly-loaded M if L_LOAD also fires this cycle).
+#[derive(Clone, Copy, PartialEq, Debug, Digital)]
+pub struct ControlRam {
+    /// M register — analog of L, 16 bits, loaded only in RAM-related
+    /// tasks (= Emulator on standard Alto) when L_LOAD is set.
+    pub m: Bits<16>,
+    /// S-register file: 8 banks × 32 entries × 16 bits.  Flat index
+    /// = `(bank << 5) | rselect`.  Slot 0 of each bank is unused
+    /// (read returns M, not S0); only slots 1..31 of each bank are
+    /// useful.
+    pub s_regs: [Bits<16>; 256],
+    /// Emulator's S-bank select (3 bits, 0..7).  Set by ESRB
+    /// (Emulator F1=15B = our F1=13).
+    pub s_bank: Bits<3>,
+}
+
+impl Default for ControlRam {
+    fn default() -> Self {
+        Self {
+            m: bits::<16>(0),
+            s_regs: [bits::<16>(0); 256],
+            s_bank: bits::<3>(0),
+        }
+    }
 }
 
 impl Microengine {
@@ -374,23 +445,41 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // Per *Alto Hardware Manual* §2.1 Bus Sources + spec §3.2 + §8.5,
     // BS=3 and BS=4 are TASK-SPECIFIC.  In Disk Sector (4) and Disk
     // Word (14) tasks, BS=3 reads KSTAT and BS=4 reads KDATA.  In
-    // Emulator (0), BS=3 is ReadSLocation and BS=4 is LoadSLocation
-    // (S-register access — not yet implemented; returns 0).
+    // Emulator (0) on a RAM-equipped Alto, BS=3 is ReadSLocation
+    // (S-register read with RSELECT=0 → M) and BS=4 is LoadSLocation
+    // (returns 0xFFFF on bus, triggers s_regs[bank,rselect] = M
+    // write at end of cycle).
     let is_disk_task: bool = i.current_task == bits::<4>(4)
         || i.current_task == bits::<4>(14);
+    // S-register read computation (Emulator BS=3).  Index =
+    // (s_bank << 5) | RSELECT, except RSELECT=0 returns M (per spec
+    // digest §4.3 + ContrAlto's EmulatorTask.cs:70-81).  RSELECT
+    // here is the RAW microinstruction rsel — ACSOURCE/ACDEST do
+    // NOT affect S-register addressing per spec digest §4.3 line 447.
+    let s_index: Bits<8> = ((q.cram.s_bank.resize::<8>()) << 5)
+        | mi.rsel.resize::<8>();
+    let s_read_value: Bits<16> = if mi.rsel == bits::<5>(0) {
+        q.cram.m
+    } else {
+        q.cram.s_regs[s_index]
+    };
     // Bus source dispatch.  Per spec §3.2:
     //   - BusSource::None (BS=2) reads as -1 (all-ones) because
     //     no source is asserting and the Alto bus is wired-AND.
     //   - BusSource::LoadR (BS=1) forces BUS=0 AND triggers R-write.
     //   - TaskSpec3/4 in disk tasks read KSTAT/KDATA; in Emulator
-    //     they're S-register access (not yet implemented; stub 0).
+    //     they're S-register access (ReadSLocation / LoadSLocation).
     //   - Mouse (BS=6) is not implemented; stub 0.
     let bus_from_bs: Bits<16> = match mi.bs {
         BusSource::ReadR              => r_read,
         BusSource::LoadR              => bits::<16>(0),
         BusSource::None               => bits::<16>(0xFFFF),
-        BusSource::TaskSpec3 => if is_disk_task { i.kstat } else { bits::<16>(0) },
-        BusSource::TaskSpec4 => if is_disk_task { i.kdata } else { bits::<16>(0) },
+        BusSource::TaskSpec3 => if is_disk_task { i.kstat }
+                                else if is_emulator { s_read_value }
+                                else { bits::<16>(0) },
+        BusSource::TaskSpec4 => if is_disk_task { i.kdata }
+                                else if is_emulator { bits::<16>(0xFFFF) } // LoadSLocation: undefined-on-bus
+                                else { bits::<16>(0) },
         BusSource::MemoryData         => i.mem_read_data,
         BusSource::Mouse              => bits::<16>(0),
         BusSource::InstructionRegister => {
@@ -961,6 +1050,53 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // `if (_loadR) { _carry = carry; }`).  Without DNS, carry is held.
     d.carry = if is_dns && !dns_suppress_r { dns_carry_out } else { q.carry };
 
+    // ---- Control RAM updates (M / S / S-bank) ----------------------
+    //
+    // Per spec digest §4.3 + ContrAlto's CPU.cs / Task.cs:
+    //
+    // 1. **M load**: same gating as L (= L_LOAD) but ONLY in
+    //    RAM-related task (= Emulator on standard Alto).  Loaded
+    //    from raw ALU output (`aout.result`), NOT from the shifter
+    //    output — per spec digest line 446: "the data path from M
+    //    to the S registers contains no shifter".
+    //
+    // 2. **S load**: BS=4 (LoadSLocation) in Emulator triggers a
+    //    write at end of cycle: `s_regs[(s_bank << 5) | rselect] = M`.
+    //    Per ContrAlto Task.cs:485-488, this uses the NEW M value
+    //    (= the one just-loaded above if L_LOAD also fires this
+    //    cycle).  RSELECT is the RAW microinstruction value, not
+    //    the ACSOURCE/ACDEST-overridden one (per spec digest line
+    //    447: "ACSOURCE and ACDEST F2's have no effect on S register
+    //    addressing").
+    //
+    // 3. **S-bank update (ESRB)**: F1=15B (= our F1=13 = WriteKcomm
+    //    in our enum) in Emulator sets the S-bank from BUS[2:0].
+    //    In Disk task, F1=13 is WriteKcomm (the existing chip-side
+    //    KCOM-register write); the per-task gating distinguishes.
+    //    Spec digest §4.3 line 450: "ESRB (Emulator's Set Register
+    //    Bank, F1=15B in Emulator) sets the Emulator's bank."
+    let m_load: bool = mi.l_load && is_emulator;
+    let new_m: Bits<16> = if m_load { aout.result } else { q.cram.m };
+    let load_s_emulator: bool = is_emulator && mi.bs == BusSource::TaskSpec4;
+    let new_s_regs: [Bits<16>; 256] = if load_s_emulator {
+        let mut s = q.cram.s_regs;
+        s[s_index] = new_m;
+        s
+    } else {
+        q.cram.s_regs
+    };
+    let is_esrb: bool = is_emulator && mi.f1 == F1Function::WriteKcomm;
+    let new_s_bank: Bits<3> = if is_esrb {
+        (bus & bits::<16>(0x7)).resize::<3>()
+    } else {
+        q.cram.s_bank
+    };
+    d.cram = ControlRam {
+        m: new_m,
+        s_regs: new_s_regs,
+        s_bank: new_s_bank,
+    };
+
     // ---- Outputs ---------------------------------------------------
     o.t          = q.t;
     o.l          = q.l;
@@ -995,6 +1131,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         d.skip = q.skip;
         d.carry = q.carry;
         d.next_modifier_pending = q.next_modifier_pending;
+        d.cram = q.cram;
         // Note: we do NOT override `o.next_mpc` to `i.mpc` here.  The
         // chip is responsible for holding its URom prefetch address
         // during a stall (via `urom_addr_held` DFF), so that the same
@@ -1041,6 +1178,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         d.skip = false;
         d.carry = false;
         d.next_modifier_pending = bits::<10>(0);
+        d.cram = ControlRam::default();
         o.mpc = bits::<10>(0);
         o.current_task = bits::<4>(0);
         o.next_mpc = bits::<10>(0);
