@@ -31,6 +31,53 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-03 — Tier C #2 Alto: F2=LoadIr semantics fix — IR ← MD (was loading from BUS, should load from MD per spec digest §3 entry 14)
+
+**Path:** `crates/rhdl-alto/src/microengine.rs` (single line change + extensive comment).
+
+**Why this, why now:** Step 6 of the Phase 3.5 boot chain (Emulator Nova IR fetch + dispatch) requires that the IR register is loaded with the FETCHED INSTRUCTION, not the fetch address.  Pre-fix, `d.ir = bus` was loading IR from the BUS — which carries the address being computed for the new memory fetch (= SAD + T at the canonical Nova-fetch MPC=0x150), NOT the instruction from the previous memory fetch.  This silently corrupted IR with addresses; all subsequent F2=IDispatch decisions saw garbage instead of opcodes.
+
+**Spec correctness:**
+
+- Spec digest §3 entry for F2=14: *"Some tasks: IR ← MD (Emulator: latch fetched instruction into IR)"*.
+- Spec digest line 648 (citing AltoHW §6.6): *"IR← also merges bus bits 0,5,6 and 7 into NEXT, which does a first level instruction dispatch."*
+
+So F2=LoadIr does TWO independent things in Emulator:
+
+1. **IR ← MD** (storage): the instruction fetched from memory by the previous cycle goes into IR.
+2. **NEXT |= bus-bit-merge** (dispatch): first-level Nova decode based on BUS bits.
+
+Both are fired by the same F2 code, but they use DIFFERENT data paths.  The bus-bit merge (at line ~750) was already correct.  The IR storage path was wrong.
+
+**The trigger that surfaced the bug:** decoded the actual canonical-microcode microinstruction at MPC=0x150 (= the standard Nova IR-fetch instruction):
+
+```
+MPC=0x150: rsel=5  alu=BusPlusT  bs=ReadR  f1=LoadMar  f2=LoadIr  next=0x151
+```
+
+BS=ReadR with rsel=5 reads SAD register; ALU computes SAD+T (= effective fetch address); F1=LoadMar latches MAR ← BUS for the new memory cycle; F2=LoadIr is supposed to load IR from MD (= the result of the PREVIOUS memory cycle).  The pre-fix `d.ir = bus` was loading IR with SAD+T instead of MD.
+
+**Validation:**
+
+- All 244 alto tests pass (no test was specifically checking IR contents — would have caught this if anyone had written one).
+- Lockstep dumper post-fix: OURS' Emulator now follows the EXACT same MPC sequence as ContrAlto throughout the Emulator boot loop (cycles 27-59), including the Nova IR dispatch transitions at cycles 40, 47, 54 where the loop exit MPC depends on the fetched instruction.
+- 1-cycle offset between OURS and CTR remains (inherited from the K+4 vs K+5 inter-MAR<- threshold question — separate issue).
+
+**Surprises and gotchas:**
+
+- The pre-fix comment was *misleading*: it claimed "the typical microcode is `IR← MD` which sets BS=MemoryData driving BUS = MD".  This is FALSE for the canonical Nova IR fetch at MPC=0x150 — that instruction uses BS=ReadR, not BS=MemoryData.  The comment was an incorrect reverse-engineering of the original implementation rather than a spec-derived statement.
+- Bug was spec-verifiable but never showed in tests because:
+  - All Tier-1 / Tier-2 microengine tests use synthetic microcode that doesn't fully exercise the Nova IR fetch sequence.
+  - All Tier-4 iverilog tests verify Verilog matches Rust simulation but don't validate against an external reference.
+  - Lockstep against ContrAlto is what surfaced it (and only after the chip-side `task_mpcs` fix unblocked accurate Emulator-resume behavior).
+
+**Follow-ups:**
+
+- `examples/inxb_decode.rs` extended to dump the Emulator main fetch loop instructions (0x130, 0x14e, 0x150, 0x151, 0x131, 0x132, 0x133).  Useful for future "what does this microinstruction actually do" investigations.
+- The R[6]=PC initialization is the next likely Step-6 unblocker.  ContrAlto's PC=1 at the start of Emulator execution; OURS' PC=0 (DFF default).  Likely needs a chip-level "boot button" simulation that initializes R[6] before the boot microcode runs.
+
+---
+
 ## 2026-05-03 — Tier C #2 Alto: chip-side `task_mpcs` DFF — Emulator resumes at correct MPC post-yield, MPC reporting matches ContrAlto cycle-for-cycle
 
 **Paths:**
