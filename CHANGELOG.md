@@ -31,6 +31,84 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-02 — Tier C #2 Alto wakeup/BLOCK spec verification: AltoHW §2.4 + §6.0 vs. ContrAlto
+
+**Paths:** No code changes — research/spec-verification entry, written before deciding whether to "fix" rhdl-alto to match ContrAlto.
+
+**Why this, why now:** After the cadence test exonerated the chip-kernel BLOCK-clear path, the natural next step would be "match ContrAlto's behavior pixel-for-pixel."  Per the user's correction: **before "fixing" rhdl-alto to match ContrAlto, verify that ContrAlto and the spec actually agree.**  If ContrAlto deviates from spec, the right move is to file a bug against ContrAlto and decide which side to match — not to silently follow ContrAlto.
+
+**What the spec actually says:**
+
+- **AltoHW Aug76 §2.4 (Microprocessor Control), on BLOCK:**
+  > "The BLOCK function (F1=3) is used, by convention, to **signal a hardware device** associated with the currently running task to remove its wakeup signal. **This function is not accomplished by the Alto microprocessor, but rather by the individual device interfaces.**"
+
+- **AltoHW Aug76 §2.4, on wakeup signals:**
+  > "The 'wakeup signals' which drive the priority encoder are **hardware-generated** and are not accessible to the microprogram."
+
+- **AltoHW Aug76 §6.0 (Disk and Controller):**
+  > "The disk controller hardware communicates with the microprocessor in four ways: first, by **task wakeup signals for the sector and word tasks**..."
+  > "The sector task is awakened by a **sector signal from the disk**."
+
+The spec is unambiguous about (1) wakeups are hardware-driven; (2) BLOCK is a signal to the device, not a CPU-side write to the wakeup; (3) the device interface decides when/how to deassert.  The spec is **silent on the exact deassertion timing** (1-cycle vs. multi-cycle).
+
+**What ContrAlto actually does (cross-checked source):**
+
+- `Tasks/Task.cs:343-348` — BLOCK handler with an explicit "I deviate from spec" comment:
+  ```csharp
+  case SpecialFunction1.Block:
+      // Technically this is to be invoked by the hardware device associated with a task.
+      // That logic would be circuituous and unless there's a good reason not to that is
+      // discovered later, I'm just going to directly block the current task here.
+      _cpu.BlockTask(this._taskType);
+      break;
+  ```
+  ContrAlto admits it bypasses the device interface and clears wakeup directly via CPU.  Observable result is functionally equivalent to a faithful device-interface implementation.
+
+- `IO/DiskController.cs:753` — sector cadence:
+  ```csharp
+  private static ulong _sectorDuration = (ulong)((40.0 / 12.0) * Conversion.MsecToNsec * _scale);
+  ```
+  Exactly the spec §8.1 math: 40 ms rotation / 12 sectors = 3.333 ms per sector.  Identical to our `SECTOR_PERIOD_CYCLES = 19608` (= 3.333 ms / 170 ns).
+
+- `IO/DiskController.cs:303-360` (SectorCallback) — sector wakeup is edge-triggered (set once at SectorCallback fire); subsequent SectorCallbacks chained from the last WordCallback at fixed sector cadence.
+
+**Verdict: spec and ContrAlto agree** on observable behavior:
+
+- Wakeup periodically asserted at sector cadence (~3.333 ms / 19,608 cycles).
+- BLOCK clears wakeup on the cycle after the running task asserts it.
+- Stays cleared until the next sector signal.
+
+ContrAlto's CPU-direct-BLOCK deviation is admitted in code and doesn't change observable behavior.  **No bug to file against ContrAlto.**
+
+**Verdict for rhdl-alto:**
+
+Our impl follows spec §2.4 *more literally* than ContrAlto: `DiabloDisk` has its own `sector_wake` DFF, set when `sector_tick` wraps, cleared when `current_task=4 AND block_task=true` — that IS the "device interface clears its own wakeup on seeing BLOCK from its task" per §2.4.  We model the device-interface BLOCK clear path the spec describes; ContrAlto skips it.  Cadence test (`tests/sector_mark_block_cadence.rs`) confirms 19/19 BLOCK→clear, exact 256-cycle spacing, no drift, no stuck-latch.
+
+**No fix is needed in rhdl-alto's wakeup/BLOCK path.**
+
+**What this means for the lockstep divergence:**
+
+The lockstep divergence at MPC 0x38c vs 0x38d in the Disk Sector task (Step 5b CHANGELOG, divergence #2) is **downstream of the wakeup mechanism**.  The dump tool showed the divergent instruction at MPC=0x38b uses `BS=ReadR rsel=28 + F2=BusEqZero`, which dispatches NEXT[0] based on whether R[28]==0.  R[28]'s value is determined by whatever Disk Sector microcode wrote to it earlier in the boot sequence — an R-register accumulation cascade in the microcode itself, not in the chip's wakeup plumbing.
+
+Discipline: **don't conflate "we have a divergence somewhere" with "we know where the divergence is."**  The cadence test gave strong evidence the wakeup/BLOCK path is correct; the spec verification confirms we're spec-conformant; the divergence localizes elsewhere.
+
+**Surprises and gotchas:**
+
+- ContrAlto admits a spec deviation in BLOCK handling, in a code comment, with the qualifier "unless there's a good reason not to that is discovered later."  That deviation **is harmless** in normal operation but could be discriminative under racy scheduling — e.g., if a SectorCallback fires in the same nanosecond as a BLOCK, the order in ContrAlto depends on scheduler implementation; in our DFF-based latch, BLOCK and `wraps` in the same cycle cause `block_clears_sector` to win (sector_wake = false) and we'd lose a sector_mark event.  This corner case requires KSEC to take ≥ sector duration to execute, which doesn't happen in normal operation — but is the kind of scenario the cadence test would catch if it ever did.
+- The pattern "investigate what spec says before fixing impl to match a reference implementation" is exactly the §11.1 + spec-first discipline.  Without checking the spec, the natural reaction to "lockstep diverges" would be "let me look at how ContrAlto handles BLOCK and copy that."  That would have been wrong: ContrAlto deviates from spec, and our spec-correct impl produces the same observable behavior.
+
+**Validation:**
+
+- No code changes; this entry is the verification evidence + decision rationale.
+- 231 alto tests still pass (no regressions from prior commits in this PR).
+
+**Follow-ups:**
+
+- Investigate the actual source of the lockstep divergence: the Disk Sector task's R-register cascade.  Add `R[0..32]` to `ChipOut` (Step 5b follow-up #1), extend `tools/contralto-trace/Program.cs` to dump R-state per cycle, then compare cycle-by-cycle to localize which microinstruction wrote R[28] differently.
+- The "ContrAlto's CPU-direct BLOCK might cause divergence under same-cycle race" hypothesis is worth a deliberate test in the future.  Right now neither sim exercises this path under normal operation.
+
+---
+
 ## 2026-05-02 — Tier C #2 Alto sector_mark / BLOCK / wakeup-clear cadence test (§11.1 follow-up)
 
 **Paths:**
