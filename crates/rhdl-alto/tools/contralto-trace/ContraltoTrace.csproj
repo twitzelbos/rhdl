@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <RootNamespace>ContraltoTrace</RootNamespace>
+    <AssemblyName>contralto-trace</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <RollForward>Major</RollForward>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../assets/contralto/Contralto2/ContraltoLib/ContraltoLib.csproj" />
+  </ItemGroup>
+
+</Project>
