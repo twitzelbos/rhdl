@@ -285,6 +285,67 @@ impl AltoChip {
             task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
         }
     }
+
+    /// As [`AltoChip::with_microcode_and_constants`] but with the disk
+    /// configured for a SHORT sector cadence (per
+    /// [`crate::diablo_disk::DiabloDisk::with_test_period`]).  Use this
+    /// in tests that need to observe disk-driven task switching without
+    /// running the spec-correct ~19,608 cycles per sector boundary.
+    /// Real hardware uses [`crate::diablo_disk::SECTOR_PERIOD_CYCLES`];
+    /// only this constructor in tests.
+    pub fn with_microcode_constants_and_test_disk_period(
+        microcode_words: &[u32; crate::microcode_rom::MICROCODE_WORDS],
+        constants: &[u16; crate::constant_rom::NUM_CONSTANTS],
+        disk_period_cycles: u32,
+    ) -> Self {
+        Self {
+            urom: MicrocodeRom::with_words(microcode_words),
+            crom: ConstantRom::with_constants(constants),
+            mem: Memory::default(),
+            tasks: AltoTaskSystem::default(),
+            disk_ctrl: DiskController::default(),
+            disk: DiabloDisk::with_test_period(disk_period_cycles),
+            engine: Microengine::default(),
+            current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
+            task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
+        }
+    }
+
+    /// As [`AltoChip::with_microcode_constants_and_boot`] but with the
+    /// disk configured for a SHORT sector cadence.  Use this in
+    /// boot-trace tests that need to observe disk-driven task
+    /// switching within ~thousands of cycles instead of the
+    /// spec-correct ~19,608 per boundary.
+    pub fn with_microcode_constants_boot_and_test_disk_period(
+        microcode_words: &[u32; crate::microcode_rom::MICROCODE_WORDS],
+        constants: &[u16; crate::constant_rom::NUM_CONSTANTS],
+        boot_sector_data: &[u16; 256],
+        boot_sector_label: &[u16; 8],
+        disk_period_cycles: u32,
+    ) -> Self {
+        let mut mem_init: Vec<(Bits<16>, Bits<16>)> = Vec::with_capacity(266);
+        mem_init.push((bits::<16>(0), bits::<16>(0)));
+        mem_init.push((bits::<16>(2), bits::<16>(0)));
+        for (i, &w) in boot_sector_data.iter().enumerate() {
+            mem_init.push((bits::<16>((i as u128) + 1), bits::<16>(w as u128)));
+        }
+        for (i, &w) in boot_sector_label.iter().enumerate() {
+            mem_init.push((bits::<16>(0o402 + i as u128), bits::<16>(w as u128)));
+        }
+        Self {
+            urom: MicrocodeRom::with_words(microcode_words),
+            crom: ConstantRom::with_constants(constants),
+            mem: Memory::new(mem_init),
+            tasks: AltoTaskSystem::default(),
+            disk_ctrl: DiskController::default(),
+            disk: DiabloDisk::with_test_period_and_sector(
+                disk_period_cycles, boot_sector_data,
+            ),
+            engine: Microengine::default(),
+            current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
+            task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
+        }
+    }
 }
 
 impl SynchronousIO for AltoChip {
@@ -1340,9 +1401,11 @@ mod tests {
             "IR should latch the memory value at 0x0100 via LoadIr in Emulator task");
     }
 
-    /// End-to-end disk → wakeup → arbiter → engine path: the disk
-    /// widget's sector_mark fires every 256 cycles; with a long-enough
-    /// run, the Disk Sector task (Task 4) fires at least once.
+    /// End-to-end disk → wakeup → arbiter → engine path: with a SHORT
+    /// 256-cycle test sector cadence, the Disk Sector task (Task 4)
+    /// fires at least once within 512 cycles.  Real hardware uses
+    /// the spec-correct ~19,608-cycle cadence (`SECTOR_PERIOD_CYCLES`);
+    /// this test uses a short cadence purely to keep iteration fast.
     #[test]
     fn disk_sector_mark_fires_disk_sector_task() {
         // Per spec §2.4: task K resets to MPC=K.  Place an Emulator
@@ -1366,9 +1429,13 @@ mod tests {
         microcode[0] = mi_emu_yield.pack();
         microcode[4] = mi_task4_loop.pack();
         let constants = [0u16; crate::constant_rom::NUM_CONSTANTS];
-        let uut = AltoChip::with_microcode_and_constants(&microcode, &constants);
+        // Use SHORT 256-cycle test disk period so sector_mark fires
+        // within 512 cycles.  Spec-correct ~19,608-cycle period would
+        // need a 25K-cycle test run.
+        let uut = AltoChip::with_microcode_constants_and_test_disk_period(
+            &microcode, &constants, 256);
         // Wake Task 0 (Emulator) only via input; disk's sector_mark
-        // should add wakeup bit 4 every 256 cycles.
+        // should add wakeup bit 4 within ~512 cycles.
         let inputs: Vec<ChipIn> = (0..512).map(|_| ChipIn {
             wakeups: bits::<16>(0x0001),
         }).collect();
@@ -1636,7 +1703,14 @@ mod tests {
         }
         let microcode = microcode_loader::load_alto_ii_microcode_from_dir(&dir).unwrap();
         let constants = microcode_loader::load_alto_ii_constant_rom_from_dir(&dir).unwrap();
-        let uut = AltoChip::with_microcode_and_constants(&microcode, &constants);
+        // Spec-correct disk period (19,608 cycles per sector, per
+        // diablo_disk::SECTOR_PERIOD_CYCLES + spec §8.1) is too long
+        // for a 2000-cycle test to observe disk-driven task switching.
+        // Use a SHORT 256-cycle test period so the dispatch volume +
+        // sector_mark cadence in 2000 cycles is comparable to what we
+        // saw before the spec-correct period landed.
+        let uut = AltoChip::with_microcode_constants_and_test_disk_period(
+            &microcode, &constants, 256);
         let trace = run(uut, 2000);
 
         // Distinct microaddresses visited.
@@ -1754,11 +1828,17 @@ mod tests {
         let disk_image = disk_image_loader::load_disk_image_from_file(&disk_path).unwrap();
         let boot_sector = disk_image.sector(0, 0, 0);
 
-        let uut = AltoChip::with_microcode_constants_and_boot(
+        // Spec-correct disk period (~19,608 cycles) is too long for a
+        // 2000-cycle boot trace to observe sector_mark-driven KSEC
+        // execution.  Use a SHORT 256-cycle test period so this test
+        // can still validate the "boot button + sector cadence drives
+        // KSEC dispatch volume" path within the 2000-cycle budget.
+        let uut = AltoChip::with_microcode_constants_boot_and_test_disk_period(
             &microcode,
             &constants,
             &boot_sector.data,
             &boot_sector.label,
+            256,
         );
         // 2000 cycles is enough to enter and run the BLT bootstrap loop.
         // Termination requires R[8]=XH to reach 0; current chip enters

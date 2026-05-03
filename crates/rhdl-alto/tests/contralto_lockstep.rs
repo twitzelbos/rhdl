@@ -87,8 +87,16 @@ fn run_rhdl_chip(disk: &str, rom_dir: &str, cycles: usize) -> Vec<CycleState> {
     let disk_image = disk_image_loader::load_disk_image_from_file(
         std::path::Path::new(disk)).unwrap();
     let boot_sector = disk_image.sector(0, 0, 0);
-    let uut = AltoChip::with_microcode_constants_and_boot(
-        &microcode, &constants, &boot_sector.data, &boot_sector.label,
+    // For lockstep against ContrAlto we use a SHORT 256-cycle disk
+    // sector period so the chip's first sector_mark fires within a
+    // few hundred cycles.  The spec-correct period (~19,608 cycles)
+    // is the real-hardware cadence (`SECTOR_PERIOD_CYCLES`); using it
+    // here would push the first divergence-or-match point past 20,000
+    // cycles per run and make iteration slow.  ContrAlto schedules
+    // the first SectorCallback at time 0 anyway (a different
+    // simulation shortcut); both choices are simulation policy.
+    let uut = AltoChip::with_microcode_constants_boot_and_test_disk_period(
+        &microcode, &constants, &boot_sector.data, &boot_sector.label, 256,
     );
     let inputs: Vec<ChipIn> = (0..cycles).map(|_| ChipIn {
         wakeups: bits::<16>(0x0001),
@@ -130,12 +138,12 @@ fn lockstep_first_divergence() {
         return;
     }
 
-    // 2000 cycles: enough for our chip's Disk Sector task to fire (at
-    // cycle 256, per the 256-cycle sector_tick we use as a stand-in
-    // for the real Alto's ~19,600-cycle inter-sector period) and for
-    // the boot DMA to populate enough of memory that the Emulator can
-    // make real progress.  Before cycle 256, divergences are dominated
-    // by ContrAlto's "fire sector_mark on cycle 1" simulation shortcut.
+    // 2000 cycles is enough for our chip's Disk Sector task to fire
+    // (at cycle 256, per the 256-cycle test disk period the lockstep
+    // harness configures) AND for the boot DMA to populate memory.
+    // The chip uses spec-correct 19,608 cycles by default; the
+    // lockstep harness specifically opts into the test period (see
+    // `run_rhdl_chip` above) so this iteration loop stays fast.
     let cycles = 2000;
     let ctr_full = run_contralto(disk.to_str().unwrap(), rom_dir.to_str().unwrap(), cycles);
     let ours = run_rhdl_chip(disk.to_str().unwrap(), rom_dir.to_str().unwrap(), cycles);

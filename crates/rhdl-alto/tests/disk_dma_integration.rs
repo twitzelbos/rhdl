@@ -69,8 +69,13 @@ fn disk_sector_mark_drives_disk_sector_task() {
     // sector_mark fires at cycle 255 it stays high for the rest of
     // the trace (with another rising edge happening only if it had
     // been cleared).  Verify the rising-edge events instead.
+    // Use SHORT 256-cycle test sector period so the rising edges land
+    // at the same predictable cycle (255) the test was written against.
+    // Real hardware uses the spec-correct ~19,608-cycle period
+    // (`SECTOR_PERIOD_CYCLES`); see `tests/diablo_disk.rs ::
+    // sector_mark_uses_spec_period_by_default` for that anchor.
     let cycles = 256 * 3 + 10;
-    let disk = DiabloDisk::default();
+    let disk = DiabloDisk::with_test_period(256);
     let disk_trace = run_disk(disk, cycles);
 
     let mut rising_edges: Vec<usize> = Vec::new();
