@@ -111,6 +111,14 @@ pub struct ChipOut {
     /// `tests/contralto_lockstep.rs` harness compares this field
     /// against ContrAlto's `cpu.R[]` array each cycle.
     pub regs: [Bits<16>; 32],
+    /// True if the engine's current microinstruction has F1=TaskYield
+    /// (the F1=TASK / F1=2 function).  Echoed from `engine.task_yield`
+    /// post-cycle.  Per spec §2.4: triggers task arbitration; the
+    /// switch becomes effective with a 1-cycle delay (the "one
+    /// additional instruction is executed before the switch becomes
+    /// effective" rule).  Required for the
+    /// `tests/task_switch_pipeline.rs` regression test.
+    pub task_yield: bool,
 }
 
 /// The Alto chip — composition of microengine + microcode RAM +
@@ -166,6 +174,16 @@ pub struct AltoChip {
     /// requiring a custom reset value in the per-task DFF (which would
     /// diverge between Rust sim init and Verilog `initial begin`).
     task_started: rhdl_fpga::core::dff::DFF<Bits<16>>,
+    /// One-cycle task-yield delay latch.  Captures `q.engine.task_yield`
+    /// at end of cycle K (when F1=TaskYield runs).  At cycle K+1,
+    /// `q.task_yield_pending = true` gates the `current_task`
+    /// update — so the new task's instruction first executes at
+    /// cycle K+2, matching AltoHW §2.4: "One additional instruction
+    /// is executed before the switch becomes effective."
+    ///
+    /// See `tests/task_switch_pipeline.rs` for the regression anchor
+    /// and spec digest §5 for the normative timing rule.
+    task_yield_pending: rhdl_fpga::core::dff::DFF<bool>,
 }
 
 impl Default for AltoChip {
@@ -180,6 +198,7 @@ impl Default for AltoChip {
             engine: Microengine::default(),
             current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
             task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
+            task_yield_pending: rhdl_fpga::core::dff::DFF::new(false),
         }
     }
 }
@@ -199,6 +218,7 @@ impl AltoChip {
             engine: Microengine::default(),
             current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
             task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
+            task_yield_pending: rhdl_fpga::core::dff::DFF::new(false),
         }
     }
 
@@ -218,6 +238,7 @@ impl AltoChip {
             engine: Microengine::default(),
             current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
             task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
+            task_yield_pending: rhdl_fpga::core::dff::DFF::new(false),
         }
     }
 
@@ -238,6 +259,7 @@ impl AltoChip {
             engine: Microengine::default(),
             current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
             task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
+            task_yield_pending: rhdl_fpga::core::dff::DFF::new(false),
         }
     }
 
@@ -297,6 +319,7 @@ impl AltoChip {
             engine: Microengine::default(),
             current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
             task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
+            task_yield_pending: rhdl_fpga::core::dff::DFF::new(false),
         }
     }
 
@@ -322,6 +345,7 @@ impl AltoChip {
             engine: Microengine::default(),
             current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
             task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
+            task_yield_pending: rhdl_fpga::core::dff::DFF::new(false),
         }
     }
 
@@ -358,6 +382,7 @@ impl AltoChip {
             engine: Microengine::default(),
             current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
             task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
+            task_yield_pending: rhdl_fpga::core::dff::DFF::new(false),
         }
     }
 
@@ -395,6 +420,7 @@ impl AltoChip {
             engine: Microengine::default(),
             current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
             task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
+            task_yield_pending: rhdl_fpga::core::dff::DFF::new(false),
         }
     }
 }
@@ -563,9 +589,24 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
         else if (effective_wakeups & bits::<16>(0x0010)) != bits::<16>(0) { bits::<4>(4)  }
         else if (effective_wakeups & bits::<16>(0x0001)) != bits::<16>(0) { bits::<4>(0)  }
         else { current_task };
-    // Latch winning_task into current_task only when engine.task_yield
-    // (F1=TASK).  Otherwise hold (sticky).
-    let next_current_task: Bits<4> = if q.engine.task_yield { winning_task } else { current_task };
+    // Per AltoHW §2.4 ("One additional instruction is executed before
+    // the switch becomes effective"): TASK switches happen at cycle
+    // K+2, where cycle K is when F1=TaskYield runs.
+    //
+    // Implementation: latch this cycle's `q.engine.task_yield` into
+    // `task_yield_pending` (a DFF), then use the LAST cycle's latched
+    // value (`q.task_yield_pending`) to gate the switch.  This adds
+    // exactly one cycle of delay vs. using `q.engine.task_yield`
+    // directly — which (per RHDL settle semantics) reflects this
+    // cycle's combinational engine output and gave K+1 timing.  See
+    // `tests/task_switch_pipeline.rs` for the regression anchor and
+    // spec digest §5 for the normative timing rule.
+    // Single-cycle delay latch — see field doc on
+    // `task_yield_pending` for the timing rationale.
+    d.task_yield_pending = q.engine.task_yield;
+    let task_yield_for_switch: bool = q.task_yield_pending;
+    let next_current_task: Bits<4> =
+        if task_yield_for_switch { winning_task } else { current_task };
     d.current_task = next_current_task;
     // Mark current_task as "started" — the next time it's selected by
     // arbitration, the chip will read its accumulated task_mpc rather
@@ -596,8 +637,12 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     } else {
         next_current_task.resize::<10>()
     };
+    // URom prefetch must use the SAME delayed task-yield signal —
+    // otherwise we'd prefetch the new task's instruction one cycle
+    // before the switch becomes effective, leaving stale data in the
+    // pipeline.
     let task_will_switch: bool =
-        q.engine.task_yield && winning_task != current_task;
+        task_yield_for_switch && winning_task != current_task;
     let urom_addr: Bits<10> = if task_will_switch {
         next_task_saved_mpc
     } else {
@@ -627,6 +672,7 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     o.mem_write_observed_en   = q.engine.mem_write_en;
     o.block_task              = q.engine.block_task;
     o.regs                    = q.engine.regs;
+    o.task_yield              = q.engine.task_yield;
 
     (o, d)
 }
@@ -1160,6 +1206,7 @@ mod tests {
             engine: Microengine::default(),
             current_task: rhdl_fpga::core::dff::DFF::new(bits::<4>(0)),
             task_started: rhdl_fpga::core::dff::DFF::new(bits::<16>(0)),
+            task_yield_pending: rhdl_fpga::core::dff::DFF::new(false),
         };
 
         // Wakeup pattern: Task 4 (Disk Sector) always woken so its

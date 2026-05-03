@@ -31,6 +31,50 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-03 — Tier C #2 Alto: task-switch K+2 timing fix (AltoHW §2.4 "one additional instruction before switch") + register_aliases module
+
+**Paths:**
+
+- `crates/rhdl-alto/src/alto_chip.rs` — added `task_yield_pending: dff::DFF<bool>` field to `AltoChip`.  Kernel latches `q.engine.task_yield` into it each cycle; the previous cycle's value gates `current_task` updates AND URom prefetch.  Updated all 9 chip constructors to initialize the new DFF to `false`.  Added `task_yield: bool` to `ChipOut` (echoed from `q.engine.task_yield`) so tests can observe TaskYield pulses.
+- `crates/rhdl-alto/tests/task_switch_pipeline.rs` — new chip-level regression test pinning the K → K+1 (still old) → K+2 (NEW) pipeline.  Pre-fix: K+1 timing.  Post-fix: K+2 (spec-correct).
+- `crates/rhdl-alto/src/register_aliases.rs` (new module) + spec digest §4.2/§4.2.1 update — addressed the "Our reader knows all the aliases?" question.  Diagnostic dumpers + lockstep harness now report `$PC` / `$XH` / `$AC0..AC3` / etc. with task-aware resolution + cross-task fallback.
+- `crates/rhdl-alto/tests/contralto_lockstep.rs` — uses the alias resolver in R-divergence reports.
+- `crates/rhdl-alto/examples/dump_boot_sector.rs` (new) — disk-image audit confirming `nonprog.dsk` is real period boot (90.6% non-zero, recognizable Nova opcodes).
+
+**Why this, why now:** Per the user's strategic message about the 9-step boot-to-first-prompt chain, this addresses two of the load-bearing prerequisites (disk image is real bytes; task-switch timing matches spec).  The task-switch fix specifically unblocks correct cycle alignment when KSEC needs to fire at the right moment relative to Emulator's boot dance.
+
+**Justification (per §11.1 — compiler-adjacent change to chip-level scheduling):**
+
+1. **What guarantee does this change preserve, strengthen, or introduce?**  Strengthens spec-conformance: AltoHW §2.4 explicitly states "**One additional instruction is executed before the switch becomes effective**" — i.e., task switches happen at cycle K+2 where K is the F1=TaskYield instruction.  Our impl was switching at K+1 (one cycle too early); this fix delays by one cycle to match.
+
+2. **What loophole does this *not* introduce?**  The DFF can only DELAY task switches; it can't INTRODUCE them.  No new path where wakeups bypass F1=TaskYield.  Same gating logic, just one cycle later.  The existing `current_task` sticky-DFF semantics are preserved.
+
+3. **What downstream code does this affect, and why is the effect intentional?**  Every kernel that does F1=TaskYield now sees a 1-cycle additional delay before the new task starts.  This affects boot timing, KSEC dispatch cadence, and cross-task data races.  All shifts are expected — and four chip-level tests passed without re-baselining (the TaskYield events in those tests didn't depend on K+1 vs K+2 timing because no immediate data race existed).
+
+4. **What is the alternative design considered and rejected?**  (a) "Capture task_yield in the engine itself, expose `o.task_yield_delayed`": rejected — adds engine-side state for a chip-side scheduling concern.  (b) "Two-stage DFF chain in the chip": rejected after experimentation — gave K+3 timing (one cycle too many).  (c) "Use `q.engine.task_yield` directly with no DFF": this is what we had; gave K+1 timing (one cycle too few).  Single DFF gives the spec-correct K+2.
+
+5. **Is this change reversible?**  Yes.  Removing `task_yield_pending` and reverting kernel to `if q.engine.task_yield { ... }` restores prior behavior.  But would re-introduce the bug.
+
+**Surprises and gotchas:**
+
+- **The "RHDL settle loop swallows DFF delays" hypothesis (from the F2-NEXT-modifier debugging) was wrong.**  Each DFF in series DOES add a real cycle of delay — confirmed empirically by trying 1-stage (K+2, correct) and 2-stage (K+3, overshoot).  My earlier hypothesis was a misdiagnosis; the F2 fix worked because of the timing semantics it INTENDED, not despite them.
+- **The chip's `o.mpc` reports the START-of-cycle MPC presented to URom**, not the MPC of the instruction currently being executed (off by one due to URom 1-cycle BRAM latency + task_started latch interaction).  Tests anchored to `o.mpc` are tricky; tests anchored to `o.current_task` and `o.task_yield` work cleanly.  Documented in the test's commentary.
+- **Lockstep R-divergences didn't change post-fix.**  Same R[0,4,5,6] values diverge at the first matched (task, mpc) pair.  This confirms the user's prior observation: the task-switch bug is necessary-but-not-sufficient for full lockstep alignment.  Other cascading bugs in the boot dance (per the 9-step chain analysis) remain the dominant cause.
+
+**Validation:**
+
+- 243 alto tests pass (added 1 new task-switch pipeline test, no regressions in any existing test).
+- Iverilog round-trip tests still pass (the new DFF emits cleanly).
+- Lockstep harness runs to completion; behavior is similar to pre-fix (R-divergences in the same values, suggesting other cascading bugs dominate at this point in the boot dance).
+
+**Follow-ups:**
+
+- The 9-step boot-to-first-prompt chain decomposition (per the user's strategic message) should be captured in `tier-c-flagship-cores.md` as the Phase 5 roadmap.  Deferred (separate doc-only commit).
+- Per-cycle R-state side-by-side trace dumper still pending — would let us see the FIRST cycle where R[i] diverges (vs. relying on matched-pair sampling).
+- The next bug in the cascade is likely in step 4 (per-Nova-opcode handlers) or step 5 (boot-block parameter setup).  Use the per-cycle dumper above to localize.
+
+---
+
 ## 2026-05-02 — Tier C #2 Alto: disk-image audit (REAL boot block) + register-alias completeness in spec digest
 
 **Paths:**
