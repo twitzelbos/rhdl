@@ -210,6 +210,100 @@ fn main() {
     }
     println!();
 
+    // ---- full per-cycle MPC trace ----
+    // The "first MPC divergence" section above stops at cycle 0 due to
+    // OURS' startup MPC-reporting artifact (task_started gating + URom
+    // 1-cycle latency interaction).  Cycles 0-3 of OURS report mpc=0
+    // even though the engine is internally at NOVEM → 0x152 → 0x153 →
+    // 0x154.  By cycle 4 (KSEC start) the reporting is consistent.
+    //
+    // Print the FULL cycle-by-cycle MPC trace so we can see what
+    // happens AFTER the startup transient — specifically, where in
+    // KSEC's run window OURS and CTR take different paths.
+    println!("=== Full per-cycle MPC trace (cycles 0..{}) ===", n_aligned);
+    println!("Notation: '*' marks cycles where MPC OR task differs.");
+    println!("Cycles 0-3: OURS reports mpc=0 due to task_started + URom-latency display");
+    println!("artifact.  Real divergence (if any) emerges at cycle 4 (KSEC start) onward.");
+    println!();
+    println!("{:>5}  {:>10}  {:>10}  {}", "cyc", "CTR", "OURS", "");
+    let mut last_ctr_task: i32 = -1;
+    let mut last_ours_task: i32 = -1;
+    for k in 0..n_aligned {
+        let c = &ctr[k];
+        let o = &ours[k];
+        let same = c.task == o.task && c.mpc == o.mpc;
+        let mark = if same { "" } else { " *" };
+        let ctr_yield = if (c.task as i32) != last_ctr_task && last_ctr_task >= 0 {
+            format!("CTR yield {}→{}", last_ctr_task, c.task)
+        } else { String::new() };
+        let ours_yield = if (o.task as i32) != last_ours_task && last_ours_task >= 0 {
+            format!("OURS yield {}→{}", last_ours_task, o.task)
+        } else { String::new() };
+        let yields = match (ctr_yield.is_empty(), ours_yield.is_empty()) {
+            (true, true) => String::new(),
+            (false, true) => format!("    [{ctr_yield}]"),
+            (true, false) => format!("    [{ours_yield}]"),
+            (false, false) => format!("    [{ctr_yield}; {ours_yield}]"),
+        };
+        println!(
+            "{k:>5}  t{}/0x{:03x}  t{}/0x{:03x}{}{}",
+            c.task, c.mpc, o.task, o.mpc, mark, yields,
+        );
+        last_ctr_task = c.task as i32;
+        last_ours_task = o.task as i32;
+    }
+    println!();
+
+    // ---- find first WITHIN-TASK MPC divergence after cycle 4 ----
+    // (Skip the cycles 0-3 startup-transient artifact.)
+    println!("=== FIRST within-task MPC divergence at cycle ≥ 4 ===");
+    let mut first_real: Option<usize> = None;
+    for k in 4..n_aligned {
+        let c = &ctr[k];
+        let o = &ours[k];
+        if c.task == o.task && c.mpc != o.mpc {
+            first_real = Some(k);
+            break;
+        }
+    }
+    match first_real {
+        Some(k) => {
+            println!("First real MPC divergence at cycle {k}:");
+            let lo = k.saturating_sub(2);
+            let hi = (k + 6).min(n_aligned - 1);
+            for cyc in lo..=hi {
+                let c = &ctr[cyc];
+                let o = &ours[cyc];
+                let same_task = c.task == o.task;
+                let same_mpc = c.mpc == o.mpc;
+                let status = match (same_task, same_mpc) {
+                    (true, true)   => "OK",
+                    (true, false)  => "MPC DIFFERS — different microcode path",
+                    (false, _)     => "DIFFERENT TASK",
+                };
+                let mark = if cyc == k { " ←" } else { "" };
+                println!(
+                    "  cycle {cyc}: CTR task={} mpc=0x{:03x}  OURS task={} mpc=0x{:03x}  [{status}]{mark}",
+                    c.task, c.mpc, o.task, o.mpc,
+                );
+            }
+            println!();
+            println!("Interpretation: at cycle {}-1 (= last matched cycle), both sims",
+                k);
+            println!("are at the same (task, mpc) — i.e., about to execute the same");
+            println!("microinstruction.  At cycle {}, they're at DIFFERENT MPCs.  This means", k);
+            println!("the microinstruction at cycle {}-1 had a CONDITIONAL NEXT (F2 dispatch,", k);
+            println!("F2 NEXT-modifier, or branch-on-condition) that selected differently in");
+            println!("the two sims.  Suspect: that microinstruction's F1/F2 dispatch handler.");
+        }
+        None => {
+            println!("No within-task MPC divergence in cycles 4..{}.", n_aligned);
+            println!("If R-state still diverges, the cause is in WHAT each microinstruction");
+            println!("does (ALU function, BS source, T/L load) rather than which one runs.");
+        }
+    }
+    println!();
+
     // ---- find first R-divergence ----
     println!("=== Per-cycle R-state side-by-side ({}-cycle window) ===", CYCLES);
     println!("CTR cycles:  {}", ctr.len());
