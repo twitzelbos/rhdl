@@ -9,6 +9,7 @@ pub mod fifo;
 pub mod gray;
 pub mod lid;
 pub mod pipe;
+pub mod rcstream;
 pub mod reset;
 pub mod rng;
 pub mod serial_bus;
