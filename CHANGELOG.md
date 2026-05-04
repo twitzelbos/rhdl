@@ -31,6 +31,47 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-03 — RCStream Phase 1.5: AXI4-Stream interop in `rcstream::axi_stream`
+
+**Paths:**
+
+- `crates/rhdl-fpga/src/rcstream/axi_stream/mod.rs` (new) — submodule root + signal-mapping documentation + convenience re-exports.
+- `crates/rhdl-fpga/src/rcstream/axi_stream/axi_to_rcstream.rs` (new) — `AxiToRCStream<T, F>` widget: wraps an AXI4-Stream master input as an `RCStream<T, F>` source.
+- `crates/rhdl-fpga/src/rcstream/axi_stream/rcstream_to_axi.rs` (new) — `RCStreamToAxi<T, F>` widget: wraps an `RCStream<T, F>` source as an AXI4-Stream master output.  Includes a back-to-back round-trip property test.
+- `crates/rhdl-fpga/src/rcstream/mod.rs` — register `pub mod axi_stream;`.
+- `doc/book/src/rcstream/bus.md` — extend the "Relationship" section with the new submodule's signal mapping + concrete widget names.
+
+**Why this, why now:** Per the deferred-from-Phase-1.1 follow-up list (and the design-plan §10 update), AXI4-Stream interop for `RCStream<T, F>` was always planned — built **inside `rcstream/`**, parallel to and independent of the existing `axi4lite::stream::{axi_to_rhdl, rhdl_to_axi}` widgets.  This PR ships it.  The two interop paths now coexist; users pick based on which bus type (`StreamIO<T, S>` or `RCStream<T, F>`) their design uses.
+
+**Design decisions:**
+
+- **Signal mapping:**
+  - `TDATA` ↔ `Item::data: T`.
+  - `TUSER` ↔ `Item::frame: F`.
+  - `TVALID` ↔ `data.is_some()`.
+  - `TREADY` ↔ `ready: bool`.
+- **No separate TLAST signal in this first cut.**  Users who need TLAST-equivalent end-of-frame markers encode them in `F` (e.g., `F = bool`, where TUSER becomes a 1-bit signal carrying the marker; AXI4-Stream consumers wire that to their TLAST input).  Adding a separate TLAST signal is straightforward in a follow-up but introduces a typing question (which bit of `F` is "last"?) better answered case-by-case than baked into the bus translator.
+- **Carloni skid-buffer on the AXI side of each translator** — same pattern as `axi4lite::stream::{axi_to_rhdl, rhdl_to_axi}`, isolates the AXI bus from RCStream-side combinatorial paths.  Same one-cycle latency, same throughput.
+- **Widgets are generic over `(T: Digital, F: Digital)`.**  No bit-pack-into-`Bits<N>` step on TDATA/TUSER — the wire-level types are the user's `T` and `F` directly.  Simpler than the design-plan §10 sketch (which mentioned bit-packing); the typed-Digital approach is better.
+
+**Surprises and gotchas:**
+
+- **Test-module `Q` shadowing.**  Putting a `RoundTrip` composition fixture in the same `mod tests` as the unit kernel tests caused the auto-derived `Q` for `RoundTrip` to shadow the parent widget's `Q` — RHDL's name resolution found the wrong type.  Fix: nested `mod round_trip_tests` so each scope sees the right `Q`.  Worth noting for future test authors composing widgets in unit-test modules.
+- **iverilog X-state on TDATA when TVALID=0** in the round-trip test.  The first translator's Carloni starts with `void_out=true` and a don't-care `data_out`; that propagates into the second translator's TDATA as X-state until valid data arrives.  Rust simulation reports `tdata=0` (because `dont_care()` defaults to 0); iverilog reports X.  Fix: the round-trip test is Rust-sim-only.  The single-translator iverilog round-trips (which feed valid data on every cycle) cover the Verilog code path.
+
+**Validation:**
+
+- 15 new tests pass: 8 in `axi_to_rcstream` (default construction + 4 kernel tests + descriptor smoke + 2 iverilog round-trips with `F=()` and `F=bool`); 7 in `rcstream_to_axi` (similar split + the back-to-back round-trip composition test).
+- All 870 rhdl-fpga lib tests pass (855 pre-existing + 15 new).
+
+**Follow-ups:**
+
+- Add a separate TLAST signal option to the translators if a real-world AXI4-Stream IP integration needs it.  Could be a generic flag or a separate `AxiToRCStreamWithTlast<T, F>` variant — case-by-case decision.
+- AXI4-Stream TKEEP/TSTRB byte-keep support — for variable-length items per cycle.  Per the design plan, handled via typed payload (`T = [Option<b8>; N]`), not as separate signals.  No widget work needed unless the user needs explicit TKEEP wires for vendor IP that requires them.
+- TID/TDEST channel-multiplex support — same approach as TLAST; encode in `F` for the typed path; add separate signals if a use case requires it.
+
+---
+
 ## 2026-05-03 — RCStream Phase 1.1 + 1.3: canonical typed streaming bus + Carloni relay (new `rcstream` module, parallel to `stream`)
 
 **Paths:**
