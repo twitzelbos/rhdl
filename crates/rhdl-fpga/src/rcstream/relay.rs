@@ -58,7 +58,7 @@
 use rhdl::prelude::*;
 
 use crate::lid::carloni::{self, Carloni};
-use crate::stream::bus::{Item, RCStream};
+use crate::rcstream::bus::{Item, RCStream};
 
 /// A Carloni relay station with the typed [`RCStream`] interface.
 ///

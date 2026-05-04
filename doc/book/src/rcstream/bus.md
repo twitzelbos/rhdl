@@ -111,7 +111,7 @@ relay inserted anywhere in the data path without changing functional
 behavior**.
 
 ```rust,ignore
-use rhdl_fpga::stream::RCStreamRelay;
+use rhdl_fpga::rcstream::RCStreamRelay;
 
 let r: RCStreamRelay<b32, ()> = RCStreamRelay::default();
 ```
@@ -139,7 +139,7 @@ The `bus` module provides kernel-callable helpers for the common
 construction idioms:
 
 ```rust,ignore
-use rhdl_fpga::stream::bus::{idle, send, item, item_unframed};
+use rhdl_fpga::rcstream::bus::{idle, send, item, item_unframed};
 
 // An idle cycle with backpressure
 let s = idle::<b8, ()>(true);  // data=None, ready=true
@@ -169,24 +169,27 @@ following convention:
 
 The struct shape is identical for both directions; only the semantic
 meaning of each field differs by role.  This matches the existing
-`StreamIO<T, S>` pattern that the new `RCStream<T, F>` will
-eventually subsume.
+`StreamIO<T, S>` pattern in [`crate::stream`](../../crates/rhdl-fpga/src/stream/mod.rs).
 
-## Migration from `StreamIO<T, S>`
+## Relationship to the existing `stream` and `axi4lite` modules
 
-`StreamIO<T, S>` (the existing stream-widget I/O type) and
-`RCStream<T, F>` coexist during the migration window.  See
-`stream-bus-architecture.md` §9 for the full migration plan.  Phase
-1.1 (this chapter) ships the new type alongside the old; subsequent
-phases migrate the existing `stream::*` widgets one by one.
+`rcstream` lives **in parallel to** [`crate::stream`](../../crates/rhdl-fpga/src/stream/mod.rs)
+(the existing `StreamIO<T, S>`-based widget library), not as a
+replacement.  The two modules coexist indefinitely:
 
-## What about AXI4-Stream interop?
+- **`stream`**: pre-existing widget library (`map`, `filter`,
+  `chunked`, `flatten`, `zip`, `tee`, etc.), all using `StreamIO<T, S>`.
+  Continues to work; no migration planned.
+- **`rcstream`**: typed bus for **new** widgets that want the
+  framing-marker type, future cross-domain typing, or the explicit
+  LID-correct relay-insertion property.
 
-Mandatory, not optional — but a separate subsystem.  Translation
-widgets (`AxiStreamToRCStream<T, F>` and `RCStreamToAxiStream<T, F>`)
-will live at the FPGA boundary, not pervasively throughout the design.
-See `stream-bus-architecture.md` §10 for the design and the future
-phase-1.4 milestone.
+Existing AXI4-Stream interop (`crate::axi4lite::stream::axi_to_rhdl`)
+is unchanged.  No `RCStream`-flavored AXI4-Stream wrappers are
+planned — the existing AXI subsystem is sufficient.
+
+See `stream-bus-architecture.md` §9 / §10 for the full scoping
+decision.
 
 ## See also
 

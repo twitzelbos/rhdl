@@ -202,35 +202,32 @@ This is the single biggest architectural payoff of formalizing the bus.
 
 ## 9 — Composition with the existing stream library
 
-The migration plan for `rhdl-fpga::stream::*`:
+> **Decision (post-Phase-1.1 ship):** the existing `rhdl-fpga::stream::*` widgets are NOT being migrated to `RCStream<T, F>`.  `rcstream` lives in parallel to `stream` as an opt-in bus type for **new** widgets that want the typed-framing-marker / typed-clock-domain / LID-correct properties.  The earlier "migrate every widget" plan in this section is preserved below for historical context but is no longer the project plan.
+>
+> The `rcstream` and `stream` modules will coexist indefinitely — `stream::*` widgets continue to use `StreamIO<T, S>`; new widgets that prefer the typed bus opt into `rcstream::{Item, RCStream, RCStreamRelay}`.  No `StreamIO<T, S>` deprecation, no breakage.
 
-**Phase 1.1.** Define `RCStream<T, F, D>` in a new module — `stream::bus` — alongside the existing `stream::*` widgets. The new type lives next to the old `StreamIO<T>` without breaking any existing code.
+**Original Phase 1 plan (for historical context — NOT being executed):**
 
-**Phase 1.2.** Migrate widgets one by one. Each existing widget gets a generic-over-`F` upgrade: `stream::map` becomes `Map<T, S, F, D, K>` where `F` flows through unchanged. Existing call sites that don't care about framing instantiate with `F = ()`.
+The original plan was to migrate widgets one by one, with each existing widget getting a generic-over-`F` upgrade — `stream::map` becoming `Map<T, S, F, D, K>` where `F` flows through unchanged, existing call sites instantiated with `F = ()`, etc.  After review the project decided this migration cost outweighed the benefit: existing `stream::*` widgets work, are tested, and have downstream consumers.  The typed-bus value comes from new widgets that explicitly want it, not from retrofitting old ones.
 
-```rust
-// Old:
-pub struct Map<T: Digital, S: Digital> { /* ... */ }
-// New:
-pub struct Map<T: Digital, S: Digital, F: Digital, D: Domain, K: ...> { /* ... */ }
+**What actually shipped in Phase 1.1 (PR #51):**
 
-// Old call site:
-let m: Map<b8, b16> = Map::try_new::<my_kernel>()?;
-// New call site (no behavior change):
-let m: Map<b8, b16, (), Red, my_kernel> = Map::try_new()?;
-```
+- `RCStream<T, F>` and `Item<T, F>` types in a new `rcstream` module (parallel to `stream`, NOT inside `stream`).
+- `RCStreamRelay<T, F>` widget wrapping the existing `lid::carloni::Carloni` with the typed encoding.
+- Book chapter `doc/book/src/rcstream/bus.md`.
+- Convenience re-exports `rhdl_fpga::rcstream::{Item, RCStream, RCStreamRelay}`.
 
-**Phase 1.3.** Re-export `lid::carloni::Carloni` as `stream::relay::RCStreamRelay` with the new typed signature. The underlying widget is unchanged; only the type signature is upgraded.
-
-**Phase 1.4.** Consolidate `axi4lite::channel::{sender, receiver}` to use `RCStream<T, (), D>` internally. The AXI4-Lite endpoints continue to work without API changes; they're just expressed in terms of the canonical bus.
-
-This is migration without breakage. Every existing widget continues to work; the new type is additive.
+Existing `stream::*` widgets and `axi4lite::*` (including `axi4lite::stream::axi_to_rhdl`) are unchanged.
 
 ---
 
 ## 10 — AXI4-Stream interop
 
-Mandatory, not optional. Any RHDL design that uses commercial IP needs translation widgets at the FPGA boundary.
+> **Decision (post-Phase-1.1 ship):** the AXI4-Stream interop translation widgets described below (`AxiStreamToRCStream`, `RCStreamToAxiStream`) are NOT being built.  The existing `axi4lite::stream::*` interop is sufficient for the project's needs; adding a parallel RCStream-flavored interop adds maintenance burden without unlocking a use case.
+>
+> If a future design hits a case where this interop matters, this section's spec is preserved below as the design-on-record so the work doesn't have to be re-derived.
+
+**Original interop plan (for historical context — NOT being executed):**
 
 ```rust
 /// Wraps an AXI4-Stream master input as an RHDL `RCStream` source.
@@ -244,11 +241,11 @@ pub struct RCStreamToAxiStream<T: Digital, F: Digital, D: Domain> {
 }
 ```
 
-Each translation widget is ~80 LOC. They handle TKEEP packing for byte-aligned T, encode F into TUSER+TLAST per a documented schema, and produce/consume the AXI4-Stream signal set. The schema is itself documented as part of the widget rustdoc.
+Each translation widget would be ~80 LOC.  They would handle TKEEP packing for byte-aligned T, encode F into TUSER+TLAST per a documented schema, and produce/consume the AXI4-Stream signal set.
 
-The round-trip property is the validation criterion: `axi → RCStream<T, F, D> → axi` must produce a byte-identical waveform on the AXI side. If the translation loses information, that is a bug in the schema or the widget.
+The round-trip property would be the validation criterion: `axi → RCStream<T, F, D> → axi` must produce a byte-identical waveform on the AXI side.
 
-For the typed-stream-of-`enum`-Packet case where AXI4-Stream cannot natively represent the variant tag, the translation widget bit-packs the variant discriminant into TUSER and the payload into TDATA per a documented schema. The schema is exported as a `Digital`-derived type so external IP can consume it via the same encoding.
+For the typed-stream-of-`enum`-Packet case where AXI4-Stream cannot natively represent the variant tag, the translation widget would bit-pack the variant discriminant into TUSER and the payload into TDATA per a documented schema.
 
 ---
 
@@ -276,14 +273,17 @@ This variant is Phase 3 because most kernel-to-kernel connections within a singl
 
 ## 12 — Phasing
 
-| Phase | Deliverable | Effort | Dependencies |
-|---|---|---|---|
-| 1 | `RCStream<T, F, D>` type + migration of existing `stream::*` widgets + AXI4-Stream interop | ~3 weeks | none |
-| 2 | `RCStreamRelay` re-export of `lid::carloni::Carloni` with typed signature; auto-pipelining-plan.md updated to recognize Stream boundaries as preferred cut points | ~2 weeks | Phase 1 |
-| 3 | `CreditRCStream<T, F, D, CREDIT_W>` and translation widgets for long-path use cases | ~3 weeks | Phase 1 |
-| 4 | Auto-pipelining integration: NTL-pass recognition of Stream boundaries, preferential cut placement, hazard-free pipeline insertion | ~4 weeks | Phase 2, `auto-pipelining-plan.md` Phase 1 |
+| Phase | Deliverable | Status |
+|---|---|---|
+| 1.1 | `RCStream<T, F>` + `Item<T, F>` types + `RCStreamRelay<T, F>` in new `rcstream` module + book chapter | **shipped (PR #51)** |
+| ~~1.2~~ | ~~Migrate existing `stream::*` widgets~~ | **dropped** — see §9 |
+| ~~1.4~~ | ~~Consolidate `axi4lite::channel`~~ | **dropped** — see §9 |
+| ~~Phase-§10~~ | ~~AXI4-Stream interop translation widgets~~ | **dropped** — see §10 |
+| 2 | `AsyncRCStream<T, F, D>` cross-clock-domain variant | when a multi-domain design needs it |
+| 3 | `CreditRCStream<T, F, CREDIT_W>` for long-path / multi-source aggregation | when an actual design hits the timing wall |
+| 4 | Auto-pipelining integration: NTL-pass recognition of `RCStream` boundaries as preferred cut points | coordinates with `auto-pipelining-plan.md` Phase 1 |
 
-Phase 1+2 ship together as the "canonical streaming bus" track. Phase 3 ships when a design actually hits the long-path use case. Phase 4 ships in coordination with the auto-pipelining track.
+The original Phase-1 plan (this section, pre-update) bundled four sub-phases that aimed to make `RCStream` the unifying replacement for `StreamIO<T, S>`.  After review, the project decided `rcstream` should be an **opt-in bus type for new widgets** rather than a forced migration of existing code.  The `stream` and `rcstream` modules coexist indefinitely.
 
 ---
 
