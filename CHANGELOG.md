@@ -31,6 +31,48 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-05-03 — RCStream Phase 3: credit-based variant `CreditRCStream<T, F, CREDIT_W>`
+
+**Paths:**
+
+- `crates/rhdl-fpga/src/rcstream/credit/mod.rs` (new) — submodule root + `CreditRCStream<T, F, CREDIT_W>` typed connection + `pub mod source;` + `pub mod sink;` + convenience re-exports.
+- `crates/rhdl-fpga/src/rcstream/credit/source.rs` (new) — `CreditSource<T, F, CREDIT_W>` widget: wraps an upstream `RCStream` source as a `CreditRCStream` source.  Tracks a local credit counter; gates outgoing items on `counter > 0`; signals upstream `ready` when it has credit.  Saturating-add credit accumulator.
+- `crates/rhdl-fpga/src/rcstream/credit/sink.rs` (new) — `CreditSink<T, F, CREDIT_W, FIFO_N>` widget: wraps a `CreditRCStream` sink as a downstream `RCStream` source.  Internal `SyncFIFO<Item<T, F>, FIFO_N>` buffers items; grants one credit per cycle while initial pool is draining + one credit per popped item.
+- `crates/rhdl-fpga/src/rcstream/mod.rs` — register `pub mod credit;`.
+- `doc/book/src/rcstream/bus.md` — new "Credit-based variant for long paths" section: type + translator widgets + when-to-use + sizing rule.
+
+**Why this, why now:** Per the design plan §11 (and the deferred-from-Phase-1.1 follow-up list), the credit-based variant is the third leg of the RCStream stack: simple Ready/Valid (`RCStream`, Phase 1.1), AXI4-Stream interop (Phase 1.5), and now credit-based for long-path / multi-source-aggregation / virtual-channel use cases.  This PR ships it.  The killer property: the source's send decision uses the **latched** credit counter (`q.credit`), not the in-cycle `i.credit_grant` — which breaks the long sink-to-source combinational dependency that the simple Ready/Valid form has.
+
+**Design decisions:**
+
+- **`CreditRCStream<T, F, CREDIT_W>` is a separate `Digital` struct, parallel to `RCStream<T, F>`**, not a generic-extended version.  Different wire-level signals (`credit_grant: Bits<CREDIT_W>` vs `ready: bool`), different semantics, different tradeoffs.  Keeping them as separate types makes the choice between the two visible in the code rather than buried in a generic parameter.
+- **Translator widgets are the only way to use the credit variant.**  `CreditSource` converts `RCStream → CreditRCStream`; `CreditSink` converts `CreditRCStream → RCStream`.  No code "natively" produces or consumes `CreditRCStream` — every long-path connection terminates back into `RCStream` at both ends, which means the rest of the design is unaware of the credit variant's existence.  Drop-in pipeline insertion at long-path boundaries.
+- **Source's send decision uses `q.credit` (latched), not `i.credit_grant` (in-cycle).**  This is the fundamental design property that breaks the long combinational TVALID/TREADY dependency.  Documented prominently in module docs and the kernel inline comments.
+- **Saturating-add for the source's credit counter.**  If `i.credit_grant + q.credit` would overflow `CREDIT_W` bits, clamp to all-ones.  Not strictly necessary for correctness with the always-grant-at-most-1-per-cycle sink policy, but cheap robustness for a future implementation that bursts grants after a long stall.
+- **Sink grants 1 credit per cycle (max) in this implementation.**  `pending_grants` is incremented by 1 per item popped, decremented by 1 per cycle it has credits to grant.  A per-cycle-grant-burst policy is a Phase 4 follow-up; the 1-per-cycle policy proves the bus shape works and matches the most common credit-based-flow-control silicon patterns.
+- **Sink width sizing:** `CREDIT_W` is the width of both the per-cycle grant signal AND the sink's internal `pending_grants` counter.  Document the constraint `CREDIT_W >= FIFO_N + 1` so the counter can hold the initial credit pool (`2^FIFO_N`) without truncation.  Otherwise the sink under-grants and the effective buffer depth caps at `2^CREDIT_W - 1`.  Documented in module docs.
+
+**Surprises and gotchas:**
+
+- **`Bits<{ N + 1 }>` requires `feature(generic_const_exprs)`.**  First attempt sized `pending_grants` as `Bits<{ FIFO_N + 1 }>` so it could hold the exact initial credit pool.  RHDL doesn't enable that nightly feature, so the cleaner shape is to use `Bits<CREDIT_W>` for both the wire signal and the counter, with the user-facing constraint `CREDIT_W >= FIFO_N + 1`.  Saturating-init keeps the implementation correct even if the user picks a too-small `CREDIT_W`.
+- **`PhantomData<T>` in a `Synchronous`-derived struct doesn't compile.**  Source has only one DFF (`Bits<CREDIT_W>`) which doesn't use `T` or `F`, but T/F appear in `In`/`Out`.  Tried `_t: PhantomData<T>, _f: PhantomData<F>` first — failed because `Copy` doesn't auto-derive on the wrapping struct.  Tried `PhantomData<Item<T, F>>` — compiled, but the SynchronousDQ derive transformed it into a `()`-typed Q field, then the descriptor walker tried to synthesize `_marker` as a sub-circuit and failed with "FunctionNotSynthesizable".  Working solution: use `Constant<Item<T, F>>` as the type-parameter carrier — it's a synthesizable widget that just outputs a constant value, costs essentially nothing in silicon, and keeps T and F live for the SynchronousDQ derive.  Worth noting for future widgets that have all-constant-width DFFs but generic payload-type parameters.
+- **Sink test sizing.**  Default test cases use `CREDIT_W=5, FIFO_N=4` so the initial-credit pool of 16 fits exactly in 5 bits (max value 31).  A `CREDIT_W=4, FIFO_N=4` configuration would still compile but would saturate the initial pool to 15 instead of 16, which is a documented (and tested) behavior — but not what we want as the default smoke-test config.
+
+**Validation:**
+
+- 13 new tests pass: 9 in `source.rs` (default construction + 5 kernel tests + descriptor smoke + iverilog round-trip) + 3 in `sink.rs` (default construction + descriptor smoke + iverilog round-trip) + 2 in `mod.rs` (type-construction sanity).
+- All 883 rhdl-fpga lib tests pass (870 pre-existing + 13 new).
+- iverilog round-trip on both translators verifies the Verilog code path.
+
+**Follow-ups:**
+
+- **Per-cycle-grant-burst sink policy** — current sink grants ≤ 1 credit per cycle.  A burst policy (sink grants `pending_grants` capped at the wire width) would fill the source's counter faster after a long stall.  Phase 4 work; not blocking.
+- **`CreditRCStreamRelay`** — analogue of `RCStreamRelay` for the credit variant.  Carloni-style skid-buffer that's correctness-preserving for arbitrary insertion in a credit-based pipeline.  Phase 4 work.
+- **Cross-domain credit variants** — credit-based flow control naturally extends to async clock-domain crossings (the credit counter at the source uses the source's clock; the credit grant from the sink crosses through a `Sync1Bit` synchronizer).  Useful for SerDes link layers and PCIe-style protocols.  Phase 4 work; not blocking.
+- **Multi-source aggregation widgets** — `CreditMux<T, F, CREDIT_W, N>` that arbitrates between N `CreditRCStream` sources into one downstream `RCStream`.  The classical use case for credit-based flow control; warrants its own widget once a real consumer asks for it.
+
+---
+
 ## 2026-05-03 — RCStream Phase 1.5: AXI4-Stream interop in `rcstream::axi_stream`
 
 **Paths:**

@@ -216,6 +216,80 @@ full design.
 See `stream-bus-architecture.md` §9 / §10 for the broader scoping
 decision.
 
+## Credit-based variant for long paths
+
+For inter-block connections where the sink-to-source `ready` signal
+can't meet timing as a combinational input to the source's TVALID
+generator (long routing distance, multi-source aggregation, virtual
+channels), `rcstream::credit` provides a credit-based flow-control
+variant.
+
+### The type
+
+```rust,ignore
+pub struct CreditRCStream<T: Digital, F: Digital, const CREDIT_W: usize> {
+    pub data: Option<Item<T, F>>,            // source → sink
+    pub credit_grant: Bits<CREDIT_W>,        // sink → source
+}
+```
+
+The `credit_grant` field replaces the simple variant's `ready` bit:
+instead of "I am ready to accept the next item this cycle", it
+means "I have granted you this many additional tokens this cycle".
+The source maintains a local credit counter, adds incoming grants,
+decrements on each item sent, and gates sending on `counter > 0`.
+
+Crucially: there is **no combinational path** from `credit_grant`
+through the source's send decision to `data` within a single cycle.
+The source's send decision uses the **latched** counter (the `Q`
+value), not the in-cycle `credit_grant`.  This breaks the long
+TVALID/TREADY combinational dependency that the simple variant has.
+
+### Translation widgets
+
+Two pluggable widgets convert between `RCStream` and
+`CreditRCStream`:
+
+- [`rcstream::credit::CreditSource<T, F, CREDIT_W>`] — wraps an
+  upstream `RCStream` source as a `CreditRCStream` source.  Tracks
+  the local credit counter; gates outgoing items on `counter > 0`;
+  signals upstream `ready` when it has credit.
+- [`rcstream::credit::CreditSink<T, F, CREDIT_W, FIFO_N>`] — wraps a
+  `CreditRCStream` sink as a downstream `RCStream` source.  Buffers
+  items in an internal `SyncFIFO` of depth `2^FIFO_N`; grants one
+  credit per cycle while there are unused credits in its initial
+  pool, plus one additional credit per item popped from the buffer.
+
+Together, `CreditSource → CreditRCStream → CreditSink` form the
+credit-based pipeline pair.  Insert at long-path or multi-source
+aggregation boundaries; the sink's `RCStream` output plugs into the
+rest of the design unchanged.
+
+### When to use
+
+- **Long inter-block paths** where TVALID / TREADY can't close
+  timing as a combinational pair.
+- **Multi-source aggregation** where one sink receives from many
+  sources and reverse-direction arbitration would be expensive.
+- **Virtual channels** — one physical SerDes link carrying multiple
+  logical streams, each with its own credit pool.
+
+For ordinary kernel-to-kernel connections within a single design
+that meet timing, the simple `RCStream` form is preferred — the
+credit variant adds DFF state at the source for the credit counter
+and at the sink for the buffer + free-slot tracking.
+
+### Sizing rule
+
+`CREDIT_W` is the width of both the per-cycle grant signal AND the
+sink's internal `pending_grants` counter.  For correctness, pick
+`CREDIT_W >= FIFO_N + 1` so the counter can hold the initial credit
+pool (`2^FIFO_N`) without truncation; otherwise the sink will
+under-grant and the effective buffer depth will be capped at
+`2^CREDIT_W - 1` rather than `2^FIFO_N`.
+
+See `stream-bus-architecture.md` §11 for the broader design rationale.
+
 ## See also
 
 - `stream-bus-architecture.md` — full design rationale.
