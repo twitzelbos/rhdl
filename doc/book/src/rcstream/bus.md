@@ -186,14 +186,34 @@ replacement.  The two modules coexist indefinitely:
 
 The existing `axi4lite::stream::{axi_to_rhdl, rhdl_to_axi}` widgets
 are unchanged — they translate AXI4-Stream ↔ `StreamIO<T, S>`.  A
-**new, independent** pair of translation widgets will be added inside
-`rcstream` as a follow-up (`rcstream::axi_stream::{AxiStreamToRCStream,
-RCStreamToAxiStream}`) — translating AXI4-Stream ↔ `RCStream<T, F>`.
+**new, independent** pair of translation widgets lives inside
+`rcstream::axi_stream`:
+
+- [`rcstream::axi_stream::AxiToRCStream<T, F>`] — wraps an
+  AXI4-Stream master input as an `RCStream<T, F>` source.
+- [`rcstream::axi_stream::RCStreamToAxi<T, F>`] — wraps an
+  `RCStream<T, F>` source as an AXI4-Stream master output.
+
+Signal mapping:
+
+| RCStream side                          | AXI4-Stream side |
+|---|---|
+| `data: Option<Item<T, F>>::is_some()`  | `TVALID` |
+| `Item::data: T`                        | `TDATA`  |
+| `Item::frame: F`                       | `TUSER`  |
+| `ready: bool`                          | `TREADY` |
+
+For `F = ()`, TUSER has zero wire bits (no overhead).  For
+`F = bool`, TUSER is a 1-bit signal carrying an end-of-frame
+marker — AXI4-Stream consumers wire that to their TLAST input.
+For richer `F`, TUSER carries the bit-pack of `F` (a `Digital`
+struct/enum).
+
 The two interop paths coexist; users pick based on which bus type
 their design uses.  See `stream-bus-architecture.md` §10 for the
-spec.
+full design.
 
-See `stream-bus-architecture.md` §9 / §10 for the full scoping
+See `stream-bus-architecture.md` §9 / §10 for the broader scoping
 decision.
 
 ## See also

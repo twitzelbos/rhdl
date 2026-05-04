@@ -31,6 +31,7 @@
 //! full design rationale + AXI4-Stream comparison + framing-pattern
 //! catalogue.
 
+pub mod axi_stream;
 pub mod bus;
 pub mod relay;
 
