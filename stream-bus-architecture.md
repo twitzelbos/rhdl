@@ -223,29 +223,33 @@ Existing `stream::*` widgets and `axi4lite::*` (including `axi4lite::stream::axi
 
 ## 10 — AXI4-Stream interop
 
-> **Decision (post-Phase-1.1 ship):** the AXI4-Stream interop translation widgets described below (`AxiStreamToRCStream`, `RCStreamToAxiStream`) are NOT being built.  The existing `axi4lite::stream::*` interop is sufficient for the project's needs; adding a parallel RCStream-flavored interop adds maintenance burden without unlocking a use case.
->
-> If a future design hits a case where this interop matters, this section's spec is preserved below as the design-on-record so the work doesn't have to be re-derived.
+> **Decision (post-Phase-1.1 ship):** AXI4-Stream interop *is* planned, but built **inside `rcstream/`** as a new sub-module (e.g., `rcstream::axi_stream`), independent of and parallel to the existing `axi4lite::stream::{axi_to_rhdl, rhdl_to_axi}` widgets.  The existing widgets stay unchanged (they translate AXI ↔ `StreamIO<T, S>`); the new widgets translate AXI ↔ `RCStream<T, F>`.  Two parallel translation paths, no migration of existing code.
 
-**Original interop plan (for historical context — NOT being executed):**
+The translation widgets:
 
 ```rust
-/// Wraps an AXI4-Stream master input as an RHDL `RCStream` source.
-pub struct AxiStreamToRCStream<T: Digital, F: Digital, D: Domain> {
+/// Wraps an AXI4-Stream master input as an RHDL `RCStream<T, F>` source.
+/// Lives at `rhdl_fpga::rcstream::axi_stream::AxiStreamToRCStream`.
+pub struct AxiStreamToRCStream<T: Digital, F: Digital> {
     /* internal: bit-pack T into TDATA, F into TUSER+TLAST */
 }
 
-/// Wraps an RHDL `RCStream` source as an AXI4-Stream master output.
-pub struct RCStreamToAxiStream<T: Digital, F: Digital, D: Domain> {
+/// Wraps an RHDL `RCStream<T, F>` source as an AXI4-Stream master output.
+/// Lives at `rhdl_fpga::rcstream::axi_stream::RCStreamToAxiStream`.
+pub struct RCStreamToAxiStream<T: Digital, F: Digital> {
     /* internal: unpack TDATA into T, TUSER+TLAST into F */
 }
 ```
 
-Each translation widget would be ~80 LOC.  They would handle TKEEP packing for byte-aligned T, encode F into TUSER+TLAST per a documented schema, and produce/consume the AXI4-Stream signal set.
+Each translation widget is ~80 LOC.  They handle TKEEP packing for byte-aligned `T`, encode `F` into TUSER+TLAST per a documented schema, and produce/consume the AXI4-Stream signal set.  The schema is itself documented as part of the widget rustdoc and exported as a `Digital`-derived type so external IP can consume it via the same encoding.
 
-The round-trip property would be the validation criterion: `axi → RCStream<T, F, D> → axi` must produce a byte-identical waveform on the AXI side.
+The round-trip property is the validation criterion: `axi → RCStream<T, F> → axi` must produce a byte-identical waveform on the AXI side.  If the translation loses information, that is a bug in the schema or the widget.
 
-For the typed-stream-of-`enum`-Packet case where AXI4-Stream cannot natively represent the variant tag, the translation widget would bit-pack the variant discriminant into TUSER and the payload into TDATA per a documented schema.
+For the typed-stream-of-`enum`-Packet case where AXI4-Stream cannot natively represent the variant tag, the translation widget bit-packs the variant discriminant into TUSER and the payload into TDATA per a documented schema.
+
+**Why parallel to `axi4lite::stream::*` rather than refactoring it:** the existing widgets target `StreamIO<T, S>`-using designs, which are not migrating (per §9).  The new widgets target `RCStream<T, F>`-using designs.  Both interop paths coexist; the user picks based on which bus type their design uses.
+
+**Phasing:** lands as a follow-up PR after Phase 1.1 (this PR).  Priority is set by when an actual `RCStream<T, F>`-using design needs to talk to AXI4-Stream IP.
 
 ---
 
@@ -278,7 +282,7 @@ This variant is Phase 3 because most kernel-to-kernel connections within a singl
 | 1.1 | `RCStream<T, F>` + `Item<T, F>` types + `RCStreamRelay<T, F>` in new `rcstream` module + book chapter | **shipped (PR #51)** |
 | ~~1.2~~ | ~~Migrate existing `stream::*` widgets~~ | **dropped** — see §9 |
 | ~~1.4~~ | ~~Consolidate `axi4lite::channel`~~ | **dropped** — see §9 |
-| ~~Phase-§10~~ | ~~AXI4-Stream interop translation widgets~~ | **dropped** — see §10 |
+| 1.5 | AXI4-Stream interop widgets in `rcstream::axi_stream` (`AxiStreamToRCStream<T, F>`, `RCStreamToAxiStream<T, F>`) — parallel to the existing `axi4lite::stream::{axi_to_rhdl, rhdl_to_axi}` | **planned** — see §10; lands when a `RCStream`-using design needs to talk to AXI4-Stream IP |
 | 2 | `AsyncRCStream<T, F, D>` cross-clock-domain variant | when a multi-domain design needs it |
 | 3 | `CreditRCStream<T, F, CREDIT_W>` for long-path / multi-source aggregation | when an actual design hits the timing wall |
 | 4 | Auto-pipelining integration: NTL-pass recognition of `RCStream` boundaries as preferred cut points | coordinates with `auto-pipelining-plan.md` Phase 1 |

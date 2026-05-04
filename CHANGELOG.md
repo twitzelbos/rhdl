@@ -50,11 +50,13 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 Originally the design plan (`stream-bus-architecture.md` §9) called for migrating every existing `stream::*` widget to `RCStream<T, F>`.  After review, the project decided to make `rcstream` a **parallel module** to `stream` rather than a unifying replacement.  Rationale:
 
 - Existing `stream::*` widgets work, are tested, and have downstream consumers.  Forced migration cost > benefit.
-- `axi4lite::*` (including `axi4lite::stream::axi_to_rhdl`) similarly stays as-is; the originally-planned `AxiStreamToRCStream` / `RCStreamToAxiStream` translation widgets are not being built.
+- Existing `axi4lite::*` (including `axi4lite::stream::{axi_to_rhdl, rhdl_to_axi}`) stays unchanged.
 - The typed-bus value comes from new widgets that explicitly want it, not from retrofitting old ones.
 - `rcstream` and `stream` will coexist indefinitely; no `StreamIO<T, S>` deprecation, no breakage.
 
-This decision is captured in §9, §10, and §12 of the design plan.
+**AXI4-Stream interop IS planned**, but built **inside `rcstream/`** as a follow-up (`rcstream::axi_stream::{AxiStreamToRCStream, RCStreamToAxiStream}`) — parallel to and independent of the existing `axi4lite::stream::{axi_to_rhdl, rhdl_to_axi}` widgets.  The two interop paths target different bus types (`StreamIO<T, S>` vs. `RCStream<T, F>`) and coexist; users pick based on which bus their design uses.
+
+These decisions are captured in §9, §10, and §12 of the design plan.
 
 **Design decisions:**
 
@@ -66,7 +68,8 @@ This decision is captured in §9, §10, and §12 of the design plan.
 - **Kernel attribute `#[kernel(allow_weak_partial)]`** on the relay kernel — required so RHDL's kernel-coverage tracker accepts the don't-care leaves of `Item<T, F>` in the None arm of the unpack match.  Same pattern the existing `stream_buffer::option_carloni_kernel` already uses.
 - **Convenience re-exports at `crates/rhdl-fpga/src/rcstream/mod.rs`** so downstream code can `use rhdl_fpga::rcstream::{Item, RCStream, RCStreamRelay}` without spelling sub-module paths.
 - **Existing `stream::*` widgets NOT being migrated.**  See "Scoping decision" above.  The `stream` module is unchanged.
-- **AXI4-Stream interop translation widgets NOT being built.**  See "Scoping decision" above.  Existing `axi4lite::stream::*` is sufficient for the project's needs.
+- **Existing `axi4lite::*` NOT being modified.**  See "Scoping decision" above.  Includes `axi4lite::stream::{axi_to_rhdl, rhdl_to_axi}`.
+- **AXI4-Stream interop deferred to a follow-up PR**, but planned as new code inside `rcstream/` (`rcstream::axi_stream::{AxiStreamToRCStream, RCStreamToAxiStream}`).  Lands when an actual `RCStream<T, F>`-using design needs to interop with AXI4-Stream IP.
 - **`CreditRCStream<T, F, CREDIT_W>` (Phase 3) NOT in this PR.**  Lands when a long-path / multi-source-aggregation design hits the Ready/Valid timing wall.
 
 **Surprises and gotchas:**
@@ -82,6 +85,7 @@ This decision is captured in §9, §10, and §12 of the design plan.
 
 **Follow-ups:**
 
+- Add AXI4-Stream interop widgets in `rcstream::axi_stream` (`AxiStreamToRCStream<T, F>`, `RCStreamToAxiStream<T, F>`) per design plan §10.  Parallel to the existing `axi4lite::stream::{axi_to_rhdl, rhdl_to_axi}` — different target bus type, independent code path.
 - Add `AsyncRCStream<T, F, D>` for cross-clock-domain typing when a use case materializes.
 - Add `CreditRCStream<T, F, CREDIT_W>` Phase 3 variant when an actual design hits the long-path / multi-source-aggregation timing wall.
 - Document the `RCStream`-as-preferred-cut-point story in `auto-pipelining-plan.md` once that track ships Phase 1.

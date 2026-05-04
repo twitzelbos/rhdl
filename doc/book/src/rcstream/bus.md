@@ -184,9 +184,14 @@ replacement.  The two modules coexist indefinitely:
   framing-marker type, future cross-domain typing, or the explicit
   LID-correct relay-insertion property.
 
-Existing AXI4-Stream interop (`crate::axi4lite::stream::axi_to_rhdl`)
-is unchanged.  No `RCStream`-flavored AXI4-Stream wrappers are
-planned — the existing AXI subsystem is sufficient.
+The existing `axi4lite::stream::{axi_to_rhdl, rhdl_to_axi}` widgets
+are unchanged — they translate AXI4-Stream ↔ `StreamIO<T, S>`.  A
+**new, independent** pair of translation widgets will be added inside
+`rcstream` as a follow-up (`rcstream::axi_stream::{AxiStreamToRCStream,
+RCStreamToAxiStream}`) — translating AXI4-Stream ↔ `RCStream<T, F>`.
+The two interop paths coexist; users pick based on which bus type
+their design uses.  See `stream-bus-architecture.md` §10 for the
+spec.
 
 See `stream-bus-architecture.md` §9 / §10 for the full scoping
 decision.
