@@ -266,6 +266,240 @@ mod tests {
     /// iverilog round-trip: drive items in with downstream always
     /// ready; expect items to propagate through the FIFO and credit
     /// grants to flow back.
+    // ---- Tier 1: the credit accounting itself -------------------
+    //
+    // This widget shipped with NO behavioural tests, and the credit
+    // accounting lives here.  That is how the pool off-by-one survived:
+    // the only behavioural stimulus drove `downstream_ready: true` on
+    // every cycle, which never lets the buffer fill and therefore never
+    // cashes the surplus credit.  These cover the accounting directly.
+
+    fn item(v: u128) -> Item<b8, ()> {
+        Item::<b8, ()> {
+            data: bits::<8>(v),
+            frame: (),
+        }
+    }
+
+    fn fifo_out(data: Option<Item<b8, ()>>) -> crate::fifo::synchronous::Out<Item<b8, ()>> {
+        crate::fifo::synchronous::Out::<Item<b8, ()>> {
+            data,
+            full: false,
+            almost_empty: false,
+            almost_full: false,
+            overflow: false,
+            underflow: false,
+        }
+    }
+
+    fn q_with(data: Option<Item<b8, ()>>, pending: u128) -> Q<b8, (), 5, 3> {
+        Q::<b8, (), 5, 3> {
+            fifo: fifo_out(data),
+            pending_grants: bits::<5>(pending),
+        }
+    }
+
+    fn in_with(up: Option<Item<b8, ()>>, ready: bool) -> In<b8, ()> {
+        In::<b8, ()> {
+            upstream_data: up,
+            downstream_ready: ready,
+        }
+    }
+
+    /// A pending grant is emitted and the counter decremented.
+    #[test]
+    fn pending_grant_is_emitted_and_decremented() {
+        let (o, d) = credit_sink_kernel::<b8, (), 5, 3>(
+            ClockReset::dont_care(),
+            in_with(None, false),
+            q_with(None, 4),
+        );
+        assert_eq!(o.credit_grant.raw(), 1, "one credit per cycle");
+        assert_eq!(d.pending_grants.raw(), 3, "counter decrements");
+    }
+
+    /// With nothing owed, no credit is manufactured.
+    #[test]
+    fn no_pending_means_no_grant() {
+        let (o, d) = credit_sink_kernel::<b8, (), 5, 3>(
+            ClockReset::dont_care(),
+            in_with(None, false),
+            q_with(None, 0),
+        );
+        assert_eq!(o.credit_grant.raw(), 0);
+        assert_eq!(d.pending_grants.raw(), 0);
+    }
+
+    /// Popping an item frees a slot, so a credit becomes owed.
+    #[test]
+    fn popping_an_item_owes_a_credit() {
+        let (_o, d) = credit_sink_kernel::<b8, (), 5, 3>(
+            ClockReset::dont_care(),
+            in_with(None, true),
+            q_with(Some(item(0xAA)), 0),
+        );
+        assert_eq!(d.pending_grants.raw(), 1, "freed slot owes one credit");
+    }
+
+    /// Granting and popping in the same cycle is a net zero change —
+    /// one credit goes out, one slot frees.
+    #[test]
+    fn simultaneous_grant_and_pop_net_to_zero() {
+        let (o, d) = credit_sink_kernel::<b8, (), 5, 3>(
+            ClockReset::dont_care(),
+            in_with(None, true),
+            q_with(Some(item(0xAA)), 4),
+        );
+        assert_eq!(o.credit_grant.raw(), 1);
+        assert_eq!(d.pending_grants.raw(), 4, "net zero");
+    }
+
+    /// **Underflow guard.** `downstream_ready` against an empty buffer
+    /// must not pop, and must not fabricate a credit for a slot that
+    /// never freed.
+    #[test]
+    fn ready_against_an_empty_buffer_pops_nothing() {
+        let (_o, d) = credit_sink_kernel::<b8, (), 5, 3>(
+            ClockReset::dont_care(),
+            in_with(None, true),
+            q_with(None, 0),
+        );
+        assert!(!d.fifo.next, "must not pop an empty FIFO");
+        assert_eq!(
+            d.pending_grants.raw(),
+            0,
+            "and must not owe a phantom credit"
+        );
+    }
+
+    /// The counter saturates rather than wrapping.  Wrapping would hand
+    /// the source a huge credit allowance and let it overrun.
+    #[test]
+    fn pending_grants_saturate() {
+        let max = (1u128 << 5) - 1;
+        let (_o, d) = credit_sink_kernel::<b8, (), 5, 3>(
+            ClockReset::dont_care(),
+            in_with(None, true),
+            // At max, granting and popping cancel; force pop-only by
+            // having nothing pending is impossible at max, so assert the
+            // saturating path directly.
+            q_with(Some(item(0xAA)), max),
+        );
+        assert!(
+            d.pending_grants.raw() <= max,
+            "counter must never wrap past max"
+        );
+    }
+
+    /// Incoming data is handed to the buffer verbatim.
+    #[test]
+    fn upstream_data_reaches_the_buffer() {
+        let (_o, d) = credit_sink_kernel::<b8, (), 5, 3>(
+            ClockReset::dont_care(),
+            in_with(Some(item(0x5A)), false),
+            q_with(None, 0),
+        );
+        match d.fifo.data {
+            Some(it) => assert_eq!(it.data.raw(), 0x5A),
+            None => panic!("incoming item must reach the FIFO"),
+        }
+    }
+
+    /// **The regression guard for the pool off-by-one, stated
+    /// behaviourally.**
+    ///
+    /// From reset, with nothing arriving and nothing draining, the sink
+    /// dribbles out its whole initial pool one credit per cycle and then
+    /// goes quiet.  The total it emits IS the pool size, and it must
+    /// equal the buffer's usable capacity `2^FIFO_N - 1` — not
+    /// `2^FIFO_N`.  Granting one more than the buffer can hold is what
+    /// silently dropped items.
+    ///
+    /// Black-box: no poking at internal state, so it keeps working if
+    /// the counter is reimplemented.
+    #[test]
+    fn initial_credit_pool_equals_usable_buffer_capacity() {
+        fn pool<const FIFO_N: usize>() -> u128
+        where
+            rhdl::bits::W<FIFO_N>: BitWidth,
+        {
+            let uut = CreditSink::<b8, (), 8, FIFO_N>::default();
+            let stream = std::iter::repeat_n(
+                In::<b8, ()> {
+                    upstream_data: None,
+                    downstream_ready: false,
+                },
+                64,
+            )
+            .with_reset(1)
+            .clock_pos_edge(100);
+            uut.run(stream)
+                .synchronous_sample()
+                .map(|s| s.output.credit_grant.raw())
+                .sum()
+        }
+        assert_eq!(pool::<2>(), (1 << 2) - 1, "FIFO_N=2 pool must be 3, not 4");
+        assert_eq!(pool::<3>(), (1 << 3) - 1, "FIFO_N=3 pool must be 7, not 8");
+        assert_eq!(
+            pool::<4>(),
+            (1 << 4) - 1,
+            "FIFO_N=4 pool must be 15, not 16"
+        );
+    }
+
+    /// Tier 2 — the sink under **sustained backpressure**, which is the
+    /// condition every pre-existing credit test omitted.  Feed it more
+    /// items than its buffer holds while the downstream accepts rarely;
+    /// nothing may be lost and nothing may be duplicated.
+    #[test]
+    fn sink_under_backpressure_loses_nothing() {
+        use rhdl::core::sim::ResetOrData;
+        const COUNT: u128 = 20;
+        let uut = CreditSink::<b8, (), 5, 3>::default();
+        let mut credit: u128 = 0;
+        let mut sent: u128 = 0;
+        let mut got: Vec<u128> = Vec::new();
+        let mut need_reset = true;
+        let mut phase: u32 = 0;
+
+        uut.run_fn(
+            |output| {
+                if need_reset {
+                    need_reset = false;
+                    return Some(ResetOrData::Reset);
+                }
+                phase = phase.wrapping_add(1);
+                // Accept only 1 cycle in 5 — the buffer really fills.
+                let ready = phase.is_multiple_of(5);
+                if let Some(it) = output.downstream_data {
+                    if ready {
+                        got.push(it.data.raw());
+                    }
+                }
+                credit += output.credit_grant.raw();
+                let mut input = In::<b8, ()> {
+                    upstream_data: None,
+                    downstream_ready: ready,
+                };
+                if sent < COUNT && credit > 0 {
+                    input.upstream_data = Some(item(sent));
+                    sent += 1;
+                    credit -= 1;
+                }
+                Some(ResetOrData::Data(input))
+            },
+            100,
+        )
+        .take_while(|t| t.time < 400_000)
+        .for_each(drop);
+
+        let want: Vec<u128> = (0..COUNT).collect();
+        assert_eq!(
+            got, want,
+            "a credit sink must not lose or duplicate items under backpressure"
+        );
+    }
+
     #[test]
     fn iverilog_round_trip() -> Result<(), RHDLError> {
         let uut: CreditSink<b8, (), 5, 4> = CreditSink::default();

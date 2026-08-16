@@ -235,6 +235,58 @@ mod tests {
         Ok(())
     }
 
+    /// Tier 2 — the relay under sustained backpressure.
+    ///
+    /// The relay's insertion-invariance is covered at composition level
+    /// in `tests/rcstream_relay_insertion.rs`, but the widget's own
+    /// suite only ever drove `ready: true`.  A skid buffer exists to
+    /// absorb stalls, so a test that never stalls exercises everything
+    /// except its reason for existing.
+    #[test]
+    fn relay_loses_nothing_under_backpressure() {
+        use rhdl::core::sim::ResetOrData;
+        const COUNT: u128 = 24;
+        let uut = RCStreamRelay::<b8, bool>::default();
+        let mut to_send: u128 = 0;
+        let mut got: Vec<(u128, bool)> = Vec::new();
+        let mut need_reset = true;
+        let mut phase: u32 = 0;
+
+        uut.run_fn(
+            |output| {
+                if need_reset {
+                    need_reset = false;
+                    return Some(ResetOrData::Reset);
+                }
+                phase = phase.wrapping_add(1);
+                let ready = phase.is_multiple_of(3);
+                if let Some(it) = output.data {
+                    if ready {
+                        got.push((it.data.raw(), it.frame));
+                    }
+                }
+                let mut input = RCStream::<b8, bool> { data: None, ready };
+                if to_send < COUNT && output.ready {
+                    input.data = Some(Item::<b8, bool> {
+                        data: bits::<8>(to_send),
+                        frame: to_send % 8 == 7,
+                    });
+                    to_send += 1;
+                }
+                Some(ResetOrData::Data(input))
+            },
+            100,
+        )
+        .take_while(|t| t.time < 400_000)
+        .for_each(drop);
+
+        let want: Vec<(u128, bool)> = (0..COUNT).map(|k| (k, k % 8 == 7)).collect();
+        assert_eq!(
+            got, want,
+            "a skid buffer must lose nothing when the sink stalls"
+        );
+    }
+
     /// iverilog round-trip: the relay's emitted Verilog matches the
     /// Rust simulation exactly.
     #[test]

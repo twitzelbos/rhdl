@@ -297,6 +297,78 @@ mod tests {
     }
 
     /// Smoke test: descriptor + HDL emission.
+    /// Tier 2 — **the source's core invariant, under credit starvation.**
+    ///
+    /// A credit source must never send more items than it has been
+    /// granted, at any point in time.  Violate that and the sink's
+    /// buffer overruns and items are lost silently — which is exactly
+    /// the failure mode that hid in `CreditSink`.
+    ///
+    /// The grant stream here deliberately dries up for long stretches,
+    /// so the source spends its whole allowance and must then stall.
+    /// The five pre-existing kernel tests all hold the counter at a
+    /// fixed value and never exercise running out under load.
+    #[test]
+    fn source_never_sends_more_than_it_was_granted() {
+        use rhdl::core::sim::ResetOrData;
+        let uut = CreditSource::<b8, (), 5>::default();
+        let mut granted: u128 = 0;
+        let mut sent: u128 = 0;
+        let mut need_reset = true;
+        let mut phase: u32 = 0;
+        let mut violated = false;
+        let mut stalled_at_least_once = false;
+
+        uut.run_fn(
+            |output| {
+                if need_reset {
+                    need_reset = false;
+                    return Some(ResetOrData::Reset);
+                }
+                phase = phase.wrapping_add(1);
+                if output.downstream_data.is_some() {
+                    sent += 1;
+                }
+                // THE invariant: never ahead of the grants issued.
+                if sent > granted {
+                    violated = true;
+                }
+                if !output.upstream_ready {
+                    stalled_at_least_once = true;
+                }
+                // Grant in bursts with long dry spells between them, so
+                // the source genuinely runs out.
+                let grant = if phase % 20 < 3 { 1u128 } else { 0 };
+                granted += grant;
+                Some(ResetOrData::Data(In::<b8, (), 5> {
+                    // Always offering, so the only limit is credit.
+                    upstream_data: Some(Item::<b8, ()> {
+                        data: b8(sent % 256),
+                        frame: (),
+                    }),
+                    credit_grant: bits::<5>(grant),
+                }))
+            },
+            100,
+        )
+        .take_while(|t| t.time < 300_000)
+        .for_each(drop);
+
+        assert!(
+            !violated,
+            "source sent {sent} items having been granted only {granted} — \
+             it must never run ahead of its credit"
+        );
+        assert!(
+            stalled_at_least_once,
+            "the test never starved the source, so it proved nothing"
+        );
+        assert!(
+            sent > 0,
+            "and it must actually send when it does have credit"
+        );
+    }
+
     #[test]
     fn descriptor_smoke() -> miette::Result<()> {
         let uut: CreditSource<b8, (), 4> = CreditSource::default();

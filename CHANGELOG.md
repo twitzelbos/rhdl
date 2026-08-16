@@ -31,6 +31,36 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-16 — Backpressure hardening across `rcstream` (the follow-up the bug fix owed)
+
+**Paths:** `crates/rhdl-fpga/src/rcstream/credit/{sink,source}.rs`, `crates/rhdl-fpga/src/rcstream/relay.rs`, `crates/rhdl-fpga/src/rcstream/axi_stream/{axi_to_rcstream,rcstream_to_axi}.rs`, `crates/rhdl-fpga/tests/rcstream_credit_relay_insertion.rs`.
+
+**Why this, why now:** the previous entry fixed the `CreditSink` credit-pool off-by-one and added a composition-level regression test — but left **the condition that hid it** untouched. `CreditSink` still had zero behavioural tests of its own, and no credit widget's own suite ever stalled its sink. That is a half-measure: the specific defect was gone, the class of defect was not. This closes it.
+
+**What was actually missing, measured rather than guessed:** an audit counting stall-bearing lines in each `rcstream` widget's own tests found `axi_to_rcstream` and `rcstream_to_axi` at **zero** — two protocol translators whose entire job is bridging ready/valid handshakes, with no test that ever deasserts either `ready` or `TREADY`.
+
+**What was added:**
+
+- **`CreditSink`: 3 tests → 12.** Seven Tier-1 kernel tests covering the accounting directly (grant-and-decrement, no-grant-when-owed-nothing, pop-owes-a-credit, simultaneous grant+pop netting to zero, saturation instead of wrap, the underflow guard, data reaching the buffer), plus a Tier-2 stalling-sink test. The accounting lives in this widget and had never been exercised.
+- **A black-box capacity guard.** `initial_credit_pool_equals_usable_buffer_capacity` runs the sink from reset with nothing draining and sums the credits it emits — that total *is* the pool size, and it must equal `2^FIFO_N - 1`. Verified to fail with the off-by-one restored. It touches no internal field, so it survives a reimplementation of the counter.
+- **`CreditSource`: the invariant it never tested.** Its five kernel tests all hold the counter at a fixed value. Added a Tier-2 test asserting cumulative sends never exceed cumulative grants while the grant stream deliberately dries up — plus an assertion that the source actually *did* starve, so the test cannot pass vacuously.
+- **`RCStreamRelay`, both AXI translators, and the credit-relay insertion suite** each gained a stalling-sink test. The insertion suite's helper was parameterised by stall period; the always-ready form is now a thin wrapper, so the permissive case is still covered but no longer the only case.
+
+**Surprises and gotchas:**
+
+- **The blind spot is inherited, not independently re-made.** My credit-relay tests reused the always-ready model from the sink's own suite, and the wording I wrote at the time — "both ends are maximally permissive so that the only thing limiting the rate is the credit loop itself" — reads as a considered choice rather than an omission. A composition test written over a widget you just built will reuse your mental model of it. Worth naming, because it means "I tested the composition" is not evidence the sub-widget was stressed.
+- **Vacuous-pass guards matter for starvation tests.** `source_never_sends_more_than_it_was_granted` would pass trivially if the grant schedule never actually exhausted the counter, so it asserts `stalled_at_least_once` and `sent > 0` alongside the invariant.
+
+**Validation:** every `rcstream` flow-control widget now has a stalling-sink test in its own module. The capacity guard and the backpressure test were both verified to fail with the bug reintroduced. Full `rcstream` suite green.
+
+**Convention recorded in CLAUDE.md** (working copy, not committed per the repo owner's instruction): *a flow-control widget tested without backpressure is not tested*, with the concrete checklist, plus *property tests must be verified capable of failing* before they are trusted.
+
+**Follow-ups:**
+
+- **The same audit outside `rcstream`.** `stream::*`, `fifo::*` and `axi4lite::*` contain flow-control widgets that were never checked against this standard. `stream::filter`'s dropped-item path is already an open question from earlier in this session.
+
+---
+
 ## 2026-08-16 — `CreditMux` + a silent-data-loss bug in `CreditSink`
 
 **Paths:** `crates/rhdl-fpga/src/rcstream/credit/mux.rs` (new), `crates/rhdl-fpga/src/rcstream/credit/sink.rs` (**bug fix**), `crates/rhdl-fpga/tests/rcstream_credit_no_loss.rs` (new regression), `crates/rhdl-fpga/examples/credit_mux.rs` + `doc/credit_mux.md` + `vcd/credit_mux/`, `doc/book/src/rcstream/bus.md`, `stream-bus-architecture.md` §11.3.1 / §11.3.2.

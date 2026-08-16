@@ -225,6 +225,61 @@ mod tests {
     }
 
     /// Smoke test: descriptor + HDL emission.
+    /// Tier 2 — **backpressure**, which this translator had no coverage
+    /// of at all.  Its entire job is bridging two ready/valid
+    /// handshakes, so a test that never stalls either side exercises
+    /// nothing that matters.
+    ///
+    /// The AXI master holds TDATA/TVALID until TREADY (per AMBA), and
+    /// the RCStream sink accepts only intermittently.  Every item must
+    /// arrive exactly once, in order.
+    #[test]
+    fn axi_to_rcstream_loses_nothing_under_backpressure() {
+        use rhdl::core::sim::ResetOrData;
+        const COUNT: u128 = 20;
+        let uut = AxiToRCStream::<b8, ()>::default();
+        let mut to_send: u128 = 0;
+        let mut got: Vec<u128> = Vec::new();
+        let mut need_reset = true;
+        let mut phase: u32 = 0;
+
+        uut.run_fn(
+            |output| {
+                if need_reset {
+                    need_reset = false;
+                    return Some(ResetOrData::Reset);
+                }
+                phase = phase.wrapping_add(1);
+                // The RCStream sink accepts 1 cycle in 3.
+                let ready = phase.is_multiple_of(3);
+                if let Some(it) = output.data {
+                    if ready {
+                        got.push(it.data.raw());
+                    }
+                }
+                // AXI master: hold the current beat until TREADY.
+                if to_send < COUNT && output.tready {
+                    to_send += 1;
+                }
+                Some(ResetOrData::Data(In::<b8, ()> {
+                    tdata: b8(to_send.min(COUNT - 1) % 256),
+                    tuser: (),
+                    tvalid: to_send < COUNT,
+                    ready,
+                }))
+            },
+            100,
+        )
+        .take_while(|t| t.time < 400_000)
+        .for_each(drop);
+
+        let want: Vec<u128> = (0..COUNT).collect();
+        assert_eq!(
+            got, want,
+            "AXI->RCStream must not drop or duplicate beats when the RCStream sink stalls"
+        );
+    }
+
     #[test]
     fn descriptor_smoke() -> miette::Result<()> {
         let uut: AxiToRCStream<b8, ()> = AxiToRCStream::default();

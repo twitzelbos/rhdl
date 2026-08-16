@@ -117,7 +117,11 @@ where
 /// Both ends are maximally permissive so that the only thing limiting
 /// the rate is the credit loop itself — which is exactly what we want
 /// to measure.
-fn run_pipe<const N: usize, const FIFO_N: usize>(count: u128, cycles: u64) -> Vec<u128>
+fn run_pipe_stalling<const N: usize, const FIFO_N: usize>(
+    count: u128,
+    cycles: u64,
+    stall_period: u32,
+) -> Vec<u128>
 where
     rhdl::bits::W<FIFO_N>: BitWidth,
 {
@@ -125,6 +129,7 @@ where
     let mut to_send: u128 = 0;
     let mut got: Vec<u128> = Vec::new();
     let mut need_reset = true;
+    let mut phase: u32 = 0;
 
     uut.run_fn(
         |output| {
@@ -132,13 +137,15 @@ where
                 need_reset = false;
                 return Some(ResetOrData::Reset);
             }
+            phase = phase.wrapping_add(1);
+            // `stall_period == 1` means always ready.
+            let ready = stall_period == 1 || phase.is_multiple_of(stall_period);
             if let Some(it) = output.data {
-                got.push(it.data.raw());
+                if ready {
+                    got.push(it.data.raw());
+                }
             }
-            let mut input = PipeIn {
-                data: None,
-                ready: true,
-            };
+            let mut input = PipeIn { data: None, ready };
             if to_send < count && output.ready {
                 input.data = Some(Item::<b8, ()> {
                     data: b8(to_send % 256),
@@ -154,6 +161,49 @@ where
     .for_each(drop);
 
     got
+}
+
+/// Always-ready convenience wrapper.
+fn run_pipe<const N: usize, const FIFO_N: usize>(count: u128, cycles: u64) -> Vec<u128>
+where
+    rhdl::bits::W<FIFO_N>: BitWidth,
+{
+    run_pipe_stalling::<N, FIFO_N>(count, cycles, 1)
+}
+
+/// **Correctness under backpressure.** The always-ready form below is
+/// necessary but not sufficient: a sink that never stalls keeps the
+/// buffers empty, so the credit accounting is never actually put under
+/// load.  That blind spot is precisely how the `CreditSink` pool
+/// off-by-one survived.  Here the sink accepts rarely, so the buffers
+/// genuinely fill with relays in the loop.
+#[test]
+fn credit_relay_insertion_loses_nothing_under_backpressure() {
+    const COUNT: u128 = 20;
+    let want: Vec<u128> = (0..COUNT).collect();
+    for (label, got) in [
+        (
+            "depth 1, 1-in-4 sink",
+            run_pipe_stalling::<1, 3>(COUNT, 600_000, 4),
+        ),
+        (
+            "depth 3, 1-in-4 sink",
+            run_pipe_stalling::<3, 3>(COUNT, 600_000, 4),
+        ),
+        (
+            "depth 3, 1-in-7 sink",
+            run_pipe_stalling::<3, 3>(COUNT, 600_000, 7),
+        ),
+        (
+            "depth 6, 1-in-5 sink",
+            run_pipe_stalling::<6, 4>(COUNT, 600_000, 5),
+        ),
+    ] {
+        assert_eq!(
+            got, want,
+            "{label}: relays in a stalled credit loop must lose nothing"
+        );
+    }
 }
 
 /// **Correctness.** Inserting credit relays never changes what comes
