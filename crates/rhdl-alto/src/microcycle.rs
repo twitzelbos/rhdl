@@ -12,7 +12,7 @@
 //! candidate next state.  The caller (microengine or task system)
 //! is responsible for committing the result to its DFFs.
 
-use crate::alu::{alu, AluOut};
+use crate::alu::{AluOut, alu};
 use crate::isa::{BusSource, F1Function, F2Function, Microinstruction};
 use rhdl::prelude::*;
 
@@ -55,7 +55,7 @@ pub fn compute_cycle(
     // ---- BUS source ------------------------------------------------
     let bus: Bits<16> = match mi.bs {
         BusSource::ReadR => r_read,
-        _                => bits::<16>(0),
+        _ => bits::<16>(0),
     };
 
     // ---- ALU -------------------------------------------------------
@@ -67,25 +67,49 @@ pub fn compute_cycle(
     let next_t: Bits<16> = if mi.t_load { bus } else { t };
     let l_loaded: Bits<16> = if mi.l_load { aout.result } else { l };
     let l_after_f1: Bits<16> = match mi.f1 {
-        F1Function::LeftShift1  => l_loaded << 1,
+        F1Function::LeftShift1 => l_loaded << 1,
         F1Function::RightShift1 => l_loaded >> 1,
-        F1Function::LeftCycle8  => (l_loaded << 8) | (l_loaded >> 8),
-        _                       => l_loaded,
+        F1Function::LeftCycle8 => (l_loaded << 8) | (l_loaded >> 8),
+        _ => l_loaded,
     };
 
     // ---- Next MPC ------------------------------------------------
     let mut next_addr: Bits<10> = mi.next;
     let mut bit0: Bits<10> = next_addr & bits::<10>(0x1);
     bit0 = match mi.f2 {
-        F2Function::BusEqZero          => if bus == bits::<16>(0)             { bit0 | bits::<10>(0x1) } else { bit0 },
-        F2Function::ShiftLessThanZero  => if (l_after_f1 & bits::<16>(0x8000)) == bits::<16>(0) { bit0 | bits::<10>(0x1) } else { bit0 },
-        F2Function::ShiftEqZero        => if l_after_f1 == bits::<16>(0)      { bit0 | bits::<10>(0x1) } else { bit0 },
-        F2Function::AluCarryToNext     => if aout.carry                       { bit0 | bits::<10>(0x1) } else { bit0 },
-        _                              => bit0,
+        F2Function::BusEqZero => {
+            if bus == bits::<16>(0) {
+                bit0 | bits::<10>(0x1)
+            } else {
+                bit0
+            }
+        }
+        F2Function::ShiftLessThanZero => {
+            if (l_after_f1 & bits::<16>(0x8000)) == bits::<16>(0) {
+                bit0 | bits::<10>(0x1)
+            } else {
+                bit0
+            }
+        }
+        F2Function::ShiftEqZero => {
+            if l_after_f1 == bits::<16>(0) {
+                bit0 | bits::<10>(0x1)
+            } else {
+                bit0
+            }
+        }
+        F2Function::AluCarryToNext => {
+            if aout.carry {
+                bit0 | bits::<10>(0x1)
+            } else {
+                bit0
+            }
+        }
+        _ => bit0,
     };
     let next_addr_or_bus: Bits<10> = match mi.f2 {
         F2Function::BusToNext => next_addr | (bus.resize() & bits::<10>(0x3FF)),
-        _                     => next_addr,
+        _ => next_addr,
     };
     next_addr = (next_addr_or_bus & bits::<10>(0x3FE)) | bit0;
 

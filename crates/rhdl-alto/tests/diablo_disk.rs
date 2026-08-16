@@ -7,9 +7,15 @@
 use rhdl::prelude::*;
 use rhdl_alto::diablo_disk::{DiabloDisk, DiskIn, DiskOut, WORDS_PER_SECTOR};
 
-fn b16(v: u16) -> Bits<16> { bits::<16>(v as u128) }
-fn b8(v: u8) -> Bits<8> { bits::<8>(v as u128) }
-fn b4(v: u8) -> Bits<4> { bits::<4>(v as u128) }
+fn b16(v: u16) -> Bits<16> {
+    bits::<16>(v as u128)
+}
+fn b8(v: u8) -> Bits<8> {
+    bits::<8>(v as u128)
+}
+fn b4(v: u8) -> Bits<4> {
+    bits::<4>(v as u128)
+}
 
 fn run_inputs(uut: DiabloDisk, inputs: Vec<DiskIn>) -> Vec<DiskOut> {
     let stream = inputs.into_iter().with_reset(1).clock_pos_edge(100);
@@ -27,7 +33,10 @@ fn sector_mark_fires_every_words_per_sector_cycles() {
     // (`SECTOR_PERIOD_CYCLES`); see also
     // [`sector_mark_uses_spec_period_by_default`].
     let uut = DiabloDisk::with_test_period(256);
-    let trace = run_inputs(uut, vec![DiskIn::default(); (WORDS_PER_SECTOR as usize) + 5]);
+    let trace = run_inputs(
+        uut,
+        vec![DiskIn::default(); (WORDS_PER_SECTOR as usize) + 5],
+    );
     // sector_tick wraps at 256 cycles → exactly ONE rising edge of
     // sector_mark in 261 cycles.  Per *Alto Hardware Manual* §2.4 +
     // spec §5.5, sector_mark is a SUSTAINED wakeup signal — once
@@ -38,10 +47,15 @@ fn sector_mark_fires_every_words_per_sector_cycles() {
     let mut events: usize = 0;
     let mut prev = false;
     for o in &trace {
-        if !prev && o.sector_mark { events += 1; }
+        if !prev && o.sector_mark {
+            events += 1;
+        }
         prev = o.sector_mark;
     }
-    assert_eq!(events, 1, "expected exactly one sector_mark rising edge, got {events}");
+    assert_eq!(
+        events, 1,
+        "expected exactly one sector_mark rising edge, got {events}"
+    );
 }
 
 #[test]
@@ -54,9 +68,16 @@ fn sector_mark_fires_at_position_255() {
     // Verify the rising edge is at cycle 255 and the signal stays
     // high thereafter.
     let first_high = trace.iter().position(|o| o.sector_mark);
-    assert_eq!(first_high, Some(255), "first sector_mark should be at cycle 255");
+    assert_eq!(
+        first_high,
+        Some(255),
+        "first sector_mark should be at cycle 255"
+    );
     for (i, o) in trace.iter().enumerate().skip(255) {
-        assert!(o.sector_mark, "sector_mark should remain high at cycle {i} (no Block to clear it)");
+        assert!(
+            o.sector_mark,
+            "sector_mark should remain high at cycle {i} (no Block to clear it)"
+        );
     }
 }
 
@@ -69,29 +90,50 @@ fn sector_mark_uses_spec_period_by_default() {
     // AT cycle 19,607, sector_mark visible at cycle 19,608); and
     // 19,609 cycles produces exactly one rising edge.
     use rhdl_alto::diablo_disk::SECTOR_PERIOD_CYCLES;
-    assert_eq!(SECTOR_PERIOD_CYCLES, 19608,
-        "spec-correct sector period per spec §8.1 (Diablo 31, 40 ms / 12 sectors / 170 ns)");
+    assert_eq!(
+        SECTOR_PERIOD_CYCLES, 19608,
+        "spec-correct sector period per spec §8.1 (Diablo 31, 40 ms / 12 sectors / 170 ns)"
+    );
     let uut = DiabloDisk::default();
-    let trace = run_inputs(uut, vec![DiskIn::default(); SECTOR_PERIOD_CYCLES as usize + 1]);
+    let trace = run_inputs(
+        uut,
+        vec![DiskIn::default(); SECTOR_PERIOD_CYCLES as usize + 1],
+    );
     let mut events = 0usize;
     let mut prev = false;
     for o in &trace {
-        if !prev && o.sector_mark { events += 1; }
+        if !prev && o.sector_mark {
+            events += 1;
+        }
         prev = o.sector_mark;
     }
-    assert_eq!(events, 1,
+    assert_eq!(
+        events, 1,
         "default DiabloDisk should fire exactly one sector_mark in \
-         {SECTOR_PERIOD_CYCLES}+1 cycles; got {events} (spec §8.1 cadence broken?)");
+         {SECTOR_PERIOD_CYCLES}+1 cycles; got {events} (spec §8.1 cadence broken?)"
+    );
 }
 
 #[test]
 fn write_then_read_round_trip() {
     let uut = DiabloDisk::default();
-    let trace = run_inputs(uut, vec![
-        DiskIn { word_addr: b8(5), write_data: b16(0xCAFE), write_en: true, ..DiskIn::default() },
-        DiskIn { word_addr: b8(5), read_en: true, ..DiskIn::default() },
-        DiskIn::default(),
-    ]);
+    let trace = run_inputs(
+        uut,
+        vec![
+            DiskIn {
+                word_addr: b8(5),
+                write_data: b16(0xCAFE),
+                write_en: true,
+                ..DiskIn::default()
+            },
+            DiskIn {
+                word_addr: b8(5),
+                read_en: true,
+                ..DiskIn::default()
+            },
+            DiskIn::default(),
+        ],
+    );
     // Cycle 0 commits the write; cycle 1 reads back 0xCAFE.
     assert_eq!(trace[1].read_data, b16(0xCAFE));
 }
@@ -117,22 +159,45 @@ fn ready_is_always_true_post_reset() {
 #[test]
 fn reset_then_writes_dont_panic() {
     let uut = DiabloDisk::default();
-    let trace = run_inputs(uut, vec![
-        DiskIn { word_addr: b8(0), write_data: b16(0xFFFF), write_en: true, ..DiskIn::default() };
-        5
-    ]);
+    let trace = run_inputs(
+        uut,
+        vec![
+            DiskIn {
+                word_addr: b8(0),
+                write_data: b16(0xFFFF),
+                write_en: true,
+                ..DiskIn::default()
+            };
+            5
+        ],
+    );
     assert_eq!(trace.len(), 5);
 }
 
 #[test]
 fn cylinder_head_sector_inputs_pass_through() {
     let uut = DiabloDisk::default();
-    let trace = run_inputs(uut, vec![
-        DiskIn { cylinder: b8(42), head: true, sector: b4(7), ..DiskIn::default() },
-        DiskIn { cylinder: b8(42), head: true, sector: b4(7), word_addr: b8(0), read_en: true, ..DiskIn::default() },
-        DiskIn::default(),
-        DiskIn::default(),
-    ]);
+    let trace = run_inputs(
+        uut,
+        vec![
+            DiskIn {
+                cylinder: b8(42),
+                head: true,
+                sector: b4(7),
+                ..DiskIn::default()
+            },
+            DiskIn {
+                cylinder: b8(42),
+                head: true,
+                sector: b4(7),
+                word_addr: b8(0),
+                read_en: true,
+                ..DiskIn::default()
+            },
+            DiskIn::default(),
+            DiskIn::default(),
+        ],
+    );
     assert_eq!(trace.len(), 4);
 }
 

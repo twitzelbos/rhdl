@@ -37,20 +37,35 @@ fn run_single_writes(program: Vec<u32>, max_cycles: usize) -> Vec<(u32, u32)> {
     let mut total_cycles: usize = 0;
     uut.run_fn(
         |out: SOut| {
-            if reset_cycles_remaining > 0 { reset_cycles_remaining -= 1; return Some(ResetOrData::Reset); }
-            if total_cycles >= max_cycles { return None; }
+            if reset_cycles_remaining > 0 {
+                reset_cycles_remaining -= 1;
+                return Some(ResetOrData::Reset);
+            }
+            if total_cycles >= max_cycles {
+                return None;
+            }
             total_cycles += 1;
             if out.mem_write {
                 let addr = out.mem_addr.raw() as u32;
-                let val  = out.mem_wdata.raw() as u32;
+                let val = out.mem_wdata.raw() as u32;
                 writes.push((addr, val));
                 let addr_word = (addr / 4) as usize;
-                if addr_word < data_mem.len() { data_mem[addr_word] = val; }
+                if addr_word < data_mem.len() {
+                    data_mem[addr_word] = val;
+                }
             }
             let pc_word = (out.pc.raw() / 4) as usize;
-            let instr = if pc_word < program.len() { program[pc_word] } else { 0 };
+            let instr = if pc_word < program.len() {
+                program[pc_word]
+            } else {
+                0
+            };
             let read_word = (out.mem_addr.raw() / 4) as usize;
-            let mem_rdata = if read_word < data_mem.len() { data_mem[read_word] } else { 0 };
+            let mem_rdata = if read_word < data_mem.len() {
+                data_mem[read_word]
+            } else {
+                0
+            };
             Some(ResetOrData::Data(SInIn {
                 instr: bits::<32>(instr as u128),
                 mem_rdata: bits::<32>(mem_rdata as u128),
@@ -58,7 +73,8 @@ fn run_single_writes(program: Vec<u32>, max_cycles: usize) -> Vec<(u32, u32)> {
             }))
         },
         100,
-    ).for_each(drop);
+    )
+    .for_each(drop);
     writes
 }
 
@@ -70,20 +86,35 @@ fn run_pipelined_writes(program: Vec<u32>, max_cycles: usize) -> Vec<(u32, u32)>
     let mut total_cycles: usize = 0;
     uut.run_fn(
         |out: POut| {
-            if reset_cycles_remaining > 0 { reset_cycles_remaining -= 1; return Some(ResetOrData::Reset); }
-            if total_cycles >= max_cycles { return None; }
+            if reset_cycles_remaining > 0 {
+                reset_cycles_remaining -= 1;
+                return Some(ResetOrData::Reset);
+            }
+            if total_cycles >= max_cycles {
+                return None;
+            }
             total_cycles += 1;
             if out.mem_write {
                 let addr = out.mem_addr.raw() as u32;
-                let val  = out.mem_wdata.raw() as u32;
+                let val = out.mem_wdata.raw() as u32;
                 writes.push((addr, val));
                 let addr_word = (addr / 4) as usize;
-                if addr_word < data_mem.len() { data_mem[addr_word] = val; }
+                if addr_word < data_mem.len() {
+                    data_mem[addr_word] = val;
+                }
             }
             let pc_word = (out.pc.raw() / 4) as usize;
-            let instr = if pc_word < program.len() { program[pc_word] } else { 0 };
+            let instr = if pc_word < program.len() {
+                program[pc_word]
+            } else {
+                0
+            };
             let read_word = (out.mem_addr.raw() / 4) as usize;
-            let mem_rdata = if read_word < data_mem.len() { data_mem[read_word] } else { 0 };
+            let mem_rdata = if read_word < data_mem.len() {
+                data_mem[read_word]
+            } else {
+                0
+            };
             Some(ResetOrData::Data(PIn {
                 instr: bits::<32>(instr as u128),
                 mem_rdata: bits::<32>(mem_rdata as u128),
@@ -91,7 +122,8 @@ fn run_pipelined_writes(program: Vec<u32>, max_cycles: usize) -> Vec<(u32, u32)>
             }))
         },
         100,
-    ).for_each(drop);
+    )
+    .for_each(drop);
     writes
 }
 
@@ -171,7 +203,11 @@ fn sim_addi_works() {
         0x0000_0063,
     ];
     let cpu = sim::Cpu::new().run(&program, 16);
-    assert_eq!(cpu.mem_writes, vec![(0, 15)], "5 + 10 = 15 stored at mem[0]");
+    assert_eq!(
+        cpu.mem_writes,
+        vec![(0, 15)],
+        "5 + 10 = 15 stored at mem[0]"
+    );
     assert!(cpu.halted);
 }
 
@@ -196,7 +232,11 @@ fn sim_ecall_traps_correctly() {
         0x0000_0063,
     ];
     let cpu = sim::Cpu::new().run(&program, 32);
-    assert_eq!(cpu.read_csr(0x342), 11, "mcause should be 11 (M-mode ECALL)");
+    assert_eq!(
+        cpu.read_csr(0x342),
+        11,
+        "mcause should be 11 (M-mode ECALL)"
+    );
     assert_eq!(cpu.read_csr(0x341), 0x0C, "mepc should be the ECALL's PC");
     assert!(cpu.halted);
 }

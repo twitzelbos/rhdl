@@ -131,6 +131,15 @@ fn test_no_combinatorial_paths() -> miette::Result<()> {
         miette::GraphicalReportHandler::new_themed(miette::GraphicalTheme::unicode_nocolor());
     let mut msg = String::new();
     handler.render_report(&mut msg, err.as_ref()).unwrap();
+    // `miette` renders the absolute path of the offending source file.
+    // Snapshotting it verbatim bakes in the machine that generated the
+    // snapshot, so the test fails for every other contributor and in
+    // CI.  Strip the workspace-root prefix to keep it portable.
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|p| p.parent())
+        .expect("CARGO_MANIFEST_DIR should be <workspace>/crates/<crate>");
+    let msg = msg.replace(&format!("{}/", root.display()), "");
     expect_test::expect_file!["faulty_reducer_no_combinatorial_paths.expect"].assert_eq(&msg);
     Ok(())
 }

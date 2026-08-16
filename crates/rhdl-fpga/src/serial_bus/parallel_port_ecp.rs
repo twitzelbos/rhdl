@@ -83,8 +83,8 @@ bool |                                | B<8>
 use rhdl::core::fsm::analysis::Transition;
 use rhdl::prelude::*;
 
-use super::super::core::rle_decoder::{RleDecoder, rle_decoder as rle_decoder_kernel};
-use super::super::core::rle_encoder::{RleEncoder, rle_encoder as rle_encoder_kernel};
+use super::super::core::rle_decoder::{rle_decoder as rle_decoder_kernel, RleDecoder};
+use super::super::core::rle_encoder::{rle_encoder as rle_encoder_kernel, RleEncoder};
 use crate::core::dff;
 
 #[allow(unused_imports)]

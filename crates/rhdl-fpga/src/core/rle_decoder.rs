@@ -285,7 +285,7 @@ mod tests {
     /// End-to-end round-trip: encode → decode should reproduce the original.
     #[test]
     fn test_roundtrip_with_encoder() -> miette::Result<()> {
-        use crate::core::rle_encoder::{RleEncoder, In as EncIn};
+        use crate::core::rle_encoder::{In as EncIn, RleEncoder};
         let original: Vec<u8> = vec![0x42, 0xAA, 0xAA, 0xAA, 0xBB, 0xCC, 0xCC];
 
         // Step 1: encode.

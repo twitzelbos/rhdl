@@ -54,9 +54,18 @@ rule_kernel! {
 fn urgent_before_makes_lo_win_when_both_active() {
     let uut: UrgentLoWins = UrgentLoWins::default();
     let stream_in = vec![
-        ContestInput { want_lo: true, want_hi: true },
-        ContestInput { want_lo: true, want_hi: true },
-        ContestInput { want_lo: true, want_hi: true },
+        ContestInput {
+            want_lo: true,
+            want_hi: true,
+        },
+        ContestInput {
+            want_lo: true,
+            want_hi: true,
+        },
+        ContestInput {
+            want_lo: true,
+            want_hi: true,
+        },
     ];
     let stream = stream_in.into_iter().with_reset(2).clock_pos_edge(100);
     let last = uut
@@ -76,8 +85,14 @@ fn urgent_before_makes_lo_win_when_both_active() {
 fn urgent_before_only_lo_writes_when_only_lo_active() {
     let uut: UrgentLoWins = UrgentLoWins::default();
     let stream_in = vec![
-        ContestInput { want_lo: true, want_hi: false },
-        ContestInput { want_lo: true, want_hi: false },
+        ContestInput {
+            want_lo: true,
+            want_hi: false,
+        },
+        ContestInput {
+            want_lo: true,
+            want_hi: false,
+        },
     ];
     let stream = stream_in.into_iter().with_reset(2).clock_pos_edge(100);
     let last = uut
@@ -87,15 +102,24 @@ fn urgent_before_only_lo_writes_when_only_lo_active() {
         .last()
         .map(|s| s.output.raw())
         .unwrap_or(0);
-    assert_eq!(last, 0x42, "expected lo-only path to write 0x42; got {last:#x}");
+    assert_eq!(
+        last, 0x42,
+        "expected lo-only path to write 0x42; got {last:#x}"
+    );
 }
 
 #[test]
 fn urgent_before_hi_still_fires_when_lo_inactive() {
     let uut: UrgentLoWins = UrgentLoWins::default();
     let stream_in = vec![
-        ContestInput { want_lo: false, want_hi: true },
-        ContestInput { want_lo: false, want_hi: true },
+        ContestInput {
+            want_lo: false,
+            want_hi: true,
+        },
+        ContestInput {
+            want_lo: false,
+            want_hi: true,
+        },
     ];
     let stream = stream_in.into_iter().with_reset(2).clock_pos_edge(100);
     let last = uut
@@ -105,14 +129,20 @@ fn urgent_before_hi_still_fires_when_lo_inactive() {
         .last()
         .map(|s| s.output.raw())
         .unwrap_or(0);
-    assert_eq!(last, 0xff, "expected hi-only path to write 0xff; got {last:#x}");
+    assert_eq!(
+        last, 0xff,
+        "expected hi-only path to write 0xff; got {last:#x}"
+    );
 }
 
 #[test]
 fn urgent_before_hdl_round_trip() -> Result<(), RHDLError> {
     let uut: UrgentLoWins = UrgentLoWins::default();
     let stream = std::iter::repeat_n(
-        ContestInput { want_lo: true, want_hi: true },
+        ContestInput {
+            want_lo: true,
+            want_hi: true,
+        },
         3,
     )
     .with_reset(2)

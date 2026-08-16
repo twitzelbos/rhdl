@@ -13,14 +13,23 @@ fn drive_byte(data: u8, out: &mut Vec<In>) {
         .collect();
     for &b in &frame_bits {
         for _ in 0..3 {
-            out.push(In { clk_in: true, data_in: b });
+            out.push(In {
+                clk_in: true,
+                data_in: b,
+            });
         }
         for _ in 0..3 {
-            out.push(In { clk_in: false, data_in: b });
+            out.push(In {
+                clk_in: false,
+                data_in: b,
+            });
         }
     }
     for _ in 0..3 {
-        out.push(In { clk_in: true, data_in: true });
+        out.push(In {
+            clk_in: true,
+            data_in: true,
+        });
     }
 }
 
@@ -28,12 +37,21 @@ fn main() -> Result<(), RHDLError> {
     write_fsm_diagram::<Ps2Mouse>("ps2_mouse_fsm.md")?;
 
     let uut = Ps2Mouse::default();
-    let mut stream_in: Vec<In> = vec![In { clk_in: true, data_in: true }; 2];
+    let mut stream_in: Vec<In> = vec![
+        In {
+            clk_in: true,
+            data_in: true
+        };
+        2
+    ];
     drive_byte(0x29, &mut stream_in); // status
     drive_byte(0x10, &mut stream_in); // X delta = +16
     drive_byte(0xFB, &mut stream_in); // Y delta = -5
     for _ in 0..6 {
-        stream_in.push(In { clk_in: true, data_in: true });
+        stream_in.push(In {
+            clk_in: true,
+            data_in: true,
+        });
     }
     let stream = stream_in.into_iter().with_reset(2).clock_pos_edge(100);
     let vcd = uut.run(stream).collect::<SvgFile>();

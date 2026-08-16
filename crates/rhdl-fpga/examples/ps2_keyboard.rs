@@ -16,17 +16,32 @@ fn main() -> Result<(), RHDLError> {
         .chain(std::iter::once(parity))
         .chain(std::iter::once(true))
         .collect();
-    let mut stream_in: Vec<In> = vec![In { clk_in: true, data_in: true }; 2];
+    let mut stream_in: Vec<In> = vec![
+        In {
+            clk_in: true,
+            data_in: true
+        };
+        2
+    ];
     for &b in &frame_bits {
         for _ in 0..3 {
-            stream_in.push(In { clk_in: true, data_in: b });
+            stream_in.push(In {
+                clk_in: true,
+                data_in: b,
+            });
         }
         for _ in 0..3 {
-            stream_in.push(In { clk_in: false, data_in: b });
+            stream_in.push(In {
+                clk_in: false,
+                data_in: b,
+            });
         }
     }
     for _ in 0..6 {
-        stream_in.push(In { clk_in: true, data_in: true });
+        stream_in.push(In {
+            clk_in: true,
+            data_in: true,
+        });
     }
     let stream = stream_in.into_iter().with_reset(2).clock_pos_edge(100);
     let vcd = uut.run(stream).collect::<SvgFile>();

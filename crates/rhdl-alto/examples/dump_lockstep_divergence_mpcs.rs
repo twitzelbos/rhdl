@@ -21,8 +21,7 @@ fn main() {
 
     let interesting = [
         // Divergence #2 neighborhood
-        0x150, 0x151, 0x152, 0x153, 0x154, 0x155, 0x156,
-        // Divergence #3 neighborhood
+        0x150, 0x151, 0x152, 0x153, 0x154, 0x155, 0x156, // Divergence #3 neighborhood
         0x17a, 0x17b, 0x17c, 0x17d, 0x17e, 0x17f, 0x180,
     ];
 
@@ -37,8 +36,14 @@ fn main() {
         let mi = Microinstruction::unpack(raw);
         println!(
             "MPC=0x{mpc:03x} raw=0x{raw:08x}  rsel={:>2} aluf={:?} bs={:?} f1={:?} f2={:?} t={} l={} next=0x{:03x}",
-            mi.rsel.raw(), mi.aluf, mi.bs, mi.f1, mi.f2,
-            mi.t_load as u8, mi.l_load as u8, mi.next.raw(),
+            mi.rsel.raw(),
+            mi.aluf,
+            mi.bs,
+            mi.f1,
+            mi.f2,
+            mi.t_load as u8,
+            mi.l_load as u8,
+            mi.next.raw(),
         );
     }
 
@@ -46,12 +51,17 @@ fn main() {
     for (mpc_idx, &raw) in microcode.iter().enumerate() {
         let mi = Microinstruction::unpack(raw);
         let n = mi.next.raw() as u16;
-        let n_pair_lo = n & !1;  // either side of the pair
+        let n_pair_lo = n & !1; // either side of the pair
         if divergent_targets.iter().any(|&t| (t & !1) == n_pair_lo) {
             println!(
                 "MPC=0x{mpc_idx:03x} → next=0x{n:03x}  rsel={:>2} aluf={:?} bs={:?} f1={:?} f2={:?} t={} l={}",
-                mi.rsel.raw(), mi.aluf, mi.bs, mi.f1, mi.f2,
-                mi.t_load as u8, mi.l_load as u8,
+                mi.rsel.raw(),
+                mi.aluf,
+                mi.bs,
+                mi.f1,
+                mi.f2,
+                mi.t_load as u8,
+                mi.l_load as u8,
             );
         }
     }

@@ -62,11 +62,7 @@ rule_kernel! {
 #[test]
 fn mutually_exclusive_red_arm_fires() {
     let uut: TrafficLight = TrafficLight::default();
-    let stream_in = vec![
-        LightCommand::Red,
-        LightCommand::Red,
-        LightCommand::Red,
-    ];
+    let stream_in = vec![LightCommand::Red, LightCommand::Red, LightCommand::Red];
     let stream = stream_in.into_iter().with_reset(2).clock_pos_edge(100);
     let last = uut
         .run(stream)
@@ -100,11 +96,7 @@ fn mutually_exclusive_green_arm_fires() {
 #[test]
 fn mutually_exclusive_off_holds_state() {
     let uut: TrafficLight = TrafficLight::default();
-    let stream_in = vec![
-        LightCommand::Red,
-        LightCommand::Off,
-        LightCommand::Off,
-    ];
+    let stream_in = vec![LightCommand::Red, LightCommand::Off, LightCommand::Off];
     let stream = stream_in.into_iter().with_reset(2).clock_pos_edge(100);
     let last = uut
         .run(stream)
@@ -114,20 +106,19 @@ fn mutually_exclusive_off_holds_state() {
         .map(|s| s.output.raw())
         .unwrap_or(0);
     // First cycle sets to 1; subsequent Off cycles hold (no rule fires).
-    assert_eq!(last, 1, "expected Off to hold colour=1 from prior Red; got {last}");
+    assert_eq!(
+        last, 1,
+        "expected Off to hold colour=1 from prior Red; got {last}"
+    );
 }
 
 #[test]
 fn mutually_exclusive_iverilog_round_trip() -> Result<(), RHDLError> {
     let uut: TrafficLight = TrafficLight::default();
-    let stream = vec![
-        LightCommand::Red,
-        LightCommand::Green,
-        LightCommand::Off,
-    ]
-    .into_iter()
-    .with_reset(2)
-    .clock_pos_edge(100);
+    let stream = vec![LightCommand::Red, LightCommand::Green, LightCommand::Off]
+        .into_iter()
+        .with_reset(2)
+        .clock_pos_edge(100);
     let test_bench = uut.run(stream).collect::<SynchronousTestBench<_, _>>();
     let tm = test_bench.rtl(&uut, &Default::default())?;
     tm.run_iverilog()?;

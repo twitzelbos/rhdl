@@ -353,10 +353,11 @@ impl AltoChip {
         // lockstep dumper at cycle 92 where OURS goes to MPC=0x138
         // (no BUSODD merge) but CTR goes to 0x139 (BUSODD merged
         // because keyboard LSB = 1 in the no-keys-pressed reading).
-        for kbd_addr in 0xfe1c..=0xfe1f { // 4 keyboard words
+        for kbd_addr in 0xfe1c..=0xfe1f {
+            // 4 keyboard words
             mem_init.push((bits::<16>(kbd_addr as u128), bits::<16>(0xFFFF)));
         }
-        mem_init.push((bits::<16>(0xfe18), bits::<16>(0xFFFF)));  // UTILIN
+        mem_init.push((bits::<16>(0xfe18), bits::<16>(0xFFFF))); // UTILIN
 
         Self {
             urom: MicrocodeRom::with_words(microcode_words),
@@ -434,19 +435,18 @@ impl AltoChip {
         // lockstep dumper at cycle 92 where OURS goes to MPC=0x138
         // (no BUSODD merge) but CTR goes to 0x139 (BUSODD merged
         // because keyboard LSB = 1 in the no-keys-pressed reading).
-        for kbd_addr in 0xfe1c..=0xfe1f { // 4 keyboard words
+        for kbd_addr in 0xfe1c..=0xfe1f {
+            // 4 keyboard words
             mem_init.push((bits::<16>(kbd_addr as u128), bits::<16>(0xFFFF)));
         }
-        mem_init.push((bits::<16>(0xfe18), bits::<16>(0xFFFF)));  // UTILIN
+        mem_init.push((bits::<16>(0xfe18), bits::<16>(0xFFFF))); // UTILIN
         Self {
             urom: MicrocodeRom::with_words(microcode_words),
             crom: ConstantRom::with_constants(constants),
             mem: Memory::new(mem_init),
             tasks: AltoTaskSystem::default(),
             disk_ctrl: DiskController::default(),
-            disk: DiabloDisk::with_test_period_and_sector(
-                disk_period_cycles, boot_sector_data,
-            ),
+            disk: DiabloDisk::with_test_period_and_sector(disk_period_cycles, boot_sector_data),
             engine: Microengine::default(),
             state: rhdl_fpga::core::dff::DFF::new(ChipState::default()),
         }
@@ -493,10 +493,11 @@ impl AltoChip {
         // lockstep dumper at cycle 92 where OURS goes to MPC=0x138
         // (no BUSODD merge) but CTR goes to 0x139 (BUSODD merged
         // because keyboard LSB = 1 in the no-keys-pressed reading).
-        for kbd_addr in 0xfe1c..=0xfe1f { // 4 keyboard words
+        for kbd_addr in 0xfe1c..=0xfe1f {
+            // 4 keyboard words
             mem_init.push((bits::<16>(kbd_addr as u128), bits::<16>(0xFFFF)));
         }
-        mem_init.push((bits::<16>(0xfe18), bits::<16>(0xFFFF)));  // UTILIN
+        mem_init.push((bits::<16>(0xfe18), bits::<16>(0xFFFF))); // UTILIN
         Self {
             urom: MicrocodeRom::with_words(microcode_words),
             crom: ConstantRom::with_constants(constants),
@@ -504,7 +505,8 @@ impl AltoChip {
             tasks: AltoTaskSystem::default(),
             disk_ctrl: DiskController::default(),
             disk: DiabloDisk::with_test_period_and_sector_at_boundary(
-                disk_period_cycles, boot_sector_data,
+                disk_period_cycles,
+                boot_sector_data,
             ),
             // Per AltoHW §3.4 (Bootstrapping): "When the transfer is
             // complete, PC ← 1, and the emulator is started."  The
@@ -566,14 +568,14 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     // Decode RSEL[31:27] and BS[22:20] from the instruction; constant
     // ROM index = (RSEL << 3) | BS = 8 bits.
     let rsel: Bits<5> = ((instr_this_cycle >> 27) & bits::<32>(0x1F)).resize();
-    let bs:   Bits<3> = ((instr_this_cycle >> 20) & bits::<32>(0x07)).resize();
+    let bs: Bits<3> = ((instr_this_cycle >> 20) & bits::<32>(0x07)).resize();
     let const_idx: Bits<8> = (rsel.resize::<8>() << 3) | bs.resize::<8>();
     d.crom = ConstantIn { index: const_idx };
     let const_value: Bits<16> = q.crom.value;
 
     // Memory bus + pipeline-stall signal.
     let mem_data_for_engine: Bits<16> = q.mem.read_data;
-    let mem_stall_for_engine: bool    = q.mem.mem_stall;
+    let mem_stall_for_engine: bool = q.mem.mem_stall;
 
     // Per the Alto Hardware Manual §2.4: task switches happen ONLY
     // when microcode does F1=TASK.  When engine.task_yield asserts,
@@ -614,7 +616,7 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
         // dependence on stall state.  See `Memory` rustdoc for the
         // FSM semantics and stall rules.
         mar_load_this_cycle: q.engine.mar_load_this_cycle,
-        md_read_this_cycle:  q.engine.md_read_this_cycle,
+        md_read_this_cycle: q.engine.md_read_this_cycle,
         md_write_this_cycle: q.engine.md_write_this_cycle,
     };
 
@@ -639,8 +641,7 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     // words.  Phase-3.5 also accepts the Phase-3 simplified
     // KCOM-bit-15 trigger from the disk controller for the legacy
     // DMA test microcode.
-    disk_in.transfer_request = q.disk_ctrl.transfer_request
-        || q.engine.disk_strobe;
+    disk_in.transfer_request = q.disk_ctrl.transfer_request || q.engine.disk_strobe;
     disk_in.word_consumed = q.engine.disk_word_consumed;
     // F1=Block + current_task per spec §5.5: the device interface
     // monitors F1=Block in conjunction with current_task to clear its
@@ -673,8 +674,12 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     let disk_sector_mark = q.disk.sector_mark;
     let disk_word_strobe = q.disk.word_strobe;
     let mut effective_wakeups = i.wakeups;
-    if disk_sector_mark { effective_wakeups = effective_wakeups | bits::<16>(0x0010); }
-    if disk_word_strobe { effective_wakeups = effective_wakeups | bits::<16>(0x4000); }
+    if disk_sector_mark {
+        effective_wakeups = effective_wakeups | bits::<16>(0x0010);
+    }
+    if disk_word_strobe {
+        effective_wakeups = effective_wakeups | bits::<16>(0x4000);
+    }
 
     // Build the next_mpc_per_task array for the arbiter: only the
     // current task's slot reflects the engine's computed value.
@@ -688,18 +693,29 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     // Combinational priority encoder: highest task # = highest priority.
     // Picks the highest-priority woken task from effective_wakeups.
     // Falls back to current_task if no task is woken (no-op).
-    let winning_task: Bits<4> =
-             if (effective_wakeups & bits::<16>(0x4000)) != bits::<16>(0) { bits::<4>(14) }
-        else if (effective_wakeups & bits::<16>(0x2000)) != bits::<16>(0) { bits::<4>(13) }
-        else if (effective_wakeups & bits::<16>(0x1000)) != bits::<16>(0) { bits::<4>(12) }
-        else if (effective_wakeups & bits::<16>(0x0800)) != bits::<16>(0) { bits::<4>(11) }
-        else if (effective_wakeups & bits::<16>(0x0400)) != bits::<16>(0) { bits::<4>(10) }
-        else if (effective_wakeups & bits::<16>(0x0200)) != bits::<16>(0) { bits::<4>(9)  }
-        else if (effective_wakeups & bits::<16>(0x0100)) != bits::<16>(0) { bits::<4>(8)  }
-        else if (effective_wakeups & bits::<16>(0x0080)) != bits::<16>(0) { bits::<4>(7)  }
-        else if (effective_wakeups & bits::<16>(0x0010)) != bits::<16>(0) { bits::<4>(4)  }
-        else if (effective_wakeups & bits::<16>(0x0001)) != bits::<16>(0) { bits::<4>(0)  }
-        else { current_task };
+    let winning_task: Bits<4> = if (effective_wakeups & bits::<16>(0x4000)) != bits::<16>(0) {
+        bits::<4>(14)
+    } else if (effective_wakeups & bits::<16>(0x2000)) != bits::<16>(0) {
+        bits::<4>(13)
+    } else if (effective_wakeups & bits::<16>(0x1000)) != bits::<16>(0) {
+        bits::<4>(12)
+    } else if (effective_wakeups & bits::<16>(0x0800)) != bits::<16>(0) {
+        bits::<4>(11)
+    } else if (effective_wakeups & bits::<16>(0x0400)) != bits::<16>(0) {
+        bits::<4>(10)
+    } else if (effective_wakeups & bits::<16>(0x0200)) != bits::<16>(0) {
+        bits::<4>(9)
+    } else if (effective_wakeups & bits::<16>(0x0100)) != bits::<16>(0) {
+        bits::<4>(8)
+    } else if (effective_wakeups & bits::<16>(0x0080)) != bits::<16>(0) {
+        bits::<4>(7)
+    } else if (effective_wakeups & bits::<16>(0x0010)) != bits::<16>(0) {
+        bits::<4>(4)
+    } else if (effective_wakeups & bits::<16>(0x0001)) != bits::<16>(0) {
+        bits::<4>(0)
+    } else {
+        current_task
+    };
     // Per AltoHW §2.4 ("One additional instruction is executed before
     // the switch becomes effective"): TASK switches happen at cycle
     // K+2, where cycle K is when F1=TaskYield runs.
@@ -716,8 +732,11 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     // `task_yield_pending` for the timing rationale.
     next_state.task_yield_pending = q.engine.task_yield;
     let task_yield_for_switch: bool = q.state.task_yield_pending;
-    let next_current_task: Bits<4> =
-        if task_yield_for_switch { winning_task } else { current_task };
+    let next_current_task: Bits<4> = if task_yield_for_switch {
+        winning_task
+    } else {
+        current_task
+    };
     next_state.current_task = next_current_task;
     // Mark current_task as "started" — the next time it's selected by
     // arbitration, the chip will read its accumulated task_mpc rather
@@ -768,8 +787,7 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     // otherwise we'd prefetch the new task's instruction one cycle
     // before the switch becomes effective, leaving stale data in the
     // pipeline.
-    let task_will_switch: bool =
-        task_yield_for_switch && winning_task != current_task;
+    let task_will_switch: bool = task_yield_for_switch && winning_task != current_task;
     // URom prefetch address.  When stalled (mem_stall_for_engine),
     // hold the previously-presented address so the URom keeps
     // returning the SAME instruction — letting the engine re-execute
@@ -790,32 +808,34 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
         urom_addr_natural
     };
     next_state.urom_addr_held = urom_addr;
-    d.urom = UromIn { mpc: urom_addr.resize() };
+    d.urom = UromIn {
+        mpc: urom_addr.resize(),
+    };
 
     // Outputs
-    o.mpc              = current_mpc;
-    o.current_task     = current_task;
-    o.next_mpc         = next_mpc;
-    o.t                = q.engine.t;
-    o.l                = q.engine.l;
-    o.bus              = q.engine.bus;
-    o.alu_result       = q.engine.alu_result;
-    o.instruction      = instr_this_cycle;
-    o.disk_sector_mark    = disk_sector_mark;
-    o.disk_word_strobe    = disk_word_strobe;
-    o.wakeups             = effective_wakeups;
+    o.mpc = current_mpc;
+    o.current_task = current_task;
+    o.next_mpc = next_mpc;
+    o.t = q.engine.t;
+    o.l = q.engine.l;
+    o.bus = q.engine.bus;
+    o.alu_result = q.engine.alu_result;
+    o.instruction = instr_this_cycle;
+    o.disk_sector_mark = disk_sector_mark;
+    o.disk_word_strobe = disk_word_strobe;
+    o.wakeups = effective_wakeups;
     o.disk_ctrl_read_data = q.disk_ctrl.read_data;
-    o.disk_ctrl_write_en  = q.engine.disk_ctrl_write_en;
-    o.ir                  = q.engine.ir;
-    o.disk_sector_count   = q.tasks.disk_sector_count;
-    o.disk_word_count     = q.tasks.disk_word_count;
+    o.disk_ctrl_write_en = q.engine.disk_ctrl_write_en;
+    o.ir = q.engine.ir;
+    o.disk_sector_count = q.tasks.disk_sector_count;
+    o.disk_word_count = q.tasks.disk_word_count;
     o.mem_write_observed_addr = q.engine.mem_address;
     o.mem_write_observed_data = q.engine.mem_write_data;
-    o.mem_write_observed_en   = q.engine.mem_write_en;
-    o.block_task              = q.engine.block_task;
-    o.regs                    = q.engine.regs;
-    o.task_yield              = q.engine.task_yield;
-    o.mem_stall               = mem_stall_for_engine;
+    o.mem_write_observed_en = q.engine.mem_write_en;
+    o.block_task = q.engine.block_task;
+    o.regs = q.engine.regs;
+    o.task_yield = q.engine.task_yield;
+    o.mem_stall = mem_stall_for_engine;
 
     // Commit the bundled chip-state DFF (per CLAUDE.md §3.1).
     d.state = next_state;
@@ -829,7 +849,14 @@ mod tests {
     use crate::isa::*;
 
     /// Pack a simple microinstruction.
-    fn ui(rsel: u8, aluf: AluFunction, bs: BusSource, t_load: bool, l_load: bool, next: u16) -> u32 {
+    fn ui(
+        rsel: u8,
+        aluf: AluFunction,
+        bs: BusSource,
+        t_load: bool,
+        l_load: bool,
+        next: u16,
+    ) -> u32 {
         Microinstruction {
             rsel: bits::<5>(rsel as u128),
             aluf,
@@ -839,12 +866,15 @@ mod tests {
             t_load,
             l_load,
             next: bits::<10>(next as u128),
-        }.pack()
+        }
+        .pack()
     }
 
     /// Boot input: wake Task 0 (Emulator) only, every cycle.
     fn boot_in() -> ChipIn {
-        ChipIn { wakeups: bits::<16>(0x0001) }
+        ChipIn {
+            wakeups: bits::<16>(0x0001),
+        }
     }
 
     fn run(uut: AltoChip, cycles: usize) -> Vec<ChipOut> {
@@ -878,7 +908,11 @@ mod tests {
         assert_eq!(final_l, 1, "L should reach 1 after the boot loop runs");
         // The MPC should stay at 0 (looping).  It can take a couple
         // cycles for the BRAM to settle, but by the end it must be 0.
-        assert_eq!(trace.last().unwrap().mpc.raw(), 0, "MPC stays at 0 in the loop");
+        assert_eq!(
+            trace.last().unwrap().mpc.raw(),
+            0,
+            "MPC stays at 0 in the loop"
+        );
     }
 
     /// Chip throughput test: 1 microinstruction per cycle, per spec
@@ -941,7 +975,8 @@ mod tests {
             bs: BusSource::ReadR,
             f1: F1Function::Nop,
             f2: F2Function::BusEqZero,
-            t_load: false, l_load: true,
+            t_load: false,
+            l_load: true,
             next: bits::<10>(2),
         };
         microcode[0] = mi0.pack();
@@ -972,7 +1007,7 @@ mod tests {
         let mi0 = Microinstruction {
             rsel: bits::<5>(0),
             aluf: AluFunction::Bus,
-            bs: BusSource::ReadR,  // overridden by F1=Constant
+            bs: BusSource::ReadR, // overridden by F1=Constant
             f1: F1Function::Constant,
             f2: F2Function::Nop,
             t_load: false,
@@ -992,8 +1027,10 @@ mod tests {
         // After enough cycles for the BRAM to settle and L to commit,
         // L should hold 0x1234 (the constant).
         let final_l = trace.last().unwrap().l.raw();
-        assert_eq!(final_l, 0x1234,
-            "L should latch the constant ROM value via F1=Constant");
+        assert_eq!(
+            final_l, 0x1234,
+            "L should latch the constant ROM value via F1=Constant"
+        );
     }
 
     #[test]
@@ -1002,10 +1039,11 @@ mod tests {
         let mi0 = Microinstruction {
             rsel: bits::<5>(1),
             aluf: AluFunction::Bus,
-            bs: BusSource::None,  // BS=2; overridden by F1=Constant for BUS
+            bs: BusSource::None, // BS=2; overridden by F1=Constant for BUS
             f1: F1Function::Constant,
             f2: F2Function::Nop,
-            t_load: false, l_load: true,
+            t_load: false,
+            l_load: true,
             next: bits::<10>(0),
         };
         let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
@@ -1014,8 +1052,11 @@ mod tests {
         constants[10] = 0xCAFE;
         let uut = AltoChip::with_microcode_and_constants(&microcode, &constants);
         let trace = run(uut, 8);
-        assert_eq!(trace.last().unwrap().l.raw(), 0xCAFE,
-            "L should latch the constant at index (RSEL<<3)|BS = 10");
+        assert_eq!(
+            trace.last().unwrap().l.raw(),
+            0xCAFE,
+            "L should latch the constant at index (RSEL<<3)|BS = 10"
+        );
     }
 
     /// Memory read end-to-end through AltoChip: preload memory, use
@@ -1027,22 +1068,37 @@ mod tests {
         // addr 0: F1=Constant (idx 0 = 0x0080) + F2=LoadMar → MAR ← 0x0080
         //         next = 1.
         let mi0 = Microinstruction {
-            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::LoadMar, f2: F2Function::Constant,
-            t_load: false, l_load: false, next: bits::<10>(1),
+            rsel: bits::<5>(0),
+            aluf: AluFunction::Bus,
+            bs: BusSource::ReadR,
+            f1: F1Function::LoadMar,
+            f2: F2Function::Constant,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(1),
         };
         // addr 1: filler — wait one cycle for BRAM read to land.
         let mi1 = Microinstruction {
-            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::Nop, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(2),
+            rsel: bits::<5>(0),
+            aluf: AluFunction::Bus,
+            bs: BusSource::ReadR,
+            f1: F1Function::Nop,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(2),
         };
         // addr 2: BS=MemoryData + L_LOAD → L ← memory[MAR] (= 0x0080's value)
         //         loop here.
         let mi2 = Microinstruction {
-            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::MemoryData,
-            f1: F1Function::Nop, f2: F2Function::Nop,
-            t_load: false, l_load: true, next: bits::<10>(2),
+            rsel: bits::<5>(0),
+            aluf: AluFunction::Bus,
+            bs: BusSource::MemoryData,
+            f1: F1Function::Nop,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: true,
+            next: bits::<10>(2),
         };
         let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
         microcode[0] = mi0.pack();
@@ -1056,15 +1112,16 @@ mod tests {
         // Memory: preload memory[0x0080] = 0xC0DE.
         let memory_initial = vec![(bits::<16>(0x0080), bits::<16>(0xC0DE))];
 
-        let uut = AltoChip::with_microcode_constants_and_memory(
-            &microcode, &constants, memory_initial,
-        );
+        let uut =
+            AltoChip::with_microcode_constants_and_memory(&microcode, &constants, memory_initial);
         let trace = run(uut, 16);
 
         // Eventually L should hold 0xC0DE (the memory value at 0x0080).
         let final_l = trace.last().unwrap().l.raw();
-        assert_eq!(final_l, 0xC0DE,
-            "L should latch the memory value at 0x0080 after MAR + MD→ sequence");
+        assert_eq!(
+            final_l, 0xC0DE,
+            "L should latch the memory value at 0x0080 after MAR + MD→ sequence"
+        );
     }
 
     /// Memory write end-to-end through AltoChip: use F1=Constant to
@@ -1075,35 +1132,60 @@ mod tests {
     fn memory_write_then_read_round_trip() {
         // addr 0: F1=Constant idx 0 = 0x0100 (target addr) + F2=LoadMar
         let mi0 = Microinstruction {
-            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::LoadMar, f2: F2Function::Constant,
-            t_load: false, l_load: false, next: bits::<10>(1),
+            rsel: bits::<5>(0),
+            aluf: AluFunction::Bus,
+            bs: BusSource::ReadR,
+            f1: F1Function::LoadMar,
+            f2: F2Function::Constant,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(1),
         };
         // addr 1: F1=Constant idx 1 = 0xBEEF + F2=StoreMd → memory[0x0100] ← 0xBEEF
         //         (RSEL=0, BS=1 → constant index = 1).  F1=Constant sets
         //         BUS from constant ROM; F2=StoreMd writes BUS to memory.
         let mi1 = Microinstruction {
-            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::LoadR, // BS=1
-            f1: F1Function::Constant, f2: F2Function::StoreMd,
-            t_load: false, l_load: false, next: bits::<10>(2),
+            rsel: bits::<5>(0),
+            aluf: AluFunction::Bus,
+            bs: BusSource::LoadR, // BS=1
+            f1: F1Function::Constant,
+            f2: F2Function::StoreMd,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(2),
         };
         // addr 2: filler (BRAM write commit + read latency)
         let mi2 = Microinstruction {
-            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::Nop, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(3),
+            rsel: bits::<5>(0),
+            aluf: AluFunction::Bus,
+            bs: BusSource::ReadR,
+            f1: F1Function::Nop,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(3),
         };
         // addr 3: another filler
         let mi3 = Microinstruction {
-            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::Nop, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(4),
+            rsel: bits::<5>(0),
+            aluf: AluFunction::Bus,
+            bs: BusSource::ReadR,
+            f1: F1Function::Nop,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(4),
         };
         // addr 4: BS=MemoryData + L_LOAD → L ← memory[MAR] (= 0xBEEF).  Loop.
         let mi4 = Microinstruction {
-            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::MemoryData,
-            f1: F1Function::Nop, f2: F2Function::Nop,
-            t_load: false, l_load: true, next: bits::<10>(4),
+            rsel: bits::<5>(0),
+            aluf: AluFunction::Bus,
+            bs: BusSource::MemoryData,
+            f1: F1Function::Nop,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: true,
+            next: bits::<10>(4),
         };
         let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
         microcode[0] = mi0.pack();
@@ -1120,8 +1202,10 @@ mod tests {
         let trace = run(uut, 24);
 
         let final_l = trace.last().unwrap().l.raw();
-        assert_eq!(final_l, 0xBEEF,
-            "after write-then-read sequence, L should hold the written 0xBEEF");
+        assert_eq!(
+            final_l, 0xBEEF,
+            "after write-then-read sequence, L should hold the written 0xBEEF"
+        );
     }
 
     /// Multi-task arbitration through the chip: wake Task 0 (Emulator)
@@ -1136,27 +1220,38 @@ mod tests {
         // substitution to fall through into task 0's microcode at MPC=0.
         let mi_yield = Microinstruction {
             rsel: bits::<5>(0),
-            aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::TaskYield, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(0),
+            aluf: AluFunction::Bus,
+            bs: BusSource::ReadR,
+            f1: F1Function::TaskYield,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(0),
         };
         let mi_task4_loop = Microinstruction {
             rsel: bits::<5>(0),
-            aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::Nop, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(4),
+            aluf: AluFunction::Bus,
+            bs: BusSource::ReadR,
+            f1: F1Function::Nop,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(4),
         };
         let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
-        microcode[0] = mi_yield.pack();      // task 0 reset MPC: yield
+        microcode[0] = mi_yield.pack(); // task 0 reset MPC: yield
         microcode[4] = mi_task4_loop.pack(); // task 4 reset MPC: NOP loop
         let constants = [0u16; crate::constant_rom::NUM_CONSTANTS];
         let uut = AltoChip::with_microcode_and_constants(&microcode, &constants);
         // Wake both Task 0 (bit 0) and Task 4 (bit 4 = 0x0010).
-        let inputs: Vec<ChipIn> = (0..16).map(|_| ChipIn {
-            wakeups: bits::<16>(0x0011),
-        }).collect();
+        let inputs: Vec<ChipIn> = (0..16)
+            .map(|_| ChipIn {
+                wakeups: bits::<16>(0x0011),
+            })
+            .collect();
         let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
-        let trace: Vec<ChipOut> = uut.run(stream)
+        let trace: Vec<ChipOut> = uut
+            .run(stream)
             .synchronous_sample()
             .filter(|s| !s.input.0.reset.any())
             .map(|s| s.output)
@@ -1164,8 +1259,10 @@ mod tests {
         // After the initial settling cycles, current_task should be 4
         // (Disk Sector wins over Emulator on shared wakeup).
         let final_task = trace.last().unwrap().current_task.raw();
-        assert_eq!(final_task, 4,
-            "with both task 0 and task 4 woken, task 4 (Disk Sector) wins");
+        assert_eq!(
+            final_task, 4,
+            "with both task 0 and task 4 woken, task 4 (Disk Sector) wins"
+        );
     }
 
     /// Per-task gating: under Disk Sector (Task 4), F1=WriteKadr
@@ -1185,51 +1282,69 @@ mod tests {
         //     write_en stays low.
         let mi_yield = Microinstruction {
             rsel: bits::<5>(0),
-            aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::TaskYield, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(1),
+            aluf: AluFunction::Bus,
+            bs: BusSource::ReadR,
+            f1: F1Function::TaskYield,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(1),
         };
         let mi_writekadr = Microinstruction {
             rsel: bits::<5>(0),
-            aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::WriteKadr, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(1),
+            aluf: AluFunction::Bus,
+            bs: BusSource::ReadR,
+            f1: F1Function::WriteKadr,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(1),
         };
         let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
-        microcode[0] = mi_yield.pack();      // Emulator's reset MPC: yield
-        microcode[1] = mi_writekadr.pack();  // Emulator's post-yield path
-        microcode[4] = mi_writekadr.pack();  // Disk Sector's reset MPC
+        microcode[0] = mi_yield.pack(); // Emulator's reset MPC: yield
+        microcode[1] = mi_writekadr.pack(); // Emulator's post-yield path
+        microcode[4] = mi_writekadr.pack(); // Disk Sector's reset MPC
         let constants = [0u16; crate::constant_rom::NUM_CONSTANTS];
 
         // ---- Test A: Disk Sector task (4) firing → write_en asserted
         let uut_a = AltoChip::with_microcode_and_constants(&microcode, &constants);
-        let inputs_a: Vec<ChipIn> = (0..16).map(|_| ChipIn {
-            wakeups: bits::<16>(0x0010),  // wake Task 4 only
-        }).collect();
+        let inputs_a: Vec<ChipIn> = (0..16)
+            .map(|_| ChipIn {
+                wakeups: bits::<16>(0x0010), // wake Task 4 only
+            })
+            .collect();
         let stream_a = inputs_a.into_iter().with_reset(2).clock_pos_edge(100);
-        let trace_a: Vec<ChipOut> = uut_a.run(stream_a)
+        let trace_a: Vec<ChipOut> = uut_a
+            .run(stream_a)
             .synchronous_sample()
             .filter(|s| !s.input.0.reset.any())
             .map(|s| s.output)
             .collect();
         let write_active_a = trace_a.iter().any(|t| t.disk_ctrl_write_en);
-        assert!(write_active_a,
-            "Under Disk Sector task, F1=WriteKadr should assert write_en");
+        assert!(
+            write_active_a,
+            "Under Disk Sector task, F1=WriteKadr should assert write_en"
+        );
 
         // ---- Test B: Emulator task (0) firing → write_en NEVER asserted
         let uut_b = AltoChip::with_microcode_and_constants(&microcode, &constants);
-        let inputs_b: Vec<ChipIn> = (0..16).map(|_| ChipIn {
-            wakeups: bits::<16>(0x0001),  // wake Task 0 only
-        }).collect();
+        let inputs_b: Vec<ChipIn> = (0..16)
+            .map(|_| ChipIn {
+                wakeups: bits::<16>(0x0001), // wake Task 0 only
+            })
+            .collect();
         let stream_b = inputs_b.into_iter().with_reset(2).clock_pos_edge(100);
-        let trace_b: Vec<ChipOut> = uut_b.run(stream_b)
+        let trace_b: Vec<ChipOut> = uut_b
+            .run(stream_b)
             .synchronous_sample()
             .filter(|s| !s.input.0.reset.any())
             .map(|s| s.output)
             .collect();
         let write_active_b = trace_b.iter().any(|t| t.disk_ctrl_write_en);
-        assert!(!write_active_b,
-            "Under Emulator task, F1=WriteKadr is a no-op (gated)");
+        assert!(
+            !write_active_b,
+            "Under Emulator task, F1=WriteKadr is a no-op (gated)"
+        );
     }
 
     /// End-to-end 256-word DMA: hand-written Disk Sector microcode
@@ -1264,45 +1379,73 @@ mod tests {
         //           F1=TaskYield, NEXT=14 — atomic DMA per firing.
         let mi_load_r2 = Microinstruction {
             rsel: bits::<5>(2),
-            aluf: AluFunction::Bus, bs: BusSource::LoadR,
-            f1: F1Function::Constant, f2: F2Function::Nop,
-            t_load: false, l_load: true, next: bits::<10>(5),
+            aluf: AluFunction::Bus,
+            bs: BusSource::LoadR,
+            f1: F1Function::Constant,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: true,
+            next: bits::<10>(5),
         };
         let mi_load_r1 = Microinstruction {
             rsel: bits::<5>(1),
-            aluf: AluFunction::Bus, bs: BusSource::LoadR,
-            f1: F1Function::Constant, f2: F2Function::Nop,
-            t_load: false, l_load: true, next: bits::<10>(6),
+            aluf: AluFunction::Bus,
+            bs: BusSource::LoadR,
+            f1: F1Function::Constant,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: true,
+            next: bits::<10>(6),
         };
         let mi_write_kcwa = Microinstruction {
             rsel: bits::<5>(2),
-            aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::WriteKcwa, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(7),
+            aluf: AluFunction::Bus,
+            bs: BusSource::ReadR,
+            f1: F1Function::WriteKcwa,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(7),
         };
         let mi_write_kcom = Microinstruction {
             rsel: bits::<5>(1),
-            aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::WriteKcomm, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(8),
+            aluf: AluFunction::Bus,
+            bs: BusSource::ReadR,
+            f1: F1Function::WriteKcomm,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(8),
         };
         let mi_yield_to_dwt = Microinstruction {
             rsel: bits::<5>(0),
-            aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::TaskYield, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(9),
+            aluf: AluFunction::Bus,
+            bs: BusSource::ReadR,
+            f1: F1Function::TaskYield,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(9),
         };
         let mi_task4_idle = Microinstruction {
             rsel: bits::<5>(0),
-            aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::TaskYield, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(9),
+            aluf: AluFunction::Bus,
+            bs: BusSource::ReadR,
+            f1: F1Function::TaskYield,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(9),
         };
         let mi_task14_loop = Microinstruction {
             rsel: bits::<5>(0),
-            aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::TaskYield, f2: F2Function::DiskWordTransfer,
-            t_load: false, l_load: false, next: bits::<10>(14),
+            aluf: AluFunction::Bus,
+            bs: BusSource::ReadR,
+            f1: F1Function::TaskYield,
+            f2: F2Function::DiskWordTransfer,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(14),
         };
         // Task 0 (Emulator) needs SOMETHING at MPC=0 that asserts
         // TaskYield so the chip can switch to task 4.  Without this,
@@ -1313,18 +1456,22 @@ mod tests {
         // which yields naturally.
         let mi_emu_bootstrap = Microinstruction {
             rsel: bits::<5>(0),
-            aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::TaskYield, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(0),
+            aluf: AluFunction::Bus,
+            bs: BusSource::ReadR,
+            f1: F1Function::TaskYield,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(0),
         };
         let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
-        microcode[0]  = mi_emu_bootstrap.pack();
-        microcode[4]  = mi_load_r2.pack();
-        microcode[5]  = mi_load_r1.pack();
-        microcode[6]  = mi_write_kcwa.pack();
-        microcode[7]  = mi_write_kcom.pack();
-        microcode[8]  = mi_yield_to_dwt.pack();
-        microcode[9]  = mi_task4_idle.pack();
+        microcode[0] = mi_emu_bootstrap.pack();
+        microcode[4] = mi_load_r2.pack();
+        microcode[5] = mi_load_r1.pack();
+        microcode[6] = mi_write_kcwa.pack();
+        microcode[7] = mi_write_kcom.pack();
+        microcode[8] = mi_yield_to_dwt.pack();
+        microcode[9] = mi_task4_idle.pack();
         microcode[14] = mi_task14_loop.pack();
 
         // ---- Constant ROM ---------------------------------------------
@@ -1332,7 +1479,7 @@ mod tests {
         // const[9]  (= (RSEL=1 << 3) | BS=LoadR) → 0x8000 (KCOM arm bit).
         let mut constants = [0u16; crate::constant_rom::NUM_CONSTANTS];
         constants[17] = 0x0200;
-        constants[9]  = 0x8000;
+        constants[9] = 0x8000;
 
         // ---- Disk sector pre-loaded with [0xA000+i for i in 0..256] -
         let mut sector = [0u16; 256];
@@ -1356,11 +1503,14 @@ mod tests {
         // Wakeup pattern: Task 4 (Disk Sector) always woken so its
         // microcode runs.  Disk Word (Task 14) wake comes from the
         // disk's word_strobe automatically once transfer arms.
-        let inputs: Vec<ChipIn> = (0..400).map(|_| ChipIn {
-            wakeups: bits::<16>(0x0010),
-        }).collect();
+        let inputs: Vec<ChipIn> = (0..400)
+            .map(|_| ChipIn {
+                wakeups: bits::<16>(0x0010),
+            })
+            .collect();
         let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
-        let trace: Vec<ChipOut> = uut.run(stream)
+        let trace: Vec<ChipOut> = uut
+            .run(stream)
             .synchronous_sample()
             .filter(|s| !s.input.0.reset.any())
             .map(|s| s.output)
@@ -1380,9 +1530,11 @@ mod tests {
         // was 256..=280 (24 cycles slack) which would have masked any
         // re-arm bug for many extra firings.  Tighten to the
         // pipeline-exact value: 256 DMAs + at most 1 transition cycle.
-        assert!(final_disk_word_count == 256 || final_disk_word_count == 257,
+        assert!(
+            final_disk_word_count == 256 || final_disk_word_count == 257,
             "Disk Word task should fire exactly 256 or 257 times \
-             (256 DMAs + ≤1 transition cycle); got {final_disk_word_count}");
+             (256 DMAs + ≤1 transition cycle); got {final_disk_word_count}"
+        );
 
         // E2 tightening: Disk Sector fires ~5 setup cycles then idles
         // while Task 14 wins arbitration during DMA, then resumes
@@ -1391,10 +1543,12 @@ mod tests {
         // bare floor `>=4` to a measured-pipeline-exact range.
         let final_disk_sector_count = trace.last().unwrap().disk_sector_count.raw();
         eprintln!("[end_to_end_256_word_dma] disk_sector_count = {final_disk_sector_count}");
-        assert!(final_disk_sector_count >= 140 && final_disk_sector_count <= 145,
+        assert!(
+            final_disk_sector_count >= 140 && final_disk_sector_count <= 145,
             "Disk Sector should fire 140..145 times (5-cycle setup + \
              ~140 post-DMA cycles in 400-cycle test); got \
-             {final_disk_sector_count}");
+             {final_disk_sector_count}"
+        );
 
         // ---- Verify memory contents via observed-write trace --------
         // Reconstruct the engine's memory-write trace from ChipOut and
@@ -1404,24 +1558,35 @@ mod tests {
         let mut writes: Vec<(u128, u128)> = Vec::new();
         for t in &trace {
             if t.mem_write_observed_en {
-                writes.push((t.mem_write_observed_addr.raw(),
-                             t.mem_write_observed_data.raw()));
+                writes.push((
+                    t.mem_write_observed_addr.raw(),
+                    t.mem_write_observed_data.raw(),
+                ));
             }
         }
-        eprintln!("[end_to_end_256_word_dma] observed {} memory writes", writes.len());
+        eprintln!(
+            "[end_to_end_256_word_dma] observed {} memory writes",
+            writes.len()
+        );
         // 256 DMAs expected; pipeline-delay can produce one extra
         // firing as the wakeup chain settles.  Accept 256 or 257.
-        assert!(writes.len() == 256 || writes.len() == 257,
+        assert!(
+            writes.len() == 256 || writes.len() == 257,
             "Expected 256 or 257 memory writes (256 DMAs + maybe 1 transition); got {}",
-            writes.len());
+            writes.len()
+        );
         // Verify the first 256 writes: addr 0x200..0x300, data 0xA000..0xA0FF.
         for (i, &(addr, data)) in writes.iter().take(256).enumerate() {
             let expected_addr = 0x200u128 + (i as u128);
             let expected_data = 0xA000u128 + (i as u128);
-            assert_eq!(addr, expected_addr,
-                "Write {i}: addr = {addr:#06x}, expected {expected_addr:#06x}");
-            assert_eq!(data, expected_data,
-                "Write {i}: data = {data:#06x}, expected {expected_data:#06x}");
+            assert_eq!(
+                addr, expected_addr,
+                "Write {i}: addr = {addr:#06x}, expected {expected_addr:#06x}"
+            );
+            assert_eq!(
+                data, expected_data,
+                "Write {i}: data = {data:#06x}, expected {expected_data:#06x}"
+            );
         }
     }
 
@@ -1446,10 +1611,11 @@ mod tests {
         let mi_emu_yield = Microinstruction {
             rsel: bits::<5>(0),
             aluf: AluFunction::Bus,
-            bs:   BusSource::ReadR,
-            f1:   F1Function::TaskYield,
-            f2:   F2Function::Nop,
-            t_load: false, l_load: false,
+            bs: BusSource::ReadR,
+            f1: F1Function::TaskYield,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: false,
             next: bits::<10>(0),
         };
         // addr 4: F1=Constant idx 9 = 0x8000, BS=LoadR, RSEL=1, ALUF=Bus
@@ -1457,10 +1623,11 @@ mod tests {
         let mi_load = Microinstruction {
             rsel: bits::<5>(1),
             aluf: AluFunction::Bus,
-            bs:   BusSource::LoadR,
-            f1:   F1Function::Constant,
-            f2:   F2Function::Nop,
-            t_load: false, l_load: true,
+            bs: BusSource::LoadR,
+            f1: F1Function::Constant,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: true,
             next: bits::<10>(5),
         };
         // addr 5: BS=ReadR (RSEL=1 → BUS = R[1] = 0x8000), F1=WriteKcomm
@@ -1468,10 +1635,11 @@ mod tests {
         let mi_kcom = Microinstruction {
             rsel: bits::<5>(1),
             aluf: AluFunction::Bus,
-            bs:   BusSource::ReadR,
-            f1:   F1Function::WriteKcomm,
-            f2:   F2Function::Nop,
-            t_load: false, l_load: false,
+            bs: BusSource::ReadR,
+            f1: F1Function::WriteKcomm,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: false,
             next: bits::<10>(6),
         };
         // addr 6: F1=TaskYield → release Disk Sector so Disk Word
@@ -1479,10 +1647,11 @@ mod tests {
         let mi_yield = Microinstruction {
             rsel: bits::<5>(0),
             aluf: AluFunction::Bus,
-            bs:   BusSource::ReadR,
-            f1:   F1Function::TaskYield,
-            f2:   F2Function::Nop,
-            t_load: false, l_load: false,
+            bs: BusSource::ReadR,
+            f1: F1Function::TaskYield,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: false,
             next: bits::<10>(6),
         };
         // addr 14: Disk Word's reset MPC.  TaskYield + DiskWordTransfer
@@ -1490,17 +1659,18 @@ mod tests {
         let mi_dw = Microinstruction {
             rsel: bits::<5>(0),
             aluf: AluFunction::Bus,
-            bs:   BusSource::ReadR,
-            f1:   F1Function::TaskYield,
-            f2:   F2Function::DiskWordTransfer,
-            t_load: false, l_load: false,
+            bs: BusSource::ReadR,
+            f1: F1Function::TaskYield,
+            f2: F2Function::DiskWordTransfer,
+            t_load: false,
+            l_load: false,
             next: bits::<10>(14),
         };
         let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
-        microcode[0]  = mi_emu_yield.pack();
-        microcode[4]  = mi_load.pack();
-        microcode[5]  = mi_kcom.pack();
-        microcode[6]  = mi_yield.pack();
+        microcode[0] = mi_emu_yield.pack();
+        microcode[4] = mi_load.pack();
+        microcode[5] = mi_kcom.pack();
+        microcode[6] = mi_yield.pack();
         microcode[14] = mi_dw.pack();
         let mut constants = [0u16; crate::constant_rom::NUM_CONSTANTS];
         // F1=Constant in mi0 has RSEL=1, BS=LoadR(=1), so the constant
@@ -1509,11 +1679,14 @@ mod tests {
 
         let uut = AltoChip::with_microcode_and_constants(&microcode, &constants);
         // Wake Disk Sector (task 4) only.
-        let inputs: Vec<ChipIn> = (0..40).map(|_| ChipIn {
-            wakeups: bits::<16>(0x0010),
-        }).collect();
+        let inputs: Vec<ChipIn> = (0..40)
+            .map(|_| ChipIn {
+                wakeups: bits::<16>(0x0010),
+            })
+            .collect();
         let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
-        let trace: Vec<ChipOut> = uut.run(stream)
+        let trace: Vec<ChipOut> = uut
+            .run(stream)
             .synchronous_sample()
             .filter(|s| !s.input.0.reset.any())
             .map(|s| s.output)
@@ -1522,13 +1695,17 @@ mod tests {
         // Within 40 cycles, the chain should have completed:
         // KCOM written → transfer_request → disk armed → word_strobe fires.
         let any_word_strobe = trace.iter().any(|t| t.disk_word_strobe);
-        assert!(any_word_strobe,
-            "word_strobe should fire after Disk Sector microcode writes KCOM = 0x8000");
+        assert!(
+            any_word_strobe,
+            "word_strobe should fire after Disk Sector microcode writes KCOM = 0x8000"
+        );
 
         // And: the Disk Word task (14) should have fired.
         let any_task_14 = trace.iter().any(|t| t.current_task.raw() == 14);
-        assert!(any_task_14,
-            "Disk Word task (14) should fire after disk arms the transfer");
+        assert!(
+            any_task_14,
+            "Disk Word task (14) should fire after disk arms the transfer"
+        );
     }
 
     /// IDispatch under Emulator: stage IR=0x4000 then run F2=IDispatch
@@ -1546,15 +1723,25 @@ mod tests {
     fn f2_idispatch_routes_via_ir_low_byte() {
         // addr 0: F1=LoadMar + F2=Constant idx=0=0x0100 → MAR ← 0x0100.
         let mi0 = Microinstruction {
-            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::LoadMar, f2: F2Function::Constant,
-            t_load: false, l_load: false, next: bits::<10>(1),
+            rsel: bits::<5>(0),
+            aluf: AluFunction::Bus,
+            bs: BusSource::ReadR,
+            f1: F1Function::LoadMar,
+            f2: F2Function::Constant,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(1),
         };
         // addr 1: filler, BRAM read settle.
         let mi1 = Microinstruction {
-            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::Nop, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(2),
+            rsel: bits::<5>(0),
+            aluf: AluFunction::Bus,
+            bs: BusSource::ReadR,
+            f1: F1Function::Nop,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(2),
         };
         // addr 2: F2=LoadIr → IR ← MD = 0xCAFE.  Per spec §6.6 + ContrAlto
         // EmulatorTask.cs, IR loads from the BUS — so BS must be
@@ -1563,9 +1750,14 @@ mod tests {
         // loaded IR directly from i.mem_read_data; that bypass was
         // removed when D17 added the spec'd NEXT-merge semantics.)
         let mi2 = Microinstruction {
-            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::MemoryData,
-            f1: F1Function::Nop, f2: F2Function::LoadIr,
-            t_load: false, l_load: false, next: bits::<10>(3),
+            rsel: bits::<5>(0),
+            aluf: AluFunction::Bus,
+            bs: BusSource::MemoryData,
+            f1: F1Function::Nop,
+            f2: F2Function::LoadIr,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(3),
         };
         // addr 3: F2=IDispatch with NEXT=0x100.  IR=0x4000.
         // Per spec §6.6 IDISP PROM: IR[1-2] = (0x4000 >> 13) & 3 =
@@ -1577,26 +1769,38 @@ mod tests {
         //   Cycle running 0x100 → next_mpc = 0x100 | 5 = 0x105 (modifier applied)
         //   Cycle running 0x105 → handler runs.
         let mi3 = Microinstruction {
-            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::Nop, f2: F2Function::IDispatch,
-            t_load: false, l_load: false, next: bits::<10>(0x100),
+            rsel: bits::<5>(0),
+            aluf: AluFunction::Bus,
+            bs: BusSource::ReadR,
+            f1: F1Function::Nop,
+            f2: F2Function::IDispatch,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(0x100),
         };
         // addr 0x100: absorb-cycle that picks up cycle-3's latched
         // IDISP modifier.  NEXT=0x100 (self-loop) so OR'ing the modifier
         // (= 5) produces 0x100 | 5 = 0x105.  l_load=false so L isn't
         // disturbed before the handler runs.
         let mi_absorb = Microinstruction {
-            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::Nop, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(0x100),
+            rsel: bits::<5>(0),
+            aluf: AluFunction::Bus,
+            bs: BusSource::ReadR,
+            f1: F1Function::Nop,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(0x100),
         };
         // addr 0x105: handler — BUS+1 → L = 1, loop.
         let mi_target = Microinstruction {
             rsel: bits::<5>(0),
             aluf: AluFunction::BusPlusOne,
             bs: BusSource::ReadR,
-            f1: F1Function::Nop, f2: F2Function::Nop,
-            t_load: false, l_load: true,
+            f1: F1Function::Nop,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: true,
             next: bits::<10>(0x105),
         };
         let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
@@ -1608,23 +1812,26 @@ mod tests {
         microcode[0x105] = mi_target.pack();
 
         let mut constants = [0u16; crate::constant_rom::NUM_CONSTANTS];
-        constants[0] = 0x0100;  // MAR target
+        constants[0] = 0x0100; // MAR target
         let memory_initial = vec![(bits::<16>(0x0100), bits::<16>(0x4000))];
 
-        let uut = AltoChip::with_microcode_constants_and_memory(
-            &microcode, &constants, memory_initial,
-        );
+        let uut =
+            AltoChip::with_microcode_constants_and_memory(&microcode, &constants, memory_initial);
         let trace = run(uut, 16);
 
         // L should latch 1 (BUS+1 with BUS=0) at the handler.
         let final_l = trace.last().unwrap().l.raw();
-        assert_eq!(final_l, 1,
+        assert_eq!(
+            final_l, 1,
             "L should latch 1 from the addr-0x105 BUS+1 ALU op, proving \
              spec §6.6 IDISP PROM routed MPC to 0x105 = 0x100 | 5 \
-             (IR[1-2]=2 → dispatch=5)");
+             (IR[1-2]=2 → dispatch=5)"
+        );
         let final_ir = trace.last().unwrap().ir.raw();
-        assert_eq!(final_ir, 0x4000,
-            "IR should hold 0x4000 from the LoadIr step");
+        assert_eq!(
+            final_ir, 0x4000,
+            "IR should hold 0x4000 from the LoadIr step"
+        );
     }
 
     /// Per-task IR load: under Emulator (task 0), F2=LoadIr loads
@@ -1634,22 +1841,37 @@ mod tests {
     fn f2_load_ir_only_active_under_emulator_task() {
         // addr 0: F1=Constant idx 0 = 0x0100, F2=LoadMar → MAR ← 0x0100
         let mi0 = Microinstruction {
-            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::LoadMar, f2: F2Function::Constant,
-            t_load: false, l_load: false, next: bits::<10>(1),
+            rsel: bits::<5>(0),
+            aluf: AluFunction::Bus,
+            bs: BusSource::ReadR,
+            f1: F1Function::LoadMar,
+            f2: F2Function::Constant,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(1),
         };
         // addr 1: filler, give BRAM read time to land
         let mi1 = Microinstruction {
-            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::Nop, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(2),
+            rsel: bits::<5>(0),
+            aluf: AluFunction::Bus,
+            bs: BusSource::ReadR,
+            f1: F1Function::Nop,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(2),
         };
         // addr 2: F2=LoadIr  → IR ← BUS = MD (memory[MAR] = 0xCAFE).
         // Spec §6.6: IR← latches BUS, so BS=MemoryData drives BUS=MD.
         let mi2 = Microinstruction {
-            rsel: bits::<5>(0), aluf: AluFunction::Bus, bs: BusSource::MemoryData,
-            f1: F1Function::Nop, f2: F2Function::LoadIr,
-            t_load: false, l_load: false, next: bits::<10>(2),
+            rsel: bits::<5>(0),
+            aluf: AluFunction::Bus,
+            bs: BusSource::MemoryData,
+            f1: F1Function::Nop,
+            f2: F2Function::LoadIr,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(2),
         };
         let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
         microcode[0] = mi0.pack();
@@ -1659,13 +1881,14 @@ mod tests {
         constants[0] = 0x0100;
         let memory_initial = vec![(bits::<16>(0x0100), bits::<16>(0xCAFE))];
 
-        let uut = AltoChip::with_microcode_constants_and_memory(
-            &microcode, &constants, memory_initial,
-        );
-        let trace = run(uut, 16);  // Task 0 (Emulator) always woken via boot_in()
+        let uut =
+            AltoChip::with_microcode_constants_and_memory(&microcode, &constants, memory_initial);
+        let trace = run(uut, 16); // Task 0 (Emulator) always woken via boot_in()
         let final_ir = trace.last().unwrap().ir.raw();
-        assert_eq!(final_ir, 0xCAFE,
-            "IR should latch the memory value at 0x0100 via LoadIr in Emulator task");
+        assert_eq!(
+            final_ir, 0xCAFE,
+            "IR should latch the memory value at 0x0100 via LoadIr in Emulator task"
+        );
     }
 
     /// End-to-end disk → wakeup → arbiter → engine path: with a SHORT
@@ -1682,15 +1905,23 @@ mod tests {
         // stays on its own microcode, not falling through to Emulator's).
         let mi_emu_yield = Microinstruction {
             rsel: bits::<5>(0),
-            aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::TaskYield, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(0),
+            aluf: AluFunction::Bus,
+            bs: BusSource::ReadR,
+            f1: F1Function::TaskYield,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(0),
         };
         let mi_task4_loop = Microinstruction {
             rsel: bits::<5>(0),
-            aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::Nop, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(4),
+            aluf: AluFunction::Bus,
+            bs: BusSource::ReadR,
+            f1: F1Function::Nop,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(4),
         };
         let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
         microcode[0] = mi_emu_yield.pack();
@@ -1699,15 +1930,18 @@ mod tests {
         // Use SHORT 256-cycle test disk period so sector_mark fires
         // within 512 cycles.  Spec-correct ~19,608-cycle period would
         // need a 25K-cycle test run.
-        let uut = AltoChip::with_microcode_constants_and_test_disk_period(
-            &microcode, &constants, 256);
+        let uut =
+            AltoChip::with_microcode_constants_and_test_disk_period(&microcode, &constants, 256);
         // Wake Task 0 (Emulator) only via input; disk's sector_mark
         // should add wakeup bit 4 within ~512 cycles.
-        let inputs: Vec<ChipIn> = (0..512).map(|_| ChipIn {
-            wakeups: bits::<16>(0x0001),
-        }).collect();
+        let inputs: Vec<ChipIn> = (0..512)
+            .map(|_| ChipIn {
+                wakeups: bits::<16>(0x0001),
+            })
+            .collect();
         let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
-        let trace: Vec<ChipOut> = uut.run(stream)
+        let trace: Vec<ChipOut> = uut
+            .run(stream)
             .synchronous_sample()
             .filter(|s| !s.input.0.reset.any())
             .map(|s| s.output)
@@ -1715,13 +1949,17 @@ mod tests {
         // Verify the wakeup vector saw the disk's sector_mark at some
         // point (bit 4 set in the effective wakeup vector).
         let any_disk_wakeup = trace.iter().any(|t| (t.wakeups.raw() & 0x0010) != 0);
-        assert!(any_disk_wakeup,
-            "disk sector_mark should have driven wakeup bit 4 at least once");
+        assert!(
+            any_disk_wakeup,
+            "disk sector_mark should have driven wakeup bit 4 at least once"
+        );
         // Verify the Disk Sector task (Task 4) fired at least once
         // (current_task = 4 in some cycle).
         let any_task_4 = trace.iter().any(|t| t.current_task.raw() == 4);
-        assert!(any_task_4,
-            "Disk Sector task should have fired in response to the disk wakeup");
+        assert!(
+            any_task_4,
+            "Disk Sector task should have fired in response to the disk wakeup"
+        );
     }
 
     /// F1=STROBE (binary 9, per spec §8.5) in Disk Sector arms a
@@ -1742,38 +1980,53 @@ mod tests {
         // semantics keep current_task=0 until task_yield fires.)
         let mi_emu_yield = Microinstruction {
             rsel: bits::<5>(0),
-            aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::TaskYield, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(0),
+            aluf: AluFunction::Bus,
+            bs: BusSource::ReadR,
+            f1: F1Function::TaskYield,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(0),
         };
         // mi_strobe: F1=STROBE (Code9, per spec §8.5).  Arms transfer.
         let mi_strobe = Microinstruction {
             rsel: bits::<5>(0),
-            aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::Code9, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(5),
+            aluf: AluFunction::Bus,
+            bs: BusSource::ReadR,
+            f1: F1Function::Code9,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(5),
         };
         // mi_idle: Task 4 idle loop with TaskYield, so word_strobe
         // can switch arbitration to Task 14.
         let mi_idle = Microinstruction {
             rsel: bits::<5>(0),
-            aluf: AluFunction::Bus, bs: BusSource::ReadR,
-            f1: F1Function::TaskYield, f2: F2Function::Nop,
-            t_load: false, l_load: false, next: bits::<10>(5),
+            aluf: AluFunction::Bus,
+            bs: BusSource::ReadR,
+            f1: F1Function::TaskYield,
+            f2: F2Function::Nop,
+            t_load: false,
+            l_load: false,
+            next: bits::<10>(5),
         };
         let mut microcode = [0u32; crate::microcode_rom::MICROCODE_WORDS];
         microcode[0] = mi_emu_yield.pack();
-        microcode[4] = mi_strobe.pack();   // Task 4 reset MPC: STROBE
-        microcode[5] = mi_idle.pack();     // Task 4 idle loop
+        microcode[4] = mi_strobe.pack(); // Task 4 reset MPC: STROBE
+        microcode[5] = mi_idle.pack(); // Task 4 idle loop
         let constants = [0u16; crate::constant_rom::NUM_CONSTANTS];
 
         let uut = AltoChip::with_microcode_and_constants(&microcode, &constants);
         // Wake Disk Sector (task 4) only.
-        let inputs: Vec<ChipIn> = (0..50).map(|_| ChipIn {
-            wakeups: bits::<16>(0x0010),
-        }).collect();
+        let inputs: Vec<ChipIn> = (0..50)
+            .map(|_| ChipIn {
+                wakeups: bits::<16>(0x0010),
+            })
+            .collect();
         let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
-        let trace: Vec<ChipOut> = uut.run(stream)
+        let trace: Vec<ChipOut> = uut
+            .run(stream)
             .synchronous_sample()
             .filter(|s| !s.input.0.reset.any())
             .map(|s| s.output)
@@ -1781,9 +2034,11 @@ mod tests {
 
         // After the STROBE fires, transfer arms → word_strobe asserts.
         let any_word_strobe = trace.iter().any(|t| t.disk_word_strobe);
-        assert!(any_word_strobe,
+        assert!(
+            any_word_strobe,
             "F1=STROBE in Disk Sector should arm the transfer; \
-             word_strobe should assert");
+             word_strobe should assert"
+        );
     }
 
     /// Verify the AltoChip composition emits clean Verilog and the
@@ -1814,9 +2069,12 @@ mod tests {
     fn boot_with_real_microcode_and_constants_does_not_crash() {
         use crate::microcode_loader;
         let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("assets").join("rom");
+            .join("assets")
+            .join("rom");
         if !dir.join("U55").exists() || !dir.join("C0").exists() {
-            eprintln!("[boot_with_real_microcode_and_constants_does_not_crash] skipping — assets absent");
+            eprintln!(
+                "[boot_with_real_microcode_and_constants_does_not_crash] skipping — assets absent"
+            );
             return;
         }
         let microcode = microcode_loader::load_alto_ii_microcode_from_dir(&dir)
@@ -1835,16 +2093,21 @@ mod tests {
         // The engine should have processed at least one non-zero
         // instruction (the real microcode at addr 0 is non-zero).
         let any_nonzero = trace.iter().any(|t| t.instruction.raw() != 0);
-        assert!(any_nonzero, "should fetch at least one non-zero microinstruction from real microcode");
+        assert!(
+            any_nonzero,
+            "should fetch at least one non-zero microinstruction from real microcode"
+        );
         // It should also have visited multiple distinct microaddresses
         // (the boot path doesn't immediately stick at one address).
         let mut visited: std::collections::HashSet<u128> = std::collections::HashSet::new();
         for t in &trace {
             visited.insert(t.mpc.raw());
         }
-        assert!(visited.len() >= 2,
+        assert!(
+            visited.len() >= 2,
             "boot trace should visit at least 2 distinct microaddresses; visited {:?}",
-            visited);
+            visited
+        );
     }
 
     /// Diagnostic: dump the (mpc, decoded microinstruction) for each
@@ -1861,7 +2124,8 @@ mod tests {
     fn boot_trace_decode_diagnostic() {
         use crate::microcode_loader;
         let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("assets").join("rom");
+            .join("assets")
+            .join("rom");
         if !dir.join("U55").exists() || !dir.join("C0").exists() {
             eprintln!("[diagnostic] skipping — assets absent");
             return;
@@ -1887,13 +2151,24 @@ mod tests {
             seen.insert((t.current_task.raw(), t.mpc.raw()), t.instruction.raw());
         }
 
-        eprintln!("[boot_trace_decode_diagnostic] {} unique (task, mpc) pairs visited:", seen.len());
+        eprintln!(
+            "[boot_trace_decode_diagnostic] {} unique (task, mpc) pairs visited:",
+            seen.len()
+        );
         for ((task, mpc), &instr) in seen.iter() {
             let mi = Microinstruction::unpack(instr as u32);
             eprintln!("  task={task:2} mpc=0x{mpc:03x} instr=0x{instr:08x}");
-            eprintln!("    rsel={} aluf={:?} bs={:?} f1={:?} f2={:?} t_load={} l_load={} next=0x{:03x}",
-                mi.rsel.raw(), mi.aluf, mi.bs, mi.f1, mi.f2,
-                mi.t_load, mi.l_load, mi.next.raw());
+            eprintln!(
+                "    rsel={} aluf={:?} bs={:?} f1={:?} f2={:?} t_load={} l_load={} next=0x{:03x}",
+                mi.rsel.raw(),
+                mi.aluf,
+                mi.bs,
+                mi.f1,
+                mi.f2,
+                mi.t_load,
+                mi.l_load,
+                mi.next.raw()
+            );
         }
     }
 
@@ -1906,9 +2181,12 @@ mod tests {
     fn boot_trace_per_cycle_chain() {
         use crate::{disk_image_loader, microcode_loader};
         let rom_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("assets").join("rom");
+            .join("assets")
+            .join("rom");
         let disk_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("assets").join("disk").join("nonprog.dsk");
+            .join("assets")
+            .join("disk")
+            .join("nonprog.dsk");
         if !rom_dir.join("U55").exists() || !disk_path.exists() {
             eprintln!("[per_cycle_chain] skipping — assets absent");
             return;
@@ -1918,7 +2196,10 @@ mod tests {
         let disk_image = disk_image_loader::load_disk_image_from_file(&disk_path).unwrap();
         let boot_sector = disk_image.sector(0, 0, 0);
         let uut = AltoChip::with_microcode_constants_and_boot(
-            &microcode, &constants, &boot_sector.data, &boot_sector.label,
+            &microcode,
+            &constants,
+            &boot_sector.data,
+            &boot_sector.label,
         );
         let trace = run(uut, 800);
 
@@ -1963,7 +2244,8 @@ mod tests {
     fn boot_trace_baseline_metrics() {
         use crate::microcode_loader;
         let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("assets").join("rom");
+            .join("assets")
+            .join("rom");
         if !dir.join("U55").exists() || !dir.join("C0").exists() {
             eprintln!("[boot_trace_baseline_metrics] skipping — assets absent");
             return;
@@ -1976,8 +2258,8 @@ mod tests {
         // Use a SHORT 256-cycle test period so the dispatch volume +
         // sector_mark cadence in 2000 cycles is comparable to what we
         // saw before the spec-correct period landed.
-        let uut = AltoChip::with_microcode_constants_and_test_disk_period(
-            &microcode, &constants, 256);
+        let uut =
+            AltoChip::with_microcode_constants_and_test_disk_period(&microcode, &constants, 256);
         let trace = run(uut, 2000);
 
         // Distinct microaddresses visited.
@@ -1990,7 +2272,9 @@ mod tests {
         let mut task_counts = [0u32; 16];
         for t in &trace {
             let task = t.current_task.raw() as usize;
-            if task < 16 { task_counts[task] += 1; }
+            if task < 16 {
+                task_counts[task] += 1;
+            }
         }
 
         // Sector_mark "rising-edge" count: per *Alto Hardware Manual*
@@ -2052,14 +2336,19 @@ mod tests {
         //   Disk Sector firings:    29 (was 40)
         //   Emulator firings:       1971 (was 1960)
         // Allow ±10% slack as before.
-        assert!(visited.len() >= 50 && visited.len() <= 65,
+        assert!(
+            visited.len() >= 50 && visited.len() <= 65,
             "expected 50..65 distinct microaddresses in 2000-cycle boot \
              trace (delayed-pipeline baseline = 56); got {} — significant \
              deviation suggests a regression or new feature unblocking \
-             more dispatch", visited.len());
-        assert!((6..=10).contains(&sector_events),
+             more dispatch",
+            visited.len()
+        );
+        assert!(
+            (6..=10).contains(&sector_events),
             "expected 6..10 sector_mark events (every ~285 cycles in \
-             2000 cycles); got {sector_events}");
+             2000 cycles); got {sector_events}"
+        );
         // KSEC handler runs the FULL ~22-24 cycles per sector mark
         // (per AltoHW + canonical altoIIcode3.mu microcode):
         //   sector mark → wakeup → KSEC PROM-resident microcode runs
@@ -2075,15 +2364,19 @@ mod tests {
         // microcode would).  Post-refactor: chip-side `task_mpcs`
         // updates each non-stalled cycle, KSEC correctly executes
         // its full microcode loop matching ContrAlto cycle-for-cycle.
-        assert!((140..=200).contains(&disk_sector_firings),
+        assert!(
+            (140..=200).contains(&disk_sector_firings),
             "Disk Sector should fire 140..200 times (post-chip-state-\
              refactor baseline = 166, computed as ~7 marks × ~23 \
-             cycles per visit); got {disk_sector_firings}");
+             cycles per visit); got {disk_sector_firings}"
+        );
         // Emulator owns the remaining cycles.  2000 - 166 = ~1834.
-        assert!((1800..=1860).contains(&emulator_firings),
+        assert!(
+            (1800..=1860).contains(&emulator_firings),
             "Emulator should run 1800..1860 cycles in a 2000-cycle \
              trace with 7 sector marks (post-refactor baseline = \
-             1834); got {emulator_firings}");
+             1834); got {emulator_firings}"
+        );
     }
 
     /// Boot-button-equivalent trace: pre-load memory with disk
@@ -2099,9 +2392,12 @@ mod tests {
     fn boot_trace_with_boot_button() {
         use crate::{disk_image_loader, microcode_loader};
         let rom_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("assets").join("rom");
+            .join("assets")
+            .join("rom");
         let disk_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("assets").join("disk").join("nonprog.dsk");
+            .join("assets")
+            .join("disk")
+            .join("nonprog.dsk");
         if !rom_dir.join("U55").exists() || !rom_dir.join("C0").exists() {
             eprintln!("[boot_trace_with_boot_button] skipping — PROM assets absent");
             return;
@@ -2136,20 +2432,23 @@ mod tests {
         // per ContrAlto's microcode.
         let trace = run(uut, 2000);
 
-        let mut visited: std::collections::HashSet<u128> =
-            std::collections::HashSet::new();
+        let mut visited: std::collections::HashSet<u128> = std::collections::HashSet::new();
         for t in &trace {
             visited.insert(t.mpc.raw());
         }
         let mut task_counts = [0u32; 16];
         for t in &trace {
             let task = t.current_task.raw() as usize;
-            if task < 16 { task_counts[task] += 1; }
+            if task < 16 {
+                task_counts[task] += 1;
+            }
         }
         let mut sector_events: u32 = 0;
         let mut prev_sm: bool = false;
         for t in &trace {
-            if !prev_sm && t.disk_sector_mark { sector_events += 1; }
+            if !prev_sm && t.disk_sector_mark {
+                sector_events += 1;
+            }
             prev_sm = t.disk_sector_mark;
         }
 
@@ -2170,10 +2469,12 @@ mod tests {
         // cycle later, which subtly shifts the microaddress visit set.
         // Re-baseline measured at 56 distinct microaddresses; 50 floor
         // gives ±10% slack.
-        assert!(visited.len() >= 50,
+        assert!(
+            visited.len() >= 50,
             "boot trace should visit at least 50 distinct microaddresses \
              (delayed-pipeline baseline = 56); got {} — likely a \
              regression in dispatch, throughput, or per-task F1/F2/BS",
-            visited.len());
+            visited.len()
+        );
     }
 }

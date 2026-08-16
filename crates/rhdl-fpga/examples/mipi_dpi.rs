@@ -1,5 +1,8 @@
 use rhdl::prelude::*;
-use rhdl_fpga::{doc::write_svg_as_markdown, video::mipi_dpi::{In, MipiDpi}};
+use rhdl_fpga::{
+    doc::write_svg_as_markdown,
+    video::mipi_dpi::{In, MipiDpi},
+};
 
 fn main() -> Result<(), RHDLError> {
     let uut = MipiDpi::<7, 4>::new(

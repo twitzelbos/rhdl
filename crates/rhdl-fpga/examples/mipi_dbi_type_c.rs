@@ -7,13 +7,11 @@ use rhdl_fpga::{
 fn main() -> Result<(), RHDLError> {
     let uut = MipiDbiTypeC::<4>::default();
     // Send DISPLAY_ON command (0x29), then a data byte 0xA5.
-    let mut stream_in: Vec<In> = vec![
-        In {
-            data: bits(0x29),
-            is_command: true,
-            send: true,
-        },
-    ];
+    let mut stream_in: Vec<In> = vec![In {
+        data: bits(0x29),
+        is_command: true,
+        send: true,
+    }];
     for _ in 0..40 {
         stream_in.push(In {
             data: bits(0),

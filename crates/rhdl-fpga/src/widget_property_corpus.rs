@@ -34,9 +34,8 @@
 #![cfg(test)]
 
 use rhdl::core::rhif::property_tests::{
-    check_lowering_correctness, check_semantic_preservation, random_arguments,
-    seeded_rng, structured_synchronous_arguments, LoweringCorrectnessOutcome,
-    SemanticPreservationOutcome,
+    check_lowering_correctness, check_semantic_preservation, random_arguments, seeded_rng,
+    structured_synchronous_arguments, LoweringCorrectnessOutcome, SemanticPreservationOutcome,
 };
 
 const SAMPLES_PER_WIDGET: usize = 4;
@@ -112,9 +111,7 @@ where
         }
         let args = match strategy {
             InputStrategy::Random => random_arguments(&obj, &mut rng),
-            InputStrategy::StructuredFirstCycle => {
-                structured_synchronous_arguments(&obj, &mut rng)
-            }
+            InputStrategy::StructuredFirstCycle => structured_synchronous_arguments(&obj, &mut rng),
         };
         let outcome = check_lowering_correctness::<W::Kernel>(
             rhdl::core::CompilationMode::Synchronous,

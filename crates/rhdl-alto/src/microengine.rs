@@ -29,10 +29,8 @@
 //! The microcode is loaded by the parent at construction time
 //! (passed as a `[u32; 1024]` array).
 
-use crate::alu::{alu, AluOut};
-use crate::isa::{
-    AluFunction, BusSource, F1Function, F2Function, Microinstruction,
-};
+use crate::alu::{AluOut, alu};
+use crate::isa::{AluFunction, BusSource, F1Function, F2Function, Microinstruction};
 // Note: the RegFile widget (in `regfile.rs`) is no longer composed
 // as a sub-widget of Microengine — its DFF storage is inlined into
 // Microengine directly per the Path B refactor.  RegFile is kept as
@@ -405,24 +403,21 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     //
     // (Note F2=11 = our F2Function::Code11; F2=14 = Code14.)
     let is_emulator: bool = i.current_task == bits::<4>(0);
-    let ir_dest_ac: Bits<5> = (((q.ir >> 11) & bits::<16>(0b11))
-        ^ bits::<16>(0b11)).resize();
-    let ir_src_ac: Bits<5> = (((q.ir >> 13) & bits::<16>(0b11))
-        ^ bits::<16>(0b11)).resize();
+    let ir_dest_ac: Bits<5> = (((q.ir >> 11) & bits::<16>(0b11)) ^ bits::<16>(0b11)).resize();
+    let ir_src_ac: Bits<5> = (((q.ir >> 13) & bits::<16>(0b11)) ^ bits::<16>(0b11)).resize();
     let rsel_high: Bits<5> = mi.rsel & bits::<5>(0b11100);
     // F2=Code10 (LoadDNS) ALSO uses the destination-AC override, per
     // ContrAlto's EmulatorTask.cs early LoadDNS handler:
     // `_rSelect = (_rSelect & 0xfffc) | (((ir & 0x1800) >> 11) ^ 3)` —
     // identical to ACDEST.
-    let effective_rsel: Bits<5> = if is_emulator
-        && (mi.f2 == F2Function::Code11 || mi.f2 == F2Function::Code10)
-    {
-        rsel_high | ir_dest_ac
-    } else if is_emulator && mi.f2 == F2Function::Code14 {
-        rsel_high | ir_src_ac
-    } else {
-        mi.rsel
-    };
+    let effective_rsel: Bits<5> =
+        if is_emulator && (mi.f2 == F2Function::Code11 || mi.f2 == F2Function::Code10) {
+            rsel_high | ir_dest_ac
+        } else if is_emulator && mi.f2 == F2Function::Code14 {
+            rsel_high | ir_src_ac
+        } else {
+            mi.rsel
+        };
 
     // ---- BUS source -------------------------------------------------
     // BS = ReadR              → drive bus from R[effective_rsel].
@@ -449,15 +444,13 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // (S-register read with RSELECT=0 → M) and BS=4 is LoadSLocation
     // (returns 0xFFFF on bus, triggers s_regs[bank,rselect] = M
     // write at end of cycle).
-    let is_disk_task: bool = i.current_task == bits::<4>(4)
-        || i.current_task == bits::<4>(14);
+    let is_disk_task: bool = i.current_task == bits::<4>(4) || i.current_task == bits::<4>(14);
     // S-register read computation (Emulator BS=3).  Index =
     // (s_bank << 5) | RSELECT, except RSELECT=0 returns M (per spec
     // digest §4.3 + ContrAlto's EmulatorTask.cs:70-81).  RSELECT
     // here is the RAW microinstruction rsel — ACSOURCE/ACDEST do
     // NOT affect S-register addressing per spec digest §4.3 line 447.
-    let s_index: Bits<8> = ((q.cram.s_bank.resize::<8>()) << 5)
-        | mi.rsel.resize::<8>();
+    let s_index: Bits<8> = ((q.cram.s_bank.resize::<8>()) << 5) | mi.rsel.resize::<8>();
     let s_read_value: Bits<16> = if mi.rsel == bits::<5>(0) {
         q.cram.m
     } else {
@@ -471,17 +464,31 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     //     they're S-register access (ReadSLocation / LoadSLocation).
     //   - Mouse (BS=6) is not implemented; stub 0.
     let bus_from_bs: Bits<16> = match mi.bs {
-        BusSource::ReadR              => r_read,
-        BusSource::LoadR              => bits::<16>(0),
-        BusSource::None               => bits::<16>(0xFFFF),
-        BusSource::TaskSpec3 => if is_disk_task { i.kstat }
-                                else if is_emulator { s_read_value }
-                                else { bits::<16>(0) },
-        BusSource::TaskSpec4 => if is_disk_task { i.kdata }
-                                else if is_emulator { bits::<16>(0xFFFF) } // LoadSLocation: undefined-on-bus
-                                else { bits::<16>(0) },
-        BusSource::MemoryData         => i.mem_read_data,
-        BusSource::Mouse              => bits::<16>(0),
+        BusSource::ReadR => r_read,
+        BusSource::LoadR => bits::<16>(0),
+        BusSource::None => bits::<16>(0xFFFF),
+        BusSource::TaskSpec3 => {
+            if is_disk_task {
+                i.kstat
+            } else if is_emulator {
+                s_read_value
+            } else {
+                bits::<16>(0)
+            }
+        }
+        BusSource::TaskSpec4 => {
+            if is_disk_task {
+                i.kdata
+            } else if is_emulator {
+                bits::<16>(0xFFFF)
+            }
+            // LoadSLocation: undefined-on-bus
+            else {
+                bits::<16>(0)
+            }
+        }
+        BusSource::MemoryData => i.mem_read_data,
+        BusSource::Mouse => bits::<16>(0),
         BusSource::InstructionRegister => {
             let disp: Bits<16> = q.ir & bits::<16>(0x00FF);
             let x_nonzero: bool = (q.ir & bits::<16>(0x0300)) != bits::<16>(0);
@@ -508,8 +515,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // correctness gap rather than an active source of divergence;
     // when a microinstruction hits a (RSEL, BS≥4) index with a
     // non-0xFFFF mask, the BUS value will be wrong.
-    let bus: Bits<16> = if mi.f1 == F1Function::Constant
-        || mi.f2 == F2Function::Constant {
+    let bus: Bits<16> = if mi.f1 == F1Function::Constant || mi.f2 == F2Function::Constant {
         i.constant_value
     } else {
         bus_from_bs
@@ -533,8 +539,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // This is what makes accumulator patterns like `T← BUS OR T` work:
     // BUS drives the operand; ALU computes BUS|T; T_LOAD is set; T
     // receives the OR result, not just BUS.
-    let aluf_t_loads_alu: bool =
-           mi.aluf == AluFunction::BusOrT
+    let aluf_t_loads_alu: bool = mi.aluf == AluFunction::BusOrT
         || mi.aluf == AluFunction::BusPlusOne
         || mi.aluf == AluFunction::BusMinusOne
         || mi.aluf == AluFunction::BusPlusTPlusOne
@@ -566,7 +571,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     //   - Left shift:  bit 0  ← dns_carry; new carry ← input bit 15
     //   - Right shift: bit 15 ← dns_carry; new carry ← input bit 0
     let is_magic: bool = is_emulator && mi.f2 == F2Function::Code9;
-    let is_dns:   bool = is_emulator && mi.f2 == F2Function::Code10;
+    let is_dns: bool = is_emulator && mi.f2 == F2Function::Code10;
 
     // Nova carry input for DNS, per ContrAlto's LoadDNS early handler.
     // IR bits 5-4 (in our LSB=0 numbering, value 0..3) select carry
@@ -574,24 +579,36 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // NEG/INC/ADC/SUB/ADD AND ALU produced a carry-out, invert.
     let dns_carry_base: bool = if is_dns {
         let cc: Bits<2> = ((q.ir >> 4) & bits::<16>(0b11)).resize();
-        if cc == bits::<2>(0)      { q.carry }
-        else if cc == bits::<2>(1) { false }            // Z
-        else if cc == bits::<2>(2) { true }             // O
-        else                        { !q.carry }        // C: complement
+        if cc == bits::<2>(0) {
+            q.carry
+        } else if cc == bits::<2>(1) {
+            false
+        }
+        // Z
+        else if cc == bits::<2>(2) {
+            true
+        }
+        // O
+        else {
+            !q.carry
+        } // C: complement
     } else {
         q.carry
     };
     let dns_carry_in: bool = if is_dns {
         let op: Bits<3> = ((q.ir >> 8) & bits::<16>(0b111)).resize();
-        let invert: bool =
-               op == bits::<3>(1)
+        let invert: bool = op == bits::<3>(1)
             || op == bits::<3>(3)
             || op == bits::<3>(4)
             || op == bits::<3>(5)
             || op == bits::<3>(6);
-        if invert && aout.carry { !dns_carry_base } else { dns_carry_base }
+        if invert && aout.carry {
+            !dns_carry_base
+        } else {
+            dns_carry_base
+        }
     } else {
-        false  // unused when !is_dns
+        false // unused when !is_dns
     };
 
     // Capture pre-shift value (= L after L_LOAD but before F1's shift).
@@ -600,20 +617,38 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
 
     // Compute shifter output.
     let l_after_f1: Bits<16> = match mi.f1 {
-        F1Function::LeftShift1  => {
+        F1Function::LeftShift1 => {
             let shifted = l_pre_shift << 1;
-            if is_magic        { shifted | ((q.t >> 15) & bits::<16>(1)) }
-            else if is_dns     { shifted | (if dns_carry_in { bits::<16>(1) } else { bits::<16>(0) }) }
-            else               { shifted }
+            if is_magic {
+                shifted | ((q.t >> 15) & bits::<16>(1))
+            } else if is_dns {
+                shifted
+                    | (if dns_carry_in {
+                        bits::<16>(1)
+                    } else {
+                        bits::<16>(0)
+                    })
+            } else {
+                shifted
+            }
         }
         F1Function::RightShift1 => {
             let shifted = l_pre_shift >> 1;
-            if is_magic        { shifted | ((q.t & bits::<16>(1)) << 15) }
-            else if is_dns     { shifted | (if dns_carry_in { bits::<16>(0x8000) } else { bits::<16>(0) }) }
-            else               { shifted }
+            if is_magic {
+                shifted | ((q.t & bits::<16>(1)) << 15)
+            } else if is_dns {
+                shifted
+                    | (if dns_carry_in {
+                        bits::<16>(0x8000)
+                    } else {
+                        bits::<16>(0)
+                    })
+            } else {
+                shifted
+            }
         }
-        F1Function::LeftCycle8  => (l_pre_shift << 8) | (l_pre_shift >> 8),
-        _                       => l_pre_shift,
+        F1Function::LeftCycle8 => (l_pre_shift << 8) | (l_pre_shift >> 8),
+        _ => l_pre_shift,
     };
     d.l = l_after_f1;
 
@@ -622,9 +657,9 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // For non-shift (e.g. just F2=LoadDNS without LSH/RSH), dns_carry_in.
     let dns_carry_out: bool = if is_dns {
         match mi.f1 {
-            F1Function::LeftShift1  => (l_pre_shift & bits::<16>(0x8000)) != bits::<16>(0),
-            F1Function::RightShift1 => (l_pre_shift & bits::<16>(1))      != bits::<16>(0),
-            _                       => dns_carry_in,
+            F1Function::LeftShift1 => (l_pre_shift & bits::<16>(0x8000)) != bits::<16>(0),
+            F1Function::RightShift1 => (l_pre_shift & bits::<16>(1)) != bits::<16>(0),
+            _ => dns_carry_in,
         }
     } else {
         false
@@ -684,19 +719,44 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     //   LoadIr (Emul)      — bus bits 0,5,6,7 merged into NEXT[0-3]
     //   BUSODD (Emul)      — bus bit 0 → NEXT bit 0
     let mut next_modifier_this_cycle: Bits<10> = bits::<10>(0);
-    next_modifier_this_cycle = next_modifier_this_cycle | match mi.f2 {
-        F2Function::BusEqZero          => if bus == bits::<16>(0)             { bits::<10>(0x1) } else { bits::<10>(0) },
-        // Spec §3.4: SH<0 sets NEXT bit 0 if Shifter Output is negative
-        // (MSB SET).  Previous code had this inverted (== 0 instead of != 0),
-        // making the engine branch the wrong way on signed comparisons.
-        F2Function::ShiftLessThanZero  => if (l_after_f1 & bits::<16>(0x8000)) != bits::<16>(0) { bits::<10>(0x1) } else { bits::<10>(0) },
-        F2Function::ShiftEqZero        => if l_after_f1 == bits::<16>(0)      { bits::<10>(0x1) } else { bits::<10>(0) },
-        // ALUCY uses the STICKY carry from the last cycle that loaded L,
-        // NOT this cycle's carry.  Per spec §3.4 footnote.
-        F2Function::AluCarryToNext     => if q.alu_carry                      { bits::<10>(0x1) } else { bits::<10>(0) },
-        F2Function::BusToNext          => bus.resize() & bits::<10>(0x3FF),
-        _                              => bits::<10>(0),
-    };
+    next_modifier_this_cycle = next_modifier_this_cycle
+        | match mi.f2 {
+            F2Function::BusEqZero => {
+                if bus == bits::<16>(0) {
+                    bits::<10>(0x1)
+                } else {
+                    bits::<10>(0)
+                }
+            }
+            // Spec §3.4: SH<0 sets NEXT bit 0 if Shifter Output is negative
+            // (MSB SET).  Previous code had this inverted (== 0 instead of != 0),
+            // making the engine branch the wrong way on signed comparisons.
+            F2Function::ShiftLessThanZero => {
+                if (l_after_f1 & bits::<16>(0x8000)) != bits::<16>(0) {
+                    bits::<10>(0x1)
+                } else {
+                    bits::<10>(0)
+                }
+            }
+            F2Function::ShiftEqZero => {
+                if l_after_f1 == bits::<16>(0) {
+                    bits::<10>(0x1)
+                } else {
+                    bits::<10>(0)
+                }
+            }
+            // ALUCY uses the STICKY carry from the last cycle that loaded L,
+            // NOT this cycle's carry.  Per spec §3.4 footnote.
+            F2Function::AluCarryToNext => {
+                if q.alu_carry {
+                    bits::<10>(0x1)
+                } else {
+                    bits::<10>(0)
+                }
+            }
+            F2Function::BusToNext => bus.resize() & bits::<10>(0x3FF),
+            _ => bits::<10>(0),
+        };
     // F2=IDispatch (Emulator only, F2=15B = binary 13): the 16-way
     // PROM dispatch per *Alto Hardware Manual* §3.5 + spec §6.6.
     // Full table per ContrAlto's EmulatorTask.cs (verified against
@@ -724,21 +784,30 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let is_emulator_for_idisp: bool = i.current_task == bits::<4>(0);
     let is_idisp: bool = mi.f2 == F2Function::IDispatch;
     if is_emulator_for_idisp && is_idisp {
-        let ir_0:   bool      = (q.ir & bits::<16>(0x8000)) != bits::<16>(0);
-        let ir_8_9: Bits<10>  = ((q.ir >> 6)  & bits::<16>(0b11)).resize();
-        let ir_1_2: Bits<10>  = ((q.ir >> 13) & bits::<16>(0b11)).resize();
-        let ir_3_4: Bits<10>  = ((q.ir >> 11) & bits::<16>(0b11)).resize();
-        let ir_4_7: Bits<10>  = ((q.ir >> 8)  & bits::<16>(0b1111)).resize();
-        let dispatch_value: Bits<10> =
-                 if ir_0                        { bits::<10>(3) - ir_8_9 }
-            else if ir_1_2 == bits::<10>(0)     { ir_3_4 }
-            else if ir_1_2 == bits::<10>(1)     { bits::<10>(4) }
-            else if ir_1_2 == bits::<10>(2)     { bits::<10>(5) }
-            else if ir_4_7 == bits::<10>(0)     { bits::<10>(1) }
-            else if ir_4_7 == bits::<10>(1)     { bits::<10>(0) }
-            else if ir_4_7 == bits::<10>(6)     { bits::<10>(0o16) }
-            else if ir_4_7 == bits::<10>(0o16)  { bits::<10>(6) }
-            else                                { ir_4_7 };
+        let ir_0: bool = (q.ir & bits::<16>(0x8000)) != bits::<16>(0);
+        let ir_8_9: Bits<10> = ((q.ir >> 6) & bits::<16>(0b11)).resize();
+        let ir_1_2: Bits<10> = ((q.ir >> 13) & bits::<16>(0b11)).resize();
+        let ir_3_4: Bits<10> = ((q.ir >> 11) & bits::<16>(0b11)).resize();
+        let ir_4_7: Bits<10> = ((q.ir >> 8) & bits::<16>(0b1111)).resize();
+        let dispatch_value: Bits<10> = if ir_0 {
+            bits::<10>(3) - ir_8_9
+        } else if ir_1_2 == bits::<10>(0) {
+            ir_3_4
+        } else if ir_1_2 == bits::<10>(1) {
+            bits::<10>(4)
+        } else if ir_1_2 == bits::<10>(2) {
+            bits::<10>(5)
+        } else if ir_4_7 == bits::<10>(0) {
+            bits::<10>(1)
+        } else if ir_4_7 == bits::<10>(1) {
+            bits::<10>(0)
+        } else if ir_4_7 == bits::<10>(6) {
+            bits::<10>(0o16)
+        } else if ir_4_7 == bits::<10>(0o16) {
+            bits::<10>(6)
+        } else {
+            ir_4_7
+        };
         next_modifier_this_cycle = next_modifier_this_cycle | dispatch_value;
     }
 
@@ -772,8 +841,8 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // Each F2 NEXT-modify is OR'd into next_addr; multiple can apply
     // if the dispatch is ambiguous, but the canonical KSEC/KWDX
     // microcode uses one per cycle.
-    let in_disk_task_for_f2: bool = i.current_task == bits::<4>(4)
-        || i.current_task == bits::<4>(14);
+    let in_disk_task_for_f2: bool =
+        i.current_task == bits::<4>(4) || i.current_task == bits::<4>(14);
     if in_disk_task_for_f2 {
         // INIT, XFRDAT, RWC, RECNO, SWRNRDY, STROBON all stub to 0
         // (no NEXT modification).  NFER stubs to 1 (always set bit 0).
@@ -827,20 +896,34 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
             bits::<10>(3) - sh
         } else {
             let ir_1_2_acs: Bits<10> = ((q.ir >> 13) & bits::<16>(0b11)).resize();
-            let ir_5: Bits<10>       = ((q.ir >> 10) & bits::<16>(0b1)).resize();
-            let ir_3_7: Bits<10>     = ((q.ir >> 8)  & bits::<16>(0b11111)).resize();
-            let ind_bit: Bits<10> = if ir_1_2_acs != bits::<10>(3) { ir_5 } else { bits::<10>(0) };
-            let dispatch: Bits<10> =
-                     if ir_3_7 == bits::<10>(0)     { bits::<10>(2) }
-                else if ir_3_7 == bits::<10>(1)     { bits::<10>(5) }
-                else if ir_3_7 == bits::<10>(2)     { bits::<10>(3) }
-                else if ir_3_7 == bits::<10>(3)     { bits::<10>(6) }
-                else if ir_3_7 == bits::<10>(4)     { bits::<10>(7) }
-                else if ir_3_7 == bits::<10>(9)     { bits::<10>(4) }
-                else if ir_3_7 == bits::<10>(10)    { bits::<10>(4) }
-                else if ir_3_7 == bits::<10>(14)    { bits::<10>(1) }
-                else if ir_3_7 == bits::<10>(31)    { bits::<10>(15) }
-                else                                { bits::<10>(14) };
+            let ir_5: Bits<10> = ((q.ir >> 10) & bits::<16>(0b1)).resize();
+            let ir_3_7: Bits<10> = ((q.ir >> 8) & bits::<16>(0b11111)).resize();
+            let ind_bit: Bits<10> = if ir_1_2_acs != bits::<10>(3) {
+                ir_5
+            } else {
+                bits::<10>(0)
+            };
+            let dispatch: Bits<10> = if ir_3_7 == bits::<10>(0) {
+                bits::<10>(2)
+            } else if ir_3_7 == bits::<10>(1) {
+                bits::<10>(5)
+            } else if ir_3_7 == bits::<10>(2) {
+                bits::<10>(3)
+            } else if ir_3_7 == bits::<10>(3) {
+                bits::<10>(6)
+            } else if ir_3_7 == bits::<10>(4) {
+                bits::<10>(7)
+            } else if ir_3_7 == bits::<10>(9) {
+                bits::<10>(4)
+            } else if ir_3_7 == bits::<10>(10) {
+                bits::<10>(4)
+            } else if ir_3_7 == bits::<10>(14) {
+                bits::<10>(1)
+            } else if ir_3_7 == bits::<10>(31) {
+                bits::<10>(15)
+            } else {
+                bits::<10>(14)
+            };
             ind_bit | dispatch
         };
         next_modifier_this_cycle = next_modifier_this_cycle | acs_dispatch;
@@ -857,7 +940,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // wrong handler.
     if is_emulator_for_idisp && mi.f2 == F2Function::LoadIr {
         let merge_hi: Bits<10> = ((bus & bits::<16>(0x8000)) >> 12).resize();
-        let merge_lo: Bits<10> = ((bus & bits::<16>(0x0700)) >>  8).resize();
+        let merge_lo: Bits<10> = ((bus & bits::<16>(0x0700)) >> 8).resize();
         next_modifier_this_cycle = next_modifier_this_cycle | merge_hi | merge_lo;
     }
 
@@ -896,9 +979,13 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     //                                     with BUS as data.
     // DMA → emit a memory write at i.kcwa with i.disk_word_data.
     // BS = MemoryData reads memory[MAR] (1-cycle delay on BRAM).
-    d.mar = if mi.f1 == F1Function::LoadMar { bus } else { q.mar };
-    o.mem_address    = if is_dma { i.kcwa } else { q.mar };
-    o.mem_write_en   = is_dma || (mi.f2 == F2Function::StoreMd);
+    d.mar = if mi.f1 == F1Function::LoadMar {
+        bus
+    } else {
+        q.mar
+    };
+    o.mem_address = if is_dma { i.kcwa } else { q.mar };
+    o.mem_write_en = is_dma || (mi.f2 == F2Function::StoreMd);
     o.mem_write_data = if is_dma { i.disk_word_data } else { bus };
 
     // ---- Per-task disk-controller register writes ---------------
@@ -917,43 +1004,43 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let is_disk_word_task_for_f1: bool = i.current_task == bits::<4>(14);
     let in_disk_task: bool = is_disk_sector_task || is_disk_word_task_for_f1;
     let is_kcomm: bool = mi.f1 == F1Function::WriteKcomm;
-    let is_kadr:  bool = mi.f1 == F1Function::WriteKadr;
+    let is_kadr: bool = mi.f1 == F1Function::WriteKadr;
     let is_kdata: bool = mi.f1 == F1Function::WriteKdata;
-    let is_kcwa:  bool = mi.f1 == F1Function::WriteKcwa;
+    let is_kcwa: bool = mi.f1 == F1Function::WriteKcwa;
     let is_kstat: bool = mi.f1 == F1Function::Code10;
     o.disk_ctrl_addr = if is_dma {
-        bits::<3>(4)  // REG_KCWA
+        bits::<3>(4) // REG_KCWA
     } else if is_kstat {
-        bits::<3>(0)  // REG_KSTAT
+        bits::<3>(0) // REG_KSTAT
     } else if is_kcomm {
-        bits::<3>(2)  // REG_KCOM
+        bits::<3>(2) // REG_KCOM
     } else if is_kadr {
-        bits::<3>(3)  // REG_KADR
+        bits::<3>(3) // REG_KADR
     } else if is_kdata {
-        bits::<3>(1)  // REG_KDATA
+        bits::<3>(1) // REG_KDATA
     } else if is_kcwa {
-        bits::<3>(4)  // REG_KCWA
+        bits::<3>(4) // REG_KCWA
     } else {
-        bits::<3>(0)  // any value; write_en will be false
+        bits::<3>(0) // any value; write_en will be false
     };
-    o.disk_ctrl_write_en   = is_dma
+    o.disk_ctrl_write_en = is_dma
         || (is_disk_sector_task && (is_kcomm || is_kadr || is_kdata || is_kcwa))
         || (in_disk_task && is_kstat);
     o.disk_ctrl_write_data = if is_dma { i.kcwa + bits::<16>(1) } else { bus };
-    o.disk_word_consumed   = is_dma;
-    o.task_yield           = mi.f1 == F1Function::TaskYield;
+    o.disk_word_consumed = is_dma;
+    o.task_yield = mi.f1 == F1Function::TaskYield;
     // Memory-pipeline-stall driver signals — pure decode of current
     // uinst (no dependence on stall state).  AltoChip routes these
     // into the Memory subsystem, which combinationally returns
     // mem_stall.  See `Memory` rustdoc for the FSM.
     o.mar_load_this_cycle = mi.f1 == F1Function::LoadMar;
-    o.md_read_this_cycle  = mi.bs == BusSource::MemoryData;
+    o.md_read_this_cycle = mi.bs == BusSource::MemoryData;
     o.md_write_this_cycle = mi.f2 == F2Function::StoreMd;
     // F1=Block (universal, F1=3): per *Alto Hardware Manual* §2.4
     // and spec §5.5.  Surfaced as a chip-level signal so device
     // widgets (e.g. DiabloDisk) can snoop it together with
     // current_task to deassert their own wakeup signals.
-    o.block_task           = mi.f1 == F1Function::Block;
+    o.block_task = mi.f1 == F1Function::Block;
     // F1=STROBE (per-task, F1=11B/binary 9 in Disk Sector / Disk
     // Word per spec §8.5): "Initiates a disk seek operation. KDATA
     // must be loaded previously, and SENDADR bit of KCOM register
@@ -963,8 +1050,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // transfer.  Surfaced as `disk_strobe` for the chip to route to
     // disk.transfer_request as an arm trigger (in addition to the
     // existing Phase-3.5 KCOM-bit-15 path).
-    o.disk_strobe = (i.current_task == bits::<4>(4)
-        || i.current_task == bits::<4>(14))
+    o.disk_strobe = (i.current_task == bits::<4>(4) || i.current_task == bits::<4>(14))
         && (mi.f1 == F1Function::Code9);
     // F1=STARTF (Emulator-only, F1=17B/binary 15 per spec §6.6):
     // "The STARTF function is used by the SIO instruction, and is
@@ -973,8 +1059,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // task it's WriteKdata (LoadKDATA per spec §8.5).  Per-task
     // gating distinguishes.  Surfaced as `startf` for the chip to
     // route to per-device boot/I/O triggers.
-    o.startf = i.current_task == bits::<4>(0)
-        && mi.f1 == F1Function::WriteKdata;
+    o.startf = i.current_task == bits::<4>(0) && mi.f1 == F1Function::WriteKdata;
     // F1=CLRSTAT (per-task, F1=12 in Disk Sector / Disk Word per
     // spec §3.3 + §8.5): "Causes all error latches in disk controller
     // hardware to reset, clears KSTAT[13]" (per ContrAlto's
@@ -985,8 +1070,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // triggers KCWA write.  The two semantics are not mutually
     // exclusive (clear KSTAT + write KCWA both happen in this
     // simplification).
-    o.disk_clr_stat = (i.current_task == bits::<4>(4)
-        || i.current_task == bits::<4>(14))
+    o.disk_clr_stat = (i.current_task == bits::<4>(4) || i.current_task == bits::<4>(14))
         && (mi.f1 == F1Function::WriteKcwa);
 
     // ---- Per-task IR load (Emulator) ------------------------------
@@ -1014,7 +1098,11 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // into IR, breaking all downstream Nova dispatch.
     let is_emulator_task: bool = i.current_task == bits::<4>(0);
     let is_load_ir: bool = mi.f2 == F2Function::LoadIr;
-    d.ir = if is_emulator_task && is_load_ir { i.mem_read_data } else { q.ir };
+    d.ir = if is_emulator_task && is_load_ir {
+        i.mem_read_data
+    } else {
+        q.ir
+    };
     o.ir = q.ir;
 
     // SKIP latch update per spec §6.6:
@@ -1031,24 +1119,40 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     //       7 SBN      → SKIP=(result != 0 && carry_out != 0)
     let dns_skip_mode: Bits<3> = (q.ir & bits::<16>(0b111)).resize();
     let result_zero: bool = l_after_f1 == bits::<16>(0);
-    let carry_zero: bool  = !dns_carry_out;
-    let dns_new_skip: bool =
-             if dns_skip_mode == bits::<3>(0) { false }
-        else if dns_skip_mode == bits::<3>(1) { true }
-        else if dns_skip_mode == bits::<3>(2) { carry_zero }
-        else if dns_skip_mode == bits::<3>(3) { !carry_zero }
-        else if dns_skip_mode == bits::<3>(4) { result_zero }
-        else if dns_skip_mode == bits::<3>(5) { !result_zero }
-        else if dns_skip_mode == bits::<3>(6) { result_zero || carry_zero }
-        else                                  { !result_zero && !carry_zero };
-    d.skip = if is_emulator_task && is_load_ir { false }
-        else if is_dns                          { dns_new_skip }
-        else                                    { q.skip };
+    let carry_zero: bool = !dns_carry_out;
+    let dns_new_skip: bool = if dns_skip_mode == bits::<3>(0) {
+        false
+    } else if dns_skip_mode == bits::<3>(1) {
+        true
+    } else if dns_skip_mode == bits::<3>(2) {
+        carry_zero
+    } else if dns_skip_mode == bits::<3>(3) {
+        !carry_zero
+    } else if dns_skip_mode == bits::<3>(4) {
+        result_zero
+    } else if dns_skip_mode == bits::<3>(5) {
+        !result_zero
+    } else if dns_skip_mode == bits::<3>(6) {
+        result_zero || carry_zero
+    } else {
+        !result_zero && !carry_zero
+    };
+    d.skip = if is_emulator_task && is_load_ir {
+        false
+    } else if is_dns {
+        dns_new_skip
+    } else {
+        q.skip
+    };
 
     // CARRY latch update: F2=LoadDNS late phase writes back
     // dns_carry_out IFF R-write is enabled (per ContrAlto:
     // `if (_loadR) { _carry = carry; }`).  Without DNS, carry is held.
-    d.carry = if is_dns && !dns_suppress_r { dns_carry_out } else { q.carry };
+    d.carry = if is_dns && !dns_suppress_r {
+        dns_carry_out
+    } else {
+        q.carry
+    };
 
     // ---- Control RAM updates (M / S / S-bank) ----------------------
     //
@@ -1098,11 +1202,11 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     };
 
     // ---- Outputs ---------------------------------------------------
-    o.t          = q.t;
-    o.l          = q.l;
-    o.bus        = bus;
+    o.t = q.t;
+    o.l = q.l;
+    o.bus = bus;
     o.alu_result = aout.result;
-    o.regs       = q.regs;
+    o.regs = q.regs;
 
     // ---- Memory-pipeline stall gate -------------------------------
     //
@@ -1212,21 +1316,21 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
 /// needed because the kernel can't call `Microinstruction::unpack`
 /// (which is a non-kernel `impl` method).
 pub fn unpack_kernel(word: Bits<32>) -> Microinstruction {
-    let rsel: Bits<5>   = ((word >> 27) & bits::<32>(0x1F)).resize();
+    let rsel: Bits<5> = ((word >> 27) & bits::<32>(0x1F)).resize();
     let aluf_idx: Bits<4> = ((word >> 23) & bits::<32>(0xF)).resize();
-    let bs_idx: Bits<3>   = ((word >> 20) & bits::<32>(0x7)).resize();
-    let f1_idx: Bits<4>   = ((word >> 16) & bits::<32>(0xF)).resize();
-    let f2_idx: Bits<4>   = ((word >> 12) & bits::<32>(0xF)).resize();
-    let t_load: bool      = ((word >> 11) & bits::<32>(0x1)) != bits::<32>(0);
-    let l_load: bool      = ((word >> 10) & bits::<32>(0x1)) != bits::<32>(0);
-    let next: Bits<10>    = (word & bits::<32>(0x3FF)).resize();
+    let bs_idx: Bits<3> = ((word >> 20) & bits::<32>(0x7)).resize();
+    let f1_idx: Bits<4> = ((word >> 16) & bits::<32>(0xF)).resize();
+    let f2_idx: Bits<4> = ((word >> 12) & bits::<32>(0xF)).resize();
+    let t_load: bool = ((word >> 11) & bits::<32>(0x1)) != bits::<32>(0);
+    let l_load: bool = ((word >> 10) & bits::<32>(0x1)) != bits::<32>(0);
+    let next: Bits<10> = (word & bits::<32>(0x3FF)).resize();
 
     Microinstruction {
         rsel,
         aluf: aluf_from_index(aluf_idx),
-        bs:   bs_from_index(bs_idx),
-        f1:   f1_from_index(f1_idx),
-        f2:   f2_from_index(f2_idx),
+        bs: bs_from_index(bs_idx),
+        f1: f1_from_index(f1_idx),
+        f2: f2_from_index(f2_idx),
         t_load,
         l_load,
         next,
@@ -1235,73 +1339,132 @@ pub fn unpack_kernel(word: Bits<32>) -> Microinstruction {
 
 #[kernel]
 fn aluf_from_index(i: Bits<4>) -> AluFunction {
-    if      i == bits::<4>(0)  { AluFunction::Bus }
-    else if i == bits::<4>(1)  { AluFunction::T }
-    else if i == bits::<4>(2)  { AluFunction::BusOrT }
-    else if i == bits::<4>(3)  { AluFunction::BusAndT }
-    else if i == bits::<4>(4)  { AluFunction::BusXorT }
-    else if i == bits::<4>(5)  { AluFunction::BusPlusOne }
-    else if i == bits::<4>(6)  { AluFunction::BusMinusOne }
-    else if i == bits::<4>(7)  { AluFunction::BusPlusT }
-    else if i == bits::<4>(8)  { AluFunction::BusMinusT }
-    else if i == bits::<4>(9)  { AluFunction::BusMinusTMinusOne }
-    else if i == bits::<4>(10) { AluFunction::BusPlusTPlusOne }
-    else if i == bits::<4>(11) { AluFunction::BusPlusSkip }
-    else if i == bits::<4>(12) { AluFunction::BusAndTAlt }
-    else if i == bits::<4>(13) { AluFunction::BusAndNotT }
-    else if i == bits::<4>(14) { AluFunction::Undef14 }
-    else                       { AluFunction::Undef15 }
+    if i == bits::<4>(0) {
+        AluFunction::Bus
+    } else if i == bits::<4>(1) {
+        AluFunction::T
+    } else if i == bits::<4>(2) {
+        AluFunction::BusOrT
+    } else if i == bits::<4>(3) {
+        AluFunction::BusAndT
+    } else if i == bits::<4>(4) {
+        AluFunction::BusXorT
+    } else if i == bits::<4>(5) {
+        AluFunction::BusPlusOne
+    } else if i == bits::<4>(6) {
+        AluFunction::BusMinusOne
+    } else if i == bits::<4>(7) {
+        AluFunction::BusPlusT
+    } else if i == bits::<4>(8) {
+        AluFunction::BusMinusT
+    } else if i == bits::<4>(9) {
+        AluFunction::BusMinusTMinusOne
+    } else if i == bits::<4>(10) {
+        AluFunction::BusPlusTPlusOne
+    } else if i == bits::<4>(11) {
+        AluFunction::BusPlusSkip
+    } else if i == bits::<4>(12) {
+        AluFunction::BusAndTAlt
+    } else if i == bits::<4>(13) {
+        AluFunction::BusAndNotT
+    } else if i == bits::<4>(14) {
+        AluFunction::Undef14
+    } else {
+        AluFunction::Undef15
+    }
 }
 
 #[kernel]
 fn bs_from_index(i: Bits<3>) -> BusSource {
-    if      i == bits::<3>(0) { BusSource::ReadR }
-    else if i == bits::<3>(1) { BusSource::LoadR }
-    else if i == bits::<3>(2) { BusSource::None }
-    else if i == bits::<3>(3) { BusSource::TaskSpec3 }
-    else if i == bits::<3>(4) { BusSource::TaskSpec4 }
-    else if i == bits::<3>(5) { BusSource::MemoryData }
-    else if i == bits::<3>(6) { BusSource::Mouse }
-    else                      { BusSource::InstructionRegister }
+    if i == bits::<3>(0) {
+        BusSource::ReadR
+    } else if i == bits::<3>(1) {
+        BusSource::LoadR
+    } else if i == bits::<3>(2) {
+        BusSource::None
+    } else if i == bits::<3>(3) {
+        BusSource::TaskSpec3
+    } else if i == bits::<3>(4) {
+        BusSource::TaskSpec4
+    } else if i == bits::<3>(5) {
+        BusSource::MemoryData
+    } else if i == bits::<3>(6) {
+        BusSource::Mouse
+    } else {
+        BusSource::InstructionRegister
+    }
 }
 
 #[kernel]
 fn f1_from_index(i: Bits<4>) -> F1Function {
-    if      i == bits::<4>(0)  { F1Function::Nop }
-    else if i == bits::<4>(1)  { F1Function::LoadMar }
-    else if i == bits::<4>(2)  { F1Function::TaskYield }
-    else if i == bits::<4>(3)  { F1Function::Block }
-    else if i == bits::<4>(4)  { F1Function::LeftShift1 }
-    else if i == bits::<4>(5)  { F1Function::RightShift1 }
-    else if i == bits::<4>(6)  { F1Function::LeftCycle8 }
-    else if i == bits::<4>(7)  { F1Function::Constant }
-    else if i == bits::<4>(8)  { F1Function::EmuSwMode }
-    else if i == bits::<4>(9)  { F1Function::Code9 }
-    else if i == bits::<4>(10) { F1Function::Code10 }
-    else if i == bits::<4>(11) { F1Function::Code11 }
-    else if i == bits::<4>(12) { F1Function::WriteKcwa }
-    else if i == bits::<4>(13) { F1Function::WriteKcomm }
-    else if i == bits::<4>(14) { F1Function::WriteKadr }
-    else                       { F1Function::WriteKdata }
+    if i == bits::<4>(0) {
+        F1Function::Nop
+    } else if i == bits::<4>(1) {
+        F1Function::LoadMar
+    } else if i == bits::<4>(2) {
+        F1Function::TaskYield
+    } else if i == bits::<4>(3) {
+        F1Function::Block
+    } else if i == bits::<4>(4) {
+        F1Function::LeftShift1
+    } else if i == bits::<4>(5) {
+        F1Function::RightShift1
+    } else if i == bits::<4>(6) {
+        F1Function::LeftCycle8
+    } else if i == bits::<4>(7) {
+        F1Function::Constant
+    } else if i == bits::<4>(8) {
+        F1Function::EmuSwMode
+    } else if i == bits::<4>(9) {
+        F1Function::Code9
+    } else if i == bits::<4>(10) {
+        F1Function::Code10
+    } else if i == bits::<4>(11) {
+        F1Function::Code11
+    } else if i == bits::<4>(12) {
+        F1Function::WriteKcwa
+    } else if i == bits::<4>(13) {
+        F1Function::WriteKcomm
+    } else if i == bits::<4>(14) {
+        F1Function::WriteKadr
+    } else {
+        F1Function::WriteKdata
+    }
 }
 
 #[kernel]
 fn f2_from_index(i: Bits<4>) -> F2Function {
-    if      i == bits::<4>(0)  { F2Function::Nop }
-    else if i == bits::<4>(1)  { F2Function::BusEqZero }
-    else if i == bits::<4>(2)  { F2Function::ShiftLessThanZero }
-    else if i == bits::<4>(3)  { F2Function::ShiftEqZero }
-    else if i == bits::<4>(4)  { F2Function::BusToNext }
-    else if i == bits::<4>(5)  { F2Function::AluCarryToNext }
-    else if i == bits::<4>(6)  { F2Function::StoreMd }
-    else if i == bits::<4>(7)  { F2Function::Constant }
-    else if i == bits::<4>(8)  { F2Function::DiskWordTransfer }
-    else if i == bits::<4>(9)  { F2Function::Code9 }
-    else if i == bits::<4>(10) { F2Function::Code10 }
-    else if i == bits::<4>(11) { F2Function::Code11 }
-    else if i == bits::<4>(12) { F2Function::LoadIr }
-    else if i == bits::<4>(13) { F2Function::IDispatch }
-    else if i == bits::<4>(14) { F2Function::Code14 }
-    else                       { F2Function::Code15 }
+    if i == bits::<4>(0) {
+        F2Function::Nop
+    } else if i == bits::<4>(1) {
+        F2Function::BusEqZero
+    } else if i == bits::<4>(2) {
+        F2Function::ShiftLessThanZero
+    } else if i == bits::<4>(3) {
+        F2Function::ShiftEqZero
+    } else if i == bits::<4>(4) {
+        F2Function::BusToNext
+    } else if i == bits::<4>(5) {
+        F2Function::AluCarryToNext
+    } else if i == bits::<4>(6) {
+        F2Function::StoreMd
+    } else if i == bits::<4>(7) {
+        F2Function::Constant
+    } else if i == bits::<4>(8) {
+        F2Function::DiskWordTransfer
+    } else if i == bits::<4>(9) {
+        F2Function::Code9
+    } else if i == bits::<4>(10) {
+        F2Function::Code10
+    } else if i == bits::<4>(11) {
+        F2Function::Code11
+    } else if i == bits::<4>(12) {
+        F2Function::LoadIr
+    } else if i == bits::<4>(13) {
+        F2Function::IDispatch
+    } else if i == bits::<4>(14) {
+        F2Function::Code14
+    } else {
+        F2Function::Code15
+    }
 }
-

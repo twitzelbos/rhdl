@@ -200,9 +200,7 @@ impl Default for DiabloDisk {
     fn default() -> Self {
         Self {
             sector_tick: dff::DFF::new(bits::<SECTOR_TICK_W>(0)),
-            sector_period_minus_1: Constant::new(
-                bits::<SECTOR_TICK_W>(DEFAULT_SECTOR_TICK_WRAP),
-            ),
+            sector_period_minus_1: Constant::new(bits::<SECTOR_TICK_W>(DEFAULT_SECTOR_TICK_WRAP)),
             sector_wake: dff::DFF::new(false),
             transfer_remaining: dff::DFF::new(bits::<10>(0)),
             current_word_position: dff::DFF::new(bits::<8>(0)),
@@ -224,9 +222,7 @@ impl DiabloDisk {
         }
         Self {
             sector_tick: dff::DFF::new(bits::<SECTOR_TICK_W>(0)),
-            sector_period_minus_1: Constant::new(
-                bits::<SECTOR_TICK_W>(DEFAULT_SECTOR_TICK_WRAP),
-            ),
+            sector_period_minus_1: Constant::new(bits::<SECTOR_TICK_W>(DEFAULT_SECTOR_TICK_WRAP)),
             sector_wake: dff::DFF::new(false),
             transfer_remaining: dff::DFF::new(bits::<10>(0)),
             current_word_position: dff::DFF::new(bits::<8>(0)),
@@ -248,12 +244,8 @@ impl DiabloDisk {
             buf[i] = bits::<16>(w as u128);
         }
         Self {
-            sector_tick: dff::DFF::new(bits::<SECTOR_TICK_W>(
-                DEFAULT_SECTOR_TICK_WRAP,
-            )),
-            sector_period_minus_1: Constant::new(
-                bits::<SECTOR_TICK_W>(DEFAULT_SECTOR_TICK_WRAP),
-            ),
+            sector_tick: dff::DFF::new(bits::<SECTOR_TICK_W>(DEFAULT_SECTOR_TICK_WRAP)),
+            sector_period_minus_1: Constant::new(bits::<SECTOR_TICK_W>(DEFAULT_SECTOR_TICK_WRAP)),
             sector_wake: dff::DFF::new(false),
             transfer_remaining: dff::DFF::new(bits::<10>(0)),
             current_word_position: dff::DFF::new(bits::<8>(0)),
@@ -280,9 +272,7 @@ impl DiabloDisk {
         let wrap_value = (period_cycles - 1) as u128;
         Self {
             sector_tick: dff::DFF::new(bits::<SECTOR_TICK_W>(0)),
-            sector_period_minus_1: Constant::new(
-                bits::<SECTOR_TICK_W>(wrap_value),
-            ),
+            sector_period_minus_1: Constant::new(bits::<SECTOR_TICK_W>(wrap_value)),
             sector_wake: dff::DFF::new(false),
             transfer_remaining: dff::DFF::new(bits::<10>(0)),
             current_word_position: dff::DFF::new(bits::<8>(0)),
@@ -296,10 +286,7 @@ impl DiabloDisk {
     /// `_sectorEvent = new Event(0, ...)` simulation choice — useful
     /// for lockstep harnesses that want to align task arbitration to
     /// the first cycle.  Steady-state period is unchanged.
-    pub fn with_test_period_and_sector_at_boundary(
-        period_cycles: u32,
-        words: &[u16; 256],
-    ) -> Self {
+    pub fn with_test_period_and_sector_at_boundary(period_cycles: u32, words: &[u16; 256]) -> Self {
         debug_assert!(period_cycles >= 1, "sector period must be ≥ 1 cycle");
         debug_assert!(
             period_cycles <= (1u32 << SECTOR_TICK_W),
@@ -312,9 +299,7 @@ impl DiabloDisk {
         }
         Self {
             sector_tick: dff::DFF::new(bits::<SECTOR_TICK_W>(wrap_value)),
-            sector_period_minus_1: Constant::new(
-                bits::<SECTOR_TICK_W>(wrap_value),
-            ),
+            sector_period_minus_1: Constant::new(bits::<SECTOR_TICK_W>(wrap_value)),
             sector_wake: dff::DFF::new(false),
             transfer_remaining: dff::DFF::new(bits::<10>(0)),
             current_word_position: dff::DFF::new(bits::<8>(0)),
@@ -338,9 +323,7 @@ impl DiabloDisk {
         }
         Self {
             sector_tick: dff::DFF::new(bits::<SECTOR_TICK_W>(0)),
-            sector_period_minus_1: Constant::new(
-                bits::<SECTOR_TICK_W>(wrap_value),
-            ),
+            sector_period_minus_1: Constant::new(bits::<SECTOR_TICK_W>(wrap_value)),
             sector_wake: dff::DFF::new(false),
             transfer_remaining: dff::DFF::new(bits::<10>(0)),
             current_word_position: dff::DFF::new(bits::<8>(0)),
@@ -363,18 +346,20 @@ pub fn diablo_disk_kernel(cr: ClockReset, i: DiskIn, q: Q) -> (DiskOut, D) {
     // Sector tick: count up to `sector_period_minus_1`, then wrap.
     // Default period is the spec-correct 19,608 cycles; tests can use
     // a shorter period via `DiabloDisk::with_test_period`.
-    let next_tick: Bits<SECTOR_TICK_W> =
-        q.sector_tick + bits::<SECTOR_TICK_W>(1);
+    let next_tick: Bits<SECTOR_TICK_W> = q.sector_tick + bits::<SECTOR_TICK_W>(1);
     let wraps: bool = q.sector_tick == q.sector_period_minus_1;
-    d.sector_tick = if wraps { bits::<SECTOR_TICK_W>(0) } else { next_tick };
+    d.sector_tick = if wraps {
+        bits::<SECTOR_TICK_W>(0)
+    } else {
+        next_tick
+    };
 
     // Sustained SECTOR-task wakeup per *Alto Hardware Manual* §2.4 +
     // spec §5.5.  Set when sector_tick wraps (sector boundary
     // detected); cleared when current_task=4 issues F1=Block ("the
     // device interface monitors the F1 lines and clears its own
     // wakeup when it sees its task asserting F1=3").
-    let block_clears_sector: bool =
-        i.block_task && i.current_task == bits::<4>(4);
+    let block_clears_sector: bool = i.block_task && i.current_task == bits::<4>(4);
     let next_sector_wake: bool = if block_clears_sector {
         false
     } else if wraps {
@@ -396,14 +381,16 @@ pub fn diablo_disk_kernel(cr: ClockReset, i: DiskIn, q: Q) -> (DiskOut, D) {
     // word_strobe re-asserts (still in transfer), which re-wins
     // arbitration on the next yield — matching real-Alto per-word
     // re-arbitration behavior.
-    let block_clears_word: bool =
-        i.block_task && i.current_task == bits::<4>(14);
-    o.word_strobe = (q.transfer_remaining != bits::<10>(0))
-        && !block_clears_word;
+    let block_clears_word: bool = i.block_task && i.current_task == bits::<4>(14);
+    o.word_strobe = (q.transfer_remaining != bits::<10>(0)) && !block_clears_word;
 
     // Combinational read of the addressed word.
     let read_idx: Bits<8> = i.word_addr;
-    o.read_data = if i.read_en { q.sector_buffer[read_idx] } else { bits::<16>(0) };
+    o.read_data = if i.read_en {
+        q.sector_buffer[read_idx]
+    } else {
+        bits::<16>(0)
+    };
 
     // Apply write to the active sector buffer.
     let mut next_buffer = q.sector_buffer;
@@ -436,7 +423,7 @@ pub fn diablo_disk_kernel(cr: ClockReset, i: DiskIn, q: Q) -> (DiskOut, D) {
 
     // Expose the current word's data for DMA reads.
     o.current_word_position = q.current_word_position;
-    o.current_word_data     = q.sector_buffer[q.current_word_position];
+    o.current_word_data = q.sector_buffer[q.current_word_position];
 
     o.ready = true;
 

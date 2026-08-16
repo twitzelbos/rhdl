@@ -58,7 +58,7 @@ bool |                                | bool
 #![doc = include_str!("../../doc/smbus_host.md")]
 use rhdl::prelude::*;
 
-use super::i2c_master::{I2cMaster, i2c_master as i2c_master_kernel};
+use super::i2c_master::{i2c_master as i2c_master_kernel, I2cMaster};
 use crate::core::{constant::Constant, dff};
 
 #[allow(unused_imports)]

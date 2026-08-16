@@ -264,11 +264,7 @@ pub fn ps2_mouse_intellimouse(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     }
 
     let mut o = Out::dont_care();
-    o.event_out = if q.event_valid {
-        Some(q.event_q)
-    } else {
-        None
-    };
+    o.event_out = if q.event_valid { Some(q.event_q) } else { None };
     o.busy = q.state != Ps2MouseImState::WaitByte0;
     (o, d)
 }
@@ -417,7 +413,9 @@ mod tests {
             .join("vcd")
             .join("ps2_mouse_intellimouse");
         std::fs::create_dir_all(&root).unwrap();
-        let _ = vcd.dump_to_file(root.join("ps2_mouse_intellimouse.vcd")).unwrap();
+        let _ = vcd
+            .dump_to_file(root.join("ps2_mouse_intellimouse.vcd"))
+            .unwrap();
         let _ = expect![[r#""#]];
         Ok(())
     }

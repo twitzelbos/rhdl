@@ -22,8 +22,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::spanned::Spanned;
 use syn::{
-    Attribute, Data, DeriveInput, Expr, ExprLit, Lit, Meta, Token, Variant,
-    punctuated::Punctuated,
+    Attribute, Data, DeriveInput, Expr, ExprLit, Lit, Meta, Token, Variant, punctuated::Punctuated,
 };
 
 use crate::digital_enum::allocate_discriminants;
@@ -53,9 +52,7 @@ fn parse_fsm_state_attr(attrs: &[Attribute]) -> syn::Result<FsmStateAttr> {
         if !attr.path().is_ident("fsm_state") {
             continue;
         }
-        let nested = attr.parse_args_with(
-            Punctuated::<Meta, Token![,]>::parse_terminated,
-        )?;
+        let nested = attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
         for meta in nested {
             match meta {
                 Meta::Path(p) if p.is_ident("terminal") => {
@@ -92,9 +89,7 @@ fn parse_fsm_enum_attr(attrs: &[Attribute]) -> syn::Result<FsmEnumAttr> {
         if !attr.path().is_ident("fsm") {
             continue;
         }
-        let nested = attr.parse_args_with(
-            Punctuated::<Meta, Token![,]>::parse_terminated,
-        )?;
+        let nested = attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
         for meta in nested {
             match meta {
                 Meta::NameValue(nv) if nv.path.is_ident("initial") => {
@@ -198,15 +193,14 @@ pub fn derive_fsm(input: TokenStream) -> syn::Result<TokenStream> {
         }
     } else {
         // Default to the variant marked `#[default]`, or 0 if none.
-        e.variants
-            .iter()
-            .position(variant_has_default)
-            .unwrap_or(0)
+        e.variants.iter().position(variant_has_default).unwrap_or(0)
     };
 
     // Build the per-variant rows of the static metadata slice.
-    let variant_rows = per_variant.iter().zip(discriminants.iter()).map(
-        |((attr, v), &disc)| {
+    let variant_rows = per_variant
+        .iter()
+        .zip(discriminants.iter())
+        .map(|((attr, v), &disc)| {
             let name_str = v.ident.to_string();
             let payload = variant_has_payload(v);
             let terminal = attr.terminal;
@@ -223,8 +217,7 @@ pub fn derive_fsm(input: TokenStream) -> syn::Result<TokenStream> {
                     label: #label_tokens,
                 }
             }
-        },
-    );
+        });
 
     // The variant index is computed by matching on `self`.
     let variant_index_arms = e.variants.iter().enumerate().map(|(idx, v)| {

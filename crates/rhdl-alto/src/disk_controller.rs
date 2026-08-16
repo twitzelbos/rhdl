@@ -85,10 +85,10 @@ pub struct CtrlOut {
 /// microcode lands).
 pub const REG_KSTAT: u32 = 0;
 pub const REG_KDATA: u32 = 1;
-pub const REG_KCOM:  u32 = 2;
-pub const REG_KADR:  u32 = 3;
-pub const REG_KCWA:  u32 = 4;
-pub const REG_KCWD:  u32 = 5;
+pub const REG_KCOM: u32 = 2;
+pub const REG_KADR: u32 = 3;
+pub const REG_KCWA: u32 = 4;
+pub const REG_KCWD: u32 = 5;
 
 /// The disk controller widget — a small register file plus
 /// field-decode for KADR / KCOM.
@@ -97,10 +97,10 @@ pub const REG_KCWD:  u32 = 5;
 pub struct DiskController {
     kstat: dff::DFF<Bits<16>>,
     kdata: dff::DFF<Bits<16>>,
-    kcom:  dff::DFF<Bits<16>>,
-    kadr:  dff::DFF<Bits<16>>,
-    kcwa:  dff::DFF<Bits<16>>,
-    kcwd:  dff::DFF<Bits<16>>,
+    kcom: dff::DFF<Bits<16>>,
+    kadr: dff::DFF<Bits<16>>,
+    kcwa: dff::DFF<Bits<16>>,
+    kcwd: dff::DFF<Bits<16>>,
     /// Previous-cycle latch of KCOM[15], used to edge-detect the
     /// "start transfer" bit so transfer_request fires for ONE cycle
     /// when KCOM[15] transitions 0→1, not continuously while the bit
@@ -126,19 +126,19 @@ pub fn disk_controller_kernel(cr: ClockReset, i: CtrlIn, q: Q) -> (CtrlOut, D) {
     // resolved as clear).
     d.kstat = q.kstat;
     d.kdata = q.kdata;
-    d.kcom  = q.kcom;
-    d.kadr  = q.kadr;
-    d.kcwa  = q.kcwa;
-    d.kcwd  = q.kcwd;
+    d.kcom = q.kcom;
+    d.kadr = q.kadr;
+    d.kcwa = q.kcwa;
+    d.kcwd = q.kcwd;
     d.prev_kcom_arm = q.prev_kcom_arm;
 
     // Write port — single addressed register per cycle.
     let kstat_a: Bits<3> = bits::<3>(0);
     let kdata_a: Bits<3> = bits::<3>(1);
-    let kcom_a:  Bits<3> = bits::<3>(2);
-    let kadr_a:  Bits<3> = bits::<3>(3);
-    let kcwa_a:  Bits<3> = bits::<3>(4);
-    let kcwd_a:  Bits<3> = bits::<3>(5);
+    let kcom_a: Bits<3> = bits::<3>(2);
+    let kadr_a: Bits<3> = bits::<3>(3);
+    let kcwa_a: Bits<3> = bits::<3>(4);
+    let kcwd_a: Bits<3> = bits::<3>(5);
 
     if i.write_en {
         if i.reg_addr == kstat_a {
@@ -191,12 +191,12 @@ pub fn disk_controller_kernel(cr: ClockReset, i: CtrlIn, q: Q) -> (CtrlOut, D) {
     //   bits[3:0]  = sector
     //   (other bits reserved)
     o.kadr_cylinder = ((q.kadr >> 8) & bits::<16>(0xFF)).resize();
-    o.kadr_head     = ((q.kadr >> 7) & bits::<16>(1)) != bits::<16>(0);
-    o.kadr_sector   = (q.kadr & bits::<16>(0xF)).resize();
-    o.kdata_word    = q.kdata;
-    o.kstat_word    = q.kstat;
-    o.kcom_op       = (q.kcom & bits::<16>(0x7)).resize();
-    o.kstat_ready   = (q.kstat & bits::<16>(1)) != bits::<16>(0);
+    o.kadr_head = ((q.kadr >> 7) & bits::<16>(1)) != bits::<16>(0);
+    o.kadr_sector = (q.kadr & bits::<16>(0xF)).resize();
+    o.kdata_word = q.kdata;
+    o.kstat_word = q.kstat;
+    o.kcom_op = (q.kcom & bits::<16>(0x7)).resize();
+    o.kstat_ready = (q.kstat & bits::<16>(1)) != bits::<16>(0);
     // Phase-3.5 simplification: KCOM bit 15 = "start transfer".
     // Real Alto uses different KCOM encoding; re-align when boot
     // trace requires it.  Edge-detect: transfer_request fires for
@@ -211,19 +211,19 @@ pub fn disk_controller_kernel(cr: ClockReset, i: CtrlIn, q: Q) -> (CtrlOut, D) {
     if cr.reset.any() {
         d.kstat = bits::<16>(0);
         d.kdata = bits::<16>(0);
-        d.kcom  = bits::<16>(0);
-        d.kadr  = bits::<16>(0);
-        d.kcwa  = bits::<16>(0);
-        d.kcwd  = bits::<16>(0);
+        d.kcom = bits::<16>(0);
+        d.kadr = bits::<16>(0);
+        d.kcwa = bits::<16>(0);
+        d.kcwd = bits::<16>(0);
         d.prev_kcom_arm = false;
-        o.read_data    = bits::<16>(0);
+        o.read_data = bits::<16>(0);
         o.kadr_cylinder = bits::<8>(0);
-        o.kadr_head    = false;
-        o.kadr_sector  = bits::<4>(0);
-        o.kdata_word   = bits::<16>(0);
-        o.kstat_word   = bits::<16>(0);
-        o.kcom_op      = bits::<3>(0);
-        o.kstat_ready  = false;
+        o.kadr_head = false;
+        o.kadr_sector = bits::<4>(0);
+        o.kdata_word = bits::<16>(0);
+        o.kstat_word = bits::<16>(0);
+        o.kcom_op = bits::<3>(0);
+        o.kstat_ready = false;
         o.transfer_request = false;
         o.kcwa_value = bits::<16>(0);
     }

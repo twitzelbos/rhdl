@@ -26,8 +26,14 @@ fn main() {
         let mi = Microinstruction::unpack(raw);
         println!(
             "MPC=0x{mpc:03x} raw=0x{raw:08x} rsel={:>2} aluf={:?} bs={:?} f1={:?} f2={:?} t={} l={} next=0x{:03x}",
-            mi.rsel.raw(), mi.aluf, mi.bs, mi.f1, mi.f2,
-            mi.t_load as u8, mi.l_load as u8, mi.next.raw(),
+            mi.rsel.raw(),
+            mi.aluf,
+            mi.bs,
+            mi.f1,
+            mi.f2,
+            mi.t_load as u8,
+            mi.l_load as u8,
+            mi.next.raw(),
         );
     }
 }

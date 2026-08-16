@@ -146,7 +146,10 @@ mod tests {
     /// `CreditRCStream` carries `Some(item)` like its simple cousin.
     #[test]
     fn credit_rcstream_with_item() {
-        let it = Item::<b16, bool> { data: bits::<16>(0xCAFE), frame: true };
+        let it = Item::<b16, bool> {
+            data: bits::<16>(0xCAFE),
+            frame: true,
+        };
         let s: CreditRCStream<b16, bool, 8> = CreditRCStream {
             data: Some(it),
             credit_grant: bits::<8>(1),

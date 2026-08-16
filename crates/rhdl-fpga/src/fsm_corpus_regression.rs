@@ -48,8 +48,7 @@ fn snapshot_corpus_widget<W>(expected: Expect)
 where
     W: rhdl::core::fsm::FsmWidget + rhdl::core::circuit::synchronous::SynchronousIO,
 {
-    let result =
-        extract_widget_transitions::<W>().expect("compile + extract");
+    let result = extract_widget_transitions::<W>().expect("compile + extract");
     assert!(
         result.unanalyzable.is_empty(),
         "extractor produced Unanalyzable diagnostics: {:?}",

@@ -163,10 +163,7 @@ mod tests {
             bound: Some(64),
         }];
         let out = render_property_sva(props);
-        assert!(
-            out.contains("##[1:64]"),
-            "expected `##[1:64]` in: {out}"
-        );
+        assert!(out.contains("##[1:64]"), "expected `##[1:64]` in: {out}");
     }
 
     #[test]
@@ -276,7 +273,10 @@ mod tests {
             ("s_eventually".to_string(), rest.to_string())
         } else if after_clk.starts_with("##[") {
             let close = after_clk.find("] ")?;
-            (after_clk[..close + 1].to_string(), after_clk[close + 2..].to_string())
+            (
+                after_clk[..close + 1].to_string(),
+                after_clk[close + 2..].to_string(),
+            )
         } else {
             (String::new(), after_clk.to_string())
         };
@@ -386,7 +386,10 @@ mod tests {
                 }
             }
             // Expression passes through verbatim.
-            assert_eq!(expr, prop.expression, "expression body altered: got `{expr}`");
+            assert_eq!(
+                expr, prop.expression,
+                "expression body altered: got `{expr}`"
+            );
         }
     }
 

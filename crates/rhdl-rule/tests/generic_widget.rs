@@ -49,7 +49,10 @@ fn generic_counter_at_width_4_counts() {
     // After 5 enabled cycles in steady-state we expect a non-zero count
     // bounded by N=4 width (max 15).  Exact value depends on framework
     // pipeline depth; sufficient to verify count > 0 and within range.
-    assert!(last >= 3 && last <= 5, "expected ~5 bumps at N=4, got {last}");
+    assert!(
+        last >= 3 && last <= 5,
+        "expected ~5 bumps at N=4, got {last}"
+    );
 }
 
 #[test]
@@ -123,5 +126,8 @@ fn generic_adder_works() {
         .map(|s| s.output.raw())
         .unwrap_or(0);
     // 4 adds of 3 = 12 in steady-state; framework pipeline may shift by 1.
-    assert!(last >= 9 && last <= 12, "expected ~12 from 4 adds of 3, got {last}");
+    assert!(
+        last >= 9 && last <= 12,
+        "expected ~12 from 4 adds of 3, got {last}"
+    );
 }

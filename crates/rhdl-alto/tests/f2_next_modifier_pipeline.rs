@@ -34,15 +34,17 @@
 
 use rhdl::prelude::*;
 use rhdl_alto::alto_chip::{AltoChip, ChipIn, ChipOut};
-use rhdl_alto::isa::{
-    AluFunction, BusSource, F1Function, F2Function, Microinstruction,
-};
+use rhdl_alto::isa::{AluFunction, BusSource, F1Function, F2Function, Microinstruction};
 
 const NUM_CONSTANTS: usize = rhdl_alto::constant_rom::NUM_CONSTANTS;
 const MICROCODE_WORDS: usize = rhdl_alto::microcode_rom::MICROCODE_WORDS;
 
-fn b5(v: u128) -> Bits<5> { bits::<5>(v) }
-fn b10(v: u128) -> Bits<10> { bits::<10>(v) }
+fn b5(v: u128) -> Bits<5> {
+    bits::<5>(v)
+}
+fn b10(v: u128) -> Bits<10> {
+    bits::<10>(v)
+}
 
 fn build_microcode_and_constants() -> ([u32; MICROCODE_WORDS], [u16; NUM_CONSTANTS]) {
     let mut microcode = [0u32; MICROCODE_WORDS];
@@ -62,7 +64,8 @@ fn build_microcode_and_constants() -> ([u32; MICROCODE_WORDS], [u16; NUM_CONSTAN
         t_load: false,
         l_load: false,
         next: b10(0x100),
-    }.pack();
+    }
+    .pack();
 
     // MPC=0x100: F1=Constant (BUS=constants[(0<<3)|0]=1) + F2=BusToNext.
     //   Modifier = BUS & 0x3FF = 1.
@@ -78,7 +81,8 @@ fn build_microcode_and_constants() -> ([u32; MICROCODE_WORDS], [u16; NUM_CONSTAN
         t_load: false,
         l_load: false,
         next: b10(0x102),
-    }.pack();
+    }
+    .pack();
 
     // MPC=0x102: plain instruction, next=0x108.  Reached only in DELAYED.
     //   Cycle K+1 here applies the modifier from K → next = 0x108 | 1 = 0x109.
@@ -91,7 +95,8 @@ fn build_microcode_and_constants() -> ([u32; MICROCODE_WORDS], [u16; NUM_CONSTAN
         t_load: false,
         l_load: false,
         next: b10(0x108),
-    }.pack();
+    }
+    .pack();
 
     // MPC=0x103: trap-loop.  Reached only in IMMEDIATE; we'd loop here
     //   forever in the buggy impl.  Made into a self-loop so the trace
@@ -99,7 +104,8 @@ fn build_microcode_and_constants() -> ([u32; MICROCODE_WORDS], [u16; NUM_CONSTAN
     microcode[0x103] = Microinstruction {
         next: b10(0x103),
         ..Default::default()
-    }.pack();
+    }
+    .pack();
 
     // MPC=0x108: trap-loop.  Reached only in DELAYED if NEXT modifier is
     //   not applied to MPC=0x102's NEXT.  We don't expect to land here
@@ -107,20 +113,24 @@ fn build_microcode_and_constants() -> ([u32; MICROCODE_WORDS], [u16; NUM_CONSTAN
     microcode[0x108] = Microinstruction {
         next: b10(0x108),
         ..Default::default()
-    }.pack();
+    }
+    .pack();
 
     // MPC=0x109: success-loop.  Reached in DELAYED (the correct path).
     microcode[0x109] = Microinstruction {
         next: b10(0x109),
         ..Default::default()
-    }.pack();
+    }
+    .pack();
 
     (microcode, constants)
 }
 
 fn run(uut: AltoChip, cycles: usize) -> Vec<ChipOut> {
     let inputs: Vec<ChipIn> = (0..cycles)
-        .map(|_| ChipIn { wakeups: bits::<16>(0x0001) })
+        .map(|_| ChipIn {
+            wakeups: bits::<16>(0x0001),
+        })
         .collect();
     let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
     uut.run(stream)
@@ -151,38 +161,56 @@ fn f2_bus_to_next_is_applied_one_cycle_later_per_spec_2_3() {
     }
 
     // Cycle 0: NOVEM at MPC=0, jumps to 0x100.
-    assert_eq!(trace[0].mpc.raw(), 0x000,
-        "cycle 0 should run MPC=0x000 (Emulator reset)");
+    assert_eq!(
+        trace[0].mpc.raw(),
+        0x000,
+        "cycle 0 should run MPC=0x000 (Emulator reset)"
+    );
 
     // Cycle 1: runs MPC=0x100, computes F2=BusToNext modifier=1.
     //   DELAYED: modifier latched, NOT applied to 0x100's NEXT.
     //            cycle 2 starts at 0x102 (unmodified next field).
     //   IMMEDIATE (current bug): modifier applied to 0x100's NEXT.
     //            cycle 2 starts at 0x102 | 1 = 0x103.
-    assert_eq!(trace[1].mpc.raw(), 0x100,
-        "cycle 1 should run MPC=0x100 (the BusToNext instruction)");
+    assert_eq!(
+        trace[1].mpc.raw(),
+        0x100,
+        "cycle 1 should run MPC=0x100 (the BusToNext instruction)"
+    );
 
     // Cycle 2: under DELAYED semantics, runs MPC=0x102.
-    assert_eq!(trace[2].mpc.raw(), 0x102,
+    assert_eq!(
+        trace[2].mpc.raw(),
+        0x102,
         "cycle 2 SHOULD run MPC=0x102 per delayed F2-NEXT pipeline \
          (AltoHW §2.4 + spec digest §2.3 + ContrAlto Task.cs:173,549). \
          Currently FAILS (buggy impl produces 0x103 = 0x102 | 1 — the \
-         immediate-apply behavior).");
+         immediate-apply behavior)."
+    );
 
     // Cycle 3: under DELAYED semantics, runs MPC=0x109 (= 0x108 | 1).
     //   The modifier latched at cycle 1 is now applied to cycle 2's
     //   NEXT (= 0x108), producing MPC=0x109 for cycle 3.
-    assert_eq!(trace[3].mpc.raw(), 0x109,
+    assert_eq!(
+        trace[3].mpc.raw(),
+        0x109,
         "cycle 3 SHOULD run MPC=0x109 — the F2=BusToNext modifier from \
          cycle 1 (= 1) applied to cycle 2's NEXT field (= 0x108).  \
-         Currently FAILS (buggy impl loops at 0x103).");
+         Currently FAILS (buggy impl loops at 0x103)."
+    );
 
     // Negative assertions: prove we're not in the buggy MPC stream.
-    assert_ne!(trace[2].mpc.raw(), 0x103,
+    assert_ne!(
+        trace[2].mpc.raw(),
+        0x103,
         "cycle 2 must NOT be 0x103 — that's the IMMEDIATE-apply \
-         behavior, which is the bug being fixed");
-    assert_ne!(trace[3].mpc.raw(), 0x103,
-        "cycle 3 must NOT be 0x103 either");
+         behavior, which is the bug being fixed"
+    );
+    assert_ne!(
+        trace[3].mpc.raw(),
+        0x103,
+        "cycle 3 must NOT be 0x103 either"
+    );
 }
 
 /// **Multi-cycle ALUCY + delayed-pipeline regression test.**
@@ -238,7 +266,8 @@ fn alucy_with_sticky_carry_uses_delayed_modifier_chip_level() {
         t_load: false,
         l_load: true,
         next: b10(0x010),
-    }.pack();
+    }
+    .pack();
 
     // MPC=0x010: F2=AluCarryToNext.  q.alu_carry = true (from prev).
     //   Modifier = 1 (latched).  next field = 0x020.
@@ -253,7 +282,8 @@ fn alucy_with_sticky_carry_uses_delayed_modifier_chip_level() {
         t_load: false,
         l_load: false,
         next: b10(0x020),
-    }.pack();
+    }
+    .pack();
 
     // MPC=0x020: NO F2 modifier.  next field = 0x040.
     //   DELAYED: q.next_modifier_pending = 1 (from cycle 2's ALUCY) →
@@ -268,19 +298,22 @@ fn alucy_with_sticky_carry_uses_delayed_modifier_chip_level() {
         t_load: false,
         l_load: false,
         next: b10(0x040),
-    }.pack();
+    }
+    .pack();
 
     // MPC=0x041: target loop.
     microcode[0x041] = Microinstruction {
         next: b10(0x041),
         ..Default::default()
-    }.pack();
+    }
+    .pack();
 
     // MPC=0x021: trap-loop for IMMEDIATE-buggy detection.
     microcode[0x021] = Microinstruction {
         next: b10(0x021),
         ..Default::default()
-    }.pack();
+    }
+    .pack();
 
     let uut = AltoChip::with_microcode_and_constants(&microcode, &constants);
     let trace = run(uut, 6);
@@ -291,28 +324,39 @@ fn alucy_with_sticky_carry_uses_delayed_modifier_chip_level() {
     }
 
     // Cycle 0: runs MPC=0x000 (constant + BusPlusOne, latches alu_carry).
-    assert_eq!(trace[0].mpc.raw(), 0x000,
-        "cycle 0 should run MPC=0x000");
+    assert_eq!(trace[0].mpc.raw(), 0x000, "cycle 0 should run MPC=0x000");
     // Cycle 1: runs MPC=0x010 (ALUCY).
-    assert_eq!(trace[1].mpc.raw(), 0x010,
-        "cycle 1 should run MPC=0x010 (the ALUCY instruction)");
+    assert_eq!(
+        trace[1].mpc.raw(),
+        0x010,
+        "cycle 1 should run MPC=0x010 (the ALUCY instruction)"
+    );
     // Cycle 2: under DELAYED, runs MPC=0x020 (modifier latched, not applied here).
-    assert_eq!(trace[2].mpc.raw(), 0x020,
+    assert_eq!(
+        trace[2].mpc.raw(),
+        0x020,
         "cycle 2 SHOULD run MPC=0x020 — ALUCY modifier from cycle 1 \
          is latched but NOT applied to cycle 1's NEXT (delayed pipeline). \
          If this fails with 0x021, the F2-NEXT-modifier-timing fix has \
-         regressed (immediate-apply behavior).");
+         regressed (immediate-apply behavior)."
+    );
     // Cycle 3: ALUCY's modifier (= 1) now applies to cycle 2's NEXT
     //   (= 0x040).  next_mpc = 0x041.
-    assert_eq!(trace[3].mpc.raw(), 0x041,
+    assert_eq!(
+        trace[3].mpc.raw(),
+        0x041,
         "cycle 3 SHOULD run MPC=0x041 — ALUCY modifier from cycle 1 \
          applied to cycle 2's NEXT (= 0x040 | 1).  Confirms BOTH the \
          sticky carry (alu_carry latched on cycle 0's L-load is \
          visible to ALUCY at cycle 1) AND the delayed pipeline \
-         (modifier from cycle 1 lands on cycle 2's NEXT).");
+         (modifier from cycle 1 lands on cycle 2's NEXT)."
+    );
 
     // Negative assertion: cycle 2 must NOT be 0x021 (immediate-apply).
-    assert_ne!(trace[2].mpc.raw(), 0x021,
+    assert_ne!(
+        trace[2].mpc.raw(),
+        0x021,
         "cycle 2 must NOT be 0x021 — that's the IMMEDIATE-apply \
-         behavior (the F2-NEXT-modifier-timing bug)");
+         behavior (the F2-NEXT-modifier-timing bug)"
+    );
 }

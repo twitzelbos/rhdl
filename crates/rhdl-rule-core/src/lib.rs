@@ -38,13 +38,13 @@
 //!   per the plan.
 
 use proc_macro2::{Span, TokenStream};
-use quote::{format_ident, quote, ToTokens};
+use quote::{ToTokens, format_ident, quote};
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
 use syn::visit_mut::{self, VisitMut};
 use syn::{
-    parse2, Block, Expr, ExprMacro, FnArg, Generics, Ident, ImplItem, ImplItemFn, Item, ItemImpl,
-    ItemStruct, Macro, Pat, Path, ReturnType, Type, TypeReference,
+    Block, Expr, ExprMacro, FnArg, Generics, Ident, ImplItem, ImplItemFn, Item, ItemImpl,
+    ItemStruct, Macro, Pat, Path, ReturnType, Type, TypeReference, parse2,
 };
 
 /// The macro's input: a struct followed by an impl block.
@@ -419,9 +419,7 @@ pub fn expand_rule_kernel_attr_with_args(
 /// most flexible) or `subwidgets(f1, f2)` (parenthesised form,
 /// slightly nicer to read).  The string-literal form is the
 /// canonical one.
-fn parse_subwidgets_arg(
-    attr: TokenStream,
-) -> syn::Result<std::collections::BTreeSet<String>> {
+fn parse_subwidgets_arg(attr: TokenStream) -> syn::Result<std::collections::BTreeSet<String>> {
     use syn::parse::{Parse, ParseStream};
     use syn::punctuated::Punctuated;
 
@@ -682,8 +680,7 @@ fn lower_rule_kernel_with_subwidget_marker(
     // The attribute form can't see the struct, so it skips this and
     // relies on the user to either touch every field in some rule or
     // accept Rust's "missing field" error.  Documented in §4.5.
-    let mut field_name_set: std::collections::BTreeSet<String> =
-        std::collections::BTreeSet::new();
+    let mut field_name_set: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for rule in &rules {
         for action in &rule.actions {
             field_name_set.insert(action.field.to_string());
@@ -770,11 +767,11 @@ fn lower_rule_kernel_with_subwidget_marker(
                 continue;
             }
             let prior_name = prior.name.to_string();
-            let mutually_exclusive = rule.mutually_exclusive_with.iter().any(|n| n == &prior_name)
-                || prior
-                    .mutually_exclusive_with
-                    .iter()
-                    .any(|n| n == &i_name);
+            let mutually_exclusive = rule
+                .mutually_exclusive_with
+                .iter()
+                .any(|n| n == &prior_name)
+                || prior.mutually_exclusive_with.iter().any(|n| n == &i_name);
             if mutually_exclusive {
                 continue;
             }
@@ -1132,10 +1129,7 @@ fn build_schedule_order(rules: &[Rule]) -> syn::Result<Vec<usize>> {
 // ---------------------------------------------------------------
 
 fn has_attr(method: &ImplItemFn, name: &str) -> bool {
-    method
-        .attrs
-        .iter()
-        .any(|a| a.path().is_ident(name))
+    method.attrs.iter().any(|a| a.path().is_ident(name))
 }
 
 fn parse_rule(method: &ImplItemFn) -> syn::Result<Rule> {
@@ -1613,10 +1607,7 @@ fn try_rewrite_ctx_read_with_field(expr: &Expr) -> Option<(Expr, String)> {
         ..
     }) = expr
     {
-        if let Expr::Field(syn::ExprField {
-            base, member, ..
-        }) = &**inner
-        {
+        if let Expr::Field(syn::ExprField { base, member, .. }) = &**inner {
             if let Expr::Path(syn::ExprPath { path, .. }) = &**base {
                 if path.is_ident("ctx") {
                     if let syn::Member::Named(field) = member {
@@ -1708,17 +1699,26 @@ fn try_rewrite_ctx_subwidget_read(expr: &Expr) -> Option<(Expr, String)> {
         }
         // ctx.outer.method(...)   →  q.outer.method(...)
         Expr::MethodCall(syn::ExprMethodCall {
-            receiver, method, args, turbofish, ..
+            receiver,
+            method,
+            args,
+            turbofish,
+            ..
         }) => {
             if let Some((q_recv, name)) = ctx_field_to_q_field(receiver) {
                 let args = args.clone();
                 let turbofish = turbofish.clone();
-                return Some((syn::parse_quote! { #q_recv.#method #turbofish ( #args ) }, name));
+                return Some((
+                    syn::parse_quote! { #q_recv.#method #turbofish ( #args ) },
+                    name,
+                ));
             }
             None
         }
         // ctx.outer[idx]   →  q.outer[idx]
-        Expr::Index(syn::ExprIndex { expr: base, index, .. }) => {
+        Expr::Index(syn::ExprIndex {
+            expr: base, index, ..
+        }) => {
             if let Some((q_base, name)) = ctx_field_to_q_field(base) {
                 let idx = (**index).clone();
                 return Some((syn::parse_quote! { #q_base[#idx] }, name));
@@ -1774,10 +1774,7 @@ impl VisitMut for OutputBodyWalker {
             ..
         }) = expr
         {
-            if let Expr::Field(syn::ExprField {
-                base, member, ..
-            }) = &**inner
-            {
+            if let Expr::Field(syn::ExprField { base, member, .. }) = &**inner {
                 if let Expr::Path(syn::ExprPath { path, .. }) = &**base {
                     if path.is_ident(&self.receiver_name) {
                         if let syn::Member::Named(field) = member {
@@ -1790,10 +1787,7 @@ impl VisitMut for OutputBodyWalker {
             }
         }
         // Also rewrite plain `<receiver>.field` (no deref).
-        if let Expr::Field(syn::ExprField {
-            base, member, ..
-        }) = expr
-        {
+        if let Expr::Field(syn::ExprField { base, member, .. }) = expr {
             if let Expr::Path(syn::ExprPath { path, .. }) = &**base {
                 if path.is_ident(&self.receiver_name) {
                     if let syn::Member::Named(field) = member {

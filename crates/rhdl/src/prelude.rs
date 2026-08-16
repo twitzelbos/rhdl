@@ -26,6 +26,10 @@ pub use rhdl_core::trace;
 pub use rhdl_core::trace_pop_path;
 pub use rhdl_core::trace_push_path;
 //pub use rhdl_core::types::bitz::BitZ;
+pub use rhdl_core::fsm::{
+    FsmDescriptor, FsmDiagnostic, FsmDiagnosticKind, FsmKernelProperties, FsmKernelTag,
+    FsmProperty, FsmPropertyKind, FsmState, FsmVariantDescriptor, FsmWidget, FsmWidgetTag,
+};
 pub use rhdl_core::types::clock::Clock;
 pub use rhdl_core::types::clock::clock;
 pub use rhdl_core::types::clock_reset::clock_reset;
@@ -54,20 +58,16 @@ pub use rhdl_core::types::signal::signal;
 pub use rhdl_core::types::timed::Timed;
 pub use rhdl_core::types::timed_sample::TimedSample;
 pub use rhdl_core::types::timed_sample::timed_sample;
-pub use rhdl_core::fsm::{
-    FsmDescriptor, FsmDiagnostic, FsmDiagnosticKind, FsmKernelProperties, FsmKernelTag,
-    FsmProperty, FsmPropertyKind, FsmState, FsmVariantDescriptor, FsmWidget, FsmWidgetTag,
-};
 pub use rhdl_macro::Circuit;
 pub use rhdl_macro::CircuitDQ;
 pub use rhdl_macro::Digital;
 pub use rhdl_macro::Fsm;
 pub use rhdl_macro::FsmWidget;
-pub use rhdl_macro::fsm_doc;
-pub use rhdl_macro::fsm_properties;
 pub use rhdl_macro::Synchronous;
 pub use rhdl_macro::SynchronousDQ;
 pub use rhdl_macro::Timed;
+pub use rhdl_macro::fsm_doc;
+pub use rhdl_macro::fsm_properties;
 pub use rhdl_macro::kernel;
 pub use rhdl_trace_type as rtt;
 // Use the extension traits

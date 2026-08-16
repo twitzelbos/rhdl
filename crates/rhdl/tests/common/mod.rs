@@ -79,10 +79,28 @@ pub fn red<T: Digital>(x: T) -> Signal<T, Red> {
     signal(x)
 }
 
+/// Rewrite absolute workspace paths in a rendered diagnostic to be
+/// workspace-relative.
+///
+/// `miette` renders the *absolute* path of the offending source file
+/// into its report header.  Snapshotting that verbatim bakes the
+/// machine that generated the snapshot into the committed file, so
+/// every `.expect` file only matches on that one checkout — the tests
+/// fail for every other contributor and in CI.  Stripping the
+/// workspace-root prefix makes the snapshots portable.
+pub fn normalize_paths(msg: &str) -> String {
+    // CARGO_MANIFEST_DIR is <workspace>/crates/<crate>; go up two.
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|p| p.parent())
+        .expect("CARGO_MANIFEST_DIR should be <workspace>/crates/<crate>");
+    msg.replace(&format!("{}/", root.display()), "")
+}
+
 pub fn miette_report(err: RHDLError) -> String {
     let handler =
         miette::GraphicalReportHandler::new_themed(miette::GraphicalTheme::unicode_nocolor());
     let mut msg = String::new();
     handler.render_report(&mut msg, &err).unwrap();
-    msg
+    normalize_paths(&msg)
 }

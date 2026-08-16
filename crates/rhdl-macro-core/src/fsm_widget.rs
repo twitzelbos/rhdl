@@ -18,8 +18,8 @@
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
 use syn::{
-    Attribute, Data, DeriveInput, Expr, ExprLit, Lit, Meta, Path, Token,
-    punctuated::Punctuated, spanned::Spanned,
+    Attribute, Data, DeriveInput, Expr, ExprLit, Lit, Meta, Path, Token, punctuated::Punctuated,
+    spanned::Spanned,
 };
 
 #[derive(Debug, Default, Clone)]
@@ -44,8 +44,7 @@ fn parse_fsm_widget_attr(attrs: &[Attribute]) -> syn::Result<FsmWidgetAttr> {
         if !attr.path().is_ident("fsm") {
             continue;
         }
-        let nested = attr
-            .parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
+        let nested = attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
         for meta in nested {
             match meta {
                 Meta::Path(p) if p.is_ident("strict") => {

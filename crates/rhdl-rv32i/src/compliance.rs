@@ -55,11 +55,7 @@ fn r_type(funct7: u32, rs2: u32, rs1: u32, funct3: u32, rd: u32, opcode: u32) ->
 }
 fn i_type(imm: i32, rs1: u32, funct3: u32, rd: u32, opcode: u32) -> u32 {
     let imm_u = (imm as u32) & 0xFFF;
-    (imm_u << 20)
-        | (rs1 & 0x1F) << 15
-        | (funct3 & 0x7) << 12
-        | (rd & 0x1F) << 7
-        | (opcode & 0x7F)
+    (imm_u << 20) | (rs1 & 0x1F) << 15 | (funct3 & 0x7) << 12 | (rd & 0x1F) << 7 | (opcode & 0x7F)
 }
 fn s_type(imm: i32, rs2: u32, rs1: u32, funct3: u32, opcode: u32) -> u32 {
     let imm_u = (imm as u32) & 0xFFF;
@@ -91,16 +87,36 @@ fn u_type(imm: u32, rd: u32, opcode: u32) -> u32 {
     (imm & 0xFFFF_F000) | (rd & 0x1F) << 7 | (opcode & 0x7F)
 }
 
-fn addi(rd: u32, rs1: u32, imm: i32) -> u32 { i_type(imm, rs1, 0, rd, 0x13) }
-fn lui(rd: u32, imm20: u32) -> u32          { u_type(imm20 << 12, rd, 0x37) }
-fn add(rd: u32, rs1: u32, rs2: u32) -> u32  { r_type(0, rs2, rs1, 0, rd, 0x33) }
-fn sub(rd: u32, rs1: u32, rs2: u32) -> u32  { r_type(0x20, rs2, rs1, 0, rd, 0x33) }
-fn and(rd: u32, rs1: u32, rs2: u32) -> u32  { r_type(0, rs2, rs1, 7, rd, 0x33) }
-fn or(rd: u32, rs1: u32, rs2: u32) -> u32   { r_type(0, rs2, rs1, 6, rd, 0x33) }
-fn xor(rd: u32, rs1: u32, rs2: u32) -> u32  { r_type(0, rs2, rs1, 4, rd, 0x33) }
-fn sw(rs2: u32, rs1: u32, imm: i32) -> u32  { s_type(imm, rs2, rs1, 2, 0x23) }
-fn bne(rs1: u32, rs2: u32, imm: i32) -> u32 { b_type(imm, rs2, rs1, 1) }
-fn beq(rs1: u32, rs2: u32, imm: i32) -> u32 { b_type(imm, rs2, rs1, 0) }
+fn addi(rd: u32, rs1: u32, imm: i32) -> u32 {
+    i_type(imm, rs1, 0, rd, 0x13)
+}
+fn lui(rd: u32, imm20: u32) -> u32 {
+    u_type(imm20 << 12, rd, 0x37)
+}
+fn add(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    r_type(0, rs2, rs1, 0, rd, 0x33)
+}
+fn sub(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    r_type(0x20, rs2, rs1, 0, rd, 0x33)
+}
+fn and(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    r_type(0, rs2, rs1, 7, rd, 0x33)
+}
+fn or(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    r_type(0, rs2, rs1, 6, rd, 0x33)
+}
+fn xor(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    r_type(0, rs2, rs1, 4, rd, 0x33)
+}
+fn sw(rs2: u32, rs1: u32, imm: i32) -> u32 {
+    s_type(imm, rs2, rs1, 2, 0x23)
+}
+fn bne(rs1: u32, rs2: u32, imm: i32) -> u32 {
+    b_type(imm, rs2, rs1, 1)
+}
+fn beq(rs1: u32, rs2: u32, imm: i32) -> u32 {
+    b_type(imm, rs2, rs1, 0)
+}
 
 /// Load an arbitrary 32-bit constant into rd via LUI + ADDI.
 ///
@@ -112,7 +128,11 @@ fn li(rd: u32, value: u32) -> [u32; 2] {
     let low = value & 0xFFF;
     // Sign-extend the low 12 bits.  ADDI will produce this value
     // (as a u32) for the low 12 bits.
-    let low_se: u32 = if low & 0x800 != 0 { low | 0xFFFF_F000 } else { low };
+    let low_se: u32 = if low & 0x800 != 0 {
+        low | 0xFFFF_F000
+    } else {
+        low
+    };
     // Wrapping subtraction handles the sign-extension carry.
     let high: u32 = (value.wrapping_sub(low_se) >> 12) & 0xFFFFF;
     let low_signed: i32 = if low & 0x800 != 0 {
@@ -162,8 +182,8 @@ type RrEncoder = fn(rd: u32, rs1: u32, rs2: u32) -> u32;
 pub fn make_rr_program(op: RrEncoder, tests: &[RrTest]) -> Vec<u32> {
     let mut prog: Vec<u32> = Vec::new();
     // Setup: x30 = 0 (data-mem base), x29 = 1 (pass code).
-    prog.push(addi(30, 0, 0));  // x30 = 0
-    prog.push(addi(29, 0, 1));  // x29 = 1
+    prog.push(addi(30, 0, 0)); // x30 = 0
+    prog.push(addi(29, 0, 1)); // x29 = 1
 
     // Per-test sequence.  Each sub-test:
     //   li  x10, a
@@ -192,8 +212,8 @@ pub fn make_rr_program(op: RrEncoder, tests: &[RrTest]) -> Vec<u32> {
 
     // Pass handler: write x29 (= 1) to mem[0] then loop forever.
     let pass_handler_pc = (prog.len() * 4) as u32;
-    prog.push(sw(29, 30, 0));        // mem[0] = 1
-    prog.push(beq(0, 0, 0));         // beq x0, x0, +0  (infinite loop)
+    prog.push(sw(29, 30, 0)); // mem[0] = 1
+    prog.push(beq(0, 0, 0)); // beq x0, x0, +0  (infinite loop)
 
     // Fail handler: write the fail code (loaded into x14 by the
     // bne-target setup below) to mem[0], then loop forever.
@@ -210,8 +230,8 @@ pub fn make_rr_program(op: RrEncoder, tests: &[RrTest]) -> Vec<u32> {
         prog[*site] = bne(12, 13, offset);
         // Emit the fail block.
         prog.extend_from_slice(&li(14, *id));
-        prog.push(sw(14, 30, 0));     // mem[0] = id
-        prog.push(beq(0, 0, 0));      // infinite loop
+        prog.push(sw(14, 30, 0)); // mem[0] = id
+        prog.push(beq(0, 0, 0)); // infinite loop
     }
 
     let _ = pass_handler_pc;
@@ -244,9 +264,17 @@ pub fn run_signature_single(program: Vec<u32>, max_cycles: usize) -> u32 {
                 }
             }
             let pc_word = (out.pc.raw() / 4) as usize;
-            let instr: u32 = if pc_word < program.len() { program[pc_word] } else { 0 };
+            let instr: u32 = if pc_word < program.len() {
+                program[pc_word]
+            } else {
+                0
+            };
             let read_word = (out.mem_addr.raw() / 4) as usize;
-            let mem_rdata: u32 = if read_word < data_mem.len() { data_mem[read_word] } else { 0 };
+            let mem_rdata: u32 = if read_word < data_mem.len() {
+                data_mem[read_word]
+            } else {
+                0
+            };
             Some(ResetOrData::Data(SInIn {
                 instr: bits::<32>(instr as u128),
                 mem_rdata: bits::<32>(mem_rdata as u128),
@@ -282,9 +310,17 @@ pub fn run_signature_pipelined(program: Vec<u32>, max_cycles: usize) -> u32 {
                 }
             }
             let pc_word = (out.pc.raw() / 4) as usize;
-            let instr: u32 = if pc_word < program.len() { program[pc_word] } else { 0 };
+            let instr: u32 = if pc_word < program.len() {
+                program[pc_word]
+            } else {
+                0
+            };
             let read_word = (out.mem_addr.raw() / 4) as usize;
-            let mem_rdata: u32 = if read_word < data_mem.len() { data_mem[read_word] } else { 0 };
+            let mem_rdata: u32 = if read_word < data_mem.len() {
+                data_mem[read_word]
+            } else {
+                0
+            };
             Some(ResetOrData::Data(PIn {
                 instr: bits::<32>(instr as u128),
                 mem_rdata: bits::<32>(mem_rdata as u128),
@@ -305,21 +341,96 @@ pub fn run_signature_pipelined(program: Vec<u32>, max_cycles: usize) -> u32 {
 /// patterns.
 pub fn make_add_program() -> Vec<u32> {
     let tests = vec![
-        RrTest { id: 2,  expected: 0x00000000, a: 0x00000000, b: 0x00000000 },
-        RrTest { id: 3,  expected: 0x00000002, a: 0x00000001, b: 0x00000001 },
-        RrTest { id: 4,  expected: 0x0000000a, a: 0x00000003, b: 0x00000007 },
-        RrTest { id: 5,  expected: 0xffff8000, a: 0x00000000, b: 0xffff8000 },
-        RrTest { id: 6,  expected: 0x80000000, a: 0x80000000, b: 0x00000000 },
-        RrTest { id: 7,  expected: 0x7fff8000, a: 0x80000000, b: 0xffff8000 },
-        RrTest { id: 8,  expected: 0x00007fff, a: 0x00000000, b: 0x00007fff },
-        RrTest { id: 9,  expected: 0x7fffffff, a: 0x7fffffff, b: 0x00000000 },
-        RrTest { id: 10, expected: 0x80007ffe, a: 0x7fffffff, b: 0x00007fff },
-        RrTest { id: 11, expected: 0x80007fff, a: 0x80000000, b: 0x00007fff },
-        RrTest { id: 12, expected: 0x7fff7fff, a: 0x7fffffff, b: 0xffff8000 },
-        RrTest { id: 13, expected: 0xffffffff, a: 0x00000000, b: 0xffffffff },
-        RrTest { id: 14, expected: 0x00000000, a: 0xffffffff, b: 0x00000001 },
-        RrTest { id: 15, expected: 0xfffffffe, a: 0xffffffff, b: 0xffffffff },
-        RrTest { id: 16, expected: 0x80000000, a: 0x00000001, b: 0x7fffffff },
+        RrTest {
+            id: 2,
+            expected: 0x00000000,
+            a: 0x00000000,
+            b: 0x00000000,
+        },
+        RrTest {
+            id: 3,
+            expected: 0x00000002,
+            a: 0x00000001,
+            b: 0x00000001,
+        },
+        RrTest {
+            id: 4,
+            expected: 0x0000000a,
+            a: 0x00000003,
+            b: 0x00000007,
+        },
+        RrTest {
+            id: 5,
+            expected: 0xffff8000,
+            a: 0x00000000,
+            b: 0xffff8000,
+        },
+        RrTest {
+            id: 6,
+            expected: 0x80000000,
+            a: 0x80000000,
+            b: 0x00000000,
+        },
+        RrTest {
+            id: 7,
+            expected: 0x7fff8000,
+            a: 0x80000000,
+            b: 0xffff8000,
+        },
+        RrTest {
+            id: 8,
+            expected: 0x00007fff,
+            a: 0x00000000,
+            b: 0x00007fff,
+        },
+        RrTest {
+            id: 9,
+            expected: 0x7fffffff,
+            a: 0x7fffffff,
+            b: 0x00000000,
+        },
+        RrTest {
+            id: 10,
+            expected: 0x80007ffe,
+            a: 0x7fffffff,
+            b: 0x00007fff,
+        },
+        RrTest {
+            id: 11,
+            expected: 0x80007fff,
+            a: 0x80000000,
+            b: 0x00007fff,
+        },
+        RrTest {
+            id: 12,
+            expected: 0x7fff7fff,
+            a: 0x7fffffff,
+            b: 0xffff8000,
+        },
+        RrTest {
+            id: 13,
+            expected: 0xffffffff,
+            a: 0x00000000,
+            b: 0xffffffff,
+        },
+        RrTest {
+            id: 14,
+            expected: 0x00000000,
+            a: 0xffffffff,
+            b: 0x00000001,
+        },
+        RrTest {
+            id: 15,
+            expected: 0xfffffffe,
+            a: 0xffffffff,
+            b: 0xffffffff,
+        },
+        RrTest {
+            id: 16,
+            expected: 0x80000000,
+            a: 0x00000001,
+            b: 0x7fffffff,
+        },
     ];
     make_rr_program(add, &tests)
 }
@@ -327,15 +438,60 @@ pub fn make_add_program() -> Vec<u32> {
 /// `rv32ui-p-sub` edge cases.
 pub fn make_sub_program() -> Vec<u32> {
     let tests = vec![
-        RrTest { id: 2,  expected: 0x00000000, a: 0x00000000, b: 0x00000000 },
-        RrTest { id: 3,  expected: 0x00000000, a: 0x00000001, b: 0x00000001 },
-        RrTest { id: 4,  expected: 0xfffffffc, a: 0x00000003, b: 0x00000007 },
-        RrTest { id: 5,  expected: 0x00008000, a: 0x00000000, b: 0xffff8000 },
-        RrTest { id: 6,  expected: 0x80000000, a: 0x80000000, b: 0x00000000 },
-        RrTest { id: 7,  expected: 0x80008000, a: 0x80000000, b: 0xffff8000 },
-        RrTest { id: 8,  expected: 0xffff8001, a: 0x00000000, b: 0x00007fff },
-        RrTest { id: 9,  expected: 0x7fffffff, a: 0x7fffffff, b: 0x00000000 },
-        RrTest { id: 10, expected: 0x7fff8000, a: 0x7fffffff, b: 0x00007fff },
+        RrTest {
+            id: 2,
+            expected: 0x00000000,
+            a: 0x00000000,
+            b: 0x00000000,
+        },
+        RrTest {
+            id: 3,
+            expected: 0x00000000,
+            a: 0x00000001,
+            b: 0x00000001,
+        },
+        RrTest {
+            id: 4,
+            expected: 0xfffffffc,
+            a: 0x00000003,
+            b: 0x00000007,
+        },
+        RrTest {
+            id: 5,
+            expected: 0x00008000,
+            a: 0x00000000,
+            b: 0xffff8000,
+        },
+        RrTest {
+            id: 6,
+            expected: 0x80000000,
+            a: 0x80000000,
+            b: 0x00000000,
+        },
+        RrTest {
+            id: 7,
+            expected: 0x80008000,
+            a: 0x80000000,
+            b: 0xffff8000,
+        },
+        RrTest {
+            id: 8,
+            expected: 0xffff8001,
+            a: 0x00000000,
+            b: 0x00007fff,
+        },
+        RrTest {
+            id: 9,
+            expected: 0x7fffffff,
+            a: 0x7fffffff,
+            b: 0x00000000,
+        },
+        RrTest {
+            id: 10,
+            expected: 0x7fff8000,
+            a: 0x7fffffff,
+            b: 0x00007fff,
+        },
     ];
     make_rr_program(sub, &tests)
 }
@@ -353,8 +509,14 @@ pub fn make_and_program() -> Vec<u32> {
         (6, 0xffffffff, 0x00000000),
         (7, 0xffffffff, 0xffffffff),
     ];
-    let tests: Vec<RrTest> = pairs.into_iter()
-        .map(|(id, a, b)| RrTest { id, expected: a & b, a, b })
+    let tests: Vec<RrTest> = pairs
+        .into_iter()
+        .map(|(id, a, b)| RrTest {
+            id,
+            expected: a & b,
+            a,
+            b,
+        })
         .collect();
     make_rr_program(and, &tests)
 }
@@ -368,8 +530,14 @@ pub fn make_or_program() -> Vec<u32> {
         (5, 0xffffffff, 0xffffffff),
         (6, 0x00000000, 0x00000000),
     ];
-    let tests: Vec<RrTest> = pairs.into_iter()
-        .map(|(id, a, b)| RrTest { id, expected: a | b, a, b })
+    let tests: Vec<RrTest> = pairs
+        .into_iter()
+        .map(|(id, a, b)| RrTest {
+            id,
+            expected: a | b,
+            a,
+            b,
+        })
         .collect();
     make_rr_program(or, &tests)
 }
@@ -383,8 +551,14 @@ pub fn make_xor_program() -> Vec<u32> {
         (5, 0xff00ff00, 0x00ff00ff),
         (6, 0xffffffff, 0xffffffff),
     ];
-    let tests: Vec<RrTest> = pairs.into_iter()
-        .map(|(id, a, b)| RrTest { id, expected: a ^ b, a, b })
+    let tests: Vec<RrTest> = pairs
+        .into_iter()
+        .map(|(id, a, b)| RrTest {
+            id,
+            expected: a ^ b,
+            a,
+            b,
+        })
         .collect();
     make_rr_program(xor, &tests)
 }
@@ -399,20 +573,20 @@ pub fn make_addi_program() -> Vec<u32> {
     // Per-test: li x10, a; addi x12, x10, imm; li x13, expected; bne ...
     let tests = vec![
         (2u32, 0x00000000u32, 0x00000000u32, 0x000i32),
-        (3,    0x00000002,    0x00000001,    0x001),
-        (4,    0x0000000a,    0x00000003,    0x007),
-        (5,    0xfffff800,    0x00000000,    -2048),     // imm = 0x800 (sign-extended to 0xFFFF_F800)
-        (6,    0x80000000,    0x80000000,    0x000),
-        (7,    0x7ffff800,    0x80000000,    -2048),
-        (8,    0x000007ff,    0x00000000,    0x7FF),     // imm = +2047
-        (9,    0x7fffffff,    0x7fffffff,    0x000),
-        (10,   0x800007fe,    0x7fffffff,    0x7FF),
-        (11,   0x800007ff,    0x80000000,    0x7FF),
-        (12,   0x7ffff7ff,    0x7fffffff,    -2049 + 1), // imm = -2048
-        (13,   0xffffffff,    0x00000000,    -1),
-        (14,   0x00000000,    0xffffffff,    0x001),
-        (15,   0xfffffffe,    0xffffffff,    -1),
-        (16,   0x80000000,    0x7fffffff,    0x001),
+        (3, 0x00000002, 0x00000001, 0x001),
+        (4, 0x0000000a, 0x00000003, 0x007),
+        (5, 0xfffff800, 0x00000000, -2048), // imm = 0x800 (sign-extended to 0xFFFF_F800)
+        (6, 0x80000000, 0x80000000, 0x000),
+        (7, 0x7ffff800, 0x80000000, -2048),
+        (8, 0x000007ff, 0x00000000, 0x7FF), // imm = +2047
+        (9, 0x7fffffff, 0x7fffffff, 0x000),
+        (10, 0x800007fe, 0x7fffffff, 0x7FF),
+        (11, 0x800007ff, 0x80000000, 0x7FF),
+        (12, 0x7ffff7ff, 0x7fffffff, -2049 + 1), // imm = -2048
+        (13, 0xffffffff, 0x00000000, -1),
+        (14, 0x00000000, 0xffffffff, 0x001),
+        (15, 0xfffffffe, 0xffffffff, -1),
+        (16, 0x80000000, 0x7fffffff, 0x001),
     ];
 
     let mut prog: Vec<u32> = Vec::new();

@@ -59,8 +59,7 @@ where
     let object = crate::compiler::driver::compile_design_stage1::<W::Kernel>(
         crate::CompilationMode::Synchronous,
     )?;
-    let ops: Vec<crate::rhif::spec::OpCode> =
-        object.ops.iter().map(|loc| loc.op.clone()).collect();
+    let ops: Vec<crate::rhif::spec::OpCode> = object.ops.iter().map(|loc| loc.op.clone()).collect();
     let lookup = |slot: crate::rhif::spec::Slot| -> Option<crate::types::typed_bits::TypedBits> {
         slot.lit().map(|lit_id| object.symtab[lit_id].clone())
     };

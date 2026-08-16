@@ -39,12 +39,31 @@ struct InCfg {
 }
 impl InCfg {
     fn new(instr: u32, constant: u16) -> Self {
-        Self { instr, constant, task: 0, md: 0, kdata: 0, kstat: 0 }
+        Self {
+            instr,
+            constant,
+            task: 0,
+            md: 0,
+            kdata: 0,
+            kstat: 0,
+        }
     }
-    fn with_task(mut self, t: u8) -> Self { self.task = t; self }
-    fn with_md(mut self, md: u16) -> Self { self.md = md; self }
-    fn with_kdata(mut self, k: u16) -> Self { self.kdata = k; self }
-    fn with_kstat(mut self, k: u16) -> Self { self.kstat = k; self }
+    fn with_task(mut self, t: u8) -> Self {
+        self.task = t;
+        self
+    }
+    fn with_md(mut self, md: u16) -> Self {
+        self.md = md;
+        self
+    }
+    fn with_kdata(mut self, k: u16) -> Self {
+        self.kdata = k;
+        self
+    }
+    fn with_kstat(mut self, k: u16) -> Self {
+        self.kstat = k;
+        self
+    }
 }
 
 /// Output split into the two timings that matter:
@@ -63,8 +82,16 @@ struct Observation {
 /// so we can return both the action's combinational output and the
 /// post-edge registered state.
 fn observe(prog: Vec<InCfg>) -> Observation {
-    let nop_instr = ui(0, AluFunction::Bus, BusSource::ReadR,
-        F1Function::Nop, F2Function::Nop, false, false, 0);
+    let nop_instr = ui(
+        0,
+        AluFunction::Bus,
+        BusSource::ReadR,
+        F1Function::Nop,
+        F2Function::Nop,
+        false,
+        false,
+        0,
+    );
     let task = prog.last().map(|c| c.task).unwrap_or(0);
     let mut full = prog;
     full.push(InCfg::new(nop_instr, 0).with_task(task));
@@ -126,13 +153,27 @@ fn observe_comb(prog: Vec<InCfg>) -> Out {
     observe(prog).comb
 }
 
-fn ui(rsel: u8, aluf: AluFunction, bs: BusSource, f1: F1Function, f2: F2Function,
-      t_load: bool, l_load: bool, next: u16) -> u32 {
+fn ui(
+    rsel: u8,
+    aluf: AluFunction,
+    bs: BusSource,
+    f1: F1Function,
+    f2: F2Function,
+    t_load: bool,
+    l_load: bool,
+    next: u16,
+) -> u32 {
     Microinstruction {
         rsel: bits::<5>(rsel as u128),
-        aluf, bs, f1, f2, t_load, l_load,
+        aluf,
+        bs,
+        f1,
+        f2,
+        t_load,
+        l_load,
         next: bits::<10>(next as u128),
-    }.pack()
+    }
+    .pack()
 }
 
 // =====================================================================
@@ -142,43 +183,151 @@ fn ui(rsel: u8, aluf: AluFunction, bs: BusSource, f1: F1Function, f2: F2Function
 #[test]
 fn r_write_takes_l_value_not_alu() {
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0xCAFE),
-        InCfg::new(ui(5, AluFunction::Bus, BusSource::LoadR,
-            F1Function::Nop, F2Function::Nop, false, false, 0), 0),
-        InCfg::new(ui(5, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Nop, F2Function::Nop, true, false, 0), 0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0xCAFE,
+        ),
+        InCfg::new(
+            ui(
+                5,
+                AluFunction::Bus,
+                BusSource::LoadR,
+                F1Function::Nop,
+                F2Function::Nop,
+                false,
+                false,
+                0,
+            ),
+            0,
+        ),
+        InCfg::new(
+            ui(
+                5,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Nop,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0,
+        ),
     ]);
-    assert_eq!(out.t.raw() as u16, 0xCAFE,
-        "R[5] must hold L's value (0xCAFE), not ALU=0");
+    assert_eq!(
+        out.t.raw() as u16,
+        0xCAFE,
+        "R[5] must hold L's value (0xCAFE), not ALU=0"
+    );
 }
 
 #[test]
 fn r_write_with_lsh1_takes_shifted_l() {
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0x0042),
-        InCfg::new(ui(3, AluFunction::Bus, BusSource::LoadR,
-            F1Function::LeftShift1, F2Function::Nop, false, false, 0), 0),
-        InCfg::new(ui(3, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Nop, F2Function::Nop, true, false, 0), 0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0x0042,
+        ),
+        InCfg::new(
+            ui(
+                3,
+                AluFunction::Bus,
+                BusSource::LoadR,
+                F1Function::LeftShift1,
+                F2Function::Nop,
+                false,
+                false,
+                0,
+            ),
+            0,
+        ),
+        InCfg::new(
+            ui(
+                3,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Nop,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0,
+        ),
     ]);
-    assert_eq!(out.t.raw() as u16, 0x0084,
-        "R[3] should be L<<1 = 0x0042<<1 = 0x0084 (shifter output)");
+    assert_eq!(
+        out.t.raw() as u16,
+        0x0084,
+        "R[3] should be L<<1 = 0x0042<<1 = 0x0084 (shifter output)"
+    );
 }
 
 #[test]
 fn r_write_disabled_when_bs_not_loadr() {
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0xDEAD),
-        InCfg::new(ui(5, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Nop, F2Function::Nop, false, false, 0), 0),
-        InCfg::new(ui(5, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Nop, F2Function::Nop, true, false, 0), 0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0xDEAD,
+        ),
+        InCfg::new(
+            ui(
+                5,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Nop,
+                F2Function::Nop,
+                false,
+                false,
+                0,
+            ),
+            0,
+        ),
+        InCfg::new(
+            ui(
+                5,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Nop,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0,
+        ),
     ]);
-    assert_eq!(out.t.raw() as u16, 0,
-        "R[5] should remain 0 (BS=ReadR doesn't write)");
+    assert_eq!(
+        out.t.raw() as u16,
+        0,
+        "R[5] should remain 0 (BS=ReadR doesn't write)"
+    );
 }
 
 // =====================================================================
@@ -187,20 +336,51 @@ fn r_write_disabled_when_bs_not_loadr() {
 
 #[test]
 fn aluf_bus_passthrough() {
-    let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0x1234),
-    ]);
+    let out = observe_after(vec![InCfg::new(
+        ui(
+            0,
+            AluFunction::Bus,
+            BusSource::ReadR,
+            F1Function::Constant,
+            F2Function::Nop,
+            false,
+            true,
+            0,
+        ),
+        0x1234,
+    )]);
     assert_eq!(out.l.raw() as u16, 0x1234);
 }
 
 #[test]
 fn aluf_bus_plus_t() {
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, true, false, 0), 0x10),
-        InCfg::new(ui(0, AluFunction::BusPlusT, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 5),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0x10,
+        ),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::BusPlusT,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            5,
+        ),
     ]);
     assert_eq!(out.l.raw() as u16, 0x15, "BusPlusT = 5+0x10");
 }
@@ -208,39 +388,101 @@ fn aluf_bus_plus_t() {
 #[test]
 fn aluf_bus_minus_t() {
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, true, false, 0), 5),
-        InCfg::new(ui(0, AluFunction::BusMinusT, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0x10),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            5,
+        ),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::BusMinusT,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0x10,
+        ),
     ]);
     assert_eq!(out.l.raw() as u16, 0x0B, "BusMinusT = 0x10-5");
 }
 
 #[test]
 fn aluf_bus_plus_one() {
-    let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::BusPlusOne, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0x4567),
-    ]);
+    let out = observe_after(vec![InCfg::new(
+        ui(
+            0,
+            AluFunction::BusPlusOne,
+            BusSource::ReadR,
+            F1Function::Constant,
+            F2Function::Nop,
+            false,
+            true,
+            0,
+        ),
+        0x4567,
+    )]);
     assert_eq!(out.l.raw() as u16, 0x4568);
 }
 
 #[test]
 fn aluf_bus_minus_one() {
-    let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::BusMinusOne, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0x100),
-    ]);
+    let out = observe_after(vec![InCfg::new(
+        ui(
+            0,
+            AluFunction::BusMinusOne,
+            BusSource::ReadR,
+            F1Function::Constant,
+            F2Function::Nop,
+            false,
+            true,
+            0,
+        ),
+        0x100,
+    )]);
     assert_eq!(out.l.raw() as u16, 0xFF);
 }
 
 #[test]
 fn aluf_bus_or_t() {
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, true, false, 0), 0xFF00),
-        InCfg::new(ui(0, AluFunction::BusOrT, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0x00FF),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0xFF00,
+        ),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::BusOrT,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0x00FF,
+        ),
     ]);
     assert_eq!(out.l.raw() as u16, 0xFFFF);
 }
@@ -248,10 +490,32 @@ fn aluf_bus_or_t() {
 #[test]
 fn aluf_bus_and_t() {
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, true, false, 0), 0xF0F0),
-        InCfg::new(ui(0, AluFunction::BusAndT, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0xFF00),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0xF0F0,
+        ),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::BusAndT,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0xFF00,
+        ),
     ]);
     assert_eq!(out.l.raw() as u16, 0xF000);
 }
@@ -259,10 +523,32 @@ fn aluf_bus_and_t() {
 #[test]
 fn aluf_bus_xor_t() {
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, true, false, 0), 0x5555),
-        InCfg::new(ui(0, AluFunction::BusXorT, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0xFFFF),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0x5555,
+        ),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::BusXorT,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0xFFFF,
+        ),
     ]);
     assert_eq!(out.l.raw() as u16, 0xAAAA);
 }
@@ -270,10 +556,32 @@ fn aluf_bus_xor_t() {
 #[test]
 fn aluf_bus_and_not_t() {
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, true, false, 0), 0x00FF),
-        InCfg::new(ui(0, AluFunction::BusAndNotT, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0xFFFF),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0x00FF,
+        ),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::BusAndNotT,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0xFFFF,
+        ),
     ]);
     assert_eq!(out.l.raw() as u16, 0xFF00);
 }
@@ -285,12 +593,45 @@ fn aluf_bus_and_not_t() {
 #[test]
 fn bs_read_r_drives_bus_from_r() {
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0x789A),
-        InCfg::new(ui(7, AluFunction::Bus, BusSource::LoadR,
-            F1Function::Nop, F2Function::Nop, false, false, 0), 0),
-        InCfg::new(ui(7, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Nop, F2Function::Nop, true, false, 0), 0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0x789A,
+        ),
+        InCfg::new(
+            ui(
+                7,
+                AluFunction::Bus,
+                BusSource::LoadR,
+                F1Function::Nop,
+                F2Function::Nop,
+                false,
+                false,
+                0,
+            ),
+            0,
+        ),
+        InCfg::new(
+            ui(
+                7,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Nop,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0,
+        ),
     ]);
     assert_eq!(out.t.raw() as u16, 0x789A);
 }
@@ -298,20 +639,57 @@ fn bs_read_r_drives_bus_from_r() {
 #[test]
 fn bs_load_r_forces_bus_zero() {
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, true, false, 0), 0x42),
-        InCfg::new(ui(0, AluFunction::BusPlusT, BusSource::LoadR,
-            F1Function::Nop, F2Function::Nop, false, true, 0), 0xDEAD),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0x42,
+        ),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::BusPlusT,
+                BusSource::LoadR,
+                F1Function::Nop,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0xDEAD,
+        ),
     ]);
-    assert_eq!(out.l.raw() as u16, 0x42,
-        "BS=LoadR forces BUS=0; ALU=BusPlusT = 0+T = 0x42");
+    assert_eq!(
+        out.l.raw() as u16,
+        0x42,
+        "BS=LoadR forces BUS=0; ALU=BusPlusT = 0+T = 0x42"
+    );
 }
 
 #[test]
 fn bs_memory_data_drives_bus_from_md() {
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
-            F1Function::Nop, F2Function::Nop, true, false, 0), 0).with_md(0xBEEF),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::MemoryData,
+                F1Function::Nop,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_md(0xBEEF),
     ]);
     assert_eq!(out.t.raw() as u16, 0xBEEF);
 }
@@ -319,9 +697,21 @@ fn bs_memory_data_drives_bus_from_md() {
 #[test]
 fn bs_taskspec3_reads_kstat_in_disk_sector() {
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::TaskSpec3,
-            F1Function::Nop, F2Function::Nop, true, false, 0), 0)
-            .with_task(4).with_kstat(0xABCD),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::TaskSpec3,
+                F1Function::Nop,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_task(4)
+        .with_kstat(0xABCD),
     ]);
     assert_eq!(out.t.raw() as u16, 0xABCD);
 }
@@ -329,9 +719,21 @@ fn bs_taskspec3_reads_kstat_in_disk_sector() {
 #[test]
 fn bs_taskspec3_reads_kstat_in_disk_word() {
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::TaskSpec3,
-            F1Function::Nop, F2Function::Nop, true, false, 0), 0)
-            .with_task(14).with_kstat(0x1234),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::TaskSpec3,
+                F1Function::Nop,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_task(14)
+        .with_kstat(0x1234),
     ]);
     assert_eq!(out.t.raw() as u16, 0x1234);
 }
@@ -339,9 +741,21 @@ fn bs_taskspec3_reads_kstat_in_disk_word() {
 #[test]
 fn bs_taskspec4_reads_kdata_in_disk_sector() {
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::TaskSpec4,
-            F1Function::Nop, F2Function::Nop, true, false, 0), 0)
-            .with_task(4).with_kdata(0x5678),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::TaskSpec4,
+                F1Function::Nop,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_task(4)
+        .with_kdata(0x5678),
     ]);
     assert_eq!(out.t.raw() as u16, 0x5678);
 }
@@ -349,12 +763,27 @@ fn bs_taskspec4_reads_kdata_in_disk_sector() {
 #[test]
 fn bs_taskspec_returns_zero_in_emulator() {
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::TaskSpec3,
-            F1Function::Nop, F2Function::Nop, true, false, 0), 0)
-            .with_task(0).with_kstat(0xFFFF),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::TaskSpec3,
+                F1Function::Nop,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_task(0)
+        .with_kstat(0xFFFF),
     ]);
-    assert_eq!(out.t.raw() as u16, 0,
-        "BS=3 in Emulator (S-reg, not yet implemented) returns 0");
+    assert_eq!(
+        out.t.raw() as u16,
+        0,
+        "BS=3 in Emulator (S-reg, not yet implemented) returns 0"
+    );
 }
 
 #[test]
@@ -374,15 +803,42 @@ fn bs_instruction_register_reads_ir_disp_field_not_full() {
     // the spec'd DISP-only behavior from the wrong "return full IR"
     // behavior that would give BUS = 0x0100.
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
-            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
-            .with_md(0x0100).with_task(0),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::InstructionRegister,
-            F1Function::Nop, F2Function::Nop, true, false, 0), 0).with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::MemoryData,
+                F1Function::Nop,
+                F2Function::LoadIr,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_md(0x0100)
+        .with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::InstructionRegister,
+                F1Function::Nop,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_task(0),
     ]);
-    assert_eq!(out.t.raw() as u16, 0x0000,
+    assert_eq!(
+        out.t.raw() as u16,
+        0x0000,
         "BS=7 returns IR & 0xFF (DISP field) per spec §3.2; \
-         IR=0x0100 → DISP=0x00, X-field=0 (no sign-ext) → BUS=0x0000");
+         IR=0x0100 → DISP=0x00, X-field=0 (no sign-ext) → BUS=0x0000"
+    );
 }
 
 #[test]
@@ -391,15 +847,42 @@ fn bs_disp_returns_low_byte_unextended_for_page_zero() {
     // → no sign extension regardless of DISP sign.  IR=0x0080 has DISP
     // bit 7 set, X=0 → BUS = 0x0080 (no sign extension).
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
-            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
-            .with_md(0x0080).with_task(0),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::InstructionRegister,
-            F1Function::Nop, F2Function::Nop, true, false, 0), 0).with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::MemoryData,
+                F1Function::Nop,
+                F2Function::LoadIr,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_md(0x0080)
+        .with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::InstructionRegister,
+                F1Function::Nop,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_task(0),
     ]);
-    assert_eq!(out.t.raw() as u16, 0x0080,
+    assert_eq!(
+        out.t.raw() as u16,
+        0x0080,
         "BS=7 with X=0 (page-0 addressing) returns DISP zero-extended \
-         even when sign bit is set");
+         even when sign bit is set"
+    );
 }
 
 #[test]
@@ -408,14 +891,41 @@ fn bs_disp_sign_extends_when_x_field_nonzero_and_sign_bit_set() {
     // set → sign-extend.  IR = 0x0180 (X=1, DISP=0x80 with sign bit set)
     // → BUS = 0xFF80.
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
-            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
-            .with_md(0x0180).with_task(0),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::InstructionRegister,
-            F1Function::Nop, F2Function::Nop, true, false, 0), 0).with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::MemoryData,
+                F1Function::Nop,
+                F2Function::LoadIr,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_md(0x0180)
+        .with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::InstructionRegister,
+                F1Function::Nop,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_task(0),
     ]);
-    assert_eq!(out.t.raw() as u16, 0xFF80,
-        "BS=7 with X!=0 and DISP sign bit set sign-extends to 0xFF80");
+    assert_eq!(
+        out.t.raw() as u16,
+        0xFF80,
+        "BS=7 with X!=0 and DISP sign bit set sign-extends to 0xFF80"
+    );
 }
 
 #[test]
@@ -423,14 +933,41 @@ fn bs_disp_no_sign_ext_when_x_nonzero_but_sign_bit_clear() {
     // X != 0 but sign bit (DISP[7]) clear → no sign extension.
     // IR = 0x0140 (X=1, DISP=0x40, sign bit clear) → BUS = 0x0040.
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
-            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
-            .with_md(0x0140).with_task(0),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::InstructionRegister,
-            F1Function::Nop, F2Function::Nop, true, false, 0), 0).with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::MemoryData,
+                F1Function::Nop,
+                F2Function::LoadIr,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_md(0x0140)
+        .with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::InstructionRegister,
+                F1Function::Nop,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_task(0),
     ]);
-    assert_eq!(out.t.raw() as u16, 0x0040,
-        "BS=7 with X!=0 but sign bit clear returns DISP zero-extended");
+    assert_eq!(
+        out.t.raw() as u16,
+        0x0040,
+        "BS=7 with X!=0 but sign bit clear returns DISP zero-extended"
+    );
 }
 
 // =====================================================================
@@ -439,10 +976,19 @@ fn bs_disp_no_sign_ext_when_x_nonzero_but_sign_bit_clear() {
 
 #[test]
 fn f1_nop_does_nothing() {
-    let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Nop, F2Function::Nop, false, false, 0), 0),
-    ]);
+    let out = observe_comb(vec![InCfg::new(
+        ui(
+            0,
+            AluFunction::Bus,
+            BusSource::ReadR,
+            F1Function::Nop,
+            F2Function::Nop,
+            false,
+            false,
+            0,
+        ),
+        0,
+    )]);
     assert_eq!(out.t.raw(), 0);
     assert_eq!(out.l.raw(), 0);
     assert!(!out.task_yield);
@@ -451,38 +997,87 @@ fn f1_nop_does_nothing() {
 
 #[test]
 fn f1_load_mar_loads_at_edge() {
-    let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::LoadMar, F2Function::Constant, false, false, 0), 0x9876),
-    ]);
+    let out = observe_after(vec![InCfg::new(
+        ui(
+            0,
+            AluFunction::Bus,
+            BusSource::ReadR,
+            F1Function::LoadMar,
+            F2Function::Constant,
+            false,
+            false,
+            0,
+        ),
+        0x9876,
+    )]);
     assert_eq!(out.mem_address.raw() as u16, 0x9876);
 }
 
 #[test]
 fn f1_task_yield_asserts() {
-    let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::TaskYield, F2Function::Nop, false, false, 0), 0),
-    ]);
+    let out = observe_comb(vec![InCfg::new(
+        ui(
+            0,
+            AluFunction::Bus,
+            BusSource::ReadR,
+            F1Function::TaskYield,
+            F2Function::Nop,
+            false,
+            false,
+            0,
+        ),
+        0,
+    )]);
     assert!(out.task_yield);
 }
 
 #[test]
 fn f1_block_asserts() {
-    let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Block, F2Function::Nop, false, false, 0), 0),
-    ]);
+    let out = observe_comb(vec![InCfg::new(
+        ui(
+            0,
+            AluFunction::Bus,
+            BusSource::ReadR,
+            F1Function::Block,
+            F2Function::Nop,
+            false,
+            false,
+            0,
+        ),
+        0,
+    )]);
     assert!(out.block_task);
 }
 
 #[test]
 fn f1_left_shift_1() {
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0x0001),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::LeftShift1, F2Function::Nop, false, false, 0), 0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0x0001,
+        ),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::LeftShift1,
+                F2Function::Nop,
+                false,
+                false,
+                0,
+            ),
+            0,
+        ),
     ]);
     assert_eq!(out.l.raw() as u16, 0x0002);
 }
@@ -490,10 +1085,32 @@ fn f1_left_shift_1() {
 #[test]
 fn f1_right_shift_1() {
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0x0080),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::RightShift1, F2Function::Nop, false, false, 0), 0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0x0080,
+        ),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::RightShift1,
+                F2Function::Nop,
+                false,
+                false,
+                0,
+            ),
+            0,
+        ),
     ]);
     assert_eq!(out.l.raw() as u16, 0x0040);
 }
@@ -501,20 +1118,51 @@ fn f1_right_shift_1() {
 #[test]
 fn f1_left_cycle_8() {
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0x1234),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::LeftCycle8, F2Function::Nop, false, false, 0), 0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0x1234,
+        ),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::LeftCycle8,
+                F2Function::Nop,
+                false,
+                false,
+                0,
+            ),
+            0,
+        ),
     ]);
     assert_eq!(out.l.raw() as u16, 0x3412);
 }
 
 #[test]
 fn f1_constant_drives_bus() {
-    let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, true, false, 0), 0x55AA),
-    ]);
+    let out = observe_after(vec![InCfg::new(
+        ui(
+            0,
+            AluFunction::Bus,
+            BusSource::ReadR,
+            F1Function::Constant,
+            F2Function::Nop,
+            true,
+            false,
+            0,
+        ),
+        0x55AA,
+    )]);
     assert_eq!(out.t.raw() as u16, 0x55AA);
 }
 
@@ -525,8 +1173,20 @@ fn f1_constant_drives_bus() {
 #[test]
 fn f1_strobe_in_disk_sector() {
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Code9, F2Function::Nop, false, false, 0), 0).with_task(4),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Code9,
+                F2Function::Nop,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_task(4),
     ]);
     assert!(out.disk_strobe);
 }
@@ -534,8 +1194,20 @@ fn f1_strobe_in_disk_sector() {
 #[test]
 fn f1_strobe_in_disk_word() {
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Code9, F2Function::Nop, false, false, 0), 0).with_task(14),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Code9,
+                F2Function::Nop,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_task(14),
     ]);
     assert!(out.disk_strobe);
 }
@@ -543,8 +1215,20 @@ fn f1_strobe_in_disk_word() {
 #[test]
 fn f1_strobe_does_not_assert_in_emulator() {
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Code9, F2Function::Nop, false, false, 0), 0).with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Code9,
+                F2Function::Nop,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_task(0),
     ]);
     assert!(!out.disk_strobe);
 }
@@ -552,8 +1236,20 @@ fn f1_strobe_does_not_assert_in_emulator() {
 #[test]
 fn f1_clrstat_in_disk_sector() {
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::WriteKcwa, F2Function::Nop, false, false, 0), 0).with_task(4),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::WriteKcwa,
+                F2Function::Nop,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_task(4),
     ]);
     assert!(out.disk_clr_stat);
 }
@@ -561,8 +1257,20 @@ fn f1_clrstat_in_disk_sector() {
 #[test]
 fn f1_loadkstat_writes_kstat_register() {
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Code10, F2Function::Constant, false, false, 0), 0xAABB).with_task(4),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Code10,
+                F2Function::Constant,
+                false,
+                false,
+                0,
+            ),
+            0xAABB,
+        )
+        .with_task(4),
     ]);
     assert!(out.disk_ctrl_write_en);
     assert_eq!(out.disk_ctrl_addr.raw(), 0);
@@ -572,8 +1280,20 @@ fn f1_loadkstat_writes_kstat_register() {
 #[test]
 fn f1_loadkcomm_writes_kcom_register() {
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::WriteKcomm, F2Function::Constant, false, false, 0), 0x8000).with_task(4),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::WriteKcomm,
+                F2Function::Constant,
+                false,
+                false,
+                0,
+            ),
+            0x8000,
+        )
+        .with_task(4),
     ]);
     assert!(out.disk_ctrl_write_en);
     assert_eq!(out.disk_ctrl_addr.raw(), 2);
@@ -583,8 +1303,20 @@ fn f1_loadkcomm_writes_kcom_register() {
 #[test]
 fn f1_loadkadr_writes_kadr_register() {
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::WriteKadr, F2Function::Constant, false, false, 0), 0x0500).with_task(4),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::WriteKadr,
+                F2Function::Constant,
+                false,
+                false,
+                0,
+            ),
+            0x0500,
+        )
+        .with_task(4),
     ]);
     assert!(out.disk_ctrl_write_en);
     assert_eq!(out.disk_ctrl_addr.raw(), 3);
@@ -593,8 +1325,20 @@ fn f1_loadkadr_writes_kadr_register() {
 #[test]
 fn f1_loadkdata_writes_kdata_register() {
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::WriteKdata, F2Function::Constant, false, false, 0), 0x1111).with_task(4),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::WriteKdata,
+                F2Function::Constant,
+                false,
+                false,
+                0,
+            ),
+            0x1111,
+        )
+        .with_task(4),
     ]);
     assert!(out.disk_ctrl_write_en);
     assert_eq!(out.disk_ctrl_addr.raw(), 1);
@@ -603,18 +1347,44 @@ fn f1_loadkdata_writes_kdata_register() {
 #[test]
 fn f1_disk_writes_inactive_in_emulator() {
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::WriteKcomm, F2Function::Nop, false, false, 0), 0).with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::WriteKcomm,
+                F2Function::Nop,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_task(0),
     ]);
-    assert!(!out.disk_ctrl_write_en,
-        "F1=13 in Emulator = LoadESRB (not LoadKCOMM); no disk_ctrl write");
+    assert!(
+        !out.disk_ctrl_write_en,
+        "F1=13 in Emulator = LoadESRB (not LoadKCOMM); no disk_ctrl write"
+    );
 }
 
 #[test]
 fn f1_startf_in_emulator() {
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::WriteKdata, F2Function::Nop, false, false, 0), 0).with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::WriteKdata,
+                F2Function::Nop,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_task(0),
     ]);
     assert!(out.startf);
 }
@@ -622,8 +1392,20 @@ fn f1_startf_in_emulator() {
 #[test]
 fn f1_startf_inactive_in_disk() {
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::WriteKdata, F2Function::Nop, false, false, 0), 0).with_task(4),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::WriteKdata,
+                F2Function::Nop,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_task(4),
     ]);
     assert!(!out.startf);
 }
@@ -634,28 +1416,55 @@ fn f1_startf_inactive_in_disk() {
 
 #[test]
 fn f2_nop_does_not_modify_next() {
-    let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Nop, F2Function::Nop, false, false, 0x123), 0),
-    ]);
+    let out = observe_comb(vec![InCfg::new(
+        ui(
+            0,
+            AluFunction::Bus,
+            BusSource::ReadR,
+            F1Function::Nop,
+            F2Function::Nop,
+            false,
+            false,
+            0x123,
+        ),
+        0,
+    )]);
     assert_eq!(out.next_mpc.raw() as u16, 0x123);
 }
 
 #[test]
 fn f2_bus_eq_zero_sets_bit_when_bus_zero() {
-    let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::LoadR,
-            F1Function::Nop, F2Function::BusEqZero, false, false, 0x100), 0),
-    ]);
+    let out = observe_comb(vec![InCfg::new(
+        ui(
+            0,
+            AluFunction::Bus,
+            BusSource::LoadR,
+            F1Function::Nop,
+            F2Function::BusEqZero,
+            false,
+            false,
+            0x100,
+        ),
+        0,
+    )]);
     assert_eq!(out.next_mpc.raw() as u16, 0x101);
 }
 
 #[test]
 fn f2_bus_eq_zero_no_change_when_bus_nonzero() {
-    let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::BusEqZero, false, false, 0x100), 0x42),
-    ]);
+    let out = observe_comb(vec![InCfg::new(
+        ui(
+            0,
+            AluFunction::Bus,
+            BusSource::ReadR,
+            F1Function::Constant,
+            F2Function::BusEqZero,
+            false,
+            false,
+            0x100,
+        ),
+        0x42,
+    )]);
     assert_eq!(out.next_mpc.raw() as u16, 0x100);
 }
 
@@ -664,11 +1473,35 @@ fn f2_bus_to_next_ors_low_bus_bits() {
     // BS=MemoryData drives BUS=MD; LoadIr latches IR=BUS per spec §6.6.
     // 0x0007 has bits 15,10,9,8 all clear so D17's IR← NEXT-merge is 0.
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
-            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
-            .with_md(0x0007).with_task(0),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::InstructionRegister,
-            F1Function::Nop, F2Function::BusToNext, false, false, 0x100), 0).with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::MemoryData,
+                F1Function::Nop,
+                F2Function::LoadIr,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_md(0x0007)
+        .with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::InstructionRegister,
+                F1Function::Nop,
+                F2Function::BusToNext,
+                false,
+                false,
+                0x100,
+            ),
+            0,
+        )
+        .with_task(0),
     ]);
     assert_eq!(out.next_mpc.raw() as u16, 0x107);
 }
@@ -686,13 +1519,25 @@ fn f2_alu_carry_to_next_no_modifier_when_no_prior_l_load() {
     //
     // Per spec digest §2.3, the modifier (which would be 0 here
     // anyway) is also delayed by one cycle.
-    let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::BusPlusOne, BusSource::ReadR,
-            F1Function::Constant, F2Function::AluCarryToNext, false, true, 0x200), 0xFFFF),
-    ]);
-    assert_eq!(out.next_mpc.raw() as u16, 0x200,
+    let out = observe_comb(vec![InCfg::new(
+        ui(
+            0,
+            AluFunction::BusPlusOne,
+            BusSource::ReadR,
+            F1Function::Constant,
+            F2Function::AluCarryToNext,
+            false,
+            true,
+            0x200,
+        ),
+        0xFFFF,
+    )]);
+    assert_eq!(
+        out.next_mpc.raw() as u16,
+        0x200,
         "single-cycle ALUCY from reset: q.alu_carry=false → no modifier; \
-         delayed pipeline: modifier (= 0) latched for next cycle");
+         delayed pipeline: modifier (= 0) latched for next cycle"
+    );
 }
 
 // NOTE: a multi-cycle sticky-carry + delayed-pipeline test was
@@ -707,24 +1552,51 @@ fn f2_alu_carry_to_next_no_modifier_when_no_prior_l_load() {
 
 #[test]
 fn f2_constant_drives_bus_same_as_f1() {
-    let out_f1 = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, true, false, 0), 0x1000),
-    ]);
-    let out_f2 = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Nop, F2Function::Constant, true, false, 0), 0x1000),
-    ]);
+    let out_f1 = observe_after(vec![InCfg::new(
+        ui(
+            0,
+            AluFunction::Bus,
+            BusSource::ReadR,
+            F1Function::Constant,
+            F2Function::Nop,
+            true,
+            false,
+            0,
+        ),
+        0x1000,
+    )]);
+    let out_f2 = observe_after(vec![InCfg::new(
+        ui(
+            0,
+            AluFunction::Bus,
+            BusSource::ReadR,
+            F1Function::Nop,
+            F2Function::Constant,
+            true,
+            false,
+            0,
+        ),
+        0x1000,
+    )]);
     assert_eq!(out_f1.t.raw(), out_f2.t.raw());
     assert_eq!(out_f1.t.raw() as u16, 0x1000);
 }
 
 #[test]
 fn f2_storemd_asserts_mem_write_en() {
-    let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Nop, F2Function::StoreMd, false, false, 0), 0),
-    ]);
+    let out = observe_comb(vec![InCfg::new(
+        ui(
+            0,
+            AluFunction::Bus,
+            BusSource::ReadR,
+            F1Function::Nop,
+            F2Function::StoreMd,
+            false,
+            false,
+            0,
+        ),
+        0,
+    )]);
     assert!(out.mem_write_en);
 }
 
@@ -735,9 +1607,20 @@ fn f2_storemd_asserts_mem_write_en() {
 #[test]
 fn f2_busodd_in_emulator_ors_bus_lsb() {
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::DiskWordTransfer, false, false, 0x100), 1)
-            .with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::DiskWordTransfer,
+                false,
+                false,
+                0x100,
+            ),
+            1,
+        )
+        .with_task(0),
     ]);
     assert_eq!(out.next_mpc.raw() as u16, 0x101);
 }
@@ -748,9 +1631,21 @@ fn f2_loadir_in_emulator() {
     // BS=MemoryData).  Earlier impl bypassed BUS and read MD directly;
     // that's now fixed (D17), so BS must drive MD onto BUS.
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
-            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
-            .with_md(0xCAFE).with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::MemoryData,
+                F1Function::Nop,
+                F2Function::LoadIr,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_md(0xCAFE)
+        .with_task(0),
     ]);
     assert_eq!(out.ir.raw() as u16, 0xCAFE);
 }
@@ -758,12 +1653,27 @@ fn f2_loadir_in_emulator() {
 #[test]
 fn f2_loadir_inactive_in_disk_task() {
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
-            .with_md(0xDEAD).with_task(4),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Nop,
+                F2Function::LoadIr,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_md(0xDEAD)
+        .with_task(4),
     ]);
-    assert_eq!(out.ir.raw() as u16, 0,
-        "F2=12 in Disk task = SWRNRDY, not LoadIR");
+    assert_eq!(
+        out.ir.raw() as u16,
+        0,
+        "F2=12 in Disk task = SWRNRDY, not LoadIR"
+    );
 }
 
 #[test]
@@ -773,21 +1683,60 @@ fn f2_idisp_uses_prom_dispatch() {
     // merge (which would dispatch the LoadIr cycle to a non-zero
     // address).  BS=MemoryData drives BUS = MD.
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
-            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
-            .with_md(0x4000).with_task(0),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Nop, F2Function::IDispatch, false, false, 0x100), 0).with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::MemoryData,
+                F1Function::Nop,
+                F2Function::LoadIr,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_md(0x4000)
+        .with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Nop,
+                F2Function::IDispatch,
+                false,
+                false,
+                0x100,
+            ),
+            0,
+        )
+        .with_task(0),
     ]);
-    assert_eq!(out.next_mpc.raw() as u16, 0x105,
-        "IDISP PROM: IR[1-2]=2 → dispatch=5; NEXT|5 = 0x105");
+    assert_eq!(
+        out.next_mpc.raw() as u16,
+        0x105,
+        "IDISP PROM: IR[1-2]=2 → dispatch=5; NEXT|5 = 0x105"
+    );
 }
 
 #[test]
 fn f2_idisp_with_ir_zero() {
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Nop, F2Function::IDispatch, false, false, 0x200), 0).with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Nop,
+                F2Function::IDispatch,
+                false,
+                false,
+                0x200,
+            ),
+            0,
+        )
+        .with_task(0),
     ]);
     assert_eq!(out.next_mpc.raw() as u16, 0x200);
 }
@@ -795,12 +1744,27 @@ fn f2_idisp_with_ir_zero() {
 #[test]
 fn f2_idisp_does_not_apply_in_disk_task() {
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Nop, F2Function::IDispatch, false, false, 0x100), 0).with_task(4),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Nop,
+                F2Function::IDispatch,
+                false,
+                false,
+                0x100,
+            ),
+            0,
+        )
+        .with_task(4),
     ]);
     // Disk: F2=13 = NFER (NEXT |= 1), not IDISP.
-    assert_eq!(out.next_mpc.raw() as u16, 0x101,
-        "F2=13 in Disk = NFER, not IDISP");
+    assert_eq!(
+        out.next_mpc.raw() as u16,
+        0x101,
+        "F2=13 in Disk = NFER, not IDISP"
+    );
 }
 
 // =====================================================================
@@ -810,8 +1774,20 @@ fn f2_idisp_does_not_apply_in_disk_task() {
 #[test]
 fn f2_nfer_in_disk_sets_bit_no_error() {
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Nop, F2Function::IDispatch, false, false, 0x100), 0).with_task(14),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Nop,
+                F2Function::IDispatch,
+                false,
+                false,
+                0x100,
+            ),
+            0,
+        )
+        .with_task(14),
     ]);
     assert_eq!(out.next_mpc.raw() as u16, 0x101);
 }
@@ -822,20 +1798,51 @@ fn f2_nfer_in_disk_sets_bit_no_error() {
 
 #[test]
 fn mar_load_takes_effect_on_next_cycle() {
-    let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::LoadMar, F2Function::Constant, false, false, 0), 0x1234),
-    ]);
+    let out = observe_after(vec![InCfg::new(
+        ui(
+            0,
+            AluFunction::Bus,
+            BusSource::ReadR,
+            F1Function::LoadMar,
+            F2Function::Constant,
+            false,
+            false,
+            0,
+        ),
+        0x1234,
+    )]);
     assert_eq!(out.mem_address.raw() as u16, 0x1234);
 }
 
 #[test]
 fn store_md_writes_at_mar_with_bus() {
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::LoadMar, F2Function::Constant, false, false, 0), 0x100),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::LoadR,
-            F1Function::Nop, F2Function::StoreMd, false, false, 0), 0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::LoadMar,
+                F2Function::Constant,
+                false,
+                false,
+                0,
+            ),
+            0x100,
+        ),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::LoadR,
+                F1Function::Nop,
+                F2Function::StoreMd,
+                false,
+                false,
+                0,
+            ),
+            0,
+        ),
     ]);
     assert!(out.mem_write_en);
     assert_eq!(out.mem_address.raw() as u16, 0x100);
@@ -853,18 +1860,66 @@ fn acdest_overrides_low_2_rsel_from_ir() {
     // 0x1000 has bits 15,10,9,8 all clear so D17's IR← NEXT-merge is 0.
     let out = observe_after(vec![
         // Cycle 0: load IR.  BS=MemoryData drives BUS = MD per spec §6.6.
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
-            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
-            .with_md(0x1000).with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::MemoryData,
+                F1Function::Nop,
+                F2Function::LoadIr,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_md(0x1000)
+        .with_task(0),
         // Cycle 1: prep L = 0xABCD.
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0xABCD).with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0xABCD,
+        )
+        .with_task(0),
         // Cycle 2: write R[1] = L = 0xABCD.
-        InCfg::new(ui(1, AluFunction::Bus, BusSource::LoadR,
-            F1Function::Nop, F2Function::Nop, false, false, 0), 0).with_task(0),
+        InCfg::new(
+            ui(
+                1,
+                AluFunction::Bus,
+                BusSource::LoadR,
+                F1Function::Nop,
+                F2Function::Nop,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_task(0),
         // Cycle 3: read via ACDEST with rsel=0 → effective RSEL = 0|1 = 1.
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Nop, F2Function::Code11, true, false, 0), 0).with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Nop,
+                F2Function::Code11,
+                true,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_task(0),
     ]);
     assert_eq!(out.t.raw() as u16, 0xABCD);
 }
@@ -874,15 +1929,63 @@ fn acsource_overrides_low_2_rsel_from_ir_src() {
     // IR = 0x2000 → bits 14-13 = 0b01 = 1.  ACSOURCE: 1 XOR 3 = 2.
     // 0x2000 has bits 15,10,9,8 all clear so D17's IR← NEXT-merge is 0.
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
-            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
-            .with_md(0x2000).with_task(0),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0x9999).with_task(0),
-        InCfg::new(ui(2, AluFunction::Bus, BusSource::LoadR,
-            F1Function::Nop, F2Function::Nop, false, false, 0), 0).with_task(0),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Nop, F2Function::Code14, true, false, 0), 0).with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::MemoryData,
+                F1Function::Nop,
+                F2Function::LoadIr,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_md(0x2000)
+        .with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0x9999,
+        )
+        .with_task(0),
+        InCfg::new(
+            ui(
+                2,
+                AluFunction::Bus,
+                BusSource::LoadR,
+                F1Function::Nop,
+                F2Function::Nop,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Nop,
+                F2Function::Code14,
+                true,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_task(0),
     ]);
     assert_eq!(out.t.raw() as u16, 0x9999);
 }
@@ -893,29 +1996,69 @@ fn acsource_overrides_low_2_rsel_from_ir_src() {
 
 #[test]
 fn t_load_takes_bus_value() {
-    let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, true, false, 0), 0x4242),
-    ]);
+    let out = observe_after(vec![InCfg::new(
+        ui(
+            0,
+            AluFunction::Bus,
+            BusSource::ReadR,
+            F1Function::Constant,
+            F2Function::Nop,
+            true,
+            false,
+            0,
+        ),
+        0x4242,
+    )]);
     assert_eq!(out.t.raw() as u16, 0x4242);
 }
 
 #[test]
 fn l_load_takes_alu_result() {
-    let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::BusPlusOne, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 5),
-    ]);
+    let out = observe_after(vec![InCfg::new(
+        ui(
+            0,
+            AluFunction::BusPlusOne,
+            BusSource::ReadR,
+            F1Function::Constant,
+            F2Function::Nop,
+            false,
+            true,
+            0,
+        ),
+        5,
+    )]);
     assert_eq!(out.l.raw() as u16, 6);
 }
 
 #[test]
 fn no_t_load_keeps_t() {
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, true, false, 0), 0x1111),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, false, 0), 0xFFFF),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0x1111,
+        ),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                false,
+                0,
+            ),
+            0xFFFF,
+        ),
     ]);
     assert_eq!(out.t.raw() as u16, 0x1111);
 }
@@ -923,10 +2066,32 @@ fn no_t_load_keeps_t() {
 #[test]
 fn no_l_load_keeps_l() {
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0x1111),
-        InCfg::new(ui(0, AluFunction::BusPlusOne, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, false, 0), 0xFFFF),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0x1111,
+        ),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::BusPlusOne,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                false,
+                0,
+            ),
+            0xFFFF,
+        ),
     ]);
     assert_eq!(out.l.raw() as u16, 0x1111);
 }
@@ -945,25 +2110,62 @@ fn t_load_with_bus_or_t_loads_alu_result_not_bus() {
     // Pre-load T = 0x00FF.  Then `T← BUS OR T` with BUS = 0xFF00 must
     // load T from the ALU output (BUS|T = 0xFFFF), NOT from BUS (0xFF00).
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, true, false, 0), 0x00FF),
-        InCfg::new(ui(0, AluFunction::BusOrT, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, true, false, 0), 0xFF00),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0x00FF,
+        ),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::BusOrT,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0xFF00,
+        ),
     ]);
-    assert_eq!(out.t.raw() as u16, 0xFFFF,
+    assert_eq!(
+        out.t.raw() as u16,
+        0xFFFF,
         "T← BUS OR T must load T from ALU output (BUS|T = 0xFFFF), \
          not from BUS (0xFF00).  This is the canonical accumulator \
-         pattern per spec §3.1 footnote.");
+         pattern per spec §3.1 footnote."
+    );
 }
 
 #[test]
 fn t_load_with_bus_plus_one_loads_alu_result() {
-    let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::BusPlusOne, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, true, false, 0), 0x4242),
-    ]);
-    assert_eq!(out.t.raw() as u16, 0x4243,
-        "T← BUS+1 must load T from ALU output (0x4243), not BUS (0x4242)");
+    let out = observe_after(vec![InCfg::new(
+        ui(
+            0,
+            AluFunction::BusPlusOne,
+            BusSource::ReadR,
+            F1Function::Constant,
+            F2Function::Nop,
+            true,
+            false,
+            0,
+        ),
+        0x4242,
+    )]);
+    assert_eq!(
+        out.t.raw() as u16,
+        0x4243,
+        "T← BUS+1 must load T from ALU output (0x4243), not BUS (0x4242)"
+    );
 }
 
 #[test]
@@ -973,26 +2175,63 @@ fn t_load_with_non_asterisked_aluf_loads_bus() {
     // Use ALUF=8 (BusMinusT) which IS NOT asterisked: T preloaded to
     // 0x10, BUS=0x100, ALU=BUS-T=0xF0; T should load from BUS=0x100.
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, true, false, 0), 0x10),
-        InCfg::new(ui(0, AluFunction::BusMinusT, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, true, false, 0), 0x100),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0x10,
+        ),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::BusMinusT,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0x100,
+        ),
     ]);
-    assert_eq!(out.t.raw() as u16, 0x100,
+    assert_eq!(
+        out.t.raw() as u16,
+        0x100,
         "T← with non-asterisked ALUF (BusMinusT) loads from BUS, \
-         not ALU result.  BUS=0x100, T should be 0x100 not ALU=0xF0.");
+         not ALU result.  BUS=0x100, T should be 0x100 not ALU=0xF0."
+    );
 }
 
 #[test]
 fn t_load_with_bus_minus_one_loads_alu_result() {
     // ALUF=6 (BusMinusOne) is asterisked.  T_LOAD with BUS=5 → ALU=4.
     // T should load from ALU=4, not BUS=5.
-    let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::BusMinusOne, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, true, false, 0), 5),
-    ]);
-    assert_eq!(out.t.raw() as u16, 4,
-        "T← with asterisked ALUF=BusMinusOne loads ALU result (BUS-1=4), not BUS=5");
+    let out = observe_after(vec![InCfg::new(
+        ui(
+            0,
+            AluFunction::BusMinusOne,
+            BusSource::ReadR,
+            F1Function::Constant,
+            F2Function::Nop,
+            true,
+            false,
+            0,
+        ),
+        5,
+    )]);
+    assert_eq!(
+        out.t.raw() as u16,
+        4,
+        "T← with asterisked ALUF=BusMinusOne loads ALU result (BUS-1=4), not BUS=5"
+    );
 }
 
 #[test]
@@ -1001,14 +2240,39 @@ fn t_load_with_bus_plus_t_plus_one_loads_alu_result() {
     // ALU=BUS+T+1=9.  T should load from ALU=9, not BUS=5.
     let out = observe_after(vec![
         // Pre-load T=3 via non-asterisked path.
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, true, false, 0), 3),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            3,
+        ),
         // Now T_LOAD + BusPlusTPlusOne with BUS=5 → ALU=5+3+1=9.
-        InCfg::new(ui(0, AluFunction::BusPlusTPlusOne, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, true, false, 0), 5),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::BusPlusTPlusOne,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            5,
+        ),
     ]);
-    assert_eq!(out.t.raw() as u16, 9,
-        "T← with asterisked ALUF=BusPlusTPlusOne loads ALU result (5+3+1=9), not BUS=5");
+    assert_eq!(
+        out.t.raw() as u16,
+        9,
+        "T← with asterisked ALUF=BusPlusTPlusOne loads ALU result (5+3+1=9), not BUS=5"
+    );
 }
 
 #[test]
@@ -1017,13 +2281,38 @@ fn t_load_with_bus_and_t_alt_loads_alu_result() {
     // 0xF0F0 → ALU=BUS&T=0xF000.  T should load from ALU=0xF000, not
     // BUS=0xF0F0.
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, true, false, 0), 0xFF00),
-        InCfg::new(ui(0, AluFunction::BusAndTAlt, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, true, false, 0), 0xF0F0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0xFF00,
+        ),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::BusAndTAlt,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0xF0F0,
+        ),
     ]);
-    assert_eq!(out.t.raw() as u16, 0xF000,
-        "T← with asterisked ALUF=BusAndTAlt loads ALU result (BUS&T=0xF000), not BUS=0xF0F0");
+    assert_eq!(
+        out.t.raw() as u16,
+        0xF000,
+        "T← with asterisked ALUF=BusAndTAlt loads ALU result (BUS&T=0xF000), not BUS=0xF0F0"
+    );
 }
 
 // =====================================================================
@@ -1035,11 +2324,26 @@ fn bs_none_reads_as_minus_one() {
     // Per spec §3.2: "Nothing — bus reads as -1 (all-ones, no source
     // asserting)" because the Alto bus is wired-AND.
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::None,
-            F1Function::Nop, F2Function::Nop, true, false, 0), 0).with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::None,
+                F1Function::Nop,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_task(0),
     ]);
-    assert_eq!(out.t.raw() as u16, 0xFFFF,
-        "BS=None must read as 0xFFFF (-1), the wired-AND default per spec §3.2");
+    assert_eq!(
+        out.t.raw() as u16,
+        0xFFFF,
+        "BS=None must read as 0xFFFF (-1), the wired-AND default per spec §3.2"
+    );
 }
 
 // =====================================================================
@@ -1057,15 +2361,40 @@ fn alucy_uses_sticky_carry_from_last_l_load() {
     //   even though THIS cycle's ALU=BUS does not produce a carry.
     let out = observe_comb(vec![
         // Cycle 1: BUS+1 with BUS=0xFFFF carries; L latches 0; sticky carry = 1.
-        InCfg::new(ui(0, AluFunction::BusPlusOne, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0xFFFF),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::BusPlusOne,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0xFFFF,
+        ),
         // Cycle 2: BUS=0, ALU=BUS, no carry, but ALUCY uses sticky carry.
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::AluCarryToNext, false, false, 0x100), 0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::AluCarryToNext,
+                false,
+                false,
+                0x100,
+            ),
+            0,
+        ),
     ]);
-    assert_eq!(out.next_mpc.raw() as u16, 0x101,
+    assert_eq!(
+        out.next_mpc.raw() as u16,
+        0x101,
         "F2=ALUCY must use the carry from the LAST cycle that loaded L, \
-         not this cycle's carry.  Spec §3.4 footnote.");
+         not this cycle's carry.  Spec §3.4 footnote."
+    );
 }
 
 // =====================================================================
@@ -1077,25 +2406,75 @@ fn shift_lt_zero_sets_bit_when_l_negative() {
     // Pre-load L = 0x8000 (MSB set, negative).  F2=ShiftLessThanZero
     // should SET NEXT bit 0 because Shifter Output is negative.
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0x8000),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Nop, F2Function::ShiftLessThanZero, false, false, 0x100), 0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0x8000,
+        ),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Nop,
+                F2Function::ShiftLessThanZero,
+                false,
+                false,
+                0x100,
+            ),
+            0,
+        ),
     ]);
-    assert_eq!(out.next_mpc.raw() as u16, 0x101,
-        "SH<0 must set NEXT bit 0 when L's MSB is set (negative)");
+    assert_eq!(
+        out.next_mpc.raw() as u16,
+        0x101,
+        "SH<0 must set NEXT bit 0 when L's MSB is set (negative)"
+    );
 }
 
 #[test]
 fn shift_lt_zero_clears_bit_when_l_non_negative() {
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0x7FFF),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Nop, F2Function::ShiftLessThanZero, false, false, 0x100), 0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0x7FFF,
+        ),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Nop,
+                F2Function::ShiftLessThanZero,
+                false,
+                false,
+                0x100,
+            ),
+            0,
+        ),
     ]);
-    assert_eq!(out.next_mpc.raw() as u16, 0x100,
-        "SH<0 must NOT set NEXT bit 0 when L's MSB is clear (non-negative)");
+    assert_eq!(
+        out.next_mpc.raw() as u16,
+        0x100,
+        "SH<0 must NOT set NEXT bit 0 when L's MSB is clear (non-negative)"
+    );
 }
 
 // =====================================================================
@@ -1106,36 +2485,81 @@ fn shift_lt_zero_clears_bit_when_l_non_negative() {
 fn ir_load_merges_bus_bit_15_into_next_bit_3() {
     // BUS bit 15 (= Alto IR[0]) → NEXT bit 3.  Set ONLY bit 15.
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
-            F1Function::Nop, F2Function::LoadIr, false, false, 0x100), 0)
-            .with_md(0x8000).with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::MemoryData,
+                F1Function::Nop,
+                F2Function::LoadIr,
+                false,
+                false,
+                0x100,
+            ),
+            0,
+        )
+        .with_md(0x8000)
+        .with_task(0),
     ]);
-    assert_eq!(out.next_mpc.raw() as u16, 0x108,
-        "IR← merges BUS bit 15 into NEXT bit 3 per spec §6.6");
+    assert_eq!(
+        out.next_mpc.raw() as u16,
+        0x108,
+        "IR← merges BUS bit 15 into NEXT bit 3 per spec §6.6"
+    );
 }
 
 #[test]
 fn ir_load_merges_bus_bits_8_9_10_into_next_bits_0_1_2() {
     // BUS bits 10..8 (= Alto IR[5..7]) → NEXT bits 2..0.  Set 0x0700.
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
-            F1Function::Nop, F2Function::LoadIr, false, false, 0x100), 0)
-            .with_md(0x0700).with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::MemoryData,
+                F1Function::Nop,
+                F2Function::LoadIr,
+                false,
+                false,
+                0x100,
+            ),
+            0,
+        )
+        .with_md(0x0700)
+        .with_task(0),
     ]);
-    assert_eq!(out.next_mpc.raw() as u16, 0x107,
-        "IR← merges BUS bits 10,9,8 into NEXT bits 2,1,0 per spec §6.6");
+    assert_eq!(
+        out.next_mpc.raw() as u16,
+        0x107,
+        "IR← merges BUS bits 10,9,8 into NEXT bits 2,1,0 per spec §6.6"
+    );
 }
 
 #[test]
 fn ir_load_merge_inactive_in_disk_task() {
     // F2=LoadIr is Emulator-only; in disk task, no merge happens.
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
-            F1Function::Nop, F2Function::LoadIr, false, false, 0x100), 0)
-            .with_md(0x8700).with_task(4),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::MemoryData,
+                F1Function::Nop,
+                F2Function::LoadIr,
+                false,
+                false,
+                0x100,
+            ),
+            0,
+        )
+        .with_md(0x8700)
+        .with_task(4),
     ]);
-    assert_eq!(out.next_mpc.raw() as u16, 0x100,
-        "IR← merge is Emulator-only; disk task should leave NEXT alone");
+    assert_eq!(
+        out.next_mpc.raw() as u16,
+        0x100,
+        "IR← merge is Emulator-only; disk task should leave NEXT alone"
+    );
 }
 
 // =====================================================================
@@ -1147,12 +2571,26 @@ fn f2_busodd_does_not_set_bit_when_bus_lsb_clear() {
     // BUSODD per spec §6.6: BUS[15] (= our LSB) is OR'd into NEXT[9]
     // (= our LSB).  When BUS LSB = 0, NEXT must be unchanged.
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::DiskWordTransfer, false, false, 0x100), 2)
-            .with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::DiskWordTransfer,
+                false,
+                false,
+                0x100,
+            ),
+            2,
+        )
+        .with_task(0),
     ]);
-    assert_eq!(out.next_mpc.raw() as u16, 0x100,
-        "BUSODD with even BUS must leave NEXT unchanged");
+    assert_eq!(
+        out.next_mpc.raw() as u16,
+        0x100,
+        "BUSODD with even BUS must leave NEXT unchanged"
+    );
 }
 
 // =====================================================================
@@ -1163,11 +2601,35 @@ fn f2_busodd_does_not_set_bit_when_bus_lsb_clear() {
 // NEXT=0x100 in the same observation; returns next_mpc combinationally.
 fn idisp_dispatch_for_ir(ir: u16) -> u16 {
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
-            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
-            .with_md(ir).with_task(0),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Nop, F2Function::IDispatch, false, false, 0x100), 0).with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::MemoryData,
+                F1Function::Nop,
+                F2Function::LoadIr,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_md(ir)
+        .with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Nop,
+                F2Function::IDispatch,
+                false,
+                false,
+                0x100,
+            ),
+            0,
+        )
+        .with_task(0),
     ]);
     out.next_mpc.raw() as u16
 }
@@ -1180,10 +2642,26 @@ fn idisp_branch_ir0_set_uses_complement_of_sh_field() {
     //   IR=0x8040 → bits 7-6 = 0b01 → 3-1 = 2 → next = 0x102
     //   IR=0x8080 → bits 7-6 = 0b10 → 3-2 = 1 → next = 0x101
     //   IR=0x80C0 → bits 7-6 = 0b11 → 3-3 = 0 → next = 0x100
-    assert_eq!(idisp_dispatch_for_ir(0x8000), 0x103, "IR[0]=1 IR[8-9]=0 → 3");
-    assert_eq!(idisp_dispatch_for_ir(0x8040), 0x102, "IR[0]=1 IR[8-9]=1 → 2");
-    assert_eq!(idisp_dispatch_for_ir(0x8080), 0x101, "IR[0]=1 IR[8-9]=2 → 1");
-    assert_eq!(idisp_dispatch_for_ir(0x80C0), 0x100, "IR[0]=1 IR[8-9]=3 → 0");
+    assert_eq!(
+        idisp_dispatch_for_ir(0x8000),
+        0x103,
+        "IR[0]=1 IR[8-9]=0 → 3"
+    );
+    assert_eq!(
+        idisp_dispatch_for_ir(0x8040),
+        0x102,
+        "IR[0]=1 IR[8-9]=1 → 2"
+    );
+    assert_eq!(
+        idisp_dispatch_for_ir(0x8080),
+        0x101,
+        "IR[0]=1 IR[8-9]=2 → 1"
+    );
+    assert_eq!(
+        idisp_dispatch_for_ir(0x80C0),
+        0x100,
+        "IR[0]=1 IR[8-9]=3 → 0"
+    );
 }
 
 #[test]
@@ -1260,11 +2738,35 @@ fn idisp_branch_default_uses_ir47() {
 // late NEXT-modify dispatch.
 fn acsource_dispatch_for_ir(ir: u16) -> u16 {
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
-            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
-            .with_md(ir).with_task(0),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Nop, F2Function::Code14, false, false, 0x100), 0).with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::MemoryData,
+                F1Function::Nop,
+                F2Function::LoadIr,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_md(ir)
+        .with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Nop,
+                F2Function::Code14,
+                false,
+                false,
+                0x100,
+            ),
+            0,
+        )
+        .with_task(0),
     ]);
     out.next_mpc.raw() as u16
 }
@@ -1322,8 +2824,11 @@ fn acsource_ir12_not_3_ors_indirect_bit_into_dispatch() {
     // CLEAR.  IR[3-7]=5 → default dispatch=14 (bit 0 clear).  With
     // IR[5]=1 and IR[1-2]=0 (not 3) → ind_bit=1 OR'd in → 14|1=15.
     // IR=0x0500 (bits 14-13=00, bits 12-8=00101=5, bit 10=1).
-    assert_eq!(acsource_dispatch_for_ir(0x0500), 0x10F,
-        "IR[1-2]!=3 OR's the indirect-bit IR[5] into the dispatch");
+    assert_eq!(
+        acsource_dispatch_for_ir(0x0500),
+        0x10F,
+        "IR[1-2]!=3 OR's the indirect-bit IR[5] into the dispatch"
+    );
 }
 
 #[test]
@@ -1331,8 +2836,11 @@ fn acsource_ir12_eq_3_does_not_or_indirect_bit() {
     // When IR[1-2]=3, IR[5] is NOT OR'd in.  IR=0x6500 has bits 14-13=11
     // (= 3), bits 12-8=00101 (=5), bit 10=1.  Dispatch=14 (default for
     // IR[3-7]=5); ind_bit suppressed → next=0x100 | 14 = 0x10E.
-    assert_eq!(acsource_dispatch_for_ir(0x6500), 0x10E,
-        "IR[1-2]=3 suppresses the IR[5] indirect-bit OR");
+    assert_eq!(
+        acsource_dispatch_for_ir(0x6500),
+        0x10E,
+        "IR[1-2]=3 suppresses the IR[5] indirect-bit OR"
+    );
 }
 
 // =====================================================================
@@ -1357,18 +2865,55 @@ fn dns_lsh_rotates_carry_into_bit_0() {
     //     arith op (bits 8-10) = 0 (COM = unaffected).  Bits 0x20.
     let out = observe_after(vec![
         // First: load IR with carry-control=2, IR[12]=0 (R-write enabled).
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
-            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
-            .with_md(0x0020).with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::MemoryData,
+                F1Function::Nop,
+                F2Function::LoadIr,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_md(0x0020)
+        .with_task(0),
         // L <- 0x0042 (set up the value to shift).
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0x0042),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0x0042,
+        ),
         // DNS + LSH.  LoadDNS = F2=Code10.  carry-control=2 → carry_in=1.
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::LeftShift1, F2Function::Code10, false, false, 0), 0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::LeftShift1,
+                F2Function::Code10,
+                false,
+                false,
+                0,
+            ),
+            0,
+        ),
     ]);
-    assert_eq!(out.l.raw() as u16, 0x0085,
-        "DNS LSH with carry_in=1: (0x0042<<1) | 1 = 0x0085");
+    assert_eq!(
+        out.l.raw() as u16,
+        0x0085,
+        "DNS LSH with carry_in=1: (0x0042<<1) | 1 = 0x0085"
+    );
 }
 
 #[test]
@@ -1376,16 +2921,53 @@ fn dns_rsh_rotates_carry_into_bit_15() {
     // Same as above but RSH.  IR carry-control=O → carry_in=1.
     // L=0x0080, RSH+DNS: bit 15 ← 1 → (0x0080>>1) | 0x8000 = 0x8040.
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
-            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
-            .with_md(0x0020).with_task(0),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0x0080),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::RightShift1, F2Function::Code10, false, false, 0), 0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::MemoryData,
+                F1Function::Nop,
+                F2Function::LoadIr,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_md(0x0020)
+        .with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0x0080,
+        ),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::RightShift1,
+                F2Function::Code10,
+                false,
+                false,
+                0,
+            ),
+            0,
+        ),
     ]);
-    assert_eq!(out.l.raw() as u16, 0x8040,
-        "DNS RSH with carry_in=1: (0x0080>>1) | 0x8000 = 0x8040");
+    assert_eq!(
+        out.l.raw() as u16,
+        0x8040,
+        "DNS RSH with carry_in=1: (0x0080>>1) | 0x8000 = 0x8040"
+    );
 }
 
 #[test]
@@ -1393,15 +2975,53 @@ fn dns_carry_control_z_forces_zero_carry_in() {
     // IR carry-control=1 (Z = force 0).  L=0x0042, LSH+DNS → no carry
     // injection → 0x0084 (plain LSH result).
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
-            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
-            .with_md(0x0010).with_task(0),  // bits 5-4 = 0b01 = Z
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0x0042),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::LeftShift1, F2Function::Code10, false, false, 0), 0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::MemoryData,
+                F1Function::Nop,
+                F2Function::LoadIr,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_md(0x0010)
+        .with_task(0), // bits 5-4 = 0b01 = Z
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0x0042,
+        ),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::LeftShift1,
+                F2Function::Code10,
+                false,
+                false,
+                0,
+            ),
+            0,
+        ),
     ]);
-    assert_eq!(out.l.raw() as u16, 0x0084, "DNS carry-control=Z forces carry_in=0");
+    assert_eq!(
+        out.l.raw() as u16,
+        0x0084,
+        "DNS carry-control=Z forces carry_in=0"
+    );
 }
 
 #[test]
@@ -1422,29 +3042,88 @@ fn dns_carry_inverts_when_nova_op_is_arith_and_alu_carries_out() {
     // → (0x42 << 1) | 1 = 0x85.  Without the invert, 0x84.
     let out = observe_after(vec![
         // Cycle 0: load L=0xFFFF via constant.
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0xFFFF),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0xFFFF,
+        ),
         // Cycle 1: write R[3]=L=0xFFFF (BS=LoadR + RSEL=3).
-        InCfg::new(ui(3, AluFunction::Bus, BusSource::LoadR,
-            F1Function::Nop, F2Function::Nop, false, false, 0), 0),
+        InCfg::new(
+            ui(
+                3,
+                AluFunction::Bus,
+                BusSource::LoadR,
+                F1Function::Nop,
+                F2Function::Nop,
+                false,
+                false,
+                0,
+            ),
+            0,
+        ),
         // Cycle 2: load L=0x0042 via constant.
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0x0042),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0x0042,
+        ),
         // Cycle 3: load IR with op=ADD (0x0600), carry-control=0.
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
-            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
-            .with_md(0x0600).with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::MemoryData,
+                F1Function::Nop,
+                F2Function::LoadIr,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_md(0x0600)
+        .with_task(0),
         // Cycle 4: DNS+LSH+ALUF=BusPlusOne.  Effective rsel = 3 (via
         // ACDEST-style override for DNS), so BUS = R[3] = 0xFFFF.
         // ALU = 0, carry = 1.  L_LOAD=false → q.l (=0x42) stays as
         // shifter input.  DNS+ADD+carry → invert → carry_in = 1.
-        InCfg::new(ui(0, AluFunction::BusPlusOne, BusSource::ReadR,
-            F1Function::LeftShift1, F2Function::Code10, false, false, 0), 0)
-            .with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::BusPlusOne,
+                BusSource::ReadR,
+                F1Function::LeftShift1,
+                F2Function::Code10,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_task(0),
     ]);
-    assert_eq!(out.l.raw() as u16, 0x0085,
+    assert_eq!(
+        out.l.raw() as u16,
+        0x0085,
         "DNS with Nova ADD op + ALU carry → carry_in inverted from 0 to 1; \
-         (0x0042 << 1) | 1 = 0x0085");
+         (0x0042 << 1) | 1 = 0x0085"
+    );
 }
 
 #[test]
@@ -1452,18 +3131,57 @@ fn dns_skip_mode_skp_always_sets_skip() {
     // IR low 3 bits = 1 (SKP = always skip).
     // After DNS, SKIP DFF should be set.  Verify by next-cycle ALUF=BusPlusSkip.
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
-            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
-            .with_md(0x0001).with_task(0),  // bits 0-2 = 001 = SKP
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::MemoryData,
+                F1Function::Nop,
+                F2Function::LoadIr,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_md(0x0001)
+        .with_task(0), // bits 0-2 = 001 = SKP
         // DNS with no-op shift (mi.f1=Nop) so result is just whatever L is.
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Nop, F2Function::Code10, false, false, 0), 0).with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Nop,
+                F2Function::Code10,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_task(0),
         // Now ALUF=BusPlusSkip with BUS=0; should give 0+SKIP = 1 (since SKP).
-        InCfg::new(ui(0, AluFunction::BusPlusSkip, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0).with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::BusPlusSkip,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0,
+        )
+        .with_task(0),
     ]);
-    assert_eq!(out.l.raw() as u16, 1,
-        "DNS SKP mode sets SKIP latch; subsequent ALUF=BusPlusSkip with BUS=0 → 0+SKIP=1");
+    assert_eq!(
+        out.l.raw() as u16,
+        1,
+        "DNS SKP mode sets SKIP latch; subsequent ALUF=BusPlusSkip with BUS=0 → 0+SKIP=1"
+    );
 }
 
 #[test]
@@ -1471,36 +3189,138 @@ fn dns_skip_mode_szr_sets_skip_when_result_zero() {
     // IR low 3 bits = 4 (SZR = skip if result zero).
     // L=0, DNS+Nop → result = 0 → SKIP set.
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
-            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
-            .with_md(0x0004).with_task(0),  // bits 0-2 = 100 = SZR
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0).with_task(0),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Nop, F2Function::Code10, false, false, 0), 0).with_task(0),
-        InCfg::new(ui(0, AluFunction::BusPlusSkip, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0).with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::MemoryData,
+                F1Function::Nop,
+                F2Function::LoadIr,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_md(0x0004)
+        .with_task(0), // bits 0-2 = 100 = SZR
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0,
+        )
+        .with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Nop,
+                F2Function::Code10,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::BusPlusSkip,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0,
+        )
+        .with_task(0),
     ]);
-    assert_eq!(out.l.raw() as u16, 1,
-        "DNS SZR mode + result=0 → SKIP set; ALUF=BusPlusSkip with BUS=0 → 1");
+    assert_eq!(
+        out.l.raw() as u16,
+        1,
+        "DNS SZR mode + result=0 → SKIP set; ALUF=BusPlusSkip with BUS=0 → 1"
+    );
 }
 
 #[test]
 fn dns_skip_mode_szr_clears_skip_when_result_nonzero() {
     // SZR + L=nonzero → SKIP NOT set.
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
-            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
-            .with_md(0x0004).with_task(0),  // SZR
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0x42).with_task(0),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Nop, F2Function::Code10, false, false, 0), 0).with_task(0),
-        InCfg::new(ui(0, AluFunction::BusPlusSkip, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0).with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::MemoryData,
+                F1Function::Nop,
+                F2Function::LoadIr,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_md(0x0004)
+        .with_task(0), // SZR
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0x42,
+        )
+        .with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Nop,
+                F2Function::Code10,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::BusPlusSkip,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0,
+        )
+        .with_task(0),
     ]);
-    assert_eq!(out.l.raw() as u16, 0,
-        "DNS SZR + result!=0 → SKIP=0; ALUF=BusPlusSkip with BUS=0 → 0");
+    assert_eq!(
+        out.l.raw() as u16,
+        0,
+        "DNS SZR + result!=0 → SKIP=0; ALUF=BusPlusSkip with BUS=0 → 0"
+    );
 }
 
 #[test]
@@ -1510,17 +3330,51 @@ fn dns_ir_bit_3_set_suppresses_r_write() {
     // — R[5] should NOT change.
     let out = observe_after(vec![
         // Load R[5] = 0xCAFE via L (per spec §2.7).
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0xCAFE),
-        InCfg::new(ui(5, AluFunction::Bus, BusSource::LoadR,
-            F1Function::Nop, F2Function::Nop, false, false, 0), 0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0xCAFE,
+        ),
+        InCfg::new(
+            ui(
+                5,
+                AluFunction::Bus,
+                BusSource::LoadR,
+                F1Function::Nop,
+                F2Function::Nop,
+                false,
+                false,
+                0,
+            ),
+            0,
+        ),
         // Set IR[12]=1 (suppress) and IR[3-4]=ensures effective_rsel=5.
         // IR[3-4] XOR 3 with bits 12-11 → for effective_rsel low 2 bits=1
         // (so |= 1 to RSEL high bits), IR bits 12-11 = 0b10 (XOR 3 → 0b01).
         // Set IR=0x1008: bits 12-11 = 0b10, bit 3 = 1 (suppress).
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
-            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
-            .with_md(0x1008).with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::MemoryData,
+                F1Function::Nop,
+                F2Function::LoadIr,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_md(0x1008)
+        .with_task(0),
         // DNS+BS=LoadR.  With effective_rsel from IR[3-4], target would
         // be R[(5 high) | 1]=... wait RSEL is 5 bits; with high-3 and
         // low-2 from IR.  Skip the address calculation; just verify
@@ -1529,14 +3383,41 @@ fn dns_ir_bit_3_set_suppresses_r_write() {
         // Actually rsel=5 = 0b00101.  rsel_high = 0b00100 = 4.  IR[3-4]
         // bits 12-11 = 0b10 = 2; XOR 3 = 1.  So effective_rsel = 4|1 = 5.
         // So would-be write target IS R[5].  Verify it's NOT written.
-        InCfg::new(ui(5, AluFunction::Bus, BusSource::LoadR,
-            F1Function::Nop, F2Function::Code10, false, true, 0), 0xDEAD).with_task(0),
+        InCfg::new(
+            ui(
+                5,
+                AluFunction::Bus,
+                BusSource::LoadR,
+                F1Function::Nop,
+                F2Function::Code10,
+                false,
+                true,
+                0,
+            ),
+            0xDEAD,
+        )
+        .with_task(0),
         // Read R[5] back via T-load.
-        InCfg::new(ui(5, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Nop, F2Function::Nop, true, false, 0), 0).with_task(0),
+        InCfg::new(
+            ui(
+                5,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Nop,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_task(0),
     ]);
-    assert_eq!(out.t.raw() as u16, 0xCAFE,
-        "DNS with IR[12]=1 (suppress) must NOT write R; R[5] stays 0xCAFE");
+    assert_eq!(
+        out.t.raw() as u16,
+        0xCAFE,
+        "DNS with IR[12]=1 (suppress) must NOT write R; R[5] stays 0xCAFE"
+    );
 }
 //
 // Per spec §6.6 + ContrAlto's Shifter.cs commentary: SKIP is a one-bit
@@ -1549,12 +3430,24 @@ fn dns_ir_bit_3_set_suppresses_r_write() {
 fn skip_latch_defaults_to_zero_after_reset() {
     // Use ALUF=BusPlusSkip with BUS=5.  After reset, SKIP=false → ALU
     // returns BUS = 5.
-    let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::BusPlusSkip, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 5),
-    ]);
-    assert_eq!(out.l.raw() as u16, 5,
-        "After reset, SKIP=false; ALUF=BusPlusSkip with BUS=5 → 5");
+    let out = observe_after(vec![InCfg::new(
+        ui(
+            0,
+            AluFunction::BusPlusSkip,
+            BusSource::ReadR,
+            F1Function::Constant,
+            F2Function::Nop,
+            false,
+            true,
+            0,
+        ),
+        5,
+    )]);
+    assert_eq!(
+        out.l.raw() as u16,
+        5,
+        "After reset, SKIP=false; ALUF=BusPlusSkip with BUS=5 → 5"
+    );
 }
 
 #[test]
@@ -1564,14 +3457,40 @@ fn ir_load_clears_skip_latch() {
     // primarily verifies the IR← clear path doesn't change the
     // already-false SKIP — and that ALUF=BusPlusSkip still returns BUS.
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
-            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
-            .with_md(0x4000).with_task(0),
-        InCfg::new(ui(0, AluFunction::BusPlusSkip, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 7),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::MemoryData,
+                F1Function::Nop,
+                F2Function::LoadIr,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_md(0x4000)
+        .with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::BusPlusSkip,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            7,
+        ),
     ]);
-    assert_eq!(out.l.raw() as u16, 7,
-        "After IR← clears SKIP, ALUF=BusPlusSkip with BUS=7 → 7");
+    assert_eq!(
+        out.l.raw() as u16,
+        7,
+        "After IR← clears SKIP, ALUF=BusPlusSkip with BUS=7 → 7"
+    );
 }
 
 // =====================================================================
@@ -1600,21 +3519,57 @@ fn memory_read_with_intervening_cycle_returns_correct_value() {
     // observe_after captures BS=MemoryData read into T.
     let out = observe_after(vec![
         // Cycle 1: load MAR with address from constant (use index 0).
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::LoadMar, F2Function::Constant, false, false, 0), 0x0080),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::LoadMar,
+                F2Function::Constant,
+                false,
+                false,
+                0,
+            ),
+            0x0080,
+        ),
         // Cycle 2: intervening NOP (per spec §4.4(a)).
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Nop, F2Function::Nop, false, false, 0), 0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Nop,
+                F2Function::Nop,
+                false,
+                false,
+                0,
+            ),
+            0,
+        ),
         // Cycle 3: T <- MD = whatever memory holds at 0x0080.
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
-            F1Function::Nop, F2Function::Nop, true, false, 0), 0)
-            .with_md(0xDEAD),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::MemoryData,
+                F1Function::Nop,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_md(0xDEAD),
     ]);
     // Note: observe helper drives mem_read_data each cycle directly
     // (synthetic memory), not through a Memory sub-circuit.  So we
     // verify that BS=MemoryData latches the helper-supplied md value.
-    assert_eq!(out.t.raw() as u16, 0xDEAD,
-        "T <- MD with proper intervening cycle latches the supplied MD");
+    assert_eq!(
+        out.t.raw() as u16,
+        0xDEAD,
+        "T <- MD with proper intervening cycle latches the supplied MD"
+    );
 }
 
 #[test]
@@ -1624,19 +3579,60 @@ fn memory_write_with_intervening_cycle_emits_correct_signals() {
     //   Cycle 2: NOP
     //   Cycle 3: F2=StoreMd, BUS = data → mem_write_en + correct addr/data
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::LoadMar, F2Function::Constant, false, false, 0), 0x0100),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Nop, F2Function::Nop, false, false, 0), 0),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::StoreMd, false, false, 0), 0xBEEF),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::LoadMar,
+                F2Function::Constant,
+                false,
+                false,
+                0,
+            ),
+            0x0100,
+        ),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Nop,
+                F2Function::Nop,
+                false,
+                false,
+                0,
+            ),
+            0,
+        ),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::StoreMd,
+                false,
+                false,
+                0,
+            ),
+            0xBEEF,
+        ),
     ]);
-    assert!(out.mem_write_en,
-        "F2=StoreMd with proper MAR setup must assert mem_write_en");
-    assert_eq!(out.mem_address.raw() as u16, 0x0100,
-        "mem_address must reflect MAR loaded 2 cycles ago");
-    assert_eq!(out.mem_write_data.raw() as u16, 0xBEEF,
-        "mem_write_data must reflect this cycle's BUS");
+    assert!(
+        out.mem_write_en,
+        "F2=StoreMd with proper MAR setup must assert mem_write_en"
+    );
+    assert_eq!(
+        out.mem_address.raw() as u16,
+        0x0100,
+        "mem_address must reflect MAR loaded 2 cycles ago"
+    );
+    assert_eq!(
+        out.mem_write_data.raw() as u16,
+        0xBEEF,
+        "mem_write_data must reflect this cycle's BUS"
+    );
 }
 
 // =====================================================================
@@ -1649,32 +3645,104 @@ fn magic_left_shift_injects_t_msb_into_bit_0() {
     // produce L' = (0x0042 << 1) | (T MSB → bit 0) = 0x0084 | 1 = 0x0085.
     let out = observe_after(vec![
         // T <- 0x8000
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, true, false, 0), 0x8000),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0x8000,
+        ),
         // L <- 0x0042
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0x0042),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0x0042,
+        ),
         // LSH + MAGIC (F2=Code9)
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::LeftShift1, F2Function::Code9, false, false, 0), 0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::LeftShift1,
+                F2Function::Code9,
+                false,
+                false,
+                0,
+            ),
+            0,
+        ),
     ]);
-    assert_eq!(out.l.raw() as u16, 0x0085,
-        "MAGIC LSH: bit 0 = T's MSB = 1; (0x0042<<1) | 1 = 0x0085");
+    assert_eq!(
+        out.l.raw() as u16,
+        0x0085,
+        "MAGIC LSH: bit 0 = T's MSB = 1; (0x0042<<1) | 1 = 0x0085"
+    );
 }
 
 #[test]
 fn magic_left_shift_t_msb_clear_no_injection() {
     // T=0x0001 (MSB clear).  LSH+MAGIC should produce just (L << 1).
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, true, false, 0), 0x0001),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0x0042),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::LeftShift1, F2Function::Code9, false, false, 0), 0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0x0001,
+        ),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0x0042,
+        ),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::LeftShift1,
+                F2Function::Code9,
+                false,
+                false,
+                0,
+            ),
+            0,
+        ),
     ]);
-    assert_eq!(out.l.raw() as u16, 0x0084,
-        "MAGIC LSH with T MSB clear: bit 0 = 0; same as plain LSH");
+    assert_eq!(
+        out.l.raw() as u16,
+        0x0084,
+        "MAGIC LSH with T MSB clear: bit 0 = 0; same as plain LSH"
+    );
 }
 
 #[test]
@@ -1682,31 +3750,103 @@ fn magic_right_shift_injects_t_lsb_into_bit_15() {
     // T=0x0001 (LSB set), L=0x0080.  RSH+MAGIC: L' = (L>>1) | (T LSB << 15)
     //   = 0x0040 | 0x8000 = 0x8040.
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, true, false, 0), 0x0001),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0x0080),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::RightShift1, F2Function::Code9, false, false, 0), 0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0x0001,
+        ),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0x0080,
+        ),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::RightShift1,
+                F2Function::Code9,
+                false,
+                false,
+                0,
+            ),
+            0,
+        ),
     ]);
-    assert_eq!(out.l.raw() as u16, 0x8040,
-        "MAGIC RSH: bit 15 = T's LSB = 1; (0x0080>>1) | 0x8000 = 0x8040");
+    assert_eq!(
+        out.l.raw() as u16,
+        0x8040,
+        "MAGIC RSH: bit 15 = T's LSB = 1; (0x0080>>1) | 0x8000 = 0x8040"
+    );
 }
 
 #[test]
 fn magic_lsh_inactive_without_f2_code9() {
     // No F2=MAGIC → plain LSH, no T injection regardless of T value.
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, true, false, 0), 0x8000),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0x0042),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0x8000,
+        ),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0x0042,
+        ),
         // Plain LSH, no F2=Code9
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::LeftShift1, F2Function::Nop, false, false, 0), 0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::LeftShift1,
+                F2Function::Nop,
+                false,
+                false,
+                0,
+            ),
+            0,
+        ),
     ]);
-    assert_eq!(out.l.raw() as u16, 0x0084,
-        "Plain LSH (no MAGIC) produces L<<1 with no T injection");
+    assert_eq!(
+        out.l.raw() as u16,
+        0x0084,
+        "Plain LSH (no MAGIC) produces L<<1 with no T injection"
+    );
 }
 
 #[test]
@@ -1714,18 +3854,54 @@ fn magic_inactive_in_disk_task() {
     // F2=Code9 is per-task; in disk task, F2=9 is RWC (NEXT-modify, not
     // MAGIC).  Plain LSH should produce L<<1 with no T injection.
     let out = observe_after(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, true, false, 0), 0x8000)
-            .with_task(4),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Constant, F2Function::Nop, false, true, 0), 0x0042)
-            .with_task(4),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::LeftShift1, F2Function::Code9, false, false, 0), 0)
-            .with_task(4),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                true,
+                false,
+                0,
+            ),
+            0x8000,
+        )
+        .with_task(4),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Constant,
+                F2Function::Nop,
+                false,
+                true,
+                0,
+            ),
+            0x0042,
+        )
+        .with_task(4),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::LeftShift1,
+                F2Function::Code9,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_task(4),
     ]);
-    assert_eq!(out.l.raw() as u16, 0x0084,
-        "MAGIC is Emulator-only; in disk task, F2=Code9 is RWC, no T injection");
+    assert_eq!(
+        out.l.raw() as u16,
+        0x0084,
+        "MAGIC is Emulator-only; in disk task, F2=Code9 is RWC, no T injection"
+    );
 }
 
 #[test]
@@ -1734,14 +3910,41 @@ fn acsource_inactive_in_disk_task() {
     // (F2=14 = STROBON per spec §8.5), ACSOURCE late dispatch must NOT
     // fire.  Stage IR via Emulator, switch to disk task, run F2=Code14.
     let out = observe_comb(vec![
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::MemoryData,
-            F1Function::Nop, F2Function::LoadIr, false, false, 0), 0)
-            .with_md(0x8000).with_task(0),
-        InCfg::new(ui(0, AluFunction::Bus, BusSource::ReadR,
-            F1Function::Nop, F2Function::Code14, false, false, 0x100), 0).with_task(4),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::MemoryData,
+                F1Function::Nop,
+                F2Function::LoadIr,
+                false,
+                false,
+                0,
+            ),
+            0,
+        )
+        .with_md(0x8000)
+        .with_task(0),
+        InCfg::new(
+            ui(
+                0,
+                AluFunction::Bus,
+                BusSource::ReadR,
+                F1Function::Nop,
+                F2Function::Code14,
+                false,
+                false,
+                0x100,
+            ),
+            0,
+        )
+        .with_task(4),
     ]);
-    assert_eq!(out.next_mpc.raw() as u16, 0x100,
-        "ACSOURCE late dispatch is Emulator-only; disk task must not modify NEXT");
+    assert_eq!(
+        out.next_mpc.raw() as u16,
+        0x100,
+        "ACSOURCE late dispatch is Emulator-only; disk task must not modify NEXT"
+    );
 }
 
 #[test]
@@ -1750,6 +3953,9 @@ fn idisp_priority_ir0_wins_over_ir12() {
     // IR=0xE000 has IR[0]=1 AND IR[1-2]=3.  Should use IR[0]=1 branch.
     // IR[8-9] = 0 → 3-0 = 3.  So next = 0x103 (NOT 0x103 from IR[4-7]
     // path which would also give 0).
-    assert_eq!(idisp_dispatch_for_ir(0xE000), 0x103,
-        "IR[0]=1 must take precedence over the IR[1-2]/IR[4-7] table");
+    assert_eq!(
+        idisp_dispatch_for_ir(0xE000),
+        0x103,
+        "IR[0]=1 must take precedence over the IR[1-2]/IR[4-7] table"
+    );
 }

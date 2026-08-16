@@ -98,8 +98,12 @@ pub fn constant_rom_kernel(_cr: ClockReset, i: ConstantIn, q: Q) -> (ConstantOut
 mod tests {
     use super::*;
 
-    fn b8(v: u8) -> Bits<8> { bits::<8>(v as u128) }
-    fn b16(v: u16) -> Bits<16> { bits::<16>(v as u128) }
+    fn b8(v: u8) -> Bits<8> {
+        bits::<8>(v as u128)
+    }
+    fn b16(v: u16) -> Bits<16> {
+        bits::<16>(v as u128)
+    }
 
     fn run_inputs(uut: ConstantRom, inputs: Vec<ConstantIn>) -> Vec<ConstantOut> {
         let stream = inputs.into_iter().with_reset(1).clock_pos_edge(100);
@@ -114,16 +118,19 @@ mod tests {
     fn combinational_lookup() {
         // Preload three known entries.
         let mut constants = [0u16; NUM_CONSTANTS];
-        constants[0]   = 0x1111;
-        constants[42]  = 0xCAFE;
+        constants[0] = 0x1111;
+        constants[42] = 0xCAFE;
         constants[255] = 0xBEEF;
         let uut = ConstantRom::with_constants(&constants);
-        let trace = run_inputs(uut, vec![
-            ConstantIn { index: b8(0) },
-            ConstantIn { index: b8(42) },
-            ConstantIn { index: b8(255) },
-            ConstantIn { index: b8(7) }, // unset → 0
-        ]);
+        let trace = run_inputs(
+            uut,
+            vec![
+                ConstantIn { index: b8(0) },
+                ConstantIn { index: b8(42) },
+                ConstantIn { index: b8(255) },
+                ConstantIn { index: b8(7) }, // unset → 0
+            ],
+        );
         // Combinational: output == this cycle's input.
         assert_eq!(trace[0].value, b16(0x1111));
         assert_eq!(trace[1].value, b16(0xCAFE));
@@ -137,7 +144,8 @@ mod tests {
     fn load_real_constant_rom_and_lookup() {
         use crate::microcode_loader;
         let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("assets").join("rom");
+            .join("assets")
+            .join("rom");
         if !dir.join("C0").exists() {
             eprintln!("[load_real_constant_rom_and_lookup] skipping — Constant ROMs absent");
             return;
@@ -146,16 +154,23 @@ mod tests {
             .expect("load real Constant ROMs");
         let uut = ConstantRom::with_constants(&constants);
         // Look up the first 4 constants and verify they match the loader output.
-        let trace = run_inputs(uut, vec![
-            ConstantIn { index: b8(0) },
-            ConstantIn { index: b8(1) },
-            ConstantIn { index: b8(2) },
-            ConstantIn { index: b8(3) },
-        ]);
+        let trace = run_inputs(
+            uut,
+            vec![
+                ConstantIn { index: b8(0) },
+                ConstantIn { index: b8(1) },
+                ConstantIn { index: b8(2) },
+                ConstantIn { index: b8(3) },
+            ],
+        );
         for i in 0..4 {
-            assert_eq!(trace[i].value, b16(constants[i]),
+            assert_eq!(
+                trace[i].value,
+                b16(constants[i]),
                 "Constant ROM[{i}] mismatch: trace[{i}] = {:?}, expected {:#06x}",
-                trace[i].value, constants[i]);
+                trace[i].value,
+                constants[i]
+            );
         }
     }
 

@@ -16,7 +16,11 @@ fn main() {
     let microcode = microcode_loader::load_alto_ii_microcode_from_dir(&dir).unwrap();
     let constants = microcode_loader::load_alto_ii_constant_rom_from_dir(&dir).unwrap();
     let uut = AltoChip::with_microcode_and_constants(&microcode, &constants);
-    let inputs: Vec<ChipIn> = (0..200).map(|_| ChipIn { wakeups: bits::<16>(0x0001) }).collect();
+    let inputs: Vec<ChipIn> = (0..200)
+        .map(|_| ChipIn {
+            wakeups: bits::<16>(0x0001),
+        })
+        .collect();
     let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
     let trace: Vec<_> = uut
         .run(stream)

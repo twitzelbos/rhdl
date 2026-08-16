@@ -405,11 +405,7 @@ where
 
 #[kernel]
 /// Kernel for [CanMaster].
-pub fn can_master<const DIV_W: usize>(
-    cr: ClockReset,
-    i: In,
-    q: Q<DIV_W>,
-) -> (Out, D<DIV_W>)
+pub fn can_master<const DIV_W: usize>(cr: ClockReset, i: In, q: Q<DIV_W>) -> (Out, D<DIV_W>)
 where
     rhdl::bits::W<DIV_W>: BitWidth,
 {
@@ -569,11 +565,8 @@ where
         && drive_bit != sampled
         && !in_arbitration_zone;
 
-    let lost_arbitration = q.state.is_transmitting
-        && bit_done
-        && in_arbitration_zone
-        && drive_bit
-        && !sampled;
+    let lost_arbitration =
+        q.state.is_transmitting && bit_done && in_arbitration_zone && drive_bit && !sampled;
 
     let stuff_error_rx = !q.state.is_transmitting
         && bit_done
@@ -668,7 +661,11 @@ where
         }
         CanField::IdA => {
             if consume_real_bit && !stuff_error_rx {
-                let bit_b29: Bits<29> = if bit_to_crc { bits::<29>(1) } else { bits::<29>(0) };
+                let bit_b29: Bits<29> = if bit_to_crc {
+                    bits::<29>(1)
+                } else {
+                    bits::<29>(0)
+                };
                 next.id_accum = (q.state.id_accum << 1) | bit_b29;
                 if q.state.field_bit_idx == bits::<7>(10) {
                     d.field = CanField::SrrOrRtr;
@@ -699,7 +696,11 @@ where
         }
         CanField::IdB => {
             if consume_real_bit && !stuff_error_rx {
-                let bit_b29: Bits<29> = if bit_to_crc { bits::<29>(1) } else { bits::<29>(0) };
+                let bit_b29: Bits<29> = if bit_to_crc {
+                    bits::<29>(1)
+                } else {
+                    bits::<29>(0)
+                };
                 next.id_accum = (q.state.id_accum << 1) | bit_b29;
                 if q.state.field_bit_idx == bits::<7>(17) {
                     d.field = CanField::Rtr;
@@ -730,7 +731,11 @@ where
         }
         CanField::Dlc => {
             if consume_real_bit && !stuff_error_rx {
-                let bit_b4: Bits<4> = if bit_to_crc { bits::<4>(1) } else { bits::<4>(0) };
+                let bit_b4: Bits<4> = if bit_to_crc {
+                    bits::<4>(1)
+                } else {
+                    bits::<4>(0)
+                };
                 let new_dlc = (q.state.dlc_accum << 1) | bit_b4;
                 next.dlc_accum = new_dlc;
                 if q.state.field_bit_idx == bits::<7>(3) {
@@ -747,7 +752,11 @@ where
         }
         CanField::Data => {
             if consume_real_bit && !stuff_error_rx {
-                let bit_b64: Bits<64> = if bit_to_crc { bits::<64>(1) } else { bits::<64>(0) };
+                let bit_b64: Bits<64> = if bit_to_crc {
+                    bits::<64>(1)
+                } else {
+                    bits::<64>(0)
+                };
                 let shifted = (q.state.data_accum << 1) | bit_b64;
                 let dlc_for_total: Bits<4> = if q.state.is_transmitting {
                     q.state.tx_dlc_latched
@@ -790,7 +799,11 @@ where
         }
         CanField::Crc => {
             if consume_real_bit && !stuff_error_rx {
-                let bit_b15: Bits<15> = if bit_to_crc { bits::<15>(1) } else { bits::<15>(0) };
+                let bit_b15: Bits<15> = if bit_to_crc {
+                    bits::<15>(1)
+                } else {
+                    bits::<15>(0)
+                };
                 let new_rx_crc = (q.state.rx_crc_accum << 1) | bit_b15;
                 next.rx_crc_accum = new_rx_crc;
                 if q.state.field_bit_idx == bits::<7>(14) {
@@ -1095,7 +1108,12 @@ mod tests {
         out
     }
 
-    fn one_shot_tx(id: u128, extended: bool, dlc: u128, data: u128) -> impl FnMut(usize, bool) -> In {
+    fn one_shot_tx(
+        id: u128,
+        extended: bool,
+        dlc: u128,
+        data: u128,
+    ) -> impl FnMut(usize, bool) -> In {
         move |cycle, _bus| {
             let mut i = idle_in();
             if cycle == 0 {
@@ -1216,7 +1234,10 @@ mod tests {
         assert_eq!(pulse.1.rx_dlc, bits::<4>(1));
         assert_eq!(pulse.1.rx_data, bits::<64>(0xA5_00_00_00_00_00_00_00));
         let tx_done = trace.iter().any(|(o1, _)| o1.tx_done);
-        assert!(tx_done, "transmitter never pulsed tx_done (ACK was not received)");
+        assert!(
+            tx_done,
+            "transmitter never pulsed tx_done (ACK was not received)"
+        );
         Ok(())
     }
 

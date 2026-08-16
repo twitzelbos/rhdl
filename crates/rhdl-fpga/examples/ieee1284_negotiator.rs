@@ -5,9 +5,7 @@ use rhdl_fpga::{
 };
 
 fn main() -> Result<(), RHDLError> {
-    write_fsm_diagram::<Ieee1284Negotiator<8>>(
-        "ieee1284_negotiator_fsm.md",
-    )?;
+    write_fsm_diagram::<Ieee1284Negotiator<8>>("ieee1284_negotiator_fsm.md")?;
 
     let timings = NegTimings::<8> {
         t_strobe_low: bits(4),

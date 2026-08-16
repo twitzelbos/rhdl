@@ -305,6 +305,7 @@ crates/rhdl-fpga/
 │   ├── gray/                           # gray-code encoders/decoders
 │   ├── pipe/                           # pipelined map/filter/...
 │   ├── stream/                         # backpressure-aware stream cores
+│   ├── rcstream/                       # typed LID streaming bus (RCStream)
 │   ├── axi4lite/                       # AXI4-Lite protocol family
 │   ├── reset/                          # reset conditioners
 │   ├── rng/                            # XorShift, etc.
@@ -326,7 +327,7 @@ crates/rhdl-fpga/
 
 Conventions enforced:
 
-- **Categories already exist; reuse them.** `core`, `audio`, `serial_bus`, `video`, `cdc`, `fifo`, `gray`, `lid`, `pipe`, `reset`, `rng`, `dsp`, `stream`, `axi4lite`, `tristate`. A new category requires a strong reason — the widget doesn't fit any existing category, and at least two related widgets motivate the new top-level module.  Foundation primitives (registers, RAMs, counters, arithmetic, control widgets) live in `core/`; off-chip-facing protocol PHYs live in `serial_bus/`; raster-display widgets live in `video/`; audio-output / audio-protocol widgets live in `audio/`.  When a `serial_bus/` or `video/` widget needs a `dff` / `constant` / `pwm` / `edge_detector` / `pulse_stretcher` from `core/`, it imports via `use crate::core::{dff, constant};` rather than `use super::*;` (sibling-only `super::` references are reserved for intra-category composition such as `serial_bus::midi → serial_bus::uart::Uart`).
+- **Categories already exist; reuse them.** `core`, `audio`, `serial_bus`, `video`, `cdc`, `fifo`, `gray`, `lid`, `pipe`, `reset`, `rng`, `dsp`, `stream`, `rcstream`, `axi4lite`, `tristate`. A new category requires a strong reason — the widget doesn't fit any existing category, and at least two related widgets motivate the new top-level module.  Foundation primitives (registers, RAMs, counters, arithmetic, control widgets) live in `core/`; off-chip-facing protocol PHYs live in `serial_bus/`; raster-display widgets live in `video/`; audio-output / audio-protocol widgets live in `audio/`.  When a `serial_bus/` or `video/` widget needs a `dff` / `constant` / `pwm` / `edge_detector` / `pulse_stretcher` from `core/`, it imports via `use crate::core::{dff, constant};` rather than `use super::*;` (sibling-only `super::` references are reserved for intra-category composition such as `serial_bus::midi → serial_bus::uart::Uart`).
 - **One widget per file.** Group related widgets under a `mod.rs` (see `src/fifo/`, `src/stream/`).
 - **Every widget has the four companion artifacts** in their canonical locations: `src/<cat>/<name>.rs`, `examples/<name>.rs`, `doc/<name>.md`, `vcd/<name>/<name>.vcd`. See CLAUDE.md §3 for the file-anatomy template.
 - **Internal sub-modules in a category get registered in the category's `mod.rs` and do not become public unless they have a separate user-facing surface.** `fifo::write_logic` and `fifo::read_logic` are public because users may want to compose them; `fifo::testing::*` is a `#[cfg(test)]`-friendly helper module.

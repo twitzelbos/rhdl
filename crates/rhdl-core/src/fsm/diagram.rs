@@ -186,7 +186,11 @@ pub fn render_fsm_svg(diagram: &FsmDiagram) -> String {
         svg,
         r##"<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#444"/></marker></defs>"##
     );
-    let _ = writeln!(svg, r#"<title>FSM diagram for {}</title>"#, diagram.widget_name);
+    let _ = writeln!(
+        svg,
+        r#"<title>FSM diagram for {}</title>"#,
+        diagram.widget_name
+    );
 
     // Edges first (so nodes draw over them).
     for e in &diagram.edges {
@@ -267,7 +271,10 @@ pub fn render_fsm_dot(diagram: &FsmDiagram) -> String {
     let mut s = String::new();
     let _ = writeln!(s, "digraph fsm {{");
     let _ = writeln!(s, "    rankdir=TB;");
-    let _ = writeln!(s, "    node [shape=box, style=rounded, fontname=\"sans-serif\"];");
+    let _ = writeln!(
+        s,
+        "    node [shape=box, style=rounded, fontname=\"sans-serif\"];"
+    );
     let _ = writeln!(
         s,
         "    label=\"FSM: {}\"; labelloc=\"t\"; fontname=\"sans-serif\";",
@@ -291,7 +298,12 @@ pub fn render_fsm_dot(diagram: &FsmDiagram) -> String {
     }
 
     for e in &diagram.edges {
-        let _ = writeln!(s, "    n{src} -> n{tgt};", src = e.source_index, tgt = e.target_index);
+        let _ = writeln!(
+            s,
+            "    n{src} -> n{tgt};",
+            src = e.source_index,
+            tgt = e.target_index
+        );
     }
 
     let _ = writeln!(s, "}}");

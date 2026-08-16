@@ -75,12 +75,8 @@ fn opcodes_dir() -> PathBuf {
 
 fn opcode_pages() -> BTreeSet<String> {
     let dir = opcodes_dir();
-    let entries = fs::read_dir(&dir).unwrap_or_else(|e| {
-        panic!(
-            "could not read opcodes directory at {}: {e}",
-            dir.display(),
-        )
-    });
+    let entries = fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("could not read opcodes directory at {}: {e}", dir.display(),));
     entries
         .filter_map(|entry| {
             let entry = entry.ok()?;

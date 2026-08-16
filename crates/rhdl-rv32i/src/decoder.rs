@@ -34,7 +34,7 @@ pub fn imm_i(instr: Bits<32>) -> Bits<32> {
 #[kernel]
 pub fn imm_s(instr: Bits<32>) -> Bits<32> {
     // imm[11:5] = instr[31:25], imm[4:0] = instr[11:7]
-    let high: Bits<32> = (instr >> 25) << 5;        // bits 11:5 of imm
+    let high: Bits<32> = (instr >> 25) << 5; // bits 11:5 of imm
     let low: Bits<32> = (instr >> 7) & bits::<32>(0x1F); // bits 4:0 of imm
     let combined: Bits<32> = high | low;
     // Sign-extend by checking bit 11 (instr[31]).
@@ -145,28 +145,28 @@ pub fn decode(instr: Bits<32>) -> DecodedInstruction {
 
     // Opcode dispatch.  RV32I major opcodes are 7-bit values; we
     // match on the literal bit patterns from the spec.
-    let op_reg: Bits<7>     = bits::<7>(0b0110011);
-    let op_imm_v: Bits<7>   = bits::<7>(0b0010011);
-    let op_load: Bits<7>    = bits::<7>(0b0000011);
-    let op_store: Bits<7>   = bits::<7>(0b0100011);
-    let op_branch: Bits<7>  = bits::<7>(0b1100011);
-    let op_jalr: Bits<7>    = bits::<7>(0b1100111);
-    let op_jal: Bits<7>     = bits::<7>(0b1101111);
-    let op_lui: Bits<7>     = bits::<7>(0b0110111);
-    let op_auipc: Bits<7>   = bits::<7>(0b0010111);
-    let op_system: Bits<7>  = bits::<7>(0b1110011);
+    let op_reg: Bits<7> = bits::<7>(0b0110011);
+    let op_imm_v: Bits<7> = bits::<7>(0b0010011);
+    let op_load: Bits<7> = bits::<7>(0b0000011);
+    let op_store: Bits<7> = bits::<7>(0b0100011);
+    let op_branch: Bits<7> = bits::<7>(0b1100011);
+    let op_jalr: Bits<7> = bits::<7>(0b1100111);
+    let op_jal: Bits<7> = bits::<7>(0b1101111);
+    let op_lui: Bits<7> = bits::<7>(0b0110111);
+    let op_auipc: Bits<7> = bits::<7>(0b0010111);
+    let op_system: Bits<7> = bits::<7>(0b1110011);
     let op_misc_mem: Bits<7> = bits::<7>(0b0001111);
 
     let f3_zero: Bits<3> = bits::<3>(0);
-    let f3_one: Bits<3>  = bits::<3>(1);
-    let f3_two: Bits<3>  = bits::<3>(2);
+    let f3_one: Bits<3> = bits::<3>(1);
+    let f3_two: Bits<3> = bits::<3>(2);
     let f3_three: Bits<3> = bits::<3>(3);
     let f3_four: Bits<3> = bits::<3>(4);
     let f3_five: Bits<3> = bits::<3>(5);
-    let f3_six: Bits<3>  = bits::<3>(6);
+    let f3_six: Bits<3> = bits::<3>(6);
     let f3_seven: Bits<3> = bits::<3>(7);
 
-    let f7_alt: Bits<7>  = bits::<7>(0b0100000); // SUB, SRA(I)
+    let f7_alt: Bits<7> = bits::<7>(0b0100000); // SUB, SRA(I)
 
     if opcode_bits == op_reg {
         // R-type ALU.  funct3 selects the operation; funct7 bit 5
@@ -176,7 +176,11 @@ pub fn decode(instr: Bits<32>) -> DecodedInstruction {
         d.writeback_src = WritebackSrc::Alu;
         d.illegal = false;
         if funct3 == f3_zero {
-            d.alu_op = if funct7 == f7_alt { AluOp::Sub } else { AluOp::Add };
+            d.alu_op = if funct7 == f7_alt {
+                AluOp::Sub
+            } else {
+                AluOp::Add
+            };
         } else if funct3 == f3_one {
             d.alu_op = AluOp::Sll;
         } else if funct3 == f3_two {
@@ -186,7 +190,11 @@ pub fn decode(instr: Bits<32>) -> DecodedInstruction {
         } else if funct3 == f3_four {
             d.alu_op = AluOp::Xor;
         } else if funct3 == f3_five {
-            d.alu_op = if funct7 == f7_alt { AluOp::Sra } else { AluOp::Srl };
+            d.alu_op = if funct7 == f7_alt {
+                AluOp::Sra
+            } else {
+                AluOp::Srl
+            };
         } else if funct3 == f3_six {
             d.alu_op = AluOp::Or;
         } else {
@@ -212,7 +220,11 @@ pub fn decode(instr: Bits<32>) -> DecodedInstruction {
         } else if funct3 == f3_four {
             d.alu_op = AluOp::Xor;
         } else if funct3 == f3_five {
-            d.alu_op = if funct7 == f7_alt { AluOp::Sra } else { AluOp::Srl };
+            d.alu_op = if funct7 == f7_alt {
+                AluOp::Sra
+            } else {
+                AluOp::Srl
+            };
         } else if funct3 == f3_six {
             d.alu_op = AluOp::Or;
         } else {
@@ -222,7 +234,7 @@ pub fn decode(instr: Bits<32>) -> DecodedInstruction {
         // I-type load.
         d.opcode = Opcode::Load;
         d.alu_src = AluSrc::Imm;
-        d.alu_op = AluOp::Add;          // address = rs1 + imm
+        d.alu_op = AluOp::Add; // address = rs1 + imm
         d.imm = imm_i_v;
         d.writeback_src = WritebackSrc::Mem;
         d.mem_read = true;
@@ -244,7 +256,7 @@ pub fn decode(instr: Bits<32>) -> DecodedInstruction {
         // S-type store.
         d.opcode = Opcode::Store;
         d.alu_src = AluSrc::Imm;
-        d.alu_op = AluOp::Add;          // address = rs1 + imm
+        d.alu_op = AluOp::Add; // address = rs1 + imm
         d.imm = imm_s_v;
         d.mem_write = true;
         d.illegal = false;
@@ -260,7 +272,7 @@ pub fn decode(instr: Bits<32>) -> DecodedInstruction {
     } else if opcode_bits == op_branch {
         // B-type branch.
         d.opcode = Opcode::Branch;
-        d.alu_src = AluSrc::Reg;        // branch comparator uses both regs
+        d.alu_src = AluSrc::Reg; // branch comparator uses both regs
         d.imm = imm_b_v;
         d.illegal = false;
         if funct3 == f3_zero {
@@ -282,7 +294,7 @@ pub fn decode(instr: Bits<32>) -> DecodedInstruction {
         // I-type JALR.
         d.opcode = Opcode::Jalr;
         d.alu_src = AluSrc::Imm;
-        d.alu_op = AluOp::Add;          // target = rs1 + imm
+        d.alu_op = AluOp::Add; // target = rs1 + imm
         d.imm = imm_i_v;
         d.writeback_src = WritebackSrc::PcPlus4;
         d.jump = true;
@@ -299,7 +311,7 @@ pub fn decode(instr: Bits<32>) -> DecodedInstruction {
         // U-type LUI: rd = imm.
         d.opcode = Opcode::Lui;
         d.alu_src = AluSrc::Imm;
-        d.alu_op = AluOp::Pass;         // ALU passes second operand
+        d.alu_op = AluOp::Pass; // ALU passes second operand
         d.imm = imm_u_v;
         d.writeback_src = WritebackSrc::Alu;
         d.illegal = false;

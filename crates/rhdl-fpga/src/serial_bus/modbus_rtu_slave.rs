@@ -447,33 +447,25 @@ pub fn modbus_rtu_slave<const NREG: usize, const NCOIL: usize>(
                     // 1..=2000.
                     if count_v == bits::<16>(0) || count_v > bits::<16>(2000) {
                         exception = bits::<8>(0x03);
-                    } else if start_addr_v >= ncoil_b
-                        || (start_addr_v + count_v) > ncoil_b
-                    {
+                    } else if start_addr_v >= ncoil_b || (start_addr_v + count_v) > ncoil_b {
                         exception = bits::<8>(0x02);
                     }
                 } else if frame_fc == bits::<8>(0x02) {
                     if count_v == bits::<16>(0) || count_v > bits::<16>(2000) {
                         exception = bits::<8>(0x03);
-                    } else if start_addr_v >= ndin_b
-                        || (start_addr_v + count_v) > ndin_b
-                    {
+                    } else if start_addr_v >= ndin_b || (start_addr_v + count_v) > ndin_b {
                         exception = bits::<8>(0x02);
                     }
                 } else if frame_fc == bits::<8>(0x03) {
                     if count_v == bits::<16>(0) || count_v > bits::<16>(125) {
                         exception = bits::<8>(0x03);
-                    } else if start_addr_v >= nreg_b
-                        || (start_addr_v + count_v) > nreg_b
-                    {
+                    } else if start_addr_v >= nreg_b || (start_addr_v + count_v) > nreg_b {
                         exception = bits::<8>(0x02);
                     }
                 } else if frame_fc == bits::<8>(0x04) {
                     if count_v == bits::<16>(0) || count_v > bits::<16>(125) {
                         exception = bits::<8>(0x03);
-                    } else if start_addr_v >= nin_b
-                        || (start_addr_v + count_v) > nin_b
-                    {
+                    } else if start_addr_v >= nin_b || (start_addr_v + count_v) > nin_b {
                         exception = bits::<8>(0x02);
                     }
                 } else if frame_fc == bits::<8>(0x05) {
@@ -493,18 +485,14 @@ pub fn modbus_rtu_slave<const NREG: usize, const NCOIL: usize>(
                     // Write Multiple Coils.  count = number of coils.
                     if count_v == bits::<16>(0) || count_v > bits::<16>(1968) {
                         exception = bits::<8>(0x03);
-                    } else if start_addr_v >= ncoil_b
-                        || (start_addr_v + count_v) > ncoil_b
-                    {
+                    } else if start_addr_v >= ncoil_b || (start_addr_v + count_v) > ncoil_b {
                         exception = bits::<8>(0x02);
                     }
                 } else if frame_fc == bits::<8>(0x10) {
                     // Write Multiple Registers.
                     if count_v == bits::<16>(0) || count_v > bits::<16>(123) {
                         exception = bits::<8>(0x03);
-                    } else if start_addr_v >= nreg_b
-                        || (start_addr_v + count_v) > nreg_b
-                    {
+                    } else if start_addr_v >= nreg_b || (start_addr_v + count_v) > nreg_b {
                         exception = bits::<8>(0x02);
                     }
                 } else {
@@ -615,8 +603,8 @@ pub fn modbus_rtu_slave<const NREG: usize, const NCOIL: usize>(
                     // Build one byte: 8 coils starting at start + byte_idx*8.
                     let mut packed: Bits<8> = bits::<8>(0);
                     for b in 0..8 {
-                        let coil_offset: Bits<16> = (byte_idx << bits::<16>(3))
-                            + bits::<16>(b as u128);
+                        let coil_offset: Bits<16> =
+                            (byte_idx << bits::<16>(3)) + bits::<16>(b as u128);
                         let coil_addr: Bits<16> = start + coil_offset;
                         let in_range: bool = coil_offset < count_v;
                         // Guard against out-of-range index — both branches

@@ -49,11 +49,7 @@ fn r(funct7: u32, rs2: u32, rs1: u32, funct3: u32, rd: u32, opcode: u32) -> u32 
 
 fn i(imm: i32, rs1: u32, funct3: u32, rd: u32, opcode: u32) -> u32 {
     let imm_u = (imm as u32) & 0xFFF;
-    (imm_u << 20)
-        | (rs1 & 0x1F) << 15
-        | (funct3 & 0x7) << 12
-        | (rd & 0x1F) << 7
-        | (opcode & 0x7F)
+    (imm_u << 20) | (rs1 & 0x1F) << 15 | (funct3 & 0x7) << 12 | (rd & 0x1F) << 7 | (opcode & 0x7F)
 }
 
 fn s(imm: i32, rs2: u32, rs1: u32, funct3: u32, opcode: u32) -> u32 {
@@ -91,12 +87,7 @@ fn jal(rd: u32, imm: i32) -> u32 {
     let bits_19_12 = (imm_u >> 12) & 0xFF;
     let bit11 = (imm_u >> 11) & 1;
     let bits_10_1 = (imm_u >> 1) & 0x3FF;
-    (bit20 << 31)
-        | bits_10_1 << 21
-        | bit11 << 20
-        | bits_19_12 << 12
-        | (rd & 0x1F) << 7
-        | 0x6F
+    (bit20 << 31) | bits_10_1 << 21 | bit11 << 20 | bits_19_12 << 12 | (rd & 0x1F) << 7 | 0x6F
 }
 
 fn jalr(rd: u32, rs1: u32, imm: i32) -> u32 {
@@ -120,12 +111,24 @@ fn b(imm: i32, rs2: u32, rs1: u32, funct3: u32) -> u32 {
 }
 
 // One helper per branch op (shows the funct3 encoding inline).
-fn beq(rs1: u32, rs2: u32, imm: i32) -> u32 { b(imm, rs2, rs1, 0) }
-fn bne(rs1: u32, rs2: u32, imm: i32) -> u32 { b(imm, rs2, rs1, 1) }
-fn blt(rs1: u32, rs2: u32, imm: i32) -> u32 { b(imm, rs2, rs1, 4) }
-fn bge(rs1: u32, rs2: u32, imm: i32) -> u32 { b(imm, rs2, rs1, 5) }
-fn bltu(rs1: u32, rs2: u32, imm: i32) -> u32 { b(imm, rs2, rs1, 6) }
-fn bgeu(rs1: u32, rs2: u32, imm: i32) -> u32 { b(imm, rs2, rs1, 7) }
+fn beq(rs1: u32, rs2: u32, imm: i32) -> u32 {
+    b(imm, rs2, rs1, 0)
+}
+fn bne(rs1: u32, rs2: u32, imm: i32) -> u32 {
+    b(imm, rs2, rs1, 1)
+}
+fn blt(rs1: u32, rs2: u32, imm: i32) -> u32 {
+    b(imm, rs2, rs1, 4)
+}
+fn bge(rs1: u32, rs2: u32, imm: i32) -> u32 {
+    b(imm, rs2, rs1, 5)
+}
+fn bltu(rs1: u32, rs2: u32, imm: i32) -> u32 {
+    b(imm, rs2, rs1, 6)
+}
+fn bgeu(rs1: u32, rs2: u32, imm: i32) -> u32 {
+    b(imm, rs2, rs1, 7)
+}
 
 // ---- Program-driver harnesses ------------------------------------
 
@@ -237,17 +240,33 @@ trait ProgramObservable {
 }
 
 impl ProgramObservable for SOut {
-    fn pc_b(&self) -> u32 { self.pc.raw() as u32 }
-    fn mem_addr_b(&self) -> u32 { self.mem_addr.raw() as u32 }
-    fn mem_wdata_b(&self) -> u32 { self.mem_wdata.raw() as u32 }
-    fn mem_write_b(&self) -> bool { self.mem_write }
+    fn pc_b(&self) -> u32 {
+        self.pc.raw() as u32
+    }
+    fn mem_addr_b(&self) -> u32 {
+        self.mem_addr.raw() as u32
+    }
+    fn mem_wdata_b(&self) -> u32 {
+        self.mem_wdata.raw() as u32
+    }
+    fn mem_write_b(&self) -> bool {
+        self.mem_write
+    }
 }
 
 impl ProgramObservable for POut {
-    fn pc_b(&self) -> u32 { self.pc.raw() as u32 }
-    fn mem_addr_b(&self) -> u32 { self.mem_addr.raw() as u32 }
-    fn mem_wdata_b(&self) -> u32 { self.mem_wdata.raw() as u32 }
-    fn mem_write_b(&self) -> bool { self.mem_write }
+    fn pc_b(&self) -> u32 {
+        self.pc.raw() as u32
+    }
+    fn mem_addr_b(&self) -> u32 {
+        self.mem_addr.raw() as u32
+    }
+    fn mem_wdata_b(&self) -> u32 {
+        self.mem_wdata.raw() as u32
+    }
+    fn mem_write_b(&self) -> bool {
+        self.mem_write
+    }
 }
 
 fn run_single(program: &[u32], cycles: usize) -> [u32; 256] {
@@ -270,12 +289,15 @@ fn pipelined_pure_alu_parity() {
         addi(3, 0, 30),
         addi(4, 0, 40),
         addi(5, 0, 50),
-        sw(5, 0, 0),       // mem[0] = x5 = 50
+        sw(5, 0, 0), // mem[0] = x5 = 50
     ];
     let single = run_single(&program, 16);
     let pipelined = run_pipelined(&program, 24);
     assert_eq!(single[0], 50);
-    assert_eq!(pipelined[0], single[0], "pipelined should match single-cycle");
+    assert_eq!(
+        pipelined[0], single[0],
+        "pipelined should match single-cycle"
+    );
 }
 
 /// Hazard test: back-to-back ALU dependency.  Pipelined needs
@@ -285,8 +307,8 @@ fn pipelined_pure_alu_parity() {
 fn pipelined_back_to_back_dependency_uses_forwarding() {
     let program = vec![
         addi(1, 0, 5),
-        addi(2, 1, 7),     // depends on x1 from previous cycle
-        sw(2, 0, 0),       // mem[0] = x2 = 12
+        addi(2, 1, 7), // depends on x1 from previous cycle
+        sw(2, 0, 0),   // mem[0] = x2 = 12
     ];
     let single = run_single(&program, 12);
     let pipelined = run_pipelined(&program, 20);
@@ -300,9 +322,9 @@ fn pipelined_back_to_back_dependency_uses_forwarding() {
 fn pipelined_three_deep_chain_uses_mem_wb_forwarding() {
     let program = vec![
         addi(1, 0, 100),
-        addi(2, 1, 1),     // x2 = 101 (EX/MEM fwd)
-        addi(3, 1, 200),   // x3 = 300 (MEM/WB fwd)
-        sw(3, 0, 0),       // mem[0] = x3 = 300
+        addi(2, 1, 1),   // x2 = 101 (EX/MEM fwd)
+        addi(3, 1, 200), // x3 = 300 (MEM/WB fwd)
+        sw(3, 0, 0),     // mem[0] = x3 = 300
     ];
     let single = run_single(&program, 12);
     let pipelined = run_pipelined(&program, 20);
@@ -320,16 +342,19 @@ fn pipelined_three_deep_chain_uses_mem_wb_forwarding() {
 #[test]
 fn pipelined_load_use_stall_inserts_bubble() {
     let program = vec![
-        addi(7, 0, 42),    // x7 = 42
-        sw(7, 0, 4),       // mem[1] = 42
-        lw(1, 0, 4),       // x1 = mem[1] = 42
-        addi(2, 1, 1),     // x2 = 43 (after stall + MEM/WB forward)
-        sw(2, 0, 8),       // mem[2] = x2 = 43
+        addi(7, 0, 42), // x7 = 42
+        sw(7, 0, 4),    // mem[1] = 42
+        lw(1, 0, 4),    // x1 = mem[1] = 42
+        addi(2, 1, 1),  // x2 = 43 (after stall + MEM/WB forward)
+        sw(2, 0, 8),    // mem[2] = x2 = 43
     ];
     let single = run_single(&program, 16);
     let pipelined = run_pipelined(&program, 30);
     assert_eq!(single[2], 43);
-    assert_eq!(pipelined[2], single[2], "load-use stall + forward should match");
+    assert_eq!(
+        pipelined[2], single[2],
+        "load-use stall + forward should match"
+    );
 }
 
 /// JAL: unconditional jump.  Pipelined squashes the next
@@ -337,11 +362,11 @@ fn pipelined_load_use_stall_inserts_bubble() {
 #[test]
 fn pipelined_jal_squashes_and_redirects() {
     let program = vec![
-        jal(1, 12),                // PC ← 0x0C
-        addi(2, 0, 999),           // SQUASHED
-        addi(3, 0, 999),           // SQUASHED
-        addi(4, 0, 7),             // x4 = 7
-        sw(4, 0, 0),               // mem[0] = 7
+        jal(1, 12),      // PC ← 0x0C
+        addi(2, 0, 999), // SQUASHED
+        addi(3, 0, 999), // SQUASHED
+        addi(4, 0, 7),   // x4 = 7
+        sw(4, 0, 0),     // mem[0] = 7
     ];
     let single = run_single(&program, 12);
     let pipelined = run_pipelined(&program, 24);
@@ -354,11 +379,7 @@ fn pipelined_jal_squashes_and_redirects() {
 #[test]
 fn pipelined_iverilog_round_trip() -> Result<(), RHDLError> {
     let uut = PipelinedCpu::default();
-    let program = vec![
-        addi(1, 0, 5),
-        addi(2, 1, 7),
-        sw(2, 0, 0),
-    ];
+    let program = vec![addi(1, 0, 5), addi(2, 1, 7), sw(2, 0, 0)];
     let inputs: Vec<PIn> = (0..12)
         .map(|cycle| PIn {
             instr: bits::<32>(if cycle < program.len() {
@@ -399,13 +420,13 @@ fn pipelined_iverilog_round_trip() -> Result<(), RHDLError> {
 
 fn build_branch_program(branch_instr: u32) -> Vec<u32> {
     vec![
-        addi(1, 0, 0),         // 0x00: x1 = 0     (branch operand A)
-        addi(2, 0, 0),         // 0x04: x2 = 0     (branch operand B; tests rewrite these)
-        branch_instr,          // 0x08: BR x1, x2, +12
-        addi(7, 0, 0xDA),      // 0x0C: x7 = 0xDA      (poison; should NOT execute on taken)
-        sw(7, 0, 4),           // 0x10: mem[1] = 0xDA  (poison)
-        addi(8, 0, 0x222),     // 0x14: x8 = 0x222
-        sw(8, 0, 0),           // 0x18: mem[0] = 0x222
+        addi(1, 0, 0),     // 0x00: x1 = 0     (branch operand A)
+        addi(2, 0, 0),     // 0x04: x2 = 0     (branch operand B; tests rewrite these)
+        branch_instr,      // 0x08: BR x1, x2, +12
+        addi(7, 0, 0xDA),  // 0x0C: x7 = 0xDA      (poison; should NOT execute on taken)
+        sw(7, 0, 4),       // 0x10: mem[1] = 0xDA  (poison)
+        addi(8, 0, 0x222), // 0x14: x8 = 0x222
+        sw(8, 0, 0),       // 0x18: mem[0] = 0x222
     ]
 }
 

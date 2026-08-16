@@ -55,11 +55,7 @@ rule_kernel! {
 #[test]
 fn toggle_ff_responds_to_set() {
     let uut: ToggleFF = ToggleFF::default();
-    let stream_in: Vec<ToggleEvent> = vec![
-        ToggleEvent::Hold,
-        ToggleEvent::Set,
-        ToggleEvent::Hold,
-    ];
+    let stream_in: Vec<ToggleEvent> = vec![ToggleEvent::Hold, ToggleEvent::Set, ToggleEvent::Hold];
     let stream = stream_in.into_iter().with_reset(2).clock_pos_edge(100);
     let final_state = uut
         .run(stream)

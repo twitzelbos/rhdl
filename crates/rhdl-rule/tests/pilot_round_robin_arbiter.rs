@@ -127,8 +127,7 @@ fn rule_arbiter_rotates_under_constant_pressure() {
         .filter(|s| !s.input.0.reset.any())
         .map(|s| s.output)
         .collect();
-    let expected: Vec<Option<Bits<2>>> =
-        (0..32u128).map(|i| Some(bits::<2>(i % 4))).collect();
+    let expected: Vec<Option<Bits<2>>> = (0..32u128).map(|i| Some(bits::<2>(i % 4))).collect();
     assert_eq!(grants, expected, "expected strict 0,1,2,3 rotation");
 }
 
@@ -157,13 +156,7 @@ fn rule_arbiter_parity_with_original() {
 
     let original: RoundRobinArbiter<4, 2> = RoundRobinArbiter::default();
     let original_grants: Vec<Option<Bits<2>>> = original
-        .run(
-            inputs
-                .clone()
-                .into_iter()
-                .with_reset(1)
-                .clock_pos_edge(100),
-        )
+        .run(inputs.clone().into_iter().with_reset(1).clock_pos_edge(100))
         .synchronous_sample()
         .filter(|s| !s.input.0.reset.any())
         .map(|s| s.output)

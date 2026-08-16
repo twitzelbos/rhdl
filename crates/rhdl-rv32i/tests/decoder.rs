@@ -12,22 +12,26 @@ use rhdl_rv32i::isa::*;
 
 /// Build an R-type instruction word.
 fn r_type(funct7: u32, rs2: u32, rs1: u32, funct3: u32, rd: u32, opcode: u32) -> Bits<32> {
-    bits::<32>(((funct7 & 0x7F) << 25
-        | (rs2 & 0x1F) << 20
-        | (rs1 & 0x1F) << 15
-        | (funct3 & 0x7) << 12
-        | (rd & 0x1F) << 7
-        | (opcode & 0x7F)) as u128)
+    bits::<32>(
+        ((funct7 & 0x7F) << 25
+            | (rs2 & 0x1F) << 20
+            | (rs1 & 0x1F) << 15
+            | (funct3 & 0x7) << 12
+            | (rd & 0x1F) << 7
+            | (opcode & 0x7F)) as u128,
+    )
 }
 
 /// Build an I-type instruction word.
 fn i_type(imm: i32, rs1: u32, funct3: u32, rd: u32, opcode: u32) -> Bits<32> {
     let imm_u = (imm as u32) & 0xFFF;
-    bits::<32>(((imm_u << 20)
-        | (rs1 & 0x1F) << 15
-        | (funct3 & 0x7) << 12
-        | (rd & 0x1F) << 7
-        | (opcode & 0x7F)) as u128)
+    bits::<32>(
+        ((imm_u << 20)
+            | (rs1 & 0x1F) << 15
+            | (funct3 & 0x7) << 12
+            | (rd & 0x1F) << 7
+            | (opcode & 0x7F)) as u128,
+    )
 }
 
 /// Build an S-type instruction word.
@@ -35,12 +39,14 @@ fn s_type(imm: i32, rs2: u32, rs1: u32, funct3: u32, opcode: u32) -> Bits<32> {
     let imm_u = (imm as u32) & 0xFFF;
     let imm_high = (imm_u >> 5) & 0x7F;
     let imm_low = imm_u & 0x1F;
-    bits::<32>(((imm_high << 25)
-        | (rs2 & 0x1F) << 20
-        | (rs1 & 0x1F) << 15
-        | (funct3 & 0x7) << 12
-        | imm_low << 7
-        | (opcode & 0x7F)) as u128)
+    bits::<32>(
+        ((imm_high << 25)
+            | (rs2 & 0x1F) << 20
+            | (rs1 & 0x1F) << 15
+            | (funct3 & 0x7) << 12
+            | imm_low << 7
+            | (opcode & 0x7F)) as u128,
+    )
 }
 
 /// Build a B-type instruction word.
@@ -50,21 +56,21 @@ fn b_type(imm: i32, rs2: u32, rs1: u32, funct3: u32, opcode: u32) -> Bits<32> {
     let bit11 = (imm_u >> 11) & 1;
     let bits_10_5 = (imm_u >> 5) & 0x3F;
     let bits_4_1 = (imm_u >> 1) & 0xF;
-    bits::<32>(((bit12 << 31)
-        | bits_10_5 << 25
-        | (rs2 & 0x1F) << 20
-        | (rs1 & 0x1F) << 15
-        | (funct3 & 0x7) << 12
-        | bits_4_1 << 8
-        | bit11 << 7
-        | (opcode & 0x7F)) as u128)
+    bits::<32>(
+        ((bit12 << 31)
+            | bits_10_5 << 25
+            | (rs2 & 0x1F) << 20
+            | (rs1 & 0x1F) << 15
+            | (funct3 & 0x7) << 12
+            | bits_4_1 << 8
+            | bit11 << 7
+            | (opcode & 0x7F)) as u128,
+    )
 }
 
 /// Build a U-type instruction word.
 fn u_type(imm: u32, rd: u32, opcode: u32) -> Bits<32> {
-    bits::<32>(((imm & 0xFFFF_F000)
-        | (rd & 0x1F) << 7
-        | (opcode & 0x7F)) as u128)
+    bits::<32>(((imm & 0xFFFF_F000) | (rd & 0x1F) << 7 | (opcode & 0x7F)) as u128)
 }
 
 /// Build a J-type instruction word.
@@ -74,12 +80,14 @@ fn j_type(imm: i32, rd: u32, opcode: u32) -> Bits<32> {
     let bits_19_12 = (imm_u >> 12) & 0xFF;
     let bit11 = (imm_u >> 11) & 1;
     let bits_10_1 = (imm_u >> 1) & 0x3FF;
-    bits::<32>(((bit20 << 31)
-        | bits_10_1 << 21
-        | bit11 << 20
-        | bits_19_12 << 12
-        | (rd & 0x1F) << 7
-        | (opcode & 0x7F)) as u128)
+    bits::<32>(
+        ((bit20 << 31)
+            | bits_10_1 << 21
+            | bit11 << 20
+            | bits_19_12 << 12
+            | (rd & 0x1F) << 7
+            | (opcode & 0x7F)) as u128,
+    )
 }
 
 // ---- R-type ALU instructions -------------------------------------
@@ -213,7 +221,7 @@ fn decode_beq() {
     assert_eq!(d.opcode, Opcode::Branch);
     assert_eq!(d.branch_op, BranchOp::Eq);
     assert_eq!(d.imm, bits::<32>(8));
-    assert!(!d.jump);     // jump flag is for unconditional control flow
+    assert!(!d.jump); // jump flag is for unconditional control flow
 }
 
 #[test]

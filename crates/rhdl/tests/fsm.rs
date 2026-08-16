@@ -150,9 +150,18 @@ mod widget_layer {
         use rhdl_core::fsm::analysis::Transition;
         let diags = rhdl_core::fsm::analyze_fsm::<Machine>(
             &[
-                Transition { source_index: 0, target_index: 1 },
-                Transition { source_index: 1, target_index: 2 },
-                Transition { source_index: 2, target_index: 0 },
+                Transition {
+                    source_index: 0,
+                    target_index: 1,
+                },
+                Transition {
+                    source_index: 1,
+                    target_index: 2,
+                },
+                Transition {
+                    source_index: 2,
+                    target_index: 0,
+                },
             ],
             &[],
         );
@@ -163,14 +172,18 @@ mod widget_layer {
     fn analyze_unreachable_state_via_widget_helper() {
         use rhdl_core::fsm::analysis::{FsmDiagnosticKind, Transition};
         let diags = rhdl_core::fsm::analyze_fsm::<Machine>(
-            &[Transition { source_index: 0, target_index: 1 }],
+            &[Transition {
+                source_index: 0,
+                target_index: 1,
+            }],
             &[],
         );
         // Done is unreachable from Idle if Running has no outgoing edge.
-        assert!(diags.iter().any(|d| matches!(
-            d.kind,
-            FsmDiagnosticKind::UnreachableState { name: "Done" }
-        )));
+        assert!(
+            diags
+                .iter()
+                .any(|d| matches!(d.kind, FsmDiagnosticKind::UnreachableState { name: "Done" }))
+        );
     }
 }
 
@@ -192,13 +205,24 @@ mod diagram_layer {
     #[test]
     fn build_diagram_from_widget_descriptor() {
         use rhdl_core::fsm::analysis::Transition;
-        use rhdl_core::fsm::diagram::{build_fsm_diagram, render_fsm_dot, render_fsm_json, render_fsm_svg};
+        use rhdl_core::fsm::diagram::{
+            build_fsm_diagram, render_fsm_dot, render_fsm_json, render_fsm_svg,
+        };
 
         let desc = DiagramMachine::fsm_descriptor();
         let transitions = [
-            Transition { source_index: 0, target_index: 1 },
-            Transition { source_index: 1, target_index: 2 },
-            Transition { source_index: 2, target_index: 0 },
+            Transition {
+                source_index: 0,
+                target_index: 1,
+            },
+            Transition {
+                source_index: 1,
+                target_index: 2,
+            },
+            Transition {
+                source_index: 2,
+                target_index: 0,
+            },
         ];
         let diagram = build_fsm_diagram(&desc, &transitions);
         assert_eq!(diagram.widget_name, "DiagramMachine");
@@ -224,7 +248,7 @@ mod property_layer {
         invariant("state != State::Error", name = "no_error"),
         cover("state == State::Done"),
         liveness("state == State::Done", bound = 1024),
-        assume("input.valid"),
+        assume("input.valid")
     )]
     pub fn my_kernel() {}
 

@@ -25,10 +25,10 @@ pub fn alu(op: AluOp, a: Bits<32>, b: Bits<32>) -> Bits<32> {
     let b_signed: SignedBits<32> = b.as_signed();
 
     match op {
-        AluOp::Add  => a + b,
-        AluOp::Sub  => a - b,
-        AluOp::Sll  => a << shamt,
-        AluOp::Slt  => {
+        AluOp::Add => a + b,
+        AluOp::Sub => a - b,
+        AluOp::Sll => a << shamt,
+        AluOp::Slt => {
             if a_signed < b_signed {
                 bits::<32>(1)
             } else {
@@ -42,11 +42,11 @@ pub fn alu(op: AluOp, a: Bits<32>, b: Bits<32>) -> Bits<32> {
                 bits::<32>(0)
             }
         }
-        AluOp::Xor  => a ^ b,
-        AluOp::Srl  => a >> shamt,
-        AluOp::Sra  => (a_signed >> shamt).as_unsigned(),
-        AluOp::Or   => a | b,
-        AluOp::And  => a & b,
+        AluOp::Xor => a ^ b,
+        AluOp::Srl => a >> shamt,
+        AluOp::Sra => (a_signed >> shamt).as_unsigned(),
+        AluOp::Or => a | b,
+        AluOp::And => a & b,
         AluOp::Pass => b,
     }
 }

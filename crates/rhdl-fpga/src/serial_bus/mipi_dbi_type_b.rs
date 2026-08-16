@@ -281,12 +281,11 @@ mod tests {
             stream_in.push(idle_in());
         }
         let stream = stream_in.into_iter().with_reset(1).clock_pos_edge(100);
-        assert!(
-            uut.run(stream)
-                .synchronous_sample()
-                .filter(|s| !s.input.0.reset.any())
-                .any(|s| s.output.done)
-        );
+        assert!(uut
+            .run(stream)
+            .synchronous_sample()
+            .filter(|s| !s.input.0.reset.any())
+            .any(|s| s.output.done));
         Ok(())
     }
 
@@ -405,9 +404,7 @@ mod tests {
             .join("mipi_dbi_type_b");
         std::fs::create_dir_all(&root).unwrap();
         let expect = expect!["d3254acec926ef88b93e12e8b0a1c88914cf9ba376ec6872bc85a1ca14c7c314"];
-        let digest = vcd
-            .dump_to_file(root.join("mipi_dbi_type_b.vcd"))
-            .unwrap();
+        let digest = vcd.dump_to_file(root.join("mipi_dbi_type_b.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())
     }

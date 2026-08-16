@@ -106,10 +106,13 @@ pub fn relay_kernel<T: Digital, F: Digital>(
     // `Item<T, F>` in the None arm.
     let (data_valid, item_in): (bool, Item<T, F>) = match i.data {
         Some(it) => (true, it),
-        None => (false, Item::<T, F> {
-            data: T::dont_care(),
-            frame: F::dont_care(),
-        }),
+        None => (
+            false,
+            Item::<T, F> {
+                data: T::dont_care(),
+                frame: F::dont_care(),
+            },
+        ),
     };
     d.inner.data_in = item_in;
     d.inner.void_in = !data_valid;
@@ -150,17 +153,20 @@ mod tests {
     #[test]
     fn relay_kernel_idle() {
         let cr = ClockReset::dont_care();
-        let i = RCStream::<b8, ()> { data: None, ready: true };
+        let i = RCStream::<b8, ()> {
+            data: None,
+            ready: true,
+        };
         let q = Q::<b8, ()> {
             inner: carloni::Out::<Item<b8, ()>> {
                 data_out: Item::<b8, ()>::dont_care(),
-                void_out: true,    // no data in main_ff
+                void_out: true, // no data in main_ff
                 stop_out: false,
             },
         };
         let (o, _d) = relay_kernel::<b8, ()>(cr, i, q);
         assert!(o.data.is_none());
-        assert_eq!(o.ready, true);  // !stop_out = !false = true
+        assert_eq!(o.ready, true); // !stop_out = !false = true
     }
 
     /// Direct kernel test: when Carloni has buffered data
@@ -169,12 +175,18 @@ mod tests {
     #[test]
     fn relay_kernel_data_held() {
         let cr = ClockReset::dont_care();
-        let i = RCStream::<b8, ()> { data: None, ready: true };
-        let held = Item::<b8, ()> { data: bits::<8>(0xAB), frame: () };
+        let i = RCStream::<b8, ()> {
+            data: None,
+            ready: true,
+        };
+        let held = Item::<b8, ()> {
+            data: bits::<8>(0xAB),
+            frame: (),
+        };
         let q = Q::<b8, ()> {
             inner: carloni::Out::<Item<b8, ()>> {
                 data_out: held,
-                void_out: false,   // data valid
+                void_out: false, // data valid
                 stop_out: false,
             },
         };
@@ -191,10 +203,13 @@ mod tests {
     #[test]
     fn relay_kernel_forwards_item_to_carloni() {
         let cr = ClockReset::dont_care();
-        let it = Item::<b8, ()> { data: bits::<8>(0x55), frame: () };
+        let it = Item::<b8, ()> {
+            data: bits::<8>(0x55),
+            frame: (),
+        };
         let i = RCStream::<b8, ()> {
             data: Some(it),
-            ready: false,  // downstream not ready → stop_in=true
+            ready: false, // downstream not ready → stop_in=true
         };
         let q = Q::<b8, ()> {
             inner: carloni::Out::<Item<b8, ()>> {
@@ -205,8 +220,8 @@ mod tests {
         };
         let (_o, d) = relay_kernel::<b8, ()>(cr, i, q);
         assert_eq!(d.inner.data_in.data.raw(), 0x55);
-        assert_eq!(d.inner.void_in, false);  // is_none() = false → void = false
-        assert_eq!(d.inner.stop_in, true);   // !ready = true
+        assert_eq!(d.inner.void_in, false); // is_none() = false → void = false
+        assert_eq!(d.inner.stop_in, true); // !ready = true
     }
 
     /// Property: a `RCStreamRelay<T, F>` is a `Synchronous` widget that
@@ -225,10 +240,18 @@ mod tests {
     #[test]
     fn relay_iverilog_round_trip() -> Result<(), RHDLError> {
         let uut: RCStreamRelay<b8, ()> = RCStreamRelay::default();
-        let inputs: Vec<RCStream<b8, ()>> = (0..16).map(|k| {
-            let it = Item::<b8, ()> { data: bits::<8>(k as u128), frame: () };
-            RCStream::<b8, ()> { data: Some(it), ready: true }
-        }).collect();
+        let inputs: Vec<RCStream<b8, ()>> = (0..16)
+            .map(|k| {
+                let it = Item::<b8, ()> {
+                    data: bits::<8>(k as u128),
+                    frame: (),
+                };
+                RCStream::<b8, ()> {
+                    data: Some(it),
+                    ready: true,
+                }
+            })
+            .collect();
         let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
         let test_bench = uut.run(stream).collect::<SynchronousTestBench<_, _>>();
         let tm = test_bench.rtl(&uut, &Default::default())?;
@@ -243,13 +266,18 @@ mod tests {
     #[test]
     fn relay_with_framing_round_trip() -> Result<(), RHDLError> {
         let uut: RCStreamRelay<b8, bool> = RCStreamRelay::default();
-        let inputs: Vec<RCStream<b8, bool>> = (0..16).map(|k| {
-            let it = Item::<b8, bool> {
-                data: bits::<8>(k as u128),
-                frame: k == 15,  // last item carries TLAST = true
-            };
-            RCStream::<b8, bool> { data: Some(it), ready: true }
-        }).collect();
+        let inputs: Vec<RCStream<b8, bool>> = (0..16)
+            .map(|k| {
+                let it = Item::<b8, bool> {
+                    data: bits::<8>(k as u128),
+                    frame: k == 15, // last item carries TLAST = true
+                };
+                RCStream::<b8, bool> {
+                    data: Some(it),
+                    ready: true,
+                }
+            })
+            .collect();
         let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
         let test_bench = uut.run(stream).collect::<SynchronousTestBench<_, _>>();
         let tm = test_bench.rtl(&uut, &Default::default())?;

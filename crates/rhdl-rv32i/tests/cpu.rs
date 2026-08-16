@@ -26,11 +26,7 @@ fn r(funct7: u32, rs2: u32, rs1: u32, funct3: u32, rd: u32, opcode: u32) -> u32 
 /// Encode an I-type instruction.
 fn i(imm: i32, rs1: u32, funct3: u32, rd: u32, opcode: u32) -> u32 {
     let imm_u = (imm as u32) & 0xFFF;
-    (imm_u << 20)
-        | (rs1 & 0x1F) << 15
-        | (funct3 & 0x7) << 12
-        | (rd & 0x1F) << 7
-        | (opcode & 0x7F)
+    (imm_u << 20) | (rs1 & 0x1F) << 15 | (funct3 & 0x7) << 12 | (rd & 0x1F) << 7 | (opcode & 0x7F)
 }
 
 /// Encode a U-type instruction.
@@ -144,16 +140,16 @@ fn cpu_addi_lands_in_register_file_observable_via_subsequent_arithmetic() {
         | (0u32 & 0x1F) << 15          // rs1 = 0 (x0)
         | 2u32 << 12                   // funct3 = 010 (SW)
         | (0u32 & 0x1F) << 7           // imm[4:0] = 0
-        | 0x23;                        // opcode = STORE
+        | 0x23; // opcode = STORE
     let program = vec![
-        addi(1, 0, 5),     // x1 = 5
-        addi(2, 0, 7),     // x2 = 7
-        add(3, 1, 2),      // x3 = 12
-        sub(4, 2, 1),      // x4 = 2
-        addi(5, 3, 100),   // x5 = 112
-        addi(6, 4, -1),    // x6 = 1
-        add(7, 5, 6),      // x7 = 113
-        sw_x7_at_x0,       // observe x7 via mem_wdata
+        addi(1, 0, 5),   // x1 = 5
+        addi(2, 0, 7),   // x2 = 7
+        add(3, 1, 2),    // x3 = 12
+        sub(4, 2, 1),    // x4 = 2
+        addi(5, 3, 100), // x5 = 112
+        addi(6, 4, -1),  // x6 = 1
+        add(7, 5, 6),    // x7 = 113
+        sw_x7_at_x0,     // observe x7 via mem_wdata
     ];
     let trace = run_program(program, 10);
     // Find the cycle where `mem_write` is asserted — that's the SW.

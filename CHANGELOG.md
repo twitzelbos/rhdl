@@ -31,6 +31,41 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-16 — Follow-ups from RCStream Phase 2: portable diagnostic snapshots, deterministic `async_fifo` example, category drift, workspace formatting
+
+**Paths:**
+
+- `crates/rhdl/tests/common/mod.rs` — new `normalize_paths`, applied inside `miette_report`.
+- `crates/rhdl-fpga/tests/faulty_reducer.rs` — same normalization at its inline render site.
+- `crates/rhdl/tests/expect/*.expect` (53 files) + `crates/rhdl-fpga/tests/faulty_reducer_no_combinatorial_paths.expect` — regenerated with workspace-relative paths.
+- `crates/rhdl-fpga/examples/async_fifo.rs` + `crates/rhdl-fpga/doc/async_fifo.md` — seeded xorshift replaces `rand::random`; trace regenerated.
+- `architecture.md` — `rcstream` added to the §4 module tree and category list.
+- Workspace-wide `cargo fmt --all` (separate, formatting-only commit).
+
+**Why this, why now:** all four surfaced while building RCStream Phase 2 and were logged as follow-ups there. The first is the serious one: **`cargo test --all` could not pass for anyone except the original author.**
+
+**Design decisions:**
+
+- **Normalize the path, don't re-bless it.** 54 committed `.expect` files embedded `/Users/samitbasu/Devel/rhdl/...` — the absolute path `miette` renders into its report header, baked in by whoever last ran `UPDATE_EXPECT=1`. Five tests failed on this machine purely because of it (4 in `rhdl`, 1 in `rhdl-fpga`). The tempting fix — run `UPDATE_EXPECT=1` and commit — just moves the breakage to the next contributor and would have made *this* checkout the new privileged one. Instead the render sites strip the workspace-root prefix (derived from `CARGO_MANIFEST_DIR`, so it needs no configuration) and the snapshots became genuinely portable. Audited: across all 54 regenerated files the *only* change is the path prefix.
+- **Seeded xorshift, not `rand` with a fixed seed.** The `async_fifo` example writes a committed artifact that its widget's rustdoc includes, but drove feed/drain decisions from `rand::random`, so `doc/async_fifo.md` regenerated differently on every run — meaning the committed trace was noise, and any contributor re-running the example produced a spurious diff. A tiny inline xorshift keeps the irregular pattern the trace is meant to illustrate, adds no dependency, and needs no RNG-crate version pinning to stay reproducible. Verified byte-identical across two runs.
+- **Formatting is its own commit.** `cargo fmt --all` touches ~150 files that were never formatted. Bundling that into a fix commit would bury the fixes, so it is last and isolated — droppable or cherry-pickable on its own. It is genuine unformatted code (struct literals expanded, calls collapsed), not a rustfmt-version artifact.
+
+**Surprises and gotchas:**
+
+- **Only 5 of the 54 stale snapshots actually failed.** The rest belong to tests whose rendered output doesn't reach the path-bearing header, so the rot was mostly invisible — which is exactly why it survived this long. Fixing only the failing 5 would have left 49 landmines.
+- **`rustfmt --edition 2021` on an edition-2024 workspace silently reformats.** Invoking `rustfmt` directly on individual files skips the edition in `Cargo.toml` and produced ~7 lines of unrelated churn before it was caught. Use `cargo fmt` (which reads the manifest) or pass `--edition 2024` explicitly.
+- **Pre-existing and NOT fixed here:** the `prelude::bind` doctest (`crates/rhdl/src/prelude.rs:135`) fails on a clean tree, unrelated to any of this. Left alone deliberately — it is a separate defect and bundling it would violate one-fix-per-commit.
+
+**Validation:** `cargo test --package rhdl` and `--package rhdl-fpga` green apart from the pre-existing `prelude::bind` doctest. The 54-file snapshot regeneration was diff-audited line by line rather than blind-accepted.
+
+**Follow-ups:**
+
+- `doc/book` still contains 4 files with hardcoded `/Users/samitbasu` paths in prose sample output. Cosmetic — they break no test — but stale.
+- `CLAUDE.md` §1's category list is also missing `rcstream`, `audio`, `serial_bus`, and `video`. Not touched here because that file has unrelated uncommitted edits in the working tree.
+- The `prelude::bind` doctest failure above.
+
+---
+
 ## 2026-08-16 — RCStream Phase 2: cross-clock-domain crossing `RCStreamCdc<T, F, W, R, N>`
 
 **Paths:**

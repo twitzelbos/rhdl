@@ -28,18 +28,20 @@ fn main() {
     const CYCLES: usize = 50;
 
     // ---- our chip ----
-    let microcode =
-        microcode_loader::load_alto_ii_microcode_from_dir(&rom_dir).unwrap();
-    let constants =
-        microcode_loader::load_alto_ii_constant_rom_from_dir(&rom_dir).unwrap();
-    let disk_image =
-        disk_image_loader::load_disk_image_from_file(&disk).unwrap();
+    let microcode = microcode_loader::load_alto_ii_microcode_from_dir(&rom_dir).unwrap();
+    let constants = microcode_loader::load_alto_ii_constant_rom_from_dir(&rom_dir).unwrap();
+    let disk_image = disk_image_loader::load_disk_image_from_file(&disk).unwrap();
     let boot_sector = disk_image.sector(0, 0, 0);
     let uut = AltoChip::with_microcode_constants_and_boot(
-        &microcode, &constants, &boot_sector.data, &boot_sector.label,
+        &microcode,
+        &constants,
+        &boot_sector.data,
+        &boot_sector.label,
     );
     let inputs: Vec<ChipIn> = (0..CYCLES)
-        .map(|_| ChipIn { wakeups: bits::<16>(0x0001) })
+        .map(|_| ChipIn {
+            wakeups: bits::<16>(0x0001),
+        })
         .collect();
     let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
     let trace: Vec<_> = uut
@@ -54,22 +56,29 @@ fn main() {
     for (i, t) in trace.iter().enumerate().take(30) {
         println!(
             "{i:3}   {:>2}   0x{:03x}  0x{:03x}  {:04x}  {:04x}  {:04x}  {:04x}  {:04x}",
-            t.current_task.raw(), t.mpc.raw(), t.next_mpc.raw(),
-            t.t.raw(), t.l.raw(), t.ir.raw(),
-            t.bus.raw(), t.alu_result.raw(),
+            t.current_task.raw(),
+            t.mpc.raw(),
+            t.next_mpc.raw(),
+            t.t.raw(),
+            t.l.raw(),
+            t.ir.raw(),
+            t.bus.raw(),
+            t.alu_result.raw(),
         );
     }
 
     // ---- ContrAlto ----
-    let exe = workspace_root.join(
-        "crates/rhdl-alto/tools/contralto-trace/bin/Release/net8.0/contralto-trace",
-    );
+    let exe = workspace_root
+        .join("crates/rhdl-alto/tools/contralto-trace/bin/Release/net8.0/contralto-trace");
     if exe.exists() {
         let output = Command::new(&exe)
             .args([
-                "--disk", disk.to_str().unwrap(),
-                "--rom-dir", rom_dir.to_str().unwrap(),
-                "--cycles", &CYCLES.to_string(),
+                "--disk",
+                disk.to_str().unwrap(),
+                "--rom-dir",
+                rom_dir.to_str().unwrap(),
+                "--cycles",
+                &CYCLES.to_string(),
             ])
             .current_dir(workspace_root)
             .output()
@@ -81,11 +90,16 @@ fn main() {
             // for readability.
             let parts: Vec<&str> = line.split('\t').collect();
             if i == 0 {
-                println!("idx  {}",
-                    parts.iter().take(7).cloned().collect::<Vec<_>>().join("\t"));
+                println!(
+                    "idx  {}",
+                    parts.iter().take(7).cloned().collect::<Vec<_>>().join("\t")
+                );
             } else {
-                println!("{:3}  {}", i - 1,
-                    parts.iter().take(7).cloned().collect::<Vec<_>>().join("\t"));
+                println!(
+                    "{:3}  {}",
+                    i - 1,
+                    parts.iter().take(7).cloned().collect::<Vec<_>>().join("\t")
+                );
             }
         }
     } else {

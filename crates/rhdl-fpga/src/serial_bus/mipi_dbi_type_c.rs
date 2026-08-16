@@ -47,7 +47,7 @@ bool |                           | bool
 #![doc = include_str!("../../doc/mipi_dbi_type_c.md")]
 use rhdl::prelude::*;
 
-use super::spi_master::{SpiMaster, spi_master as spi_master_kernel};
+use super::spi_master::{spi_master as spi_master_kernel, SpiMaster};
 use crate::core::dff;
 
 #[allow(unused_imports)]
@@ -102,11 +102,7 @@ where
 
 #[kernel]
 /// Kernel for [MipiDbiTypeC].
-pub fn mipi_dbi_type_c<const CW: usize>(
-    cr: ClockReset,
-    i: In,
-    q: Q<CW>,
-) -> (Out, D<CW>)
+pub fn mipi_dbi_type_c<const CW: usize>(cr: ClockReset, i: In, q: Q<CW>) -> (Out, D<CW>)
 where
     rhdl::bits::W<CW>: BitWidth,
 {
@@ -170,9 +166,7 @@ mod tests {
             .filter(|s| !s.input.0.reset.any())
             .collect();
         // While CS is asserted (cs_n=0), D/C# must be low (command).
-        let bad = outputs
-            .iter()
-            .any(|s| !s.output.cs_n && s.output.dc_n);
+        let bad = outputs.iter().any(|s| !s.output.cs_n && s.output.dc_n);
         assert!(!bad, "D/C# must be low (command) while CS is asserted");
         Ok(())
     }
@@ -194,9 +188,7 @@ mod tests {
             .synchronous_sample()
             .filter(|s| !s.input.0.reset.any())
             .collect();
-        let bad = outputs
-            .iter()
-            .any(|s| !s.output.cs_n && !s.output.dc_n);
+        let bad = outputs.iter().any(|s| !s.output.cs_n && !s.output.dc_n);
         assert!(!bad, "D/C# must be high (data) while CS is asserted");
         Ok(())
     }
@@ -257,9 +249,7 @@ mod tests {
             .join("mipi_dbi_type_c");
         std::fs::create_dir_all(&root).unwrap();
         let expect = expect!["bda60a30f6e583ddfe06ccb768503a8092fa7b2bf7e3455fe1f800992922a04e"];
-        let digest = vcd
-            .dump_to_file(root.join("mipi_dbi_type_c.vcd"))
-            .unwrap();
+        let digest = vcd.dump_to_file(root.join("mipi_dbi_type_c.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())
     }

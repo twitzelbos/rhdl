@@ -8,10 +8,20 @@ fn main() -> Result<(), RHDLError> {
     write_fsm_diagram::<Ps2HostTx<8>>("ps2_host_tx_fsm.md")?;
 
     let mut stream_in: Vec<In> = vec![
-        In { tx_byte: bits(0), tx_strobe: false, clk_in: true, data_in: true };
+        In {
+            tx_byte: bits(0),
+            tx_strobe: false,
+            clk_in: true,
+            data_in: true
+        };
         4
     ];
-    let mut start = In { tx_byte: bits(0xED), tx_strobe: true, clk_in: true, data_in: true };
+    let mut start = In {
+        tx_byte: bits(0xED),
+        tx_strobe: true,
+        clk_in: true,
+        data_in: true,
+    };
     stream_in.push(start);
     start.tx_strobe = false;
     for _ in 0..16 {
@@ -21,14 +31,16 @@ fn main() -> Result<(), RHDLError> {
     for cycle in 0..11 {
         for _ in 0..4 {
             stream_in.push(In {
-                tx_byte: bits(0xED), tx_strobe: false,
+                tx_byte: bits(0xED),
+                tx_strobe: false,
                 clk_in: true,
                 data_in: true,
             });
         }
         for _ in 0..4 {
             stream_in.push(In {
-                tx_byte: bits(0xED), tx_strobe: false,
+                tx_byte: bits(0xED),
+                tx_strobe: false,
                 clk_in: false,
                 data_in: if cycle == 10 { false } else { true },
             });
@@ -36,7 +48,10 @@ fn main() -> Result<(), RHDLError> {
     }
     for _ in 0..6 {
         stream_in.push(In {
-            tx_byte: bits(0), tx_strobe: false, clk_in: true, data_in: true,
+            tx_byte: bits(0),
+            tx_strobe: false,
+            clk_in: true,
+            data_in: true,
         });
     }
 

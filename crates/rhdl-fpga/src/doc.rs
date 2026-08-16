@@ -435,8 +435,7 @@ mod tests {
     where
         W: rhdl::core::fsm::FsmWidget + SynchronousIO,
     {
-        let result =
-            rhdl::core::fsm::extract_widget_transitions::<W>().expect("compile + extract");
+        let result = rhdl::core::fsm::extract_widget_transitions::<W>().expect("compile + extract");
         assert!(
             result.unanalyzable.is_empty(),
             "Unanalyzable diagnostics for {}: {:?}",
@@ -498,10 +497,22 @@ mod tests {
             assert_eq!(
                 t,
                 vec![
-                    Transition { source_index: 0, target_index: 0 },
-                    Transition { source_index: 0, target_index: 1 },
-                    Transition { source_index: 1, target_index: 2 },
-                    Transition { source_index: 2, target_index: 0 },
+                    Transition {
+                        source_index: 0,
+                        target_index: 0
+                    },
+                    Transition {
+                        source_index: 0,
+                        target_index: 1
+                    },
+                    Transition {
+                        source_index: 1,
+                        target_index: 2
+                    },
+                    Transition {
+                        source_index: 2,
+                        target_index: 0
+                    },
                 ]
             );
         }
@@ -513,8 +524,8 @@ mod tests {
             use rhdl::core::fsm::analysis::Transition;
             use std::collections::BTreeSet;
 
-            let extractor = rhdl::core::fsm::extract_widget_transitions::<W>()
-                .expect("compile + extract");
+            let extractor =
+                rhdl::core::fsm::extract_widget_transitions::<W>().expect("compile + extract");
             assert!(extractor.unanalyzable.is_empty());
             let extracted: BTreeSet<_> = extractor.transitions.iter().collect();
 
@@ -600,12 +611,30 @@ mod tests {
             assert_eq!(
                 t,
                 vec![
-                    Transition { source_index: 0, target_index: 1 }, // A → B
-                    Transition { source_index: 0, target_index: 2 }, // A → C
-                    Transition { source_index: 0, target_index: 3 }, // A → D2
-                    Transition { source_index: 1, target_index: 0 }, // B → A
-                    Transition { source_index: 2, target_index: 0 }, // C → A
-                    Transition { source_index: 3, target_index: 0 }, // D2 → A
+                    Transition {
+                        source_index: 0,
+                        target_index: 1
+                    }, // A → B
+                    Transition {
+                        source_index: 0,
+                        target_index: 2
+                    }, // A → C
+                    Transition {
+                        source_index: 0,
+                        target_index: 3
+                    }, // A → D2
+                    Transition {
+                        source_index: 1,
+                        target_index: 0
+                    }, // B → A
+                    Transition {
+                        source_index: 2,
+                        target_index: 0
+                    }, // C → A
+                    Transition {
+                        source_index: 3,
+                        target_index: 0
+                    }, // D2 → A
                 ]
             );
         }
@@ -652,9 +681,18 @@ mod tests {
             assert_eq!(
                 t,
                 vec![
-                    Transition { source_index: 0, target_index: 1 },
-                    Transition { source_index: 1, target_index: 2 },
-                    Transition { source_index: 2, target_index: 0 },
+                    Transition {
+                        source_index: 0,
+                        target_index: 1
+                    },
+                    Transition {
+                        source_index: 1,
+                        target_index: 2
+                    },
+                    Transition {
+                        source_index: 2,
+                        target_index: 0
+                    },
                 ]
             );
         }
@@ -705,10 +743,22 @@ mod tests {
             assert_eq!(
                 t,
                 vec![
-                    Transition { source_index: 0, target_index: 1 },
-                    Transition { source_index: 0, target_index: 2 },
-                    Transition { source_index: 1, target_index: 0 },
-                    Transition { source_index: 2, target_index: 0 },
+                    Transition {
+                        source_index: 0,
+                        target_index: 1
+                    },
+                    Transition {
+                        source_index: 0,
+                        target_index: 2
+                    },
+                    Transition {
+                        source_index: 1,
+                        target_index: 0
+                    },
+                    Transition {
+                        source_index: 2,
+                        target_index: 0
+                    },
                 ]
             );
         }
@@ -755,9 +805,18 @@ mod tests {
             assert_eq!(
                 t,
                 vec![
-                    Transition { source_index: 0, target_index: 1 }, // A → B
-                    Transition { source_index: 1, target_index: 2 }, // B → C
-                    Transition { source_index: 2, target_index: 2 }, // C → C (empty arm preserves)
+                    Transition {
+                        source_index: 0,
+                        target_index: 1
+                    }, // A → B
+                    Transition {
+                        source_index: 1,
+                        target_index: 2
+                    }, // B → C
+                    Transition {
+                        source_index: 2,
+                        target_index: 2
+                    }, // C → C (empty arm preserves)
                 ]
             );
         }
@@ -817,12 +876,30 @@ mod tests {
             assert_eq!(
                 t,
                 vec![
-                    Transition { source_index: 0, target_index: 0 }, // Idle self-loop (start=false)
-                    Transition { source_index: 0, target_index: 1 }, // Idle → Active
-                    Transition { source_index: 1, target_index: 2 }, // Active → Cooldown
-                    Transition { source_index: 1, target_index: 3 }, // Active → Error
-                    Transition { source_index: 2, target_index: 0 }, // Cooldown → Idle
-                    Transition { source_index: 3, target_index: 3 }, // Error self-loop
+                    Transition {
+                        source_index: 0,
+                        target_index: 0
+                    }, // Idle self-loop (start=false)
+                    Transition {
+                        source_index: 0,
+                        target_index: 1
+                    }, // Idle → Active
+                    Transition {
+                        source_index: 1,
+                        target_index: 2
+                    }, // Active → Cooldown
+                    Transition {
+                        source_index: 1,
+                        target_index: 3
+                    }, // Active → Error
+                    Transition {
+                        source_index: 2,
+                        target_index: 0
+                    }, // Cooldown → Idle
+                    Transition {
+                        source_index: 3,
+                        target_index: 3
+                    }, // Error self-loop
                 ]
             );
         }
@@ -873,9 +950,18 @@ mod tests {
             assert_eq!(
                 t,
                 vec![
-                    Transition { source_index: 0, target_index: 0 }, // A → A (else)
-                    Transition { source_index: 0, target_index: 1 }, // A → B (then)
-                    Transition { source_index: 1, target_index: 0 }, // B → A
+                    Transition {
+                        source_index: 0,
+                        target_index: 0
+                    }, // A → A (else)
+                    Transition {
+                        source_index: 0,
+                        target_index: 1
+                    }, // A → B (then)
+                    Transition {
+                        source_index: 1,
+                        target_index: 0
+                    }, // B → A
                 ]
             );
         }
@@ -968,11 +1054,26 @@ mod tests {
             assert_eq!(
                 t,
                 vec![
-                    Transition { source_index: 0, target_index: 1 }, // Sof → Id
-                    Transition { source_index: 1, target_index: 1 }, // Id → Id (else)
-                    Transition { source_index: 1, target_index: 2 }, // Id → Eof (then)
-                    Transition { source_index: 2, target_index: 0 }, // Eof → Sof (then)
-                    Transition { source_index: 2, target_index: 2 }, // Eof → Eof (else)
+                    Transition {
+                        source_index: 0,
+                        target_index: 1
+                    }, // Sof → Id
+                    Transition {
+                        source_index: 1,
+                        target_index: 1
+                    }, // Id → Id (else)
+                    Transition {
+                        source_index: 1,
+                        target_index: 2
+                    }, // Id → Eof (then)
+                    Transition {
+                        source_index: 2,
+                        target_index: 0
+                    }, // Eof → Sof (then)
+                    Transition {
+                        source_index: 2,
+                        target_index: 2
+                    }, // Eof → Eof (else)
                 ]
             );
         }
@@ -1000,8 +1101,8 @@ mod tests {
             use rhdl::core::fsm::analysis::Transition;
             use std::collections::BTreeSet;
 
-            let extractor = rhdl::core::fsm::extract_widget_transitions::<W>()
-                .expect("compile + extract");
+            let extractor =
+                rhdl::core::fsm::extract_widget_transitions::<W>().expect("compile + extract");
             assert!(extractor.unanalyzable.is_empty());
             let extracted: BTreeSet<_> = extractor.transitions.iter().collect();
 
@@ -1113,9 +1214,18 @@ mod tests {
             assert_eq!(
                 t,
                 vec![
-                    Transition { source_index: 0, target_index: 0 }, // A → A (implicit, deduped)
-                    Transition { source_index: 0, target_index: 1 }, // A → B
-                    Transition { source_index: 1, target_index: 0 }, // B → A
+                    Transition {
+                        source_index: 0,
+                        target_index: 0
+                    }, // A → A (implicit, deduped)
+                    Transition {
+                        source_index: 0,
+                        target_index: 1
+                    }, // A → B
+                    Transition {
+                        source_index: 1,
+                        target_index: 0
+                    }, // B → A
                 ]
             );
         }

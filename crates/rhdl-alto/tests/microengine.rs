@@ -17,7 +17,14 @@ use rhdl_alto::microengine::{In, Microengine, Out};
 
 /// Build a Microinstruction with mostly-default fields.  Tests
 /// only override the bits they care about.
-fn ui(rsel: u8, aluf: AluFunction, bs: BusSource, t_load: bool, l_load: bool, next: u16) -> Microinstruction {
+fn ui(
+    rsel: u8,
+    aluf: AluFunction,
+    bs: BusSource,
+    t_load: bool,
+    l_load: bool,
+    next: u16,
+) -> Microinstruction {
     Microinstruction {
         rsel: bits::<5>(rsel as u128),
         aluf,
@@ -44,7 +51,9 @@ fn run(program: Vec<u32>, cycles: usize) -> Vec<Out> {
                 reset_remaining -= 1;
                 return Some(ResetOrData::Reset);
             }
-            if total >= cycles { return None; }
+            if total >= cycles {
+                return None;
+            }
             total += 1;
             trace.push(out);
             // Drive next cycle's MPC from this cycle's computed
@@ -53,7 +62,9 @@ fn run(program: Vec<u32>, cycles: usize) -> Vec<Out> {
             let mpc_to_drive = out.next_mpc.raw();
             let instr = if (mpc_to_drive as usize) < program.len() {
                 program[mpc_to_drive as usize]
-            } else { 0 };
+            } else {
+                0
+            };
             Some(ResetOrData::Data(In {
                 mpc: bits::<10>(mpc_to_drive),
                 instr: bits::<32>(instr as u128),
@@ -68,7 +79,8 @@ fn run(program: Vec<u32>, cycles: usize) -> Vec<Out> {
             }))
         },
         100,
-    ).for_each(drop);
+    )
+    .for_each(drop);
     trace
 }
 
@@ -79,9 +91,7 @@ fn t_load_from_zero_bus() {
     // Program at addr 0:
     //   T_LOAD = 1, BS = ReadR (R[0] = 0 at reset → bus = 0), NEXT = 0 (loop here)
     //   ALUF = Bus → ALU result = 0
-    let prog: Vec<u32> = vec![
-        ui(0, AluFunction::Bus, BusSource::ReadR, true, false, 0).pack(),
-    ];
+    let prog: Vec<u32> = vec![ui(0, AluFunction::Bus, BusSource::ReadR, true, false, 0).pack()];
     let trace = run(prog, 4);
     // After the T_LOAD commits at cycle 0's edge, cycle 1 reads T = 0.
     // T should remain 0 (we're loading 0 from R[0] = 0).
@@ -95,9 +105,8 @@ fn l_load_from_alu_plus_one() {
     // Program at addr 0:
     //   T_LOAD = 0, L_LOAD = 1, BS = ReadR (bus = R[0] = 0),
     //   ALUF = BusPlusOne (result = 1), NEXT = 0 (loop)
-    let prog: Vec<u32> = vec![
-        ui(0, AluFunction::BusPlusOne, BusSource::ReadR, false, true, 0).pack(),
-    ];
+    let prog: Vec<u32> =
+        vec![ui(0, AluFunction::BusPlusOne, BusSource::ReadR, false, true, 0).pack()];
     let trace = run(prog, 6);
     // Cycle 0 (post-reset): L = 0 (reset), ALU computes 1; commit at edge.
     // Cycle 1: L = 1.
@@ -111,21 +120,21 @@ fn l_load_from_alu_plus_one() {
 fn microengine_iverilog_round_trip() -> Result<(), RHDLError> {
     let uut = Microengine::default();
     // Single-microinstruction program: NOP-ish loop at addr 0.
-    let prog: Vec<u32> = vec![
-        ui(0, AluFunction::Bus, BusSource::ReadR, false, false, 0).pack(),
-    ];
-    let inputs: Vec<In> = (0..6).map(|_| In {
-        mpc: bits::<10>(0),
-        instr: bits::<32>(prog[0] as u128),
-        constant_value: bits::<16>(0),
-        mem_read_data: bits::<16>(0),
-        current_task: bits::<4>(0),
-        disk_word_data: bits::<16>(0),
-        kcwa: bits::<16>(0),
-        kstat: bits::<16>(0),
-        kdata: bits::<16>(0),
-        mem_stall: false,
-    }).collect();
+    let prog: Vec<u32> = vec![ui(0, AluFunction::Bus, BusSource::ReadR, false, false, 0).pack()];
+    let inputs: Vec<In> = (0..6)
+        .map(|_| In {
+            mpc: bits::<10>(0),
+            instr: bits::<32>(prog[0] as u128),
+            constant_value: bits::<16>(0),
+            mem_read_data: bits::<16>(0),
+            current_task: bits::<4>(0),
+            disk_word_data: bits::<16>(0),
+            kcwa: bits::<16>(0),
+            kstat: bits::<16>(0),
+            kdata: bits::<16>(0),
+            mem_stall: false,
+        })
+        .collect();
     let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
     let test_bench = uut.run(stream).collect::<SynchronousTestBench<_, _>>();
     let tm = test_bench.rtl(&uut, &Default::default())?;
@@ -151,9 +160,21 @@ fn two_step_program_t_then_alu() {
     // the first processed cycle had input mpc=0; trace[1].mpc=0.
     // The cycle that processed mpc=1 (L_LOAD) gives trace[2].
     assert_eq!(trace[0].mpc.raw(), 0, "post-reset");
-    assert_eq!(trace[1].mpc.raw(), 0, "first cycle processed addr 0 (T_LOAD)");
-    assert_eq!(trace[2].mpc.raw(), 1, "second cycle processed addr 1 (L_LOAD)");
-    assert_eq!(trace[2].l.raw(), 1, "L latched from cycle that processed L_LOAD");
+    assert_eq!(
+        trace[1].mpc.raw(),
+        0,
+        "first cycle processed addr 0 (T_LOAD)"
+    );
+    assert_eq!(
+        trace[2].mpc.raw(),
+        1,
+        "second cycle processed addr 1 (L_LOAD)"
+    );
+    assert_eq!(
+        trace[2].l.raw(),
+        1,
+        "L latched from cycle that processed L_LOAD"
+    );
     assert_eq!(trace[7].l.raw(), 1, "L stays 1 in the loop");
 }
 
@@ -176,7 +197,11 @@ fn left_shift_l_each_cycle() {
     ];
     let trace = run(prog, 10);
     // After cycle 1, L = 1.  Each subsequent cycle doubles L.
-    assert_eq!(trace[1].l.raw(), 1, "L should be 1 after first instr commits");
+    assert_eq!(
+        trace[1].l.raw(),
+        1,
+        "L should be 1 after first instr commits"
+    );
     // Cycle 2: L was 1, shift left → L = 2.
     // Cycle 3: L = 4.  Cycle 4: L = 8.  ...
     assert_eq!(trace[2].l.raw(), 2);
@@ -211,9 +236,21 @@ fn branch_on_bus_eq_zero() {
     //          (skip to addr 3).  L_LOAD took effect → l=1 next cycle.
     // trace[2]: cycle processed mpc=3 (loop).
     assert_eq!(trace[0].mpc.raw(), 0, "post-reset");
-    assert_eq!(trace[1].mpc.raw(), 0, "first cycle processed addr 0 (BusEqZero)");
-    assert_eq!(trace[1].next_mpc.raw(), 3, "BusEqZero should compute next_mpc=3");
-    assert_eq!(trace[2].mpc.raw(), 3, "second cycle processed addr 3 (branch target)");
+    assert_eq!(
+        trace[1].mpc.raw(),
+        0,
+        "first cycle processed addr 0 (BusEqZero)"
+    );
+    assert_eq!(
+        trace[1].next_mpc.raw(),
+        3,
+        "BusEqZero should compute next_mpc=3"
+    );
+    assert_eq!(
+        trace[2].mpc.raw(),
+        3,
+        "second cycle processed addr 3 (branch target)"
+    );
     assert_eq!(trace[3].mpc.raw(), 3, "should loop at addr 3");
     assert_eq!(trace[1].l.raw(), 1, "L latched from cycle 0's ALU bus+1");
 }

@@ -50,31 +50,31 @@ use rhdl_fpga::core::dff;
 
 // CSR addresses (12-bit).  Constants exported for use by tests
 // and the CPU executor.
-pub const CSR_MSTATUS: u32  = 0x300;
-pub const CSR_MISA: u32     = 0x301;
-pub const CSR_MIE: u32      = 0x304;
-pub const CSR_MTVEC: u32    = 0x305;
+pub const CSR_MSTATUS: u32 = 0x300;
+pub const CSR_MISA: u32 = 0x301;
+pub const CSR_MIE: u32 = 0x304;
+pub const CSR_MTVEC: u32 = 0x305;
 pub const CSR_MSCRATCH: u32 = 0x340;
-pub const CSR_MEPC: u32     = 0x341;
-pub const CSR_MCAUSE: u32   = 0x342;
-pub const CSR_MTVAL: u32    = 0x343;
-pub const CSR_MIP: u32      = 0x344;
-pub const CSR_MHARTID: u32  = 0xF14;
+pub const CSR_MEPC: u32 = 0x341;
+pub const CSR_MCAUSE: u32 = 0x342;
+pub const CSR_MTVAL: u32 = 0x343;
+pub const CSR_MIP: u32 = 0x344;
+pub const CSR_MHARTID: u32 = 0xF14;
 
 /// `misa` value reported to the program: bit 8 = "I" extension;
 /// bits 31:30 = 01 indicating XLEN = 32.
 pub const MISA_VALUE: u32 = (1 << 30) | (1 << 8);
 
 /// `mstatus.MIE` (Machine Interrupt Enable) — bit 3.
-pub const MSTATUS_MIE_BIT: u32  = 3;
+pub const MSTATUS_MIE_BIT: u32 = 3;
 /// `mstatus.MPIE` (Machine Previous Interrupt Enable) — bit 7.
 pub const MSTATUS_MPIE_BIT: u32 = 7;
 
 /// Bit positions inside `mip` / `mie` for the three M-mode
 /// interrupt sources (per RISC-V privileged spec).
-pub const MIE_MSIE_BIT: u32 = 3;   // M-software
-pub const MIE_MTIE_BIT: u32 = 7;   // M-timer
-pub const MIE_MEIE_BIT: u32 = 11;  // M-external
+pub const MIE_MSIE_BIT: u32 = 3; // M-software
+pub const MIE_MTIE_BIT: u32 = 7; // M-timer
+pub const MIE_MEIE_BIT: u32 = 11; // M-external
 
 /// Combined mask of the three M-mode interrupt-source bits.
 /// `mip & mie & MIE_M_MASK` is the set of pending+enabled M-mode
@@ -83,7 +83,7 @@ pub const MIE_M_MASK: u32 = (1 << MIE_MSIE_BIT) | (1 << MIE_MTIE_BIT) | (1 << MI
 
 /// `mcause` interrupt cause codes (with bit 31 set for interrupts).
 pub const MCAUSE_M_SOFTWARE: u32 = 0x8000_0003;
-pub const MCAUSE_M_TIMER:    u32 = 0x8000_0007;
+pub const MCAUSE_M_TIMER: u32 = 0x8000_0007;
 pub const MCAUSE_M_EXTERNAL: u32 = 0x8000_000B;
 
 /// Inputs to the CSR file.
@@ -174,17 +174,17 @@ impl SynchronousIO for CsrFile {
 /// derived from the live `int_pending` input rather than a stored
 /// register.
 pub fn csr_read(addr: Bits<12>, q: Q, mip: Bits<32>) -> Bits<32> {
-    let mstatus_a: Bits<12>  = bits::<12>(0x300);
-    let misa_a: Bits<12>     = bits::<12>(0x301);
-    let mie_a: Bits<12>      = bits::<12>(0x304);
-    let mtvec_a: Bits<12>    = bits::<12>(0x305);
+    let mstatus_a: Bits<12> = bits::<12>(0x300);
+    let misa_a: Bits<12> = bits::<12>(0x301);
+    let mie_a: Bits<12> = bits::<12>(0x304);
+    let mtvec_a: Bits<12> = bits::<12>(0x305);
     let mscratch_a: Bits<12> = bits::<12>(0x340);
-    let mepc_a: Bits<12>     = bits::<12>(0x341);
-    let mcause_a: Bits<12>   = bits::<12>(0x342);
-    let mtval_a: Bits<12>    = bits::<12>(0x343);
-    let mip_a: Bits<12>      = bits::<12>(0x344);
-    let mhartid_a: Bits<12>  = bits::<12>(0xF14);
-    let misa_v: Bits<32>     = bits::<32>(0x4000_0100);
+    let mepc_a: Bits<12> = bits::<12>(0x341);
+    let mcause_a: Bits<12> = bits::<12>(0x342);
+    let mtval_a: Bits<12> = bits::<12>(0x343);
+    let mip_a: Bits<12> = bits::<12>(0x344);
+    let mhartid_a: Bits<12> = bits::<12>(0xF14);
+    let misa_v: Bits<32> = bits::<32>(0x4000_0100);
 
     if addr == mstatus_a {
         q.mstatus
@@ -228,7 +228,11 @@ pub fn csr_file_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // spec, MSIP is platform-writable (memory-mapped IPI) AND
     // software-writable (CSR write); both paths set the bit.
     let plat_bits: Bits<32> = i.int_pending & bits::<32>(0x888);
-    let msip_bit: Bits<32> = if q.msip { bits::<32>(0x8) } else { bits::<32>(0) };
+    let msip_bit: Bits<32> = if q.msip {
+        bits::<32>(0x8)
+    } else {
+        bits::<32>(0)
+    };
     let mip: Bits<32> = plat_bits | msip_bit;
 
     o.rdata = csr_read(i.raddr, q, mip);
@@ -238,30 +242,30 @@ pub fn csr_file_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // Expose mstatus.MIE and the pending+enabled interrupt mask
     // as direct outputs so the CPU's interrupt-detection path
     // doesn't have to round-trip through the CSR read port.
-    let mie_m_mask: Bits<32> = bits::<32>(0x888);  // bits 3, 7, 11
-    let mie_bit: Bits<32> = bits::<32>(8);          // 1 << 3
+    let mie_m_mask: Bits<32> = bits::<32>(0x888); // bits 3, 7, 11
+    let mie_bit: Bits<32> = bits::<32>(8); // 1 << 3
     o.mstatus_mie = (q.mstatus & mie_bit) != bits::<32>(0);
     // Use the composed mip (platform bits 7/11 + software MSIP bit 3).
     o.int_pending_enabled = mip & q.mie & mie_m_mask;
 
-    let mstatus_a: Bits<12>  = bits::<12>(0x300);
-    let mie_a: Bits<12>      = bits::<12>(0x304);
-    let mtvec_a: Bits<12>    = bits::<12>(0x305);
+    let mstatus_a: Bits<12> = bits::<12>(0x300);
+    let mie_a: Bits<12> = bits::<12>(0x304);
+    let mtvec_a: Bits<12> = bits::<12>(0x305);
     let mscratch_a: Bits<12> = bits::<12>(0x340);
-    let mepc_a: Bits<12>     = bits::<12>(0x341);
-    let mcause_a: Bits<12>   = bits::<12>(0x342);
-    let mtval_a: Bits<12>    = bits::<12>(0x343);
-    let mip_a: Bits<12>      = bits::<12>(0x344);
+    let mepc_a: Bits<12> = bits::<12>(0x341);
+    let mcause_a: Bits<12> = bits::<12>(0x342);
+    let mtval_a: Bits<12> = bits::<12>(0x343);
+    let mip_a: Bits<12> = bits::<12>(0x344);
 
     // Default: hold every CSR.
-    d.mstatus  = q.mstatus;
-    d.mie      = q.mie;
-    d.mtvec    = q.mtvec;
+    d.mstatus = q.mstatus;
+    d.mie = q.mie;
+    d.mtvec = q.mtvec;
     d.mscratch = q.mscratch;
-    d.mepc     = q.mepc;
-    d.mcause   = q.mcause;
-    d.mtval    = q.mtval;
-    d.msip     = q.msip;
+    d.mepc = q.mepc;
+    d.mcause = q.mcause;
+    d.mtval = q.mtval;
+    d.msip = q.msip;
 
     // CSR-instruction write port.
     if i.wen {
@@ -299,20 +303,20 @@ pub fn csr_file_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     //   - mstatus.MPIE ← mstatus.MIE  (save current enable)
     //   - mstatus.MIE  ← 0            (disable interrupts in handler)
     if i.trap_en {
-        d.mepc   = i.trap_pc;
+        d.mepc = i.trap_pc;
         d.mcause = i.trap_cause;
-        d.mtval  = i.trap_val;
+        d.mtval = i.trap_val;
 
         // Atomic mstatus update: clear bits 3 and 7 (mask 0xFFFFFF77),
         // then OR in (old MIE shifted to MPIE position).
-        let old_mie_bit: Bits<32> = q.mstatus & bits::<32>(0x8);        // bit 3
-        let old_mie_to_mpie: Bits<32> = old_mie_bit << 4;              // bit 3 → bit 7
+        let old_mie_bit: Bits<32> = q.mstatus & bits::<32>(0x8); // bit 3
+        let old_mie_to_mpie: Bits<32> = old_mie_bit << 4; // bit 3 → bit 7
         let mstatus_cleared: Bits<32> = q.mstatus & bits::<32>(0xFFFF_FF77);
         d.mstatus = mstatus_cleared | old_mie_to_mpie;
     } else if i.mret_en {
         // MRET: restore MIE from MPIE; set MPIE to 1 per spec.
-        let old_mpie_bit: Bits<32> = q.mstatus & bits::<32>(0x80);     // bit 7
-        let old_mpie_to_mie: Bits<32> = old_mpie_bit >> 4;             // bit 7 → bit 3
+        let old_mpie_bit: Bits<32> = q.mstatus & bits::<32>(0x80); // bit 7
+        let old_mpie_to_mie: Bits<32> = old_mpie_bit >> 4; // bit 7 → bit 3
         let mstatus_cleared: Bits<32> = q.mstatus & bits::<32>(0xFFFF_FF77);
         d.mstatus = mstatus_cleared | old_mpie_to_mie | bits::<32>(0x80);
     }

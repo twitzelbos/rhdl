@@ -309,12 +309,7 @@ mod tests {
             .synchronous_sample()
             .filter(|s| !s.input.0.reset.any())
             .filter(|s| s.output.out_valid && s.input.1.out_ready)
-            .map(|s| {
-                (
-                    s.output.out_data.raw() as u8,
-                    s.output.out_is_count,
-                )
-            })
+            .map(|s| (s.output.out_data.raw() as u8, s.output.out_is_count))
             .collect()
     }
 
@@ -378,12 +373,7 @@ mod tests {
         // Remaining 2 → second run encoding (wire count = 1).
         assert_eq!(
             captured,
-            vec![
-                (127, true),
-                (0x55, false),
-                (1, true),
-                (0x55, false),
-            ]
+            vec![(127, true), (0x55, false), (1, true), (0x55, false),]
         );
         Ok(())
     }

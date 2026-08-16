@@ -40,11 +40,7 @@ use rhdl_rv32i::sim;
 
 fn i_type(imm: i32, rs1: u32, funct3: u32, rd: u32, opcode: u32) -> u32 {
     let imm_u = (imm as u32) & 0xFFF;
-    (imm_u << 20)
-        | (rs1 & 0x1F) << 15
-        | (funct3 & 0x7) << 12
-        | (rd & 0x1F) << 7
-        | (opcode & 0x7F)
+    (imm_u << 20) | (rs1 & 0x1F) << 15 | (funct3 & 0x7) << 12 | (rd & 0x1F) << 7 | (opcode & 0x7F)
 }
 fn s_type(imm: i32, rs2: u32, rs1: u32, funct3: u32, opcode: u32) -> u32 {
     let imm_u = (imm as u32) & 0xFFF;
@@ -58,9 +54,15 @@ fn s_type(imm: i32, rs2: u32, rs1: u32, funct3: u32, opcode: u32) -> u32 {
         | (opcode & 0x7F)
 }
 
-fn addi(rd: u32, rs1: u32, imm: i32) -> u32 { i_type(imm, rs1, 0, rd, 0x13) }
-fn sw(rs2: u32, rs1: u32, imm: i32) -> u32  { s_type(imm, rs2, rs1, 2, 0x23) }
-fn lui(rd: u32, imm20: u32) -> u32          { (imm20 & 0xFFFFF) << 12 | (rd & 0x1F) << 7 | 0x37 }
+fn addi(rd: u32, rs1: u32, imm: i32) -> u32 {
+    i_type(imm, rs1, 0, rd, 0x13)
+}
+fn sw(rs2: u32, rs1: u32, imm: i32) -> u32 {
+    s_type(imm, rs2, rs1, 2, 0x23)
+}
+fn lui(rd: u32, imm20: u32) -> u32 {
+    (imm20 & 0xFFFFF) << 12 | (rd & 0x1F) << 7 | 0x37
+}
 fn csrrw(rd: u32, rs1: u32, csr: u32) -> u32 {
     ((csr & 0xFFF) << 20) | (rs1 & 0x1F) << 15 | 1 << 12 | (rd & 0x1F) << 7 | 0x73
 }
@@ -91,18 +93,33 @@ fn run_single_with_int<F: FnMut(usize) -> u32>(
     let mut total_cycles: usize = 0;
     uut.run_fn(
         |out: SOut| {
-            if reset_cycles_remaining > 0 { reset_cycles_remaining -= 1; return Some(ResetOrData::Reset); }
-            if total_cycles >= max_cycles { return None; }
+            if reset_cycles_remaining > 0 {
+                reset_cycles_remaining -= 1;
+                return Some(ResetOrData::Reset);
+            }
+            if total_cycles >= max_cycles {
+                return None;
+            }
             let cyc = total_cycles;
             total_cycles += 1;
             if out.mem_write {
                 let addr_word = (out.mem_addr.raw() / 4) as usize;
-                if addr_word < data_mem.len() { data_mem[addr_word] = out.mem_wdata.raw() as u32; }
+                if addr_word < data_mem.len() {
+                    data_mem[addr_word] = out.mem_wdata.raw() as u32;
+                }
             }
             let pc_word = (out.pc.raw() / 4) as usize;
-            let instr = if pc_word < program.len() { program[pc_word] } else { 0 };
+            let instr = if pc_word < program.len() {
+                program[pc_word]
+            } else {
+                0
+            };
             let read_word = (out.mem_addr.raw() / 4) as usize;
-            let mem_rdata = if read_word < data_mem.len() { data_mem[read_word] } else { 0 };
+            let mem_rdata = if read_word < data_mem.len() {
+                data_mem[read_word]
+            } else {
+                0
+            };
             Some(ResetOrData::Data(SInIn {
                 instr: bits::<32>(instr as u128),
                 mem_rdata: bits::<32>(mem_rdata as u128),
@@ -110,7 +127,8 @@ fn run_single_with_int<F: FnMut(usize) -> u32>(
             }))
         },
         100,
-    ).for_each(drop);
+    )
+    .for_each(drop);
     data_mem
 }
 
@@ -125,18 +143,33 @@ fn run_pipelined_with_int<F: FnMut(usize) -> u32>(
     let mut total_cycles: usize = 0;
     uut.run_fn(
         |out: POut| {
-            if reset_cycles_remaining > 0 { reset_cycles_remaining -= 1; return Some(ResetOrData::Reset); }
-            if total_cycles >= max_cycles { return None; }
+            if reset_cycles_remaining > 0 {
+                reset_cycles_remaining -= 1;
+                return Some(ResetOrData::Reset);
+            }
+            if total_cycles >= max_cycles {
+                return None;
+            }
             let cyc = total_cycles;
             total_cycles += 1;
             if out.mem_write {
                 let addr_word = (out.mem_addr.raw() / 4) as usize;
-                if addr_word < data_mem.len() { data_mem[addr_word] = out.mem_wdata.raw() as u32; }
+                if addr_word < data_mem.len() {
+                    data_mem[addr_word] = out.mem_wdata.raw() as u32;
+                }
             }
             let pc_word = (out.pc.raw() / 4) as usize;
-            let instr = if pc_word < program.len() { program[pc_word] } else { 0 };
+            let instr = if pc_word < program.len() {
+                program[pc_word]
+            } else {
+                0
+            };
             let read_word = (out.mem_addr.raw() / 4) as usize;
-            let mem_rdata = if read_word < data_mem.len() { data_mem[read_word] } else { 0 };
+            let mem_rdata = if read_word < data_mem.len() {
+                data_mem[read_word]
+            } else {
+                0
+            };
             Some(ResetOrData::Data(PIn {
                 instr: bits::<32>(instr as u128),
                 mem_rdata: bits::<32>(mem_rdata as u128),
@@ -144,7 +177,8 @@ fn run_pipelined_with_int<F: FnMut(usize) -> u32>(
             }))
         },
         100,
-    ).for_each(drop);
+    )
+    .for_each(drop);
     data_mem
 }
 
@@ -155,12 +189,12 @@ fn no_interrupt_when_int_pending_zero() {
     // Run a program with mstatus.MIE set + mie = all bits — but
     // int_pending = 0 throughout.  No interrupt should fire.
     let program = vec![
-        addi(1, 0, 0x888),               // 0x00: x1 = 0x888 (enable all 3 interrupts)
-        csrrw(0, 1, CSR_MIE),            // 0x04: mie = 0x888
-        csrrsi(0, 0x8, CSR_MSTATUS),     // 0x08: mstatus.MIE = 1
-        addi(2, 0, 0x55),                // 0x0C
-        sw(2, 0, 0),                     // 0x10: mem[0] = 0x55
-        HALT,                            // 0x14
+        addi(1, 0, 0x888),           // 0x00: x1 = 0x888 (enable all 3 interrupts)
+        csrrw(0, 1, CSR_MIE),        // 0x04: mie = 0x888
+        csrrsi(0, 0x8, CSR_MSTATUS), // 0x08: mstatus.MIE = 1
+        addi(2, 0, 0x55),            // 0x0C
+        sw(2, 0, 0),                 // 0x10: mem[0] = 0x55
+        HALT,                        // 0x14
     ];
     let mem = run_single_with_int(program, 24, |_| 0);
     assert_eq!(mem[0], 0x55, "no interrupt → SW commits");
@@ -176,20 +210,20 @@ fn m_software_interrupt_fires_single_cycle() {
     // 0x18..   : user code that should be interrupted
     // 0x20+    : handler reads mcause, stores it, then HALTs
     let program = vec![
-        lui(1, 0),                        // 0x00
-        addi(1, 1, 0x20),                 // 0x04: x1 = 0x20 (mtvec)
-        csrrw(0, 1, CSR_MTVEC),           // 0x08
-        addi(2, 0, 0x008),                // 0x0C: enable MSIE
-        csrrw(0, 2, CSR_MIE),             // 0x10
-        csrrsi(0, 0x8, CSR_MSTATUS),      // 0x14: mstatus.MIE = 1
-        addi(7, 0, 0x77),                 // 0x18: user code start (will be interrupted)
-        addi(7, 0, 0x77),                 // 0x1C: pad
+        lui(1, 0),                   // 0x00
+        addi(1, 1, 0x20),            // 0x04: x1 = 0x20 (mtvec)
+        csrrw(0, 1, CSR_MTVEC),      // 0x08
+        addi(2, 0, 0x008),           // 0x0C: enable MSIE
+        csrrw(0, 2, CSR_MIE),        // 0x10
+        csrrsi(0, 0x8, CSR_MSTATUS), // 0x14: mstatus.MIE = 1
+        addi(7, 0, 0x77),            // 0x18: user code start (will be interrupted)
+        addi(7, 0, 0x77),            // 0x1C: pad
         // 0x20: handler
-        csrrs(3, 0, CSR_MCAUSE),          // 0x20: x3 ← mcause
-        csrrs(4, 0, CSR_MEPC),            // 0x24: x4 ← mepc
-        sw(3, 0, 0),                      // 0x28: mem[0] = mcause
-        sw(4, 0, 4),                      // 0x2C: mem[1] = mepc
-        HALT,                             // 0x30
+        csrrs(3, 0, CSR_MCAUSE), // 0x20: x3 ← mcause
+        csrrs(4, 0, CSR_MEPC),   // 0x24: x4 ← mepc
+        sw(3, 0, 0),             // 0x28: mem[0] = mcause
+        sw(4, 0, 4),             // 0x2C: mem[1] = mepc
+        HALT,                    // 0x30
     ];
     // mstatus.MIE commits at end of cycle 5 (the csrrsi at 0x14).
     // From cycle 6 onward, mstatus.MIE is set.  Assert MSIP from
@@ -207,7 +241,7 @@ fn m_timer_interrupt_fires_single_cycle() {
         lui(1, 0),
         addi(1, 1, 0x20),
         csrrw(0, 1, CSR_MTVEC),
-        addi(2, 0, 0x080),                // enable MTIE
+        addi(2, 0, 0x080), // enable MTIE
         csrrw(0, 2, CSR_MIE),
         csrrsi(0, 0x8, CSR_MSTATUS),
         addi(7, 0, 0x77),
@@ -231,9 +265,9 @@ fn m_external_interrupt_fires_single_cycle() {
         // Need mie = 0x800 — but addi imm is 12-bit signed.  0x800
         // sign-extends to 0xFFFF_F800 — which is fine because mie
         // only cares about bits 3/7/11.  But cleaner to use lui.
-        lui(2, 1),                        // x2 = 0x1000
-        addi(2, 2, -0x800),               // x2 = 0x800
-        csrrw(0, 2, CSR_MIE),             // mie = 0x800 (MEIE)
+        lui(2, 1),            // x2 = 0x1000
+        addi(2, 2, -0x800),   // x2 = 0x800
+        csrrw(0, 2, CSR_MIE), // mie = 0x800 (MEIE)
         csrrsi(0, 0x8, CSR_MSTATUS),
         addi(7, 0, 0x77),
         addi(7, 0, 0x77),
@@ -263,11 +297,11 @@ fn interrupt_does_not_fire_when_mie_clear() {
         // (mstatus.MIE intentionally NOT set)
         addi(7, 0, 0x77),
         addi(7, 0, 0x77),
-        sw(7, 0, 0),                      // mem[0] = 0x77
+        sw(7, 0, 0), // mem[0] = 0x77
         HALT,
         // (handler at 0x20 — should NOT execute)
         addi(8, 0, 0xFF),
-        sw(8, 0, 0),                      // mem[0] = 0xFF (would-be-trap marker)
+        sw(8, 0, 0), // mem[0] = 0xFF (would-be-trap marker)
         HALT,
     ];
     let mem = run_single_with_int(program, 24, |_| 0x008);
@@ -332,41 +366,53 @@ fn mret_restores_mstatus_mie() {
     // instruction); mepc = 0x18; handler advances to 0x1C; MRET
     // returns to PC = 0x1C where we read the restored mstatus.
     let program = vec![
-        lui(1, 0),                        // 0x00
-        addi(1, 1, 0x40),                 // 0x04: x1 = 0x40 (mtvec)
-        csrrw(0, 1, CSR_MTVEC),           // 0x08
-        addi(2, 0, 0x008),                // 0x0C: MSIE
-        csrrw(0, 2, CSR_MIE),             // 0x10
-        csrrsi(0, 0x8, CSR_MSTATUS),      // 0x14: mstatus.MIE = 1
-        addi(7, 0, 0x77),                 // 0x18: user code (interrupted)
+        lui(1, 0),                   // 0x00
+        addi(1, 1, 0x40),            // 0x04: x1 = 0x40 (mtvec)
+        csrrw(0, 1, CSR_MTVEC),      // 0x08
+        addi(2, 0, 0x008),           // 0x0C: MSIE
+        csrrw(0, 2, CSR_MIE),        // 0x10
+        csrrsi(0, 0x8, CSR_MSTATUS), // 0x14: mstatus.MIE = 1
+        addi(7, 0, 0x77),            // 0x18: user code (interrupted)
         // 0x1C: post-MRET landing
-        csrrs(8, 0, CSR_MSTATUS),         // 0x1C: read mstatus
-        sw(8, 0, 0),                      // 0x20: mem[0] = mstatus after MRET
-        HALT,                             // 0x24
-        addi(0, 0, 0),                    // 0x28: pad
-        addi(0, 0, 0),                    // 0x2C: pad
-        addi(0, 0, 0),                    // 0x30: pad
-        addi(0, 0, 0),                    // 0x34: pad
-        addi(0, 0, 0),                    // 0x38: pad
-        addi(0, 0, 0),                    // 0x3C: pad
+        csrrs(8, 0, CSR_MSTATUS), // 0x1C: read mstatus
+        sw(8, 0, 0),              // 0x20: mem[0] = mstatus after MRET
+        HALT,                     // 0x24
+        addi(0, 0, 0),            // 0x28: pad
+        addi(0, 0, 0),            // 0x2C: pad
+        addi(0, 0, 0),            // 0x30: pad
+        addi(0, 0, 0),            // 0x34: pad
+        addi(0, 0, 0),            // 0x38: pad
+        addi(0, 0, 0),            // 0x3C: pad
         // 0x40: handler — disable mie (so we don't re-trap), advance
         //       mepc to 0x1C (skip the interrupted addi at 0x18),
         //       then MRET.
-        csrrw(0, 0, CSR_MIE),             // 0x40: mie = 0 (kill pending)
-        csrrs(9, 0, CSR_MEPC),            // 0x44: x9 ← mepc (= 0x18)
-        addi(9, 9, 4),                    // 0x48: x9 = 0x1C
-        csrrw(0, 9, CSR_MEPC),            // 0x4C: mepc = 0x1C
-        MRET,                             // 0x50: return — restores MIE
+        csrrw(0, 0, CSR_MIE),  // 0x40: mie = 0 (kill pending)
+        csrrs(9, 0, CSR_MEPC), // 0x44: x9 ← mepc (= 0x18)
+        addi(9, 9, 4),         // 0x48: x9 = 0x1C
+        csrrw(0, 9, CSR_MEPC), // 0x4C: mepc = 0x1C
+        MRET,                  // 0x50: return — restores MIE
     ];
     // Pulse interrupt at cycles 6-7: mstatus.MIE commits at end of
     // cycle 5, so the interrupt fires at cycle 6 with PC = 0x18
     // (the addi at 0x18, the very first user-code instruction).
     // mepc = 0x18, handler advances mepc+4 = 0x1C, MRET lands on
     // the csrrs x8 we want to read mstatus from.
-    let mem = run_single_with_int(program, 60, |c| if (6..=7).contains(&c) { 0x008 } else { 0 });
+    let mem = run_single_with_int(
+        program,
+        60,
+        |c| if (6..=7).contains(&c) { 0x008 } else { 0 },
+    );
     let mstatus_after_mret = mem[0];
-    assert_eq!(mstatus_after_mret & 0x8, 0x8, "MRET should restore mstatus.MIE = 1; got 0x{mstatus_after_mret:x}");
-    assert_eq!(mstatus_after_mret & 0x80, 0x80, "MPIE should be set to 1 by MRET; got 0x{mstatus_after_mret:x}");
+    assert_eq!(
+        mstatus_after_mret & 0x8,
+        0x8,
+        "MRET should restore mstatus.MIE = 1; got 0x{mstatus_after_mret:x}"
+    );
+    assert_eq!(
+        mstatus_after_mret & 0x80,
+        0x80,
+        "MPIE should be set to 1 by MRET; got 0x{mstatus_after_mret:x}"
+    );
 }
 
 // ---- Pipelined parity --------------------------------------------
@@ -403,8 +449,8 @@ fn m_external_takes_priority_over_software() {
         lui(1, 0),
         addi(1, 1, 0x20),
         csrrw(0, 1, CSR_MTVEC),
-        lui(2, 1),                        // 0x1000
-        addi(2, 2, -0x7F8),               // x2 = 0x808 (MEIE | MSIE)
+        lui(2, 1),          // 0x1000
+        addi(2, 2, -0x7F8), // x2 = 0x808 (MEIE | MSIE)
         csrrw(0, 2, CSR_MIE),
         csrrsi(0, 0x8, CSR_MSTATUS),
         addi(7, 0, 0x77),
@@ -450,7 +496,9 @@ fn lockstep_m_software_interrupt() {
         for &w in &sim_cpu.mem_writes[prev_writes..] {
             sim_writes.push(w);
         }
-        if sim_cpu.halted { break; }
+        if sim_cpu.halted {
+            break;
+        }
     }
 
     // Single-cycle hardware: int_pending starts at cycle 8.

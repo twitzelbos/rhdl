@@ -55,7 +55,7 @@ bool |                                 | bool
 use rhdl::core::fsm::analysis::Transition;
 use rhdl::prelude::*;
 
-use super::ti_hdq::{TiHdqMaster, TiHdqOp, TiHdqTimings, ti_hdq as ti_hdq_kernel};
+use super::ti_hdq::{ti_hdq as ti_hdq_kernel, TiHdqMaster, TiHdqOp, TiHdqTimings};
 use crate::core::{constant::Constant, dff};
 
 #[allow(unused_imports)]
@@ -352,9 +352,7 @@ mod tests {
             .join("battery_monitor");
         std::fs::create_dir_all(&root).unwrap();
         let expect = expect!["b8cd307f5bd264a4fa4430aad836fe313e49233024a784626b176b37851662bf"];
-        let digest = vcd
-            .dump_to_file(root.join("battery_monitor.vcd"))
-            .unwrap();
+        let digest = vcd.dump_to_file(root.join("battery_monitor.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())
     }

@@ -260,11 +260,7 @@ pub fn ps2_keyboard_decoder(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     }
 
     let mut o = Out::dont_care();
-    o.event_out = if q.event_valid {
-        Some(q.event_q)
-    } else {
-        None
-    };
+    o.event_out = if q.event_valid { Some(q.event_q) } else { None };
     o.busy = q.state != DecodeState::Idle;
     (o, d)
 }
@@ -410,7 +406,9 @@ mod tests {
             .join("vcd")
             .join("ps2_keyboard_decoder");
         std::fs::create_dir_all(&root).unwrap();
-        let _ = vcd.dump_to_file(root.join("ps2_keyboard_decoder.vcd")).unwrap();
+        let _ = vcd
+            .dump_to_file(root.join("ps2_keyboard_decoder.vcd"))
+            .unwrap();
         let _ = expect![[r#""#]];
         Ok(())
     }

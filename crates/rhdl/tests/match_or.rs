@@ -12,8 +12,8 @@
 #![allow(unused_must_use)]
 #![allow(dead_code)]
 
-use rhdl::prelude::*;
 use rhdl::core::sim::testbench::kernel::test_kernel_vm_and_verilog;
+use rhdl::prelude::*;
 
 #[derive(PartialEq, Default, Clone, Copy, Debug, Digital)]
 pub enum Light {
@@ -120,7 +120,10 @@ fn or_pattern_with_three_alternatives() -> miette::Result<()> {
         (Op::Mod, 1u128),
     ] {
         let actual: u128 = op_class(signal(op)).val().raw();
-        assert_eq!(actual, expected, "op_class({op:?}) = {actual}, expected {expected}");
+        assert_eq!(
+            actual, expected,
+            "op_class({op:?}) = {actual}, expected {expected}"
+        );
     }
     Ok(())
 }
@@ -152,7 +155,10 @@ fn or_pattern_with_literal_alternatives() -> miette::Result<()> {
     for op in 0u128..=4u128 {
         let expected = if op <= 2 { 0 } else { 1 };
         let actual: u128 = opcode_class(signal(bits(op))).val().raw();
-        assert_eq!(actual, expected, "opcode_class(0x{op:02x}) = {actual}, expected {expected}");
+        assert_eq!(
+            actual, expected,
+            "opcode_class(0x{op:02x}) = {actual}, expected {expected}"
+        );
     }
     Ok(())
 }

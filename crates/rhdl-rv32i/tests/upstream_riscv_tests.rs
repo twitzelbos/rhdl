@@ -73,26 +73,30 @@ fn parse_elf(path: &Path) -> Option<LoadedElf> {
         return None;
     }
     if bytes[4] != 1 || bytes[5] != 1 {
-        return None;  // not ELF32-LE
+        return None; // not ELF32-LE
     }
     let read_u16 = |off: usize| u16::from_le_bytes([bytes[off], bytes[off + 1]]);
-    let read_u32 = |off: usize| u32::from_le_bytes([
-        bytes[off], bytes[off + 1], bytes[off + 2], bytes[off + 3],
-    ]);
-    let entry      = read_u32(0x18);
-    let phoff      = read_u32(0x1C) as usize;
-    let phentsize  = read_u16(0x2A) as usize;
-    let phnum      = read_u16(0x2C) as usize;
+    let read_u32 = |off: usize| {
+        u32::from_le_bytes([bytes[off], bytes[off + 1], bytes[off + 2], bytes[off + 3]])
+    };
+    let entry = read_u32(0x18);
+    let phoff = read_u32(0x1C) as usize;
+    let phentsize = read_u16(0x2A) as usize;
+    let phnum = read_u16(0x2C) as usize;
 
     let mut mem: HashMap<u32, u32> = HashMap::new();
     for i in 0..phnum {
         let ph_base = phoff + i * phentsize;
-        if ph_base + 32 > bytes.len() { return None; }
-        let p_type   = read_u32(ph_base);
+        if ph_base + 32 > bytes.len() {
+            return None;
+        }
+        let p_type = read_u32(ph_base);
         let p_offset = read_u32(ph_base + 4) as usize;
-        let p_vaddr  = read_u32(ph_base + 8);
+        let p_vaddr = read_u32(ph_base + 8);
         let p_filesz = read_u32(ph_base + 16) as usize;
-        if p_type != 1 { continue; }  // PT_LOAD only
+        if p_type != 1 {
+            continue;
+        } // PT_LOAD only
         // Copy filesz bytes from p_offset..p_offset+p_filesz into
         // memory at p_vaddr..p_vaddr+p_filesz.  Word-aligned writes.
         let mut byte_idx = 0;
@@ -126,9 +130,9 @@ const MAX_INSTRS: u64 = 200_000;
 #[derive(Debug, PartialEq)]
 enum TestOutcome {
     Pass,
-    Fail(u32),    // tohost value when != 1
-    Timeout,      // didn't write tohost within MAX_INSTRS
-    LoadError,    // couldn't parse ELF
+    Fail(u32), // tohost value when != 1
+    Timeout,   // didn't write tohost within MAX_INSTRS
+    LoadError, // couldn't parse ELF
 }
 
 /// Run a parsed ELF on the Rust reference simulator.  Returns the

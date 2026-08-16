@@ -82,7 +82,10 @@ fn method_on_dff_via_ctx() {
         .last()
         .map(|s| s.output)
         .unwrap();
-    assert!(last.1, "should have seen any()=true on the previous cycle's flags");
+    assert!(
+        last.1,
+        "should have seen any()=true on the previous cycle's flags"
+    );
 }
 
 // =================================================================
