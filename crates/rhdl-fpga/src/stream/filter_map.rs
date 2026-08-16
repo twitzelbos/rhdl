@@ -64,7 +64,7 @@ use badascii_doc::{badascii, badascii_formal};
 
 use rhdl::prelude::*;
 
-use crate::stream::ready_cast;
+use crate::stream::ready;
 
 use super::{stream_buffer::StreamBuffer, StreamIO};
 
@@ -130,14 +130,26 @@ where
     let mut d = D::<T, S>::dont_care();
     d.input_buffer.data = i.data;
     d.func = T::dont_care();
-    let mut tag = false;
+    let mut have = false;
     if let Some(data) = q.input_buffer.data {
         d.func = data;
-        tag = true;
+        have = true;
     }
-    d.input_buffer.ready = ready_cast::<T, S>(i.ready);
+    // The function's verdict only means anything when we had an item to
+    // hand it.
+    let produced = match q.func {
+        Some(_) => true,
+        None => false,
+    };
+    let emit = have && produced;
+    // A DROPPED item must be consumed by us, not by the sink — see
+    // `super::filter` for the full argument.  A sink may gate its
+    // `ready` on seeing data, and a dropped item shows it none, so
+    // waiting for `i.ready` here deadlocks the stream.
+    let dropping = have && !produced;
+    d.input_buffer.ready = ready::<T>(i.ready.raw || dropping);
     let o = Out::<T, S> {
-        data: if !tag { None } else { q.func },
+        data: if emit { q.func } else { None },
         ready: q.input_buffer.ready,
     };
     (o, d)
@@ -168,6 +180,70 @@ mod tests {
     fn test_no_combinatorial_paths() -> miette::Result<()> {
         let map = FilterMap::try_new::<filter_map_item>()?;
         drc::no_combinatorial_paths(&map)?;
+        Ok(())
+    }
+
+    #[kernel]
+    fn halve_even_regression(_cr: ClockReset, t: b4) -> Option<b4> {
+        if !(t & bits(1)).any() {
+            Some(t >> 1)
+        } else {
+            None
+        }
+    }
+
+    /// **Regression: deadlock against a data-gated sink.**
+    ///
+    /// The AXI Ready/Valid contract this module implements permits a
+    /// sink to withhold `ready` until it sees data. A dropped item
+    /// produces `data = None` downstream, so such a sink never asserts
+    /// `ready` — and this widget used to gate its input buffer on
+    /// `i.ready` alone, leaving the dropped item stuck forever. The
+    /// stream deadlocked after the first one, with everything behind it
+    /// silently lost.
+    ///
+    /// The pre-existing `test_operation` missed it twice over: its sink
+    /// returns `rand::random::<f64>() > 0.2`, which is independent of
+    /// whether data was presented, and it only asserts a property of the
+    /// values that *do* arrive rather than that all of them do.
+    #[test]
+    fn no_deadlock_against_a_data_gated_sink() -> Result<(), RHDLError> {
+        use rhdl::core::sim::ResetOrData;
+        const COUNT: u128 = 16;
+        let uut = FilterMap::<b4, b4>::try_new::<halve_even_regression>()?;
+        let mut to_send: u128 = 0;
+        let mut got: Vec<u128> = Vec::new();
+        let mut need_reset = true;
+
+        uut.run_fn(
+            |output| {
+                if need_reset {
+                    need_reset = false;
+                    return Some(ResetOrData::Reset);
+                }
+                // The sink only asserts ready when it can see an item.
+                let sink_ready = output.data.is_some();
+                if let Some(d) = output.data {
+                    got.push(d.raw());
+                }
+                let mut input = StreamIO::<b4, b4> {
+                    data: None,
+                    ready: ready::<b4>(sink_ready),
+                };
+                if to_send < COUNT && output.ready.raw {
+                    input.data = Some(b4(to_send % 16));
+                    to_send += 1;
+                }
+                Some(ResetOrData::Data(input))
+            },
+            100,
+        )
+        .take_while(|t| t.time < 200_000)
+        .for_each(drop);
+
+        assert_eq!(to_send, COUNT, "the source must not be stalled forever");
+        let want: Vec<u128> = (0..COUNT).filter(|k| k % 2 == 0).map(|k| k >> 1).collect();
+        assert_eq!(got, want, "every surviving item must be delivered");
         Ok(())
     }
 

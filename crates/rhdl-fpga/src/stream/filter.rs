@@ -60,7 +60,7 @@ R<T> |            |     |        |                 +   |       |   Ready<T>
 use badascii_doc::{badascii, badascii_formal};
 use rhdl::prelude::*;
 
-use super::{stream_buffer::StreamBuffer, StreamIO};
+use super::{ready, stream_buffer::StreamBuffer, StreamIO};
 
 #[derive(Clone, Synchronous, SynchronousDQ)]
 #[rhdl(dq_no_prefix)]
@@ -119,19 +119,30 @@ pub fn kernel<T: Digital>(_cr: ClockReset, i: In<T>, q: Q<T>) -> (Out<T>, D<T>) 
     let mut d = D::<T>::dont_care();
     d.input_buffer.data = i.data;
     d.func = T::dont_care();
-    let mut tag = false;
+    let mut have = false;
     if let Some(data) = q.input_buffer.data {
         d.func = data;
-        tag = true;
+        have = true;
     }
-    let tag = tag && q.func;
-    d.input_buffer.ready = i.ready;
+    let keep = have && q.func;
+    // A REJECTED item must be consumed by us, not by the sink.
+    //
+    // The handshake here is the AXI Ready/Valid contract, under which a
+    // sink may legitimately withhold `ready` until it sees data.  A
+    // rejected item produces `data = None` downstream, so such a sink
+    // never asserts `ready` — and if we gated the buffer on `i.ready`
+    // alone the rejected item would sit there forever and the stream
+    // would deadlock.  Consuming rejections ourselves is what makes this
+    // widget correct against every conforming sink rather than only
+    // against unconditionally-ready ones.
+    let dropping = have && !q.func;
+    d.input_buffer.ready = ready::<T>(i.ready.raw || dropping);
     let mut o = Out::<T> {
         data: None,
         ready: q.input_buffer.ready,
     };
     if let Some(data) = q.input_buffer.data {
-        if tag {
+        if keep {
             o.data = Some(data);
         }
     };
@@ -158,6 +169,61 @@ mod tests {
     fn test_no_combinatorial_paths() -> miette::Result<()> {
         let filter = Filter::try_new::<keep_even>()?;
         drc::no_combinatorial_paths(&filter)?;
+        Ok(())
+    }
+
+    /// **Regression: deadlock against a data-gated sink.**
+    ///
+    /// The AXI Ready/Valid contract this module implements permits a
+    /// sink to withhold `ready` until it sees data. A rejected item
+    /// produces `data = None` downstream, so such a sink never asserts
+    /// `ready` — and this widget used to gate its input buffer on
+    /// `i.ready` alone, leaving the rejected item stuck forever. The
+    /// stream deadlocked after the first one, with everything behind it
+    /// silently lost.
+    ///
+    /// The pre-existing `test_operation` missed it twice over: its sink
+    /// returns `rand::random::<f64>() > 0.2`, which is independent of
+    /// whether data was presented, and it only asserts a property of the
+    /// values that *do* arrive rather than that all of them do.
+    #[test]
+    fn no_deadlock_against_a_data_gated_sink() -> Result<(), RHDLError> {
+        use rhdl::core::sim::ResetOrData;
+        const COUNT: u128 = 16;
+        let uut = Filter::<b4>::try_new::<keep_even>()?;
+        let mut to_send: u128 = 0;
+        let mut got: Vec<u128> = Vec::new();
+        let mut need_reset = true;
+
+        uut.run_fn(
+            |output| {
+                if need_reset {
+                    need_reset = false;
+                    return Some(ResetOrData::Reset);
+                }
+                // The sink only asserts ready when it can see an item.
+                let sink_ready = output.data.is_some();
+                if let Some(d) = output.data {
+                    got.push(d.raw());
+                }
+                let mut input = StreamIO::<b4, b4> {
+                    data: None,
+                    ready: ready::<b4>(sink_ready),
+                };
+                if to_send < COUNT && output.ready.raw {
+                    input.data = Some(b4(to_send % 16));
+                    to_send += 1;
+                }
+                Some(ResetOrData::Data(input))
+            },
+            100,
+        )
+        .take_while(|t| t.time < 200_000)
+        .for_each(drop);
+
+        assert_eq!(to_send, COUNT, "the source must not be stalled forever");
+        let want: Vec<u128> = (0..COUNT).filter(|k| k % 2 == 0).collect();
+        assert_eq!(got, want, "every surviving item must be delivered");
         Ok(())
     }
 
