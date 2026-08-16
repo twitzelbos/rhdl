@@ -31,6 +31,53 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-16 — `stream::filter` and `stream::filter_map` deadlock against a conforming sink
+
+**Paths:** `crates/rhdl-fpga/src/stream/filter.rs`, `crates/rhdl-fpga/src/stream/filter_map.rs`.
+
+**Why this, why now:** flagged as a suspicion while building `rcstream::filter`, parked while the session stayed on `rcstream`, and confirmed as the natural continuation of the backpressure-hardening work. It is a live defect in shipped widgets, so it outranks new features.
+
+**The defect:** both widgets set the input buffer's `ready` from the downstream `ready` **unconditionally**. The module documents its handshake as "identical to the Ready/Valid protocol from the AXI spec", and AXI explicitly permits READY to depend on VALID — a sink may wait to see data before accepting. A rejected item produces `data = None` downstream, so such a sink never asserts `ready`, the rejected item is never consumed, and the stream **deadlocks permanently** with everything behind it lost.
+
+Measured, not theorised: driven with a data-gated sink, `stream::filter` delivered `[0]` and stopped; the source got 3 of 16 items away before stalling forever. `filter_map` behaved identically. Both now deliver all 16.
+
+**Why the existing tests missed it — two independent reasons:**
+
+- **The sink was not data-gated.** `test_operation`'s consumer returns `rand::random::<f64>() > 0.2`, which is *independent* of whether data was presented. It stalls often, but never in the one correlated way that matters: withholding `ready` precisely because there is nothing to take.
+- **Completeness was never asserted.** The test only checks a property of the values that arrive (`data.raw() & 1 == 0`). A stream that silently delivers one item and then deadlocks satisfies that assertion perfectly.
+
+Also worth recording: `stream::filter` has **no Tier-3, Tier-4 or Tier-5 tests at all** — just the DRC check and that one loose operation test. The fix changed no committed artifact because there are none to change.
+
+**The fix** is the same one `rcstream::filter` was built with: consume rejected items ourselves rather than waiting for a sink that will never ask.
+
+```rust
+let dropping = have && !q.func;
+d.input_buffer.ready = ready::<T>(i.ready.raw || dropping);
+```
+
+**Surprises and gotchas:**
+
+- **The first mutation attempt did not compile.** Reverting the `|| dropping` term left `dropping` unused, and `#[kernel]` denies unused bindings, so the "restore the bug" experiment failed to build rather than failing the test. Forcing `let dropping = false;` reproduces the old behaviour exactly while keeping the binding live. Worth knowing for any future mutation check on a kernel.
+
+**Validation:** a regression test in each widget's own module, driving a data-gated sink and asserting both that the source drains (`to_send == COUNT`) and that every surviving item is delivered. Both verified to **fail with the old behaviour restored** (`left: 3, right: 16`) and pass with the fix. Full `stream::` module green — 186 tests.
+
+**Blast radius, audited rather than assumed.** The defect needs two properties at once: the widget must be a **dropper** (able to consume an item and decide not to emit it), and it must **gate its input consumption on the downstream `ready`**. Checking every candidate:
+
+- `stream::{filter, filter_map}` — both properties. **Affected; fixed here.**
+- `stream::map` — ties its buffer `ready` to downstream identically, but never drops, so its output is `None` only when the buffer is empty and there is nothing to consume. Probed with a data-gated sink: drains fully. **Safe by construction.**
+- `stream::{chunked, flatten, zip, tee}` — absorb without emitting, but drive their input buffers through `StreamToFIFO`/`FIFOToStream` with an explicit `next` they control themselves rather than a tied `ready`. Probed `chunked` and `flatten` with data-gated sinks: both drain fully. **Safe.**
+- `fifo::*` — consumers pull with an explicit `next`; nothing is tied to a downstream `ready`. **Not applicable.**
+- `axi4lite::*` — several widgets tie `.ready` to an incoming ready, but they are protocol translators in which every request produces a response; none is a dropper. Reasoned structurally rather than probed exhaustively. **Not applicable, with that caveat.**
+
+So the class is confined to droppers, and every dropper in the tree is now fixed. `stream::map` being safe *by accident of never dropping* rather than by design is worth remembering: if it ever gains a drop path, it acquires this bug.
+
+**Follow-ups:**
+
+- **`stream::filter` needs Tier 3/4/5.** It has none — only the DRC check and `test_operation`. Neighbours in `stream::` are similarly thin.
+- **A data-gated sink belongs in `stream::testing`.** `lazy_sink` exists there and is used by nothing; a shared, correct data-gated sink would have made this bug findable by construction.
+
+---
+
 ## 2026-08-16 — Backpressure hardening across `rcstream` (the follow-up the bug fix owed)
 
 **Paths:** `crates/rhdl-fpga/src/rcstream/credit/{sink,source}.rs`, `crates/rhdl-fpga/src/rcstream/relay.rs`, `crates/rhdl-fpga/src/rcstream/axi_stream/{axi_to_rcstream,rcstream_to_axi}.rs`, `crates/rhdl-fpga/tests/rcstream_credit_relay_insertion.rs`.
