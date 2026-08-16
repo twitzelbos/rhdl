@@ -33,6 +33,7 @@
 
 pub mod axi_stream;
 pub mod bus;
+pub mod credit;
 pub mod relay;
 
 // Convenience re-exports so downstream code can `use
