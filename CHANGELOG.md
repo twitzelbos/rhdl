@@ -31,6 +31,44 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-16 — `stream::testing::sinks`, and why the shared harness could not find the deadlock
+
+**Paths:** `crates/rhdl-fpga/src/stream/testing/sinks.rs` (new), `crates/rhdl-fpga/src/stream/testing/lazy_sink.rs` (**removed**), `crates/rhdl-fpga/src/stream/testing/mod.rs`, `crates/rhdl-fpga/src/stream/map.rs`.
+
+**Why this, why now:** fixing `stream::filter` removed a bug; it did nothing to make the *next* one findable. One-off regression tests catch the case you already know about. The goal here was to make a data-gated sink the easy, documented default so the class is caught by construction.
+
+**The finding that matters more than the helper.** `SinkFromFn` — which `single_stage` uses, and which is therefore the shared harness behind every `stream::` operation test — calls its closure with:
+
+```rust
+(consumer)(if !me.ready { None } else { me.latched_value })
+```
+
+The `Option<T>` argument is an **acceptance report** ("here is the item you took"), *not* an offer ("here is what is available"). A sink built on it cannot see what is being presented. Gating readiness on that argument self-deadlocks immediately: return `false` once and the argument is `None` forever after.
+
+So **the shared harness structurally cannot express a data-gated sink.** The only readiness policies available through it are ones uncorrelated with data presence — precisely the family that cannot find the `filter` deadlock. That bug was not missed through carelessness; it was unreachable with the tools provided. Recorded prominently in the new module, because "add a data-gated test" is not actionable advice for anyone using `single_stage`.
+
+**What shipped:**
+
+- `sinks::data_gated` — asserts `ready` only when data is present. The sink that finds dropper bugs. For closed-loop `run_fn` tests.
+- `sinks::periodic` — deterministic backpressure at a fixed cadence.
+- `sinks::always_ready` — baseline, documented as never sufficient alone for a flow-control widget.
+- `sinks::stalling_periodic` — deterministic source-side stalling, the reproducible counterpart to `utils::stalling`, which uses `rand::random` and makes any committed artifact irreproducible.
+- `stream::map` gains a data-gated test. `map` has the same risky wiring as the broken `filter` and is safe **only by accident of never dropping**; the test converts that accident into a checked property, so a future drop path fails loudly.
+- `lazy_sink` **removed**. It was 60 lines of doc comment with no implementation — a stub nothing referenced, describing a *random*-reluctance sink, i.e. exactly the flavour that cannot find this bug.
+
+**Surprises and gotchas:**
+
+- **My first version of the helper was wrong, and the test caught it.** `data_gated` was written for `single_stage`, wired into `map`, and collected *nothing* — `left: []`. Reading `SinkFromFn`'s `sim` explained why, and that misstep is what produced the harness finding above. Worth recording that the helper looked obviously correct until it was run.
+
+**Validation:** 5 unit tests on the sink helpers themselves (including that `data_gated` withholds readiness exactly when no data is offered, and that `stalling_periodic` is reproducible across runs). `stream::map`'s new data-gated test passes. Full `stream::` module green.
+
+**Follow-ups:**
+
+- **Teach `SinkFromFn` to pass the offered value**, or add a sibling that does, so a data-gated sink is expressible through `single_stage`. That would make this bug class findable through the shared fixture rather than only in hand-written `run_fn` tests. It changes established harness semantics, so it is flagged rather than smuggled in here.
+- **`utils::stalling` still uses `rand::random`** and is used by seven `stream::` widgets. `stalling_periodic` is the drop-in replacement; migrating them is mechanical but touches committed behaviour.
+
+---
+
 ## 2026-08-16 — `stream::filter` and `stream::filter_map` deadlock against a conforming sink
 
 **Paths:** `crates/rhdl-fpga/src/stream/filter.rs`, `crates/rhdl-fpga/src/stream/filter_map.rs`.
