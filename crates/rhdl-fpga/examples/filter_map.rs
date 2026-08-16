@@ -1,6 +1,7 @@
 use std::iter::repeat_n;
 
 use rhdl::prelude::*;
+use rhdl_fpga::stream::testing::sink_from_fn::SinkView;
 use rhdl_fpga::{
     rng::xorshift::XorShift128,
     stream::{
@@ -44,8 +45,8 @@ fn main() -> Result<(), RHDLError> {
         _ => None,
     });
     let a_rng = stalling(a_rng, 0.23);
-    let consume = move |data: Option<b4>| {
-        if let Some(data) = data {
+    let consume = move |v: SinkView<b4>| {
+        if let Some(data) = v.accepted {
             let orig = b_rng.next().unwrap();
             assert_eq!(data, orig);
         }

@@ -13,6 +13,34 @@ use rhdl::{
 
 use crate::stream::{ready, Ready};
 
+/// What a [`SinkFromFn`] closure is told each cycle.
+///
+/// Two distinct facts, deliberately not conflated:
+///
+/// - `offered` — what the upstream is **presenting**. Decide `ready`
+///   from this. A sink may legitimately withhold `ready` when nothing
+///   is offered (AXI permits READY to depend on VALID), and a widget
+///   that consumes an item, declines to emit it, and then waits for a
+///   downstream that has no reason to respond will **deadlock** against
+///   such a sink. That is a real bug shape — it shipped in
+///   `stream::filter` — and it is unreachable unless the sink can see
+///   what is on the wire.
+/// - `accepted` — what this sink actually **took** last cycle. Observe,
+///   count, and check sequences against this. It is `Some` exactly once
+///   per transferred item, so it is safe to pop an expected-value
+///   iterator here; `offered` is *not*, because a stalled item is
+///   presented repeatedly.
+///
+/// Using the wrong field is the easy mistake: gate on `offered`,
+/// observe on `accepted`.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct SinkView<T: Digital> {
+    /// What the upstream is presenting. Use for readiness decisions.
+    pub offered: Option<T>,
+    /// What this sink took last cycle. Use for observation.
+    pub accepted: Option<T>,
+}
+
 #[derive(Clone)]
 /// The [SinkFromFn] core
 ///
@@ -22,20 +50,60 @@ use crate::stream::{ready, Ready};
 /// backpressure to the stream, by returning a boolean that
 /// is converted into the `ready` input.  
 pub struct SinkFromFn<T: Digital> {
-    consumer: std::sync::Arc<std::sync::Mutex<dyn FnMut(Option<T>) -> bool>>,
+    consumer: std::sync::Arc<std::sync::Mutex<dyn FnMut(SinkView<T>) -> bool>>,
+    /// Optional *combinational* readiness policy.
+    ///
+    /// When present, `ready` is computed from the offer **in the same
+    /// cycle** rather than being registered from the previous one, and
+    /// `consumer` is used only to observe accepted items.
+    ///
+    /// This matters more than it sounds. With the default registered
+    /// ready there is a one-cycle lag between "nothing is offered" and
+    /// "ready drops" — and that lag is exactly enough slack for a widget
+    /// which waits on `ready` to consume an item it never presented.
+    /// `stream::filter`'s deadlock is invisible to a registered
+    /// data-gated sink and visible to a combinational one. If you are
+    /// testing a widget that can absorb items, you want this.
+    ready_fn: Option<std::sync::Arc<dyn Fn(Option<T>) -> bool>>,
 }
 
 impl<T: Digital> SinkFromFn<T> {
     /// Create a new [SinkFromFn] object from the given function
     ///
-    /// Note that the function is of the form `fn(Option<T>) -> bool`.
-    /// The return type is _not_ an acceptance flag for the argument.
-    /// Rather, it signals the pipeline readiness to the pipe stage
-    /// immediately preceeding this one.
-    ///
-    pub fn new<S: FnMut(Option<T>) -> bool + 'static>(consumer: S) -> Self {
+    /// The function is `fn(SinkView<T>) -> bool`. The return value is
+    /// **not** an acceptance flag for anything in the argument — it is
+    /// the `ready` signal presented to the stage upstream for the coming
+    /// cycle. See [`SinkView`] for which of its two fields to use for
+    /// which purpose: gate on `offered`, observe on `accepted`.
+    pub fn new<S: FnMut(SinkView<T>) -> bool + 'static>(consumer: S) -> Self {
         Self {
             consumer: std::sync::Arc::new(std::sync::Mutex::new(consumer)),
+            ready_fn: None,
+        }
+    }
+
+    /// Create a [SinkFromFn] whose `ready` is **combinational** on the
+    /// current offer.
+    ///
+    /// `ready_fn` must be pure — it is evaluated whenever the simulator
+    /// asks for the output, possibly several times per cycle. `observe`
+    /// is called exactly once per clock, with the item actually
+    /// transferred (`None` when nothing was).
+    ///
+    /// Use this for any widget that can absorb or drop items. The
+    /// default [`Self::new`] registers `ready`, and that one-cycle lag
+    /// masks deadlocks of the `stream::filter` kind.
+    pub fn new_combinational(
+        ready_fn: impl Fn(Option<T>) -> bool + 'static,
+        mut observe: impl FnMut(Option<T>) + 'static,
+    ) -> Self {
+        Self {
+            consumer: std::sync::Arc::new(std::sync::Mutex::new(move |v: SinkView<T>| {
+                observe(v.accepted);
+                // Unused when `ready_fn` is present.
+                true
+            })),
+            ready_fn: Some(std::sync::Arc::new(ready_fn)),
         }
     }
 }
@@ -50,8 +118,11 @@ impl<T: Digital + std::fmt::Debug> SinkFromFn<T> {
         mut iter: S,
         stall_probability: f32,
     ) -> Self {
-        let func = move |x| {
-            if let Some(res) = x {
+        let func = move |v: SinkView<T>| {
+            // Check against ACCEPTED, never offered: a stalled item is
+            // presented repeatedly and would pop the iterator more than
+            // once.
+            if let Some(res) = v.accepted {
                 let y = iter.next().unwrap();
                 assert_eq!(res, y);
             }
@@ -111,9 +182,28 @@ impl<T: Digital> Synchronous for SinkFromFn<T> {
         trace_push_path("sink_from_fn");
         trace("input", &input);
         let pos_edge = clock_reset.clock.raw() && !me.prev_clock.raw();
+        // With a combinational policy, whether the latched offer was
+        // taken is decided by the same function that drives `ready`, so
+        // the accept-report stays exact.
+        let accepted_now = |me: &SinkFromFnState<T>| match &self.ready_fn {
+            Some(f) => match me.latched_value {
+                Some(v) if f(Some(v)) => Some(v),
+                _ => None,
+            },
+            None => {
+                if me.ready {
+                    me.latched_value
+                } else {
+                    None
+                }
+            }
+        };
         let process = || {
             let mut consumer = self.consumer.lock().unwrap();
-            (consumer)(if !me.ready { None } else { me.latched_value })
+            (consumer)(SinkView {
+                offered: me.latched_value,
+                accepted: accepted_now(me),
+            })
         };
         match me.state {
             State::Init => {
@@ -132,9 +222,15 @@ impl<T: Digital> Synchronous for SinkFromFn<T> {
             me.latched_value = input;
         }
         me.prev_clock = clock_reset.clock;
-        trace("output", &me.ready);
+        // Combinational policies recompute from the live input; the
+        // default registers the value decided at the last edge.
+        let out = match &self.ready_fn {
+            Some(f) => f(input),
+            None => me.ready,
+        };
+        trace("output", &out);
         trace_pop_path();
-        ready(me.ready)
+        ready(out)
     }
 
     fn descriptor(&self, _name: ScopedName) -> Result<Descriptor<SyncKind>, RHDLError> {

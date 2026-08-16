@@ -75,6 +75,7 @@
 //! fixture. That is a change to established harness semantics and is
 //! left as a follow-up rather than smuggled in here.
 
+use super::sink_from_fn::SinkView;
 use rhdl::prelude::Digital;
 
 /// A sink that asserts `ready` **only when it can see data**.
@@ -93,15 +94,16 @@ use rhdl::prelude::Digital;
 /// let mut got = Vec::new();
 /// let sink = data_gated(|t: b4| got.push(t.raw()));
 /// ```
-pub fn data_gated<T: Digital>(mut observe: impl FnMut(T)) -> impl FnMut(Option<T>) -> bool {
-    move |data| match data {
-        Some(t) => {
+pub fn data_gated<T: Digital>(mut observe: impl FnMut(T)) -> impl FnMut(SinkView<T>) -> bool {
+    move |v| {
+        // Observe what we actually took...
+        if let Some(t) = v.accepted {
             observe(t);
-            true
         }
-        // Nothing offered, so nothing to be ready for.  A conforming
-        // upstream must cope with this.
-        None => false,
+        // ...and gate readiness on what is being offered.  Withholding
+        // ready when nothing is on the wire is what exposes a widget
+        // that waits for us to absorb an item it never showed us.
+        v.offered.is_some()
     }
 }
 
@@ -115,17 +117,14 @@ pub fn data_gated<T: Digital>(mut observe: impl FnMut(T)) -> impl FnMut(Option<T
 pub fn periodic<T: Digital>(
     period: u32,
     mut observe: impl FnMut(T),
-) -> impl FnMut(Option<T>) -> bool {
+) -> impl FnMut(SinkView<T>) -> bool {
     let mut phase: u32 = 0;
-    move |data| {
-        phase = phase.wrapping_add(1);
-        let ready = period <= 1 || phase.is_multiple_of(period);
-        if ready {
-            if let Some(t) = data {
-                observe(t);
-            }
+    move |v| {
+        if let Some(t) = v.accepted {
+            observe(t);
         }
-        ready
+        phase = phase.wrapping_add(1);
+        period <= 1 || phase.is_multiple_of(period)
     }
 }
 
@@ -134,9 +133,9 @@ pub fn periodic<T: Digital>(
 /// Fine as a baseline, but on its own it cannot exercise any
 /// backpressure path — which for a flow-control widget is every path
 /// that matters. Pair it with [`data_gated`] or [`periodic`].
-pub fn always_ready<T: Digital>(mut observe: impl FnMut(T)) -> impl FnMut(Option<T>) -> bool {
-    move |data| {
-        if let Some(t) = data {
+pub fn always_ready<T: Digital>(mut observe: impl FnMut(T)) -> impl FnMut(SinkView<T>) -> bool {
+    move |v| {
+        if let Some(t) = v.accepted {
             observe(t);
         }
         true
@@ -172,50 +171,70 @@ mod tests {
     use super::*;
     use rhdl::prelude::*;
 
-    /// `data_gated` must withhold `ready` exactly when nothing is
-    /// offered — that correlation is the whole point.
+    fn view(offered: Option<b4>, accepted: Option<b4>) -> SinkView<b4> {
+        SinkView { offered, accepted }
+    }
+
+    /// `data_gated` gates readiness on **offered** and observes
+    /// **accepted**. Conflating the two is the mistake the `SinkView`
+    /// split exists to prevent, so pin both halves.
     #[test]
-    fn data_gated_withholds_ready_when_no_data() {
+    fn data_gated_gates_on_offered_and_observes_accepted() {
         let mut seen: Vec<u128> = Vec::new();
         {
             let mut sink = data_gated(|t: b4| seen.push(t.raw()));
-            assert!(!sink(None), "no data means not ready");
-            assert!(sink(Some(b4(3))), "data means ready");
-            assert!(!sink(None));
+            // Nothing offered -> not ready, nothing observed.
+            assert!(!sink(view(None, None)), "no offer means not ready");
+            // Offered but not yet accepted -> ready, still nothing observed.
+            assert!(sink(view(Some(b4(3)), None)), "an offer makes us ready");
+            // Now it was accepted: observed exactly once.
+            assert!(sink(view(Some(b4(4)), Some(b4(3)))));
+            assert!(!sink(view(None, Some(b4(4)))), "offer gone -> not ready");
         }
-        assert_eq!(seen, vec![3], "only accepted items are observed");
+        assert_eq!(seen, vec![3, 4], "observes accepted items, once each");
     }
 
-    /// `periodic` accepts on a fixed cadence regardless of data.
+    /// A stalled item is *offered* repeatedly but *accepted* once. If a
+    /// sink observed offers it would double-count — the exact hazard
+    /// that makes `offered` unsafe for sequence checks.
     #[test]
-    fn periodic_accepts_on_its_cadence() {
+    fn repeated_offers_are_observed_only_once() {
         let mut seen: Vec<u128> = Vec::new();
         {
             let mut sink = periodic(3, |t: b4| seen.push(t.raw()));
-            // phases 1,2 not ready; phase 3 ready.
-            assert!(!sink(Some(b4(1))));
-            assert!(!sink(Some(b4(2))));
-            assert!(sink(Some(b4(3))));
+            // Same item offered three times, accepted once.
+            sink(view(Some(b4(9)), None));
+            sink(view(Some(b4(9)), None));
+            sink(view(Some(b4(9)), Some(b4(9))));
         }
-        assert_eq!(seen, vec![3], "only the accepted cycle is observed");
+        assert_eq!(seen, vec![9], "one transfer, one observation");
+    }
+
+    /// `periodic` accepts on a fixed cadence irrespective of offers.
+    #[test]
+    fn periodic_accepts_on_its_cadence() {
+        let mut sink = periodic(3, |_t: b4| {});
+        assert!(!sink(view(Some(b4(1)), None)));
+        assert!(!sink(view(Some(b4(2)), None)));
+        assert!(sink(view(Some(b4(3)), None)));
     }
 
     /// `period <= 1` degenerates to always-ready.
     #[test]
     fn periodic_with_period_one_is_always_ready() {
         let mut sink = periodic(1, |_t: b4| {});
-        assert!(sink(Some(b4(1))));
-        assert!(sink(Some(b4(2))));
+        assert!(sink(view(Some(b4(1)), None)));
+        assert!(sink(view(None, None)));
     }
 
-    /// `always_ready` never stalls.
+    /// `always_ready` never stalls, even with nothing offered.
     #[test]
     fn always_ready_never_stalls() {
         let mut seen: Vec<u128> = Vec::new();
         {
             let mut sink = always_ready(|t: b4| seen.push(t.raw()));
-            assert!(sink(None));
-            assert!(sink(Some(b4(7))));
+            assert!(sink(view(None, None)));
+            assert!(sink(view(Some(b4(7)), Some(b4(7)))));
         }
         assert_eq!(seen, vec![7]);
     }
@@ -231,10 +250,8 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         let a = run();
-        let b = run();
-        assert_eq!(a, b, "must be reproducible");
+        assert_eq!(a, run(), "must be reproducible");
         assert!(a.contains(&-1), "must actually stall");
-        // Every underlying value still comes out, just later.
         let vals: Vec<i64> = a.iter().copied().filter(|v| *v >= 0).collect();
         assert_eq!(vals, vec![0, 1, 2, 3, 4, 5][..vals.len()].to_vec());
     }

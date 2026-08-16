@@ -31,6 +31,37 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-16 — Fix `SinkFromFn` so the shared harness can find deadlocks (migrates every affected test)
+
+**Paths:** `crates/rhdl-fpga/src/stream/testing/{sink_from_fn,single_stage,sinks}.rs`, plus every closure passed to a sink: `stream::{filter, filter_map, map, tee, pipe_wrapper}` and `axi4lite::register::testing::single_streaming_writes`.
+
+**Why this, why now:** the previous entry established that the shared harness *structurally could not* express a sink able to find the `stream::filter` deadlock, and flagged fixing it as a follow-up. Working around a broken contract just relocates the problem, so this fixes the contract and migrates every caller.
+
+**Two changes were needed, and only the second actually closed the gap:**
+
+1. **`SinkView { offered, accepted }`.** The closure previously got a single `Option<T>` that was an *acceptance report* — "here is the item you took". Correct for observation, but it means readiness cannot be correlated with what is on the wire. `SinkView` separates the two: **gate on `offered`, observe on `accepted`**. The split matters because a stalled item is *offered* repeatedly but *accepted* once, so a sequence-checking closure that read `offered` would pop its expected-value iterator several times per item.
+
+2. **`SinkFromFn::new_combinational`.** `SinkView` alone was **not enough** — and this was measured, not assumed. With the bug reintroduced, the `SinkView`-based harness test still **passed**. The reason is timing: the default sink's `ready` is *registered*, decided at one edge and applied on the next, and that one-cycle lag is exactly enough slack for the buggy filter to consume its reject before readiness drops. Only a `ready` computed from the live offer reproduces the deadlock. `new_combinational` takes a pure `ready_fn(Option<T>) -> bool` (safe to evaluate repeatedly per cycle) and a separate `observe(Option<T>)` called once per clock.
+
+With both in place, the shared-harness test fails with the bug restored and passes with the fix — the same verdict the hand-written `run_fn` test gives. The class is now findable through `single_stage`.
+
+**Migration:** the contract change is source-breaking for every sink closure. Six were migrated, all mechanically — `|data: Option<X>|` becomes `|v: SinkView<X>|` and reads `v.accepted`. Every one of them pops an expected-value iterator, so `accepted` (exact, once per transfer) preserves their semantics precisely; `offered` would have broken them. `new_from_iter` was migrated centrally, which covered `xfer`, `zip`, `axi4lite::stream::{axi_to_rhdl, rhdl_to_axi}` and the `axi4lite::core::testing` fixtures without touching them.
+
+**Surprises and gotchas:**
+
+- **The obvious fix was insufficient, and only a mutation test revealed it.** Passing the offer instead of the accept-report looks like the whole answer; it compiles, reads correctly, and the test passes. It also still fails to catch the bug. Had the change shipped on the strength of "the test passes", the harness would have looked fixed while remaining blind.
+- **Combinational readiness forces a pure function.** The simulator may evaluate a widget's output several times per time step, so a `ready` policy with side effects would double-count. Hence the split into a pure `ready_fn` and an effectful `observe` rather than one `FnMut` doing both.
+- **`single_stage` gained a sibling rather than a parameter.** `single_stage_with_sink` takes a pre-built `SinkFromFn`, so the common closure form stays a one-liner and only tests that need an unusual readiness policy pay for it.
+
+**Validation:** the shared-harness test in `stream::filter` verified to fail with the reject-consuming term removed and pass with it. All six migrated closures pass unchanged in behaviour. Full `rhdl-fpga` lib suite green.
+
+**Follow-ups:**
+
+- **`utils::stalling` still uses `rand::random`**, used by seven `stream::` widgets; `sinks::stalling_periodic` is the deterministic drop-in.
+- **Nothing yet *requires* a data-gated sink.** The capability exists and two tests use it; adopting it across the widgets that can absorb items is the remaining work.
+
+---
+
 ## 2026-08-16 — `stream::testing::sinks`, and why the shared harness could not find the deadlock
 
 **Paths:** `crates/rhdl-fpga/src/stream/testing/sinks.rs` (new), `crates/rhdl-fpga/src/stream/testing/lazy_sink.rs` (**removed**), `crates/rhdl-fpga/src/stream/testing/mod.rs`, `crates/rhdl-fpga/src/stream/map.rs`.

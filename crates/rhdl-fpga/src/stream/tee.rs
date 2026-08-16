@@ -152,7 +152,7 @@ mod tests {
     use super::Tee;
     use super::*;
     use crate::rng::xorshift::XorShift128;
-    use crate::stream::testing::sink_from_fn::SinkFromFn;
+    use crate::stream::testing::sink_from_fn::{SinkFromFn, SinkView};
     use crate::stream::testing::source_from_fn::SourceFromFn;
     use crate::stream::testing::utils::stalling;
 
@@ -193,15 +193,15 @@ mod tests {
         let mut c_rng = a_rng.clone();
         let mut d_rng = a_rng.clone();
         let a_rng = stalling(a_rng, 0.23);
-        let consume_s = move |data| {
-            if let Some(data) = data {
+        let consume_s = move |v: SinkView<_>| {
+            if let Some(data) = v.accepted {
                 let validation = c_rng.next().unwrap();
                 assert_eq!(data, validation.0);
             }
             rand::random::<f64>() > 0.2
         };
-        let consume_t = move |data| {
-            if let Some(data) = data {
+        let consume_t = move |v: SinkView<_>| {
+            if let Some(data) = v.accepted {
                 let validation = d_rng.next().unwrap();
                 assert_eq!(data, validation.1);
             }

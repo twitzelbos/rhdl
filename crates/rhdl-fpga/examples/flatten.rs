@@ -13,6 +13,7 @@
 
 use badascii_doc::badascii;
 use rhdl::prelude::*;
+use rhdl_fpga::stream::testing::sink_from_fn::SinkView;
 use rhdl_fpga::{
     rng::xorshift::XorShift128,
     stream::{
@@ -38,8 +39,8 @@ fn main() -> Result<(), RHDLError> {
     let uut = Flatten::<b4, 2, 4>::default();
     // Create the consumption function.  We should get the elements
     // back in the order they were generated
-    let consume = move |data| {
-        if let Some(data) = data {
+    let consume = move |v: SinkView<_>| {
+        if let Some(data) = v.accepted {
             let validation = dest_rng.next().unwrap();
             assert_eq!(data, validation);
         }

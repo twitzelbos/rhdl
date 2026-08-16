@@ -166,6 +166,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::stream::testing::sink_from_fn::SinkView;
 
     #[kernel]
     fn filter_map_item(_cr: ClockReset, t: b4) -> Option<b2> {
@@ -258,8 +259,8 @@ mod tests {
             }
         });
         let a_rng = stalling(a_rng, 0.23);
-        let consume = move |data: Option<b2>| {
-            if let Some(data) = data {
+        let consume = move |v: SinkView<b2>| {
+            if let Some(data) = v.accepted {
                 let orig = b_rng.next().unwrap();
                 assert_eq!(data, orig);
             }

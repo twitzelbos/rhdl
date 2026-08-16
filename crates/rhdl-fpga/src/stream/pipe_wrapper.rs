@@ -245,7 +245,9 @@ mod tests {
         core::{dff::DFF, option::pack, slice::lsbs},
         rng::xorshift::XorShift128,
         stream::testing::{
-            sink_from_fn::SinkFromFn, source_from_fn::SourceFromFn, utils::stalling,
+            sink_from_fn::{SinkFromFn, SinkView},
+            source_from_fn::SourceFromFn,
+            utils::stalling,
         },
     };
 
@@ -327,8 +329,8 @@ mod tests {
         let b_rng = XorShift128::default().map(|x| b6(((x >> 8) & 0x3F) as u128));
         let mut c_rng = b_rng.clone();
         let b_rng = stalling(b_rng, 0.13);
-        let consume = move |data| {
-            if let Some(data) = data {
+        let consume = move |v: SinkView<_>| {
+            if let Some(data) = v.accepted {
                 let validation = lsbs::<4, 6>(c_rng.next().unwrap());
                 assert_eq!(data, validation);
             }

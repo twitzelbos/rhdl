@@ -159,6 +159,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::stream::testing::sink_from_fn::SinkView;
 
     #[kernel]
     fn keep_even(_cr: ClockReset, t: b4) -> bool {
@@ -227,12 +228,62 @@ mod tests {
         Ok(())
     }
 
+    /// The same deadlock, caught **through the shared `single_stage`
+    /// harness** rather than a hand-written `run_fn` loop.
+    ///
+    /// Two changes were needed before this test could exist at all:
+    ///
+    /// 1. [`SinkView`] — so the closure can see what is *offered*, not
+    ///    just what it accepted. Without it, readiness cannot be
+    ///    correlated with data presence.
+    /// 2. [`SinkFromFn::new_combinational`] — so `ready` is computed
+    ///    from the live offer rather than registered from the previous
+    ///    cycle. The registered form's one-cycle lag is exactly enough
+    ///    slack for the buggy filter to escape, so a *registered*
+    ///    data-gated sink does **not** catch this. That was measured,
+    ///    not assumed.
+    ///
+    /// Verified to fail when the reject-consuming term is removed.
+    #[test]
+    fn data_gated_sink_through_the_shared_harness() -> Result<(), RHDLError> {
+        use crate::stream::testing::{
+            single_stage::single_stage_with_sink, sink_from_fn::SinkFromFn,
+        };
+        use std::{cell::RefCell, rc::Rc};
+
+        const COUNT: u128 = 16;
+        let got = Rc::new(RefCell::new(Vec::<u128>::new()));
+        let collector = got.clone();
+        let sink = SinkFromFn::<b4>::new_combinational(
+            // Ready only while something is actually on the wire.
+            |offer| offer.is_some(),
+            move |accepted| {
+                if let Some(t) = accepted {
+                    collector.borrow_mut().push(t.raw());
+                }
+            },
+        );
+        let src = (0..COUNT).map(|k| Some(b4(k % 16)));
+
+        let uut = single_stage_with_sink(Filter::try_new::<keep_even>()?, src, sink);
+        let input = repeat_n((), 4_000).with_reset(1).clock_pos_edge(100);
+        uut.run(input).for_each(drop);
+
+        let want: Vec<u128> = (0..COUNT).filter(|k| k % 2 == 0).collect();
+        assert_eq!(
+            *got.borrow(),
+            want,
+            "a data-gated sink must still receive every kept item"
+        );
+        Ok(())
+    }
+
     #[test]
     fn test_operation() -> Result<(), RHDLError> {
         let a_rng = XorShift128::default().map(|x| b4((x & 0xF) as u128));
         let a_rng = stalling(a_rng, 0.23);
-        let consume = move |data: Option<b4>| {
-            if let Some(data) = data {
+        let consume = move |v: SinkView<b4>| {
+            if let Some(data) = v.accepted {
                 // Only even values kept
                 assert!(data.raw() & 1 == 0);
             }
