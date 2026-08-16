@@ -303,3 +303,272 @@ mod pipeline {
         Ok(())
     }
 }
+
+/// Multi-port insertion: relays on **one input of a `zip`**.
+///
+/// This is the case a single in/out pair cannot exercise. Delaying one
+/// side of a zip relative to the other changes their *relative* arrival
+/// timing, so if the lockstep logic were wrong the pairs would shear —
+/// `a[k]` matched with `b[k+1]` or worse. Correct behaviour is that
+/// pairing is by index and completely insensitive to how much one side
+/// is delayed.
+mod zip_ports {
+    use super::*;
+    use rhdl_fpga::rcstream::zip::{In as ZipIn, RCStreamZip};
+
+    #[derive(Clone, Synchronous, SynchronousDQ)]
+    #[rhdl(dq_no_prefix)]
+    struct ZipDelayedA<const N: usize> {
+        a_chain: Chain<N>,
+        zip: RCStreamZip<b8, bool, b8, bool>,
+    }
+
+    impl<const N: usize> Default for ZipDelayedA<N> {
+        fn default() -> Self {
+            Self {
+                a_chain: Chain::<N>::default(),
+                zip: RCStreamZip::default(),
+            }
+        }
+    }
+
+    #[derive(PartialEq, Debug, Digital, Clone, Copy)]
+    pub struct In {
+        pub a_data: Option<Item<b8, bool>>,
+        pub b_data: Option<Item<b8, bool>>,
+        pub ready: bool,
+    }
+
+    #[derive(PartialEq, Debug, Digital, Clone, Copy)]
+    pub struct Out {
+        pub a_ready: bool,
+        pub b_ready: bool,
+        pub data: Option<Item<(b8, b8), (bool, bool)>>,
+    }
+
+    impl<const N: usize> SynchronousIO for ZipDelayedA<N> {
+        type I = In;
+        type O = Out;
+        type Kernel = zip_delayed_kernel<N>;
+    }
+
+    #[kernel]
+    #[doc(hidden)]
+    pub fn zip_delayed_kernel<const N: usize>(_cr: ClockReset, i: In, q: Q<N>) -> (Out, D<N>) {
+        let mut d = D::<N>::dont_care();
+        // `a` goes through the relay chain; `b` goes straight in.
+        d.a_chain.data = i.a_data;
+        d.a_chain.ready = q.zip.a_ready;
+        d.zip = ZipIn::<b8, bool, b8, bool> {
+            a_data: q.a_chain.data,
+            b_data: i.b_data,
+            ready: i.ready,
+        };
+        let o = Out {
+            a_ready: q.a_chain.ready,
+            b_ready: q.zip.b_ready,
+            data: q.zip.data,
+        };
+        (o, d)
+    }
+
+    fn pairs<const N: usize>(count: u128) -> Vec<(u128, u128)> {
+        let uut = ZipDelayedA::<N>::default();
+        let (mut a_sent, mut b_sent) = (0u128, 0u128);
+        let mut got: Vec<(u128, u128)> = Vec::new();
+        let mut need_reset = true;
+        let mut phase: u32 = 0;
+
+        uut.run_fn(
+            |output| {
+                if need_reset {
+                    need_reset = false;
+                    return Some(ResetOrData::Reset);
+                }
+                phase = phase.wrapping_add(1);
+                let sink_ready = !phase.is_multiple_of(3);
+                if let Some(it) = output.data {
+                    if sink_ready {
+                        got.push((it.data.0.raw(), it.data.1.raw()));
+                    }
+                }
+                let mut input = In {
+                    a_data: None,
+                    b_data: None,
+                    ready: sink_ready,
+                };
+                if a_sent < count && output.a_ready {
+                    input.a_data = Some(Item::<b8, bool> {
+                        data: b8(a_sent % 256),
+                        frame: false,
+                    });
+                    a_sent += 1;
+                }
+                // `b` offers on a different cadence, so the two sides are
+                // already skewed before the relays add more.
+                if b_sent < count && output.b_ready && !phase.is_multiple_of(2) {
+                    input.b_data = Some(Item::<b8, bool> {
+                        data: b8((100 + b_sent) % 256),
+                        frame: false,
+                    });
+                    b_sent += 1;
+                }
+                Some(ResetOrData::Data(input))
+            },
+            100,
+        )
+        .take_while(|t| t.time < 300_000)
+        .for_each(drop);
+        got
+    }
+
+    #[test]
+    fn zip_pairs_by_index_regardless_of_input_delay() {
+        const COUNT: u128 = 20;
+        let want: Vec<(u128, u128)> = (0..COUNT).map(|k| (k, (100 + k) % 256)).collect();
+        for (label, got) in [
+            ("1 relay on a", pairs::<1>(COUNT)),
+            ("2 relays on a", pairs::<2>(COUNT)),
+            ("4 relays on a", pairs::<4>(COUNT)),
+            ("7 relays on a", pairs::<7>(COUNT)),
+        ] {
+            assert_eq!(
+                got, want,
+                "{label}: zip must pair by index; delaying one input must not shear the pairing"
+            );
+        }
+    }
+}
+
+/// Multi-port insertion, the other direction: relays on **one output of
+/// a `tee`**.
+///
+/// The mirror of the zip case. Delaying one branch relative to the other
+/// must not let the two outputs drift apart — both halves are still
+/// index-aligned, which is what makes a later `zip` able to recombine
+/// them.
+mod tee_ports {
+    use super::*;
+    use rhdl_fpga::rcstream::tee::{In as TeeIn, RCStreamTee};
+
+    #[derive(Clone, Synchronous, SynchronousDQ)]
+    #[rhdl(dq_no_prefix)]
+    struct TeeDelayedA<const N: usize> {
+        tee: RCStreamTee<b8, bool, b8, bool>,
+        a_chain: Chain<N>,
+    }
+
+    impl<const N: usize> Default for TeeDelayedA<N> {
+        fn default() -> Self {
+            Self {
+                tee: RCStreamTee::default(),
+                a_chain: Chain::<N>::default(),
+            }
+        }
+    }
+
+    #[derive(PartialEq, Debug, Digital, Clone, Copy)]
+    pub struct In {
+        pub data: Option<Item<(b8, b8), (bool, bool)>>,
+        pub a_ready: bool,
+        pub b_ready: bool,
+    }
+
+    #[derive(PartialEq, Debug, Digital, Clone, Copy)]
+    pub struct Out {
+        pub ready: bool,
+        pub a_data: Option<Item<b8, bool>>,
+        pub b_data: Option<Item<b8, bool>>,
+    }
+
+    impl<const N: usize> SynchronousIO for TeeDelayedA<N> {
+        type I = In;
+        type O = Out;
+        type Kernel = tee_delayed_kernel<N>;
+    }
+
+    #[kernel]
+    #[doc(hidden)]
+    pub fn tee_delayed_kernel<const N: usize>(_cr: ClockReset, i: In, q: Q<N>) -> (Out, D<N>) {
+        let mut d = D::<N>::dont_care();
+        d.tee = TeeIn::<b8, bool, b8, bool> {
+            data: i.data,
+            a_ready: q.a_chain.ready,
+            b_ready: i.b_ready,
+        };
+        // The `a` branch runs through the relay chain.
+        d.a_chain.data = q.tee.a_data;
+        d.a_chain.ready = i.a_ready;
+        let o = Out {
+            ready: q.tee.ready,
+            a_data: q.a_chain.data,
+            b_data: q.tee.b_data,
+        };
+        (o, d)
+    }
+
+    fn halves<const N: usize>(count: u128) -> (Vec<u128>, Vec<u128>) {
+        let uut = TeeDelayedA::<N>::default();
+        let mut sent: u128 = 0;
+        let (mut a, mut b) = (Vec::new(), Vec::new());
+        let mut need_reset = true;
+        let mut phase: u32 = 0;
+
+        uut.run_fn(
+            |output| {
+                if need_reset {
+                    need_reset = false;
+                    return Some(ResetOrData::Reset);
+                }
+                phase = phase.wrapping_add(1);
+                let a_ready = !phase.is_multiple_of(5);
+                let b_ready = phase.is_multiple_of(2);
+                if let Some(it) = output.a_data {
+                    if a_ready {
+                        a.push(it.data.raw());
+                    }
+                }
+                if let Some(it) = output.b_data {
+                    if b_ready {
+                        b.push(it.data.raw());
+                    }
+                }
+                let mut input = In {
+                    data: None,
+                    a_ready,
+                    b_ready,
+                };
+                if sent < count && output.ready {
+                    input.data = Some(Item::<(b8, b8), (bool, bool)> {
+                        data: (b8(sent % 256), b8((100 + sent) % 256)),
+                        frame: (false, false),
+                    });
+                    sent += 1;
+                }
+                Some(ResetOrData::Data(input))
+            },
+            100,
+        )
+        .take_while(|t| t.time < 400_000)
+        .for_each(drop);
+        (a, b)
+    }
+
+    #[test]
+    fn tee_halves_stay_aligned_regardless_of_output_delay() {
+        const COUNT: u128 = 16;
+        let want_a: Vec<u128> = (0..COUNT).collect();
+        let want_b: Vec<u128> = (0..COUNT).map(|k| (100 + k) % 256).collect();
+        for (label, (a, b)) in [
+            ("1 relay on a", halves::<1>(COUNT)),
+            ("3 relays on a", halves::<3>(COUNT)),
+            ("6 relays on a", halves::<6>(COUNT)),
+        ] {
+            assert_eq!(
+                a, want_a,
+                "{label}: delayed branch must still be complete and in order"
+            );
+            assert_eq!(b, want_b, "{label}: undelayed branch must be unaffected");
+        }
+    }
+}
