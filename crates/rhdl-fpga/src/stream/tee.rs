@@ -145,6 +145,75 @@ pub fn kernel<S: Digital, T: Digital>(
 
 #[cfg(test)]
 mod tests {
+
+    /// Both outputs data-gated, draining at different rates.
+    ///
+    /// `Tee` cannot emit either half until both sides can take one, so
+    /// it presents `None` while holding an item — the
+    /// absorb-without-emitting shape that deadlocked `stream::filter`.
+    /// Each branch withholds `ready` when it sees nothing, and both
+    /// halves must still arrive complete and aligned.
+    #[test]
+    fn data_gated_sinks_do_not_stall_or_desync_the_tee() -> Result<(), RHDLError> {
+        use crate::stream::ready;
+        use rhdl::core::sim::ResetOrData;
+
+        const COUNT: u128 = 12;
+        let uut = Tee::<b4, b4>::default();
+        let mut sent: u128 = 0;
+        let (mut got_s, mut got_t) = (Vec::<u128>::new(), Vec::<u128>::new());
+        let mut need_reset = true;
+        let mut phase: u32 = 0;
+
+        uut.run_fn(
+            |output| {
+                if need_reset {
+                    need_reset = false;
+                    return Some(ResetOrData::Reset);
+                }
+                phase = phase.wrapping_add(1);
+                // Both gated on seeing data; `t` additionally throttled
+                // so the branches drain at different rates.
+                let s_ready = output.s_data.is_some();
+                let t_ready = output.t_data.is_some() && !phase.is_multiple_of(3);
+                if s_ready {
+                    if let Some(d) = output.s_data {
+                        got_s.push(d.raw());
+                    }
+                }
+                if t_ready {
+                    if let Some(d) = output.t_data {
+                        got_t.push(d.raw());
+                    }
+                }
+                let mut input = super::In::<b4, b4> {
+                    data: None,
+                    s_ready: ready::<b4>(s_ready),
+                    t_ready: ready::<b4>(t_ready),
+                };
+                if sent < COUNT && output.ready.raw {
+                    input.data = Some((b4(sent % 16), b4((15 - sent) % 16)));
+                    sent += 1;
+                }
+                Some(ResetOrData::Data(input))
+            },
+            100,
+        )
+        .take_while(|t| t.time < 300_000)
+        .for_each(drop);
+
+        let want_s: Vec<u128> = (0..COUNT).map(|k| k % 16).collect();
+        let want_t: Vec<u128> = (0..COUNT).map(|k| (15 - k) % 16).collect();
+        assert_eq!(
+            got_s, want_s,
+            "the s branch must arrive complete and in order"
+        );
+        assert_eq!(
+            got_t, want_t,
+            "the t branch must arrive complete and in order"
+        );
+        Ok(())
+    }
     use std::iter::repeat_n;
 
     use rhdl::core::SynchronousIO;

@@ -146,6 +146,66 @@ pub fn kernel<S: Digital, T: Digital>(
 
 #[cfg(test)]
 mod tests {
+
+    /// Both inputs data-gated **and** skewed against each other.
+    ///
+    /// `Zip` holds one side while waiting for the other, so it presents
+    /// `None` downstream while still needing to accept — the
+    /// absorb-without-emitting shape that deadlocked `stream::filter`.
+    /// A sink withholding `ready` when it sees nothing is legal, and
+    /// pairs must still come out index-aligned however skewed the
+    /// arrivals are.
+    #[test]
+    fn data_gated_sink_does_not_stall_or_shear_the_zip() -> Result<(), RHDLError> {
+        use crate::stream::ready;
+        use rhdl::core::sim::ResetOrData;
+
+        const COUNT: u128 = 12;
+        let uut = Zip::<b4, b4>::default();
+        let (mut a_sent, mut b_sent) = (0u128, 0u128);
+        let mut got: Vec<(u128, u128)> = Vec::new();
+        let mut need_reset = true;
+        let mut phase: u32 = 0;
+
+        uut.run_fn(
+            |output| {
+                if need_reset {
+                    need_reset = false;
+                    return Some(ResetOrData::Reset);
+                }
+                phase = phase.wrapping_add(1);
+                let sink_ready = output.data.is_some();
+                if let Some((x, y)) = output.data {
+                    got.push((x.raw(), y.raw()));
+                }
+                let mut input = super::In::<b4, b4> {
+                    a_data: None,
+                    b_data: None,
+                    ready: ready::<(b4, b4)>(sink_ready),
+                };
+                if a_sent < COUNT && output.a_ready.raw {
+                    input.a_data = Some(b4(a_sent % 16));
+                    a_sent += 1;
+                }
+                // `b` offers on a different cadence, so the sides skew.
+                if b_sent < COUNT && output.b_ready.raw && !phase.is_multiple_of(3) {
+                    input.b_data = Some(b4((15 - b_sent) % 16));
+                    b_sent += 1;
+                }
+                Some(ResetOrData::Data(input))
+            },
+            100,
+        )
+        .take_while(|t| t.time < 300_000)
+        .for_each(drop);
+
+        let want: Vec<(u128, u128)> = (0..COUNT).map(|k| (k % 16, (15 - k) % 16)).collect();
+        assert_eq!(
+            got, want,
+            "pairs must stay index-aligned and none may be lost"
+        );
+        Ok(())
+    }
     use std::iter::repeat_n;
 
     use super::*;

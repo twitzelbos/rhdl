@@ -121,6 +121,56 @@ pub fn option_carloni_kernel<T: Digital>(_cr: ClockReset, i: In<T>, q: Q<T>) -> 
 
 #[cfg(test)]
 mod tests {
+
+    /// A data-gated sink — one that withholds `ready` whenever it sees
+    /// nothing on the wire — must not stall this buffer.
+    ///
+    /// `StreamBuffer` is the skid primitive underneath `map`, `filter`
+    /// and `filter_map`, so if it mishandled that (legal) sink shape,
+    /// everything built on it would inherit the fault. `filter`'s
+    /// deadlock turned out to be in `filter` itself rather than here —
+    /// this pins that down instead of leaving it inferred.
+    #[test]
+    fn data_gated_sink_does_not_stall_the_buffer() -> Result<(), RHDLError> {
+        use crate::stream::{ready, StreamIO};
+        use rhdl::core::sim::ResetOrData;
+
+        const COUNT: u128 = 16;
+        let uut = StreamBuffer::<b4>::default();
+        let mut to_send: u128 = 0;
+        let mut got: Vec<u128> = Vec::new();
+        let mut need_reset = true;
+
+        uut.run_fn(
+            |output| {
+                if need_reset {
+                    need_reset = false;
+                    return Some(ResetOrData::Reset);
+                }
+                let sink_ready = output.data.is_some();
+                if let Some(d) = output.data {
+                    got.push(d.raw());
+                }
+                let mut input = StreamIO::<b4, b4> {
+                    data: None,
+                    ready: ready::<b4>(sink_ready),
+                };
+                if to_send < COUNT && output.ready.raw {
+                    input.data = Some(b4(to_send % 16));
+                    to_send += 1;
+                }
+                Some(ResetOrData::Data(input))
+            },
+            100,
+        )
+        .take_while(|t| t.time < 200_000)
+        .for_each(drop);
+
+        assert_eq!(to_send, COUNT, "the source must not be stalled forever");
+        let want: Vec<u128> = (0..COUNT).collect();
+        assert_eq!(got, want, "every item must survive a data-gated sink");
+        Ok(())
+    }
     use rhdl::core::sim::ResetOrData;
 
     use crate::rng::xorshift::XorShift128;

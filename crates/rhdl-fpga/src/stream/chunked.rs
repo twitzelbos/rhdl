@@ -247,6 +247,61 @@ where
 
 #[cfg(test)]
 mod tests {
+
+    /// A data-gated sink must not stall the gatherer.
+    ///
+    /// `Chunked` absorbs `N` items and emits one, so it spends most of
+    /// its time presenting `None` while still needing to accept — the
+    /// same "absorb without emitting" shape that deadlocked
+    /// `stream::filter`. It is safe because it pulls from its input
+    /// buffer with an explicit `next` it controls rather than gating on
+    /// the downstream `ready`; this test pins that down.
+    #[test]
+    fn data_gated_sink_does_not_stall_the_gatherer() -> Result<(), RHDLError> {
+        use crate::stream::StreamIO;
+        use rhdl::core::sim::ResetOrData;
+
+        const COUNT: u128 = 16;
+        let uut = Chunked::<b4, 2, 4>::default();
+        let mut to_send: u128 = 0;
+        let mut chunks: Vec<[u128; 4]> = Vec::new();
+        let mut need_reset = true;
+
+        uut.run_fn(
+            |output| {
+                if need_reset {
+                    need_reset = false;
+                    return Some(ResetOrData::Reset);
+                }
+                let sink_ready = output.data.is_some();
+                if let Some(c) = output.data {
+                    chunks.push([c[0].raw(), c[1].raw(), c[2].raw(), c[3].raw()]);
+                }
+                let mut input = StreamIO::<b4, [b4; 4]> {
+                    data: None,
+                    ready: ready::<[b4; 4]>(sink_ready),
+                };
+                if to_send < COUNT && output.ready.raw {
+                    input.data = Some(b4(to_send % 16));
+                    to_send += 1;
+                }
+                Some(ResetOrData::Data(input))
+            },
+            100,
+        )
+        .take_while(|t| t.time < 300_000)
+        .for_each(drop);
+
+        assert_eq!(to_send, COUNT, "the source must not be stalled forever");
+        let want: Vec<[u128; 4]> = (0..COUNT / 4)
+            .map(|c| {
+                let b = c * 4;
+                [b, b + 1, b + 2, b + 3]
+            })
+            .collect();
+        assert_eq!(chunks, want, "every chunk must arrive, in order");
+        Ok(())
+    }
     use crate::{rng::xorshift::XorShift128, stream::ready};
 
     use super::*;

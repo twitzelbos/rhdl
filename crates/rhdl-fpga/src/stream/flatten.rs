@@ -248,6 +248,66 @@ where
 #[cfg(test)]
 mod tests {
 
+    /// A data-gated sink must not stall the expander.
+    ///
+    /// `Flatten` holds an array while emitting its elements, so it
+    /// presents `None` between groups while still needing to accept the
+    /// next array — the "absorb without emitting" shape that deadlocked
+    /// `stream::filter`. Safe here because the input is pulled with an
+    /// explicit `next`; pinned down rather than left inferred.
+    #[test]
+    fn data_gated_sink_does_not_stall_the_expander() -> Result<(), RHDLError> {
+        use crate::stream::StreamIO;
+        use rhdl::core::sim::ResetOrData;
+
+        const GROUPS: u128 = 5;
+        let uut = Flatten::<b4, 2, 4>::default();
+        let mut sent: u128 = 0;
+        let mut got: Vec<u128> = Vec::new();
+        let mut need_reset = true;
+
+        uut.run_fn(
+            |output| {
+                if need_reset {
+                    need_reset = false;
+                    return Some(ResetOrData::Reset);
+                }
+                let sink_ready = output.data.is_some();
+                if let Some(d) = output.data {
+                    got.push(d.raw());
+                }
+                let mut input = StreamIO::<[b4; 4], b4> {
+                    data: None,
+                    ready: ready::<b4>(sink_ready),
+                };
+                if sent < GROUPS && output.ready.raw {
+                    let b = sent * 4;
+                    input.data = Some([
+                        b4(b % 16),
+                        b4((b + 1) % 16),
+                        b4((b + 2) % 16),
+                        b4((b + 3) % 16),
+                    ]);
+                    sent += 1;
+                }
+                Some(ResetOrData::Data(input))
+            },
+            100,
+        )
+        .take_while(|t| t.time < 300_000)
+        .for_each(drop);
+
+        assert_eq!(sent, GROUPS, "the source must not be stalled forever");
+        let want: Vec<u128> = (0..GROUPS)
+            .flat_map(|g| (0..4u128).map(move |e| (g * 4 + e) % 16))
+            .collect();
+        assert_eq!(
+            got, want,
+            "every element of every group must arrive, in order"
+        );
+        Ok(())
+    }
+
     use crate::{rng::xorshift::XorShift128, stream::ready};
 
     use super::*;

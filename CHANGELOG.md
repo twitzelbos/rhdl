@@ -31,6 +31,35 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-16 — Adopt data-gated sinks across every absorbing `stream::` widget
+
+**Paths:** `crates/rhdl-fpga/src/stream/{stream_buffer, chunked, flatten, zip, tee}.rs`.
+
+**Why this, why now:** the previous two entries built the capability — a sink that withholds `ready` when it sees nothing, and a harness able to express one. A capability nothing uses is not coverage. This adopts it across every `stream::` widget that can absorb or withhold items, which is the class the `filter` deadlock came from.
+
+**What was covered:**
+
+- `stream_buffer` — the skid primitive underneath `map`, `filter` and `filter_map`. Worth doing first: had it mishandled a data-gated sink, everything built on it would have inherited the fault. It is clean, which localises `filter`'s bug to `filter` itself rather than leaving that inferred.
+- `chunked` — absorbs `N` items and emits one, so it spends most of its time presenting `None` while still needing to accept.
+- `flatten` — holds an array while emitting elements, presenting `None` between groups.
+- `zip` — holds one side while waiting for the other. Tested with the two inputs on **different cadences**, so they skew; pairs must stay index-aligned regardless.
+- `tee` — cannot emit either half until both sides can take one. Tested with the branches draining at **different rates**, both gated.
+
+**Result: no new bugs.** That is worth stating plainly rather than glossing as "all green". The audit two entries ago concluded structurally that only *droppers gating consumption on downstream `ready`* were at risk, and that `chunked`/`flatten`/`zip`/`tee` were safe because they pull from their input buffers with an explicit `next` they control. That conclusion is now backed by a test on every candidate rather than by reading the code. A negative result from a test that has been shown capable of failing is evidence; the same result from an untested inference is not.
+
+**Surprises and gotchas:**
+
+- **`stream_to_fifo` is deliberately excluded.** Its downstream consumes with `next` (a pop request) rather than `ready`, so "withhold ready when idle" has no analogue — asserting `next` on an empty buffer is an underflow, which it already flags. Different contract, different hazard; forcing the pattern would have tested nothing.
+
+**Validation:** five new tests, all passing, each asserting the full delivered sequence rather than a count so duplication and reordering are caught too. Full `rhdl-fpga` lib suite green.
+
+**Follow-ups:**
+
+- **`utils::stalling` still uses `rand::random`**, in seven `stream::` widgets and their examples. `sinks::stalling_periodic` is the drop-in. Migrating the *examples* would also fix the long-standing problem that `cargo test` rewrites ~79 committed trace artifacts, since those examples' traces are irreproducible by construction.
+- **`stream::filter` still has no Tier 3/4/5.**
+
+---
+
 ## 2026-08-16 — Fix `SinkFromFn` so the shared harness can find deadlocks (migrates every affected test)
 
 **Paths:** `crates/rhdl-fpga/src/stream/testing/{sink_from_fn,single_stage,sinks}.rs`, plus every closure passed to a sink: `stream::{filter, filter_map, map, tee, pipe_wrapper}` and `axi4lite::register::testing::single_streaming_writes`.
