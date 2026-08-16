@@ -37,9 +37,11 @@
 pub mod axi_stream;
 pub mod bus;
 pub mod cdc;
+pub mod chunked;
 pub mod credit;
 pub mod filter;
 pub mod filter_map;
+pub mod flatten;
 pub mod map;
 pub mod relay;
 pub mod tee;
@@ -50,8 +52,10 @@ pub mod zip;
 // spelling sub-module paths.
 pub use bus::{AsyncRCStream, Item, RCStream};
 pub use cdc::RCStreamCdc;
+pub use chunked::RCStreamChunked;
 pub use filter::RCStreamFilter;
 pub use filter_map::RCStreamFilterMap;
+pub use flatten::RCStreamFlatten;
 pub use map::RCStreamMap;
 pub use relay::RCStreamRelay;
 pub use tee::RCStreamTee;
