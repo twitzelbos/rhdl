@@ -22,7 +22,10 @@
 
 use crate::stream::{Ready, StreamIO};
 
-use super::{sink_from_fn::SinkFromFn, source_from_fn::SourceFromFn};
+use super::{
+    sink_from_fn::{SinkFromFn, SinkView},
+    source_from_fn::SourceFromFn,
+};
 use badascii_doc::badascii;
 use rhdl::{
     core::{ScopedName, SyncKind},
@@ -79,19 +82,51 @@ where
     type Q = Q<S, T>;
 }
 
+/// Like [`single_stage`], but takes a pre-built [`SinkFromFn`] so the
+/// caller can choose a readiness policy the closure form cannot express
+/// — in particular [`SinkFromFn::new_combinational`], whose `ready` is
+/// computed from the live offer rather than registered from the
+/// previous cycle.
+///
+/// Reach for this when testing a widget that can absorb or drop items:
+/// the registered form's one-cycle lag masks that whole class of
+/// deadlock.
+pub fn single_stage_with_sink<S, T, C>(
+    uut: C,
+    source: impl Iterator<Item = Option<S>> + 'static,
+    sink: SinkFromFn<T>,
+) -> SingleStage<S, T, C>
+where
+    S: Digital,
+    T: Digital,
+    C: Synchronous<I = StreamIO<S, T>, O = StreamIO<T, S>>,
+{
+    SingleStage {
+        source: SourceFromFn::new(source),
+        uut,
+        sink,
+    }
+}
+
 /// Create a single stage test fixture
 ///
-/// `uut` is the stream stage to be tested
-/// `source` is an iterator that returns items of type `Option<S>`
-/// `sink` is a function that consumes elements of type `Option<T>`
-/// and provides the backpressure signal as a return.
+/// `uut` is the stream stage to be tested.
+/// `source` is an iterator that returns items of type `Option<S>`.
+/// `sink` is a function receiving a [`SinkView<T>`] each cycle and
+/// returning the backpressure signal.
+///
+/// The sink's readiness here is **registered** — decided at one clock
+/// edge and applied on the next. That one-cycle lag can mask deadlocks
+/// in widgets that absorb or drop items; when testing one of those,
+/// use [`single_stage_with_sink`] with
+/// [`SinkFromFn::new_combinational`] instead.
 ///
 /// To see example usages, look at the [Flatten] and
 /// [Chunked] examples.
 pub fn single_stage<S, T, C>(
     uut: C,
     source: impl Iterator<Item = Option<S>> + 'static,
-    sink: impl FnMut(Option<T>) -> bool + 'static,
+    sink: impl FnMut(SinkView<T>) -> bool + 'static,
 ) -> SingleStage<S, T, C>
 where
     S: Digital,

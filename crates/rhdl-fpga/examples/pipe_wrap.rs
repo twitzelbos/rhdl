@@ -4,6 +4,7 @@ use badascii_doc::badascii;
 use rhdl::prelude::*;
 
 use delay::DelayLine;
+use rhdl_fpga::stream::testing::sink_from_fn::SinkView;
 use rhdl_fpga::{
     core::slice::lsbs,
     rng::xorshift::XorShift128,
@@ -94,8 +95,8 @@ fn main() -> Result<(), RHDLError> {
     let b_rng = XorShift128::default().map(|x| b6(((x >> 8) & 0x3F) as u128));
     let mut c_rng = b_rng.clone();
     let b_rng = stalling(b_rng, 0.13);
-    let consume = move |data| {
-        if let Some(data) = data {
+    let consume = move |v: SinkView<_>| {
+        if let Some(data) = v.accepted {
             let validation = lsbs::<4, 6>(c_rng.next().unwrap());
             assert_eq!(data, validation);
         }

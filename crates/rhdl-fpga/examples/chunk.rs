@@ -13,6 +13,7 @@
 
 use badascii_doc::badascii;
 use rhdl::prelude::*;
+use rhdl_fpga::stream::testing::sink_from_fn::SinkView;
 use rhdl_fpga::{
     rng::xorshift::XorShift128,
     stream::{
@@ -40,11 +41,11 @@ fn main() -> Result<(), RHDLError> {
     // Create the thing to test
     let uut = Chunked::<b4, 2, 4>::default();
     // Create the consumption function.
-    let consume = move |data| {
+    let consume = move |v: SinkView<_>| {
         // The sink simply compares the `Some` values with
         // the expected output of the iterator
         // It panics if the data disagree
-        if let Some(data) = data {
+        if let Some(data) = v.accepted {
             let validation = dest_rng_chunked.next().unwrap();
             assert_eq!(data, validation);
         }
