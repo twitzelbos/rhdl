@@ -79,7 +79,11 @@ use rhdl::prelude::*;
 /// Pairs the payload `data: T` with the framing marker `frame: F`.
 /// For streams without framing (`F = ()`), the `frame` field is the
 /// unit value and adds no wire bits.
-#[derive(PartialEq, Clone, Copy, Debug, Digital)]
+/// `Default` is derived (requiring `T: Default, F: Default`) so that
+/// `Item<T, F>` can be the payload of widgets whose own `Default` is
+/// derived through it — notably [`crate::fifo::asynchronous::AsyncFIFO`]
+/// inside [`super::cdc::RCStreamCdc`].
+#[derive(PartialEq, Clone, Copy, Debug, Digital, Default)]
 pub struct Item<T: Digital, F: Digital> {
     /// Payload data.
     pub data: T,
@@ -103,6 +107,47 @@ pub struct RCStream<T: Digital, F: Digital> {
     pub ready: bool,
 }
 
+/// A domain-typed [`RCStream`] — the same wire encoding, with both
+/// signals carried as [`Signal`]s in clock domain `D`.
+///
+/// This is the bus type for widgets that live in the **multi-domain**
+/// ([`Circuit`]) family but expose an `RCStream` port.  In the
+/// single-domain ([`Synchronous`]) family the domain is implicit and
+/// plain [`RCStream`] is the right type; here the domain is part of
+/// the type, so connecting a `D = Red` port to a `D = Blue` port is a
+/// compile error rather than a silent CDC bug.
+///
+/// # Role convention
+///
+/// Identical to [`RCStream`] — the struct shape is the same for both
+/// directions and only the meaning of each field changes with the
+/// role:
+///
+/// - As widget **I**: `data` is the upstream's data flowing *in*;
+///   `ready` is the downstream's ready flowing *in*.
+/// - As widget **O**: `data` is this widget's data flowing *out*;
+///   `ready` is this widget's ready flowing *out* to the upstream.
+///
+/// # This type cannot express a clock-domain crossing
+///
+/// Both fields are in the *same* domain `D`, so `AsyncRCStream`
+/// describes one **end** of a connection, not a crossing.  A crossing
+/// widget's data-in and ready-in are in different domains by
+/// definition, so it cannot use this type for its ports — see
+/// [`super::cdc::RCStreamCdc`], whose `In`/`Out` name the two domains
+/// separately.  Use `AsyncRCStream` for a single-domain widget that
+/// participates in a multi-domain composition; use `RCStreamCdc` to
+/// actually move items between domains.
+#[derive(PartialEq, Debug, Digital, Copy, Timed, Clone)]
+pub struct AsyncRCStream<T: Digital, F: Digital, D: Domain> {
+    /// Source → sink data signal in domain `D`.  `None` = idle
+    /// (TVALID = 0); `Some(item)` = data this cycle (TVALID = 1).
+    pub data: Signal<Option<Item<T, F>>, D>,
+    /// Sink → source ready signal in domain `D`.  `true` = ready to
+    /// accept the next item.
+    pub ready: Signal<bool, D>,
+}
+
 /// Construct an idle [`RCStream`] (`data: None`, `ready: <ready>`).
 ///
 /// The kernel-callable form of "no item this cycle".  The ready
@@ -110,10 +155,7 @@ pub struct RCStream<T: Digital, F: Digital> {
 /// idle cycle.
 #[kernel]
 pub fn idle<T: Digital, F: Digital>(ready: bool) -> RCStream<T, F> {
-    RCStream::<T, F> {
-        data: None,
-        ready,
-    }
+    RCStream::<T, F> { data: None, ready }
 }
 
 /// Construct an [`RCStream`] carrying `Some(item)` this cycle.
@@ -134,9 +176,31 @@ pub fn item<T: Digital, F: Digital>(data: T, frame: F) -> Item<T, F> {
 /// Convenience: construct an [`Item<T, ()>`] (no framing).
 #[kernel]
 pub fn item_unframed<T: Digital>(data: T) -> Item<T, ()> {
-    Item::<T, ()> {
-        data,
-        frame: (),
+    Item::<T, ()> { data, frame: () }
+}
+
+/// Lift a domain-less [`RCStream`] into clock domain `D`.
+///
+/// The bridge from the single-domain ([`Synchronous`]) world to the
+/// multi-domain ([`Circuit`]) world: a `Synchronous` widget's
+/// `RCStream` port becomes an [`AsyncRCStream`] port when that widget
+/// is placed in a multi-domain composition.  Pure re-wrapping — no
+/// logic, no cost.
+#[kernel]
+pub fn lift<T: Digital, F: Digital, D: Domain>(s: RCStream<T, F>) -> AsyncRCStream<T, F, D> {
+    AsyncRCStream::<T, F, D> {
+        data: signal::<Option<Item<T, F>>, D>(s.data),
+        ready: signal::<bool, D>(s.ready),
+    }
+}
+
+/// Lower an [`AsyncRCStream`] in domain `D` to a domain-less
+/// [`RCStream`].  The inverse of [`lift`].
+#[kernel]
+pub fn lower<T: Digital, F: Digital, D: Domain>(s: AsyncRCStream<T, F, D>) -> RCStream<T, F> {
+    RCStream::<T, F> {
+        data: s.data.val(),
+        ready: s.ready.val(),
     }
 }
 
@@ -170,7 +234,10 @@ mod tests {
     /// `RCStream<T, F>` with `data: Some(item)` carries the item.
     #[test]
     fn rcstream_send_construction() {
-        let i: Item<b8, ()> = Item { data: bits::<8>(0x42), frame: () };
+        let i: Item<b8, ()> = Item {
+            data: bits::<8>(0x42),
+            frame: (),
+        };
         let s: RCStream<b8, ()> = RCStream {
             data: Some(i),
             ready: false,
@@ -184,12 +251,60 @@ mod tests {
         assert_eq!(s.ready, false);
     }
 
+    /// `lift` then `lower` is the identity — the domain wrapper carries
+    /// no information of its own, so the round trip must be lossless
+    /// for both the idle and the carrying case.
+    #[test]
+    fn lift_lower_round_trip() {
+        let carrying: RCStream<b8, bool> = RCStream {
+            data: Some(Item {
+                data: bits::<8>(0x7E),
+                frame: true,
+            }),
+            ready: true,
+        };
+        let idle: RCStream<b8, bool> = RCStream {
+            data: None,
+            ready: false,
+        };
+        for original in [carrying, idle] {
+            let lifted = lift::<b8, bool, Red>(original);
+            let recovered = lower::<b8, bool, Red>(lifted);
+            assert_eq!(recovered, original, "lift/lower must round-trip losslessly");
+        }
+    }
+
+    /// The lifted signals land in the requested domain and carry the
+    /// original values.
+    #[test]
+    fn lift_places_both_signals_in_the_domain() {
+        let s: RCStream<b8, ()> = RCStream {
+            data: Some(Item {
+                data: bits::<8>(0x3C),
+                frame: (),
+            }),
+            ready: true,
+        };
+        let lifted = lift::<b8, (), Blue>(s);
+        assert!(lifted.ready.val());
+        match lifted.data.val() {
+            Some(it) => assert_eq!(it.data.raw(), 0x3C),
+            None => panic!("expected the item to survive the lift"),
+        }
+    }
+
     /// Framing parameter F = bool gives end-of-frame marker
     /// (TLAST-equivalent).
     #[test]
     fn rcstream_with_eof_framing() {
-        let last_item: Item<b8, bool> = Item { data: bits::<8>(0xFF), frame: true };
-        let middle:    Item<b8, bool> = Item { data: bits::<8>(0x01), frame: false };
+        let last_item: Item<b8, bool> = Item {
+            data: bits::<8>(0xFF),
+            frame: true,
+        };
+        let middle: Item<b8, bool> = Item {
+            data: bits::<8>(0x01),
+            frame: false,
+        };
         assert!(last_item.frame);
         assert!(!middle.frame);
     }

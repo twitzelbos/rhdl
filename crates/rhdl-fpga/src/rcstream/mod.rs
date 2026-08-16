@@ -15,6 +15,9 @@
 //! - [`relay`] — [`relay::RCStreamRelay`], a Carloni skid-buffer with
 //!   the typed `RCStream` interface.  The canonical pipeline-stage
 //!   primitive for `RCStream` connections.
+//! - [`cdc`] — [`cdc::RCStreamCdc`], a clock-domain crossing for an
+//!   `RCStream` connection, plus [`bus::AsyncRCStream`], the
+//!   domain-typed form of the bus for multi-domain compositions.
 //!
 //! # Relationship to the existing `stream` module
 //!
@@ -33,11 +36,13 @@
 
 pub mod axi_stream;
 pub mod bus;
+pub mod cdc;
 pub mod credit;
 pub mod relay;
 
 // Convenience re-exports so downstream code can `use
 // rhdl_fpga::rcstream::{Item, RCStream, RCStreamRelay}` without
 // spelling sub-module paths.
-pub use bus::{Item, RCStream};
+pub use bus::{AsyncRCStream, Item, RCStream};
+pub use cdc::RCStreamCdc;
 pub use relay::RCStreamRelay;

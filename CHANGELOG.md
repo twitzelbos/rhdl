@@ -31,6 +31,45 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-16 — RCStream Phase 2: cross-clock-domain crossing `RCStreamCdc<T, F, W, R, N>`
+
+**Paths:**
+
+- `crates/rhdl-fpga/src/rcstream/cdc.rs` (new) — `RCStreamCdc<T, F, W, R, N>`, a `Circuit`-family widget wrapping `fifo::asynchronous::AsyncFIFO<Item<T, F>, W, R, N>` with an `RCStream` ready/valid face in each domain.
+- `crates/rhdl-fpga/src/rcstream/bus.rs` — new `AsyncRCStream<T, F, D>` (domain-typed bus type) + `lift` / `lower` kernels; `Item<T, F>` gains a `Default` derive.
+- `crates/rhdl-fpga/src/rcstream/mod.rs` — register `pub mod cdc;` + re-export `AsyncRCStream`, `RCStreamCdc`.
+- `crates/rhdl-fpga/examples/rcstream_cdc.rs` (new), `crates/rhdl-fpga/doc/rcstream_cdc.md` (new, committed trace), `crates/rhdl-fpga/vcd/rcstream_cdc/` (new, digest-checked).
+- `doc/book/src/rcstream/bus.md` — new "Crossing clock domains" section.
+- `stream-bus-architecture.md` — new §11.5; §12 phasing table row 2 marked shipped.
+
+**Why this, why now:** Phase 2 was skipped when Phase 3 (credit-based) shipped first, leaving the phasing table out of order. `RCStream<T, F>` carries no clock-domain parameter — in the `Synchronous` family the framework fans one `ClockReset` to every sub-circuit, so the domain is implicit and a `Signal`-wrapped bus would be pure overhead. The moment a design has two clocks, though, there was no supported way to move an `RCStream` between them. This closes that gap. Note this is *not* on the critical path to Phase 4 (see the Follow-ups on the blocked-ness of that work).
+
+**Design decisions:**
+
+- **The bundled `AsyncRCStream<T, F, D>` type cannot express a crossing, and that is recorded rather than papered over.** §5 of the design plan names `AsyncRCStream<T, F, D>` as the Phase 2 deliverable, but it bundles `data` and `ready` in a *single* domain `D` — so it describes one **end** of a connection. A crossing's data-in (`W`) and ready-in (`R`) are in different domains by construction, so `RCStreamCdc` names its two domains separately in `In`/`Out` instead. Both ship: the widget is the crossing, the bundled type is the port type for a *single-domain* widget participating in a multi-domain composition. The limitation is documented on the type itself so the next reader doesn't try to use it for a crossing and get confused. `lift`/`lower` give the bundled type a real, tested consumer rather than leaving it decorative API.
+- **Gating, not a skid buffer.** A conforming source may assert `data = Some(item)` while `ready` is false — the bus contract forbids `data.is_some()` from depending combinationally on `ready`, so the source holds the item instead. A raw FIFO treats any `Some` as a write and overflows when full. The crossing gates both faces: `accept = if !full { data } else { None }` and `next = ready && data.is_some()`. Reusing `stream::stream_to_fifo`'s two-element skid buffer was rejected — it would make `rcstream` depend on `stream::Ready<T>` and blur the module boundary §9 deliberately draws, and the gate is strictly cheaper besides.
+- **`Item<T, F>` gains `Default`.** `AsyncFIFO` derives `Default`, which requires its payload to be `Default`; `Item` derived only `Digital`. Purely additive (the derive adds `T: Default, F: Default` bounds to the impl), and it makes `RCStreamCdc::default()` work on the same terms `AsyncFIFO` already documents for itself.
+- **`overflow` / `underflow` are exposed on `Out` even though the gates make them unreachable.** A source that violates the hold-until-ready contract should be *observable* rather than silently lossy. They are asserted-never in the Tier-2 test, which is what turns them into a live check on the gating rather than decoration.
+
+**Surprises and gotchas:**
+
+- **Calling a generic helper kernel breaks clock-domain inference.** The read gate first used `core::option::is_some::<Item<T, F>>(read_data)`. It passes Tier 1 and Tier 2 (Rust simulation) and then fails at `descriptor()` with `RHDL Clock Domain Violation — Expression belongs to Unknown clock domain`. The helper compiles as a *separate*, domain-agnostic kernel object, so the domain checker has nothing to unify its result with. Inlining the `match` keeps the test in this kernel's RHIF where inference unifies it with the `R`-domain `q.fifo.data` and `i.ready`. **Generalisable warning: in `Circuit`-family kernels, prefer inline expressions over cross-kernel calls on domain-carrying values.** This is a good advertisement for the four-tier stack — no amount of Tier-1/Tier-2 work would have caught it; it took Tier 3/4.
+- **`TracedSample` has no `.value` field** (unlike `TimedSample`); it is `{time, input, output, page}`. Easy to trip over when moving between the closed-loop `run_async_red_blue` harness and the open-loop `uut.run(...)` form.
+- **The existing `async_fifo` example uses `rand::random`**, so its committed `doc/async_fifo.md` regenerates differently on every run. The new example is deterministic (fixed period-3 backpressure) and was verified byte-identical across two runs. Worth fixing in `async_fifo` separately — see Follow-ups.
+
+**Validation:** All five tiers, 11 tests in `cdc.rs` + 2 new in `bus.rs`, no deviations. Tier 1: 7 kernel tests covering both gates, backpressure, the empty/full edges, and flag surfacing. Tier 2: `items_cross_domains_in_order_without_loss` runs 64 items across a 50/78 clock pair with an aggressive always-presenting source and periodic sink backpressure, asserting exact in-order delivery with no drops/dupes/reordering and no overflow or underflow — this is the test that actually exercises the write gate. Tier 3: `hdl_emission_snapshot`, an `expect_test` snapshot of the emitted Verilog. Tier 4: `iverilog` round-trip on both RTL and NTL. Tier 5: VCD digest. All 52 `rcstream::*` tests pass.
+
+**On the Tier-3 snapshot's scope:** it snapshots the widget's *own* emitted module (~85 lines), selected by name out of `HDLDescriptor::modules`, rather than `modules.pretty()` for the whole tree. The sub-modules are `AsyncFIFO`'s emitted Verilog — BRAM, two gray-code cross-counters, read/write logic — which belong to *that* widget's snapshot contract, not this one. Scoping by module keeps the snapshot a genuine contract on this widget's codegen (both gates and all four output assignments are pinned) while staying stable against unrelated FIFO-internal churn. The audit of the seeded snapshot confirms the write gate emits as `r9 = r7 ? r8 : l1` with `r7 = ~full`, and the read gate as `r15 = r14 & r13` with `r13` decoding the `Option` tag bit.
+
+**Follow-ups:**
+
+- **Credit-based cross-domain variant** — credit counter in `W`, grant crossing back through a `Sync1Bit`. The natural shape for SerDes link layers and PCIe-style protocols. Phase 4 work per §11.
+- **Make the `async_fifo` example deterministic** — it uses `rand::random`, so its committed trace is not reproducible. Small fix, separate commit.
+- **`architecture.md` §4 doesn't list `rcstream`** in the widget-category list — doc drift dating from PR #51, not from this change. Separate commit.
+- **RCStream Phase 4 remains blocked**, and this work does not unblock it. Phase 4 is NTL-pass recognition of `RCStream` boundaries as auto-pipeliner cut points; there is no auto-pipeliner in the tree, and its own hard prerequisite (the combinational reachability matrix, per `auto-pipelining-plan.md:341`) has not shipped either. The chain is: reachability matrix → auto-pipelining Phase 1 → RCStream Phase 4.
+
+---
+
 ## 2026-05-03 — RCStream Phase 3: credit-based variant `CreditRCStream<T, F, CREDIT_W>`
 
 **Paths:**
