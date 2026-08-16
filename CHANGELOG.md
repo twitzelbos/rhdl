@@ -31,6 +31,33 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-16 — RCStream: relay-insertion invariance is finally tested (§13 validation debt)
+
+**Path:** `crates/rhdl-fpga/tests/rcstream_relay_insertion.rs` (new), `stream-bus-architecture.md` §13.
+
+**Why this, why now:** "inserting a relay anywhere on an `RCStream` connection changes only latency, never behaviour" is asserted in **four** places across the source and book — and was tested in none of them. It was Carloni's theorem taken on faith rather than a checked property of *this* implementation. It is also the premise RCStream Phase 4 is built on: the auto-pipeliner is supposed to treat every bus boundary as a cut point needing "no hazard analysis, no functional verification". That claim wants to be true *before* a pipeliner depends on it. The combinators shipped in the previous entry finally provided a real pipeline to test insertion around, rather than a bare relay.
+
+**Design decisions:**
+
+- **Fixed depths over a real pipeline, not the "100 random widgets × 0–10 relays" the plan specified.** A randomised harness that reports "depth 7 of widget #43 diverged" is far harder to act on than a deterministic failure naming the depth, and RHDL tests are required to be deterministic anyway (§12 rule 10). Depths 1–8 for a bare chain and 1–5 for the pipeline cover the same behaviour space. Broadening to more *widget shapes* is worthwhile as `rcstream` grows; randomising the *depth* is not.
+- **The invariance test is anchored by a behaviour test.** `pipeline_output_is_independent_of_inserted_relay_count` compares depths against each other, which a uniformly-broken pipeline would satisfy trivially (all depths equally wrong, or all empty). `pipeline_computes_the_expected_function` pins the depth-1 pipeline to the actual double-then-keep-even sequence, so invariance is anchored to real behaviour. There is also an explicit non-empty assertion on the baseline.
+- **The chain is a test fixture, not a shipped widget.** `Chain<N>` lives in the test file. It would be genuinely useful as `rcstream::relay_chain::RCStreamRelayChain<T, F, N>` — an N-deep insertion primitive is exactly what an auto-pipeliner wants to emit — but shipping it means the full five-tier contract plus example, trace and digest. Recorded as a follow-up rather than smuggled in as a public type.
+
+**Surprises and gotchas:**
+
+- **A property test that goes green on the first run is suspicious**, so this one was mutation-checked: rewiring the chain's backpressure to `d.relays[N-1].ready = true` fails three of the four tests. The throughput test correctly stays green under that mutation — ignoring backpressure doesn't *reduce* throughput, it loses data — which is a useful reminder that the throughput test is not a correctness test.
+- **`[Widget; N]` needs `std::array::from_fn`**, not `[Widget::default(); N]`, because widgets are not `Copy`. The existing array-of-subcircuit widgets (`core::delay`, `cdc::cross_counter`) construct differently enough that this isn't obvious from reading them.
+
+**Validation:** 4 tests, all passing, mutation-verified to be capable of failing.
+
+**Follow-ups:**
+
+- **Ship `Chain<N>` as a real widget** if an insertion primitive is wanted in the library rather than only in tests.
+- **Extend the invariance suite across more widget shapes** — currently `map → relays → filter`. `zip`/`tee` (multi-port) and the credit variant are the interesting additions, since their handshakes are more complex than a single in/out pair.
+- **Insertion around `RCStreamCdc`** is untested: relay insertion across a clock-domain crossing is a different argument (the LID theorem is single-domain), and probably deserves its own reasoning rather than an assumed extension.
+
+---
+
 ## 2026-08-16 — RCStream combinators: `map`, `filter`, `filter_map`, `zip`, `tee`
 
 **Paths:** `crates/rhdl-fpga/src/rcstream/{map,filter,filter_map,zip,tee}.rs` (new), `crates/rhdl-fpga/src/rcstream/mod.rs`, `crates/rhdl-fpga/examples/rcstream_{map,filter,filter_map,zip,tee}.rs` (new), `crates/rhdl-fpga/doc/rcstream_*.md` (new traces), `crates/rhdl-fpga/vcd/rcstream_*/` (new digests), `doc/book/src/rcstream/bus.md`, `stream-bus-architecture.md` §11.4.
