@@ -61,9 +61,10 @@ impl MicrocodeRom {
     /// Pass the output of [`crate::microcode_loader::load_alto_ii_microcode`]
     /// directly.
     pub fn with_words(words: &[u32; MICROCODE_WORDS]) -> Self {
-        let initial = words.iter().enumerate().map(|(i, &w)| {
-            (bits::<11>(i as u128), bits::<32>(w as u128))
-        });
+        let initial = words
+            .iter()
+            .enumerate()
+            .map(|(i, &w)| (bits::<11>(i as u128), bits::<32>(w as u128)));
         Self {
             bram: SyncBRAM::new(initial),
         }
@@ -100,8 +101,12 @@ pub fn microcode_rom_kernel(_cr: ClockReset, i: UromIn, q: Q) -> (UromOut, D) {
 mod tests {
     use super::*;
 
-    fn b11(v: u16) -> Bits<11> { bits::<11>(v as u128) }
-    fn b32(v: u32) -> Bits<32> { bits::<32>(v as u128) }
+    fn b11(v: u16) -> Bits<11> {
+        bits::<11>(v as u128)
+    }
+    fn b32(v: u32) -> Bits<32> {
+        bits::<32>(v as u128)
+    }
 
     fn run_inputs(uut: MicrocodeRom, inputs: Vec<UromIn>) -> Vec<UromOut> {
         let stream = inputs.into_iter().with_reset(1).clock_pos_edge(100);
@@ -116,16 +121,19 @@ mod tests {
     fn fetch_preloaded_microinstruction() {
         // Preload two distinct microinstructions.
         let mut words = [0u32; MICROCODE_WORDS];
-        words[0]      = 0xDEADBEEF;
-        words[0x400]  = 0x12345678;  // bank-1 entry point
-        words[0x7FF]  = 0xCAFEBABE;  // last microinstruction
+        words[0] = 0xDEADBEEF;
+        words[0x400] = 0x12345678; // bank-1 entry point
+        words[0x7FF] = 0xCAFEBABE; // last microinstruction
         let uut = MicrocodeRom::with_words(&words);
-        let trace = run_inputs(uut, vec![
-            UromIn { mpc: b11(0) },
-            UromIn { mpc: b11(0x400) },
-            UromIn { mpc: b11(0x7FF) },
-            UromIn { mpc: b11(0) },
-        ]);
+        let trace = run_inputs(
+            uut,
+            vec![
+                UromIn { mpc: b11(0) },
+                UromIn { mpc: b11(0x400) },
+                UromIn { mpc: b11(0x7FF) },
+                UromIn { mpc: b11(0) },
+            ],
+        );
         // 1-cycle BRAM latency.
         assert_eq!(trace[1].instruction, b32(0xDEADBEEF), "uROM[0]");
         assert_eq!(trace[2].instruction, b32(0x12345678), "uROM[0x400]");
@@ -138,20 +146,21 @@ mod tests {
     fn load_real_microcode_and_fetch() {
         use crate::microcode_loader;
         let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("assets").join("rom");
+            .join("assets")
+            .join("rom");
         if !dir.join("U55").exists() {
             eprintln!("[load_real_microcode_and_fetch] skipping — PROMs absent in {dir:?}");
             return;
         }
-        let words = microcode_loader::load_alto_ii_microcode_from_dir(&dir)
-            .expect("load real PROMs");
+        let words =
+            microcode_loader::load_alto_ii_microcode_from_dir(&dir).expect("load real PROMs");
         let uut = MicrocodeRom::with_words(&words);
-        let trace = run_inputs(uut, vec![
-            UromIn { mpc: b11(0) },
-            UromIn { mpc: b11(0) },
-        ]);
-        assert_eq!(trace[1].instruction, b32(words[0]),
-            "uROM[0] (Silent Boot entry) should match the loader output");
+        let trace = run_inputs(uut, vec![UromIn { mpc: b11(0) }, UromIn { mpc: b11(0) }]);
+        assert_eq!(
+            trace[1].instruction,
+            b32(words[0]),
+            "uROM[0] (Silent Boot entry) should match the loader output"
+        );
         // Spot-check: microinstruction 0 must be non-trivial.
         assert_ne!(words[0], 0u32);
         assert_ne!(words[0], 0xffff_ffff);
@@ -160,7 +169,9 @@ mod tests {
     #[test]
     fn microcode_rom_iverilog_round_trip() -> Result<(), RHDLError> {
         let mut words = [0u32; MICROCODE_WORDS];
-        for i in 0..16 { words[i] = 0xA5A5_0000 | i as u32; }
+        for i in 0..16 {
+            words[i] = 0xA5A5_0000 | i as u32;
+        }
         let uut = MicrocodeRom::with_words(&words);
         let inputs: Vec<UromIn> = (0..6).map(|i| UromIn { mpc: b11(i as u16) }).collect();
         let stream = inputs.into_iter().with_reset(1).clock_pos_edge(100);

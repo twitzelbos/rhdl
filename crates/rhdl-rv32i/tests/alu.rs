@@ -74,5 +74,8 @@ fn alu_xor_or_and() {
 #[test]
 fn alu_pass_returns_b() {
     // Pass is the LUI helper: rd = 0 + imm = imm.
-    assert_eq!(alu(AluOp::Pass, b32(0xDEADBEEF), b32(0x1234_0000)), b32(0x1234_0000));
+    assert_eq!(
+        alu(AluOp::Pass, b32(0xDEADBEEF), b32(0x1234_0000)),
+        b32(0x1234_0000)
+    );
 }

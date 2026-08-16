@@ -377,7 +377,10 @@ mod tests {
                 rising += 1;
             }
         }
-        assert_eq!(rising, 2, "expected 2 E rising edges per byte, got {rising}");
+        assert_eq!(
+            rising, 2,
+            "expected 2 E rising edges per byte, got {rising}"
+        );
         Ok(())
     }
 

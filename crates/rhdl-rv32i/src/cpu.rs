@@ -138,10 +138,10 @@ pub fn branch_taken(op: BranchOp, a: Bits<32>, b: Bits<32>) -> bool {
     let a_signed: SignedBits<32> = a.as_signed();
     let b_signed: SignedBits<32> = b.as_signed();
     match op {
-        BranchOp::Eq  => a == b,
-        BranchOp::Ne  => a != b,
-        BranchOp::Lt  => a_signed < b_signed,
-        BranchOp::Ge  => a_signed >= b_signed,
+        BranchOp::Eq => a == b,
+        BranchOp::Ne => a != b,
+        BranchOp::Lt => a_signed < b_signed,
+        BranchOp::Ge => a_signed >= b_signed,
         BranchOp::Ltu => a < b,
         BranchOp::Geu => a >= b,
     }
@@ -155,16 +155,16 @@ pub fn branch_taken(op: BranchOp, a: Bits<32>, b: Bits<32>) -> bool {
 pub fn load_format(op: MemOp, raw: Bits<32>) -> Bits<32> {
     let raw_signed: SignedBits<32> = raw.as_signed();
     match op {
-        MemOp::Lb  => ((raw_signed << 24) >> 24).as_unsigned(),
-        MemOp::Lh  => ((raw_signed << 16) >> 16).as_unsigned(),
-        MemOp::Lw  => raw,
+        MemOp::Lb => ((raw_signed << 24) >> 24).as_unsigned(),
+        MemOp::Lh => ((raw_signed << 16) >> 16).as_unsigned(),
+        MemOp::Lw => raw,
         MemOp::Lbu => raw & bits::<32>(0xFF),
         MemOp::Lhu => raw & bits::<32>(0xFFFF),
         // Stores don't load; but we have to return something
         // since the field always has a value.  Pass through.
-        MemOp::Sb  => raw,
-        MemOp::Sh  => raw,
-        MemOp::Sw  => raw,
+        MemOp::Sb => raw,
+        MemOp::Sh => raw,
+        MemOp::Sw => raw,
     }
 }
 
@@ -214,8 +214,8 @@ pub fn cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let take_branch: bool = (dec.opcode == Opcode::Branch) && branch_t;
 
     let branch_target: Bits<32> = q.pc + dec.imm;
-    let jal_target: Bits<32>    = q.pc + dec.imm;
-    let jalr_target: Bits<32>   = (rs1_val + dec.imm) & bits::<32>(0xFFFF_FFFE);
+    let jal_target: Bits<32> = q.pc + dec.imm;
+    let jalr_target: Bits<32> = (rs1_val + dec.imm) & bits::<32>(0xFFFF_FFFE);
 
     let next_pc: Bits<32> = if dec.is_jalr {
         jalr_target
@@ -235,28 +235,28 @@ pub fn cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let csr_uimm: Bits<32> = dec.rs1.resize();
     let csr_src: Bits<32> = match dec.csr_op {
         CsrOp::ReadWriteImm => csr_uimm,
-        CsrOp::ReadSetImm   => csr_uimm,
+        CsrOp::ReadSetImm => csr_uimm,
         CsrOp::ReadClearImm => csr_uimm,
-        _                    => rs1_val,
+        _ => rs1_val,
     };
     let csr_new_value: Bits<32> = match dec.csr_op {
-        CsrOp::ReadWrite     => csr_src,
-        CsrOp::ReadWriteImm  => csr_src,
-        CsrOp::ReadSet       => csr_rdata | csr_src,
-        CsrOp::ReadSetImm    => csr_rdata | csr_src,
-        CsrOp::ReadClear     => csr_rdata & !csr_src,
-        CsrOp::ReadClearImm  => csr_rdata & !csr_src,
-        CsrOp::None          => csr_rdata,
+        CsrOp::ReadWrite => csr_src,
+        CsrOp::ReadWriteImm => csr_src,
+        CsrOp::ReadSet => csr_rdata | csr_src,
+        CsrOp::ReadSetImm => csr_rdata | csr_src,
+        CsrOp::ReadClear => csr_rdata & !csr_src,
+        CsrOp::ReadClearImm => csr_rdata & !csr_src,
+        CsrOp::None => csr_rdata,
     };
     // CSRRS / CSRRC with rs1 = x0 is a pure read (no write).
     // CSRRSI / CSRRCI with uimm = 0 is also a pure read.
     let csr_writes: bool = match dec.csr_op {
-        CsrOp::None         => false,
-        CsrOp::ReadWrite    => true,
+        CsrOp::None => false,
+        CsrOp::ReadWrite => true,
         CsrOp::ReadWriteImm => true,
-        CsrOp::ReadSet      => dec.rs1 != bits::<5>(0),
-        CsrOp::ReadSetImm   => dec.rs1 != bits::<5>(0),
-        CsrOp::ReadClear    => dec.rs1 != bits::<5>(0),
+        CsrOp::ReadSet => dec.rs1 != bits::<5>(0),
+        CsrOp::ReadSetImm => dec.rs1 != bits::<5>(0),
+        CsrOp::ReadClear => dec.rs1 != bits::<5>(0),
         CsrOp::ReadClearImm => dec.rs1 != bits::<5>(0),
     };
 
@@ -274,9 +274,7 @@ pub fn cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     } else {
         branch_target
     };
-    let attempts_redirect: bool = dec.is_jalr
-        || (dec.opcode == Opcode::Jal)
-        || take_branch;
+    let attempts_redirect: bool = dec.is_jalr || (dec.opcode == Opcode::Jal) || take_branch;
     let target_misaligned: bool = (prospective_target & bits::<32>(0x3)) != bits::<32>(0);
     let take_misaligned: bool = attempts_redirect && target_misaligned;
 
@@ -289,14 +287,14 @@ pub fn cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let h_misalign: bool = (alu_result & bits::<32>(0x1)) != bits::<32>(0);
     let w_misalign: bool = (alu_result & bits::<32>(0x3)) != bits::<32>(0);
     let mem_misaligned: bool = match dec.mem_op {
-        MemOp::Lh  => h_misalign,
+        MemOp::Lh => h_misalign,
         MemOp::Lhu => h_misalign,
-        MemOp::Lw  => w_misalign,
-        MemOp::Sh  => h_misalign,
-        MemOp::Sw  => w_misalign,
-        _          => false,
+        MemOp::Lw => w_misalign,
+        MemOp::Sh => h_misalign,
+        MemOp::Sw => w_misalign,
+        _ => false,
     };
-    let take_load_misaligned: bool  = dec.mem_read  && mem_misaligned;
+    let take_load_misaligned: bool = dec.mem_read && mem_misaligned;
     let take_store_misaligned: bool = dec.mem_write && mem_misaligned;
 
     // External-interrupt detection.  An interrupt fires whenever
@@ -310,16 +308,16 @@ pub fn cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // Priority among pending+enabled interrupts (per spec):
     //   M-external (bit 11) > M-software (bit 3) > M-timer (bit 7)
     let int_pe: Bits<32> = q.csrs.int_pending_enabled;
-    let int_meip: bool = (int_pe & bits::<32>(0x800)) != bits::<32>(0);  // bit 11
-    let int_msip: bool = (int_pe & bits::<32>(0x008)) != bits::<32>(0);  // bit 3
-    let int_mtip: bool = (int_pe & bits::<32>(0x080)) != bits::<32>(0);  // bit 7
+    let int_meip: bool = (int_pe & bits::<32>(0x800)) != bits::<32>(0); // bit 11
+    let int_msip: bool = (int_pe & bits::<32>(0x008)) != bits::<32>(0); // bit 3
+    let int_mtip: bool = (int_pe & bits::<32>(0x080)) != bits::<32>(0); // bit 7
     let take_interrupt: bool = q.csrs.mstatus_mie && (int_meip || int_msip || int_mtip);
     let interrupt_cause: Bits<32> = if int_meip {
-        bits::<32>(0x8000_000B)  // M-external
+        bits::<32>(0x8000_000B) // M-external
     } else if int_msip {
-        bits::<32>(0x8000_0003)  // M-software
+        bits::<32>(0x8000_0003) // M-software
     } else {
-        bits::<32>(0x8000_0007)  // M-timer
+        bits::<32>(0x8000_0007) // M-timer
     };
 
     // Synchronous-exception detection.  ECALL/EBREAK/illegal/
@@ -333,16 +331,20 @@ pub fn cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // Interrupts take priority over synchronous exceptions and
     // over MRET — so any in-flight instruction (including ECALL
     // and MRET itself) is squashed when an interrupt fires.
-    let take_ecall:      bool = !take_interrupt && dec.system_op == SystemOp::Ecall;
-    let take_ebreak:     bool = !take_interrupt && dec.system_op == SystemOp::Ebreak;
-    let take_illegal:    bool = !take_interrupt && dec.illegal;
-    let take_sync_misaligned:    bool = !take_interrupt && take_misaligned;
-    let take_load_misalign_eff:  bool = !take_interrupt && take_load_misaligned;
+    let take_ecall: bool = !take_interrupt && dec.system_op == SystemOp::Ecall;
+    let take_ebreak: bool = !take_interrupt && dec.system_op == SystemOp::Ebreak;
+    let take_illegal: bool = !take_interrupt && dec.illegal;
+    let take_sync_misaligned: bool = !take_interrupt && take_misaligned;
+    let take_load_misalign_eff: bool = !take_interrupt && take_load_misaligned;
     let take_store_misalign_eff: bool = !take_interrupt && take_store_misaligned;
-    let take_sync_trap:  bool = take_ecall || take_ebreak || take_illegal
-        || take_sync_misaligned || take_load_misalign_eff || take_store_misalign_eff;
-    let take_trap:       bool = take_interrupt || take_sync_trap;
-    let take_mret:       bool = !take_interrupt && dec.system_op == SystemOp::Mret;
+    let take_sync_trap: bool = take_ecall
+        || take_ebreak
+        || take_illegal
+        || take_sync_misaligned
+        || take_load_misalign_eff
+        || take_store_misalign_eff;
+    let take_trap: bool = take_interrupt || take_sync_trap;
+    let take_mret: bool = !take_interrupt && dec.system_op == SystemOp::Mret;
     // Cause priority (per spec table; we order rare/severe first):
     //   misaligned-target (0)  > illegal (2) > ebreak (3) > load-misalign (4)
     //   > store-misalign (6) > ecall (11)
@@ -372,17 +374,16 @@ pub fn cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // Pick writeback value.
     let mem_value: Bits<32> = load_format(dec.mem_op, i.mem_rdata);
     let writeback_value: Bits<32> = match dec.writeback_src {
-        WritebackSrc::None    => bits::<32>(0),
-        WritebackSrc::Alu     => alu_result,
-        WritebackSrc::Mem     => mem_value,
+        WritebackSrc::None => bits::<32>(0),
+        WritebackSrc::Alu => alu_result,
+        WritebackSrc::Mem => mem_value,
         WritebackSrc::PcPlus4 => pc_plus_4,
-        WritebackSrc::Csr     => csr_rdata,
+        WritebackSrc::Csr => csr_rdata,
     };
     // Suppress writeback on a trap (the in-flight instruction is
     // squashed in favour of the trap entry).
-    let writeback_en: bool = !take_trap
-        && (dec.writeback_src != WritebackSrc::None)
-        && (dec.rd != bits::<5>(0));
+    let writeback_en: bool =
+        !take_trap && (dec.writeback_src != WritebackSrc::None) && (dec.rd != bits::<5>(0));
 
     // Drive the register file's input port.
     d.rf = RegIn {
@@ -445,7 +446,7 @@ pub fn cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // mem_write / mem_read are gated by !take_trap so an interrupt
     // (or sync exception) suppresses any in-flight load/store.
     o.mem_write = !take_trap && dec.mem_write;
-    o.mem_read  = !take_trap && dec.mem_read;
+    o.mem_read = !take_trap && dec.mem_read;
 
     o.pc = q.pc;
     o.illegal = dec.illegal;

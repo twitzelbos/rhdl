@@ -302,9 +302,7 @@ mod tests {
             .join("dtmf_generator");
         std::fs::create_dir_all(&root).unwrap();
         let expect = expect!["fdf04f60c79f23aff1727372b23a6a54c3f65f40c19b9075111ecbd6a0a8cc41"];
-        let digest = vcd
-            .dump_to_file(root.join("dtmf_generator.vcd"))
-            .unwrap();
+        let digest = vcd.dump_to_file(root.join("dtmf_generator.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())
     }

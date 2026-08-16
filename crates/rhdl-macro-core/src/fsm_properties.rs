@@ -27,8 +27,7 @@
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
 use syn::{
-    Expr, ExprCall, ExprLit, ItemFn, Lit, Token, parse2, punctuated::Punctuated,
-    spanned::Spanned,
+    Expr, ExprCall, ExprLit, ItemFn, Lit, Token, parse2, punctuated::Punctuated, spanned::Spanned,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -94,7 +93,9 @@ fn parse_one_call(call: &ExprCall) -> syn::Result<ParsedProperty> {
         )
     })?;
     let expression = match expr_arg {
-        Expr::Lit(ExprLit { lit: Lit::Str(s), .. }) => s.value(),
+        Expr::Lit(ExprLit {
+            lit: Lit::Str(s), ..
+        }) => s.value(),
         other => {
             return Err(syn::Error::new(
                 other.span(),
@@ -116,9 +117,7 @@ fn parse_one_call(call: &ExprCall) -> syn::Result<ParsedProperty> {
             }
         };
         let key = match assign.left.as_ref() {
-            Expr::Path(p) if p.path.segments.len() == 1 => {
-                p.path.segments[0].ident.to_string()
-            }
+            Expr::Path(p) if p.path.segments.len() == 1 => p.path.segments[0].ident.to_string(),
             other => {
                 return Err(syn::Error::new(
                     other.span(),
@@ -128,7 +127,9 @@ fn parse_one_call(call: &ExprCall) -> syn::Result<ParsedProperty> {
         };
         match key.as_str() {
             "name" => match assign.right.as_ref() {
-                Expr::Lit(ExprLit { lit: Lit::Str(s), .. }) => {
+                Expr::Lit(ExprLit {
+                    lit: Lit::Str(s), ..
+                }) => {
                     name = Some(s.value());
                 }
                 other => {
@@ -139,7 +140,9 @@ fn parse_one_call(call: &ExprCall) -> syn::Result<ParsedProperty> {
                 }
             },
             "bound" => match assign.right.as_ref() {
-                Expr::Lit(ExprLit { lit: Lit::Int(i), .. }) => {
+                Expr::Lit(ExprLit {
+                    lit: Lit::Int(i), ..
+                }) => {
                     bound = Some(i.base10_parse::<u64>()?);
                 }
                 other => {

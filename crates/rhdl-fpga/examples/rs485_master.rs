@@ -5,9 +5,7 @@ use rhdl_fpga::{
 };
 
 fn main() -> Result<(), RHDLError> {
-    write_fsm_diagram::<Rs485Master<6, 4, 8>>(
-        "rs485_master_fsm.md",
-    )?;
+    write_fsm_diagram::<Rs485Master<6, 4, 8>>("rs485_master_fsm.md")?;
 
     let divisor = 6u128;
     let uut = Rs485Master::<6, 4, 8>::new(bits(divisor), bits(20));

@@ -238,11 +238,7 @@ where
 
 #[kernel]
 /// Kernel for [SmpteLtcDecoder].
-pub fn smpte_ltc_decoder<const IW: usize>(
-    cr: ClockReset,
-    i: In,
-    q: Q<IW>,
-) -> (Out, D<IW>)
+pub fn smpte_ltc_decoder<const IW: usize>(cr: ClockReset, i: In, q: Q<IW>) -> (Out, D<IW>)
 where
     rhdl::bits::W<IW>: BitWidth,
 {
@@ -370,15 +366,12 @@ pub fn parse_payload(shifter: Bits<80>) -> LtcFrame {
     let frames_combined: Bits<6> = frame_units.resize::<6>()
         + (frame_tens.resize::<6>() << 3)
         + (frame_tens.resize::<6>() << 1);
-    let secs_combined: Bits<6> = sec_units.resize::<6>()
-        + (sec_tens.resize::<6>() << 3)
-        + (sec_tens.resize::<6>() << 1);
-    let mins_combined: Bits<6> = min_units.resize::<6>()
-        + (min_tens.resize::<6>() << 3)
-        + (min_tens.resize::<6>() << 1);
-    let hours_combined: Bits<5> = hour_units.resize::<5>()
-        + (hour_tens.resize::<5>() << 3)
-        + (hour_tens.resize::<5>() << 1);
+    let secs_combined: Bits<6> =
+        sec_units.resize::<6>() + (sec_tens.resize::<6>() << 3) + (sec_tens.resize::<6>() << 1);
+    let mins_combined: Bits<6> =
+        min_units.resize::<6>() + (min_tens.resize::<6>() << 3) + (min_tens.resize::<6>() << 1);
+    let hours_combined: Bits<5> =
+        hour_units.resize::<5>() + (hour_tens.resize::<5>() << 3) + (hour_tens.resize::<5>() << 1);
 
     let user_pack: Bits<32> = user0.resize::<32>()
         | (user1.resize::<32>() << 4)
@@ -536,7 +529,11 @@ mod tests {
         let uut = SmpteLtcDecoder::<14>::default();
         let desc = uut.descriptor("top".into())?;
         let hdl = desc.hdl()?.modules.pretty();
-        assert!(hdl.len() > 1000, "HDL emission unreasonably small: {}", hdl.len());
+        assert!(
+            hdl.len() > 1000,
+            "HDL emission unreasonably small: {}",
+            hdl.len()
+        );
         Ok(())
     }
 
@@ -567,7 +564,9 @@ mod tests {
             .join("vcd")
             .join("smpte_ltc_decoder");
         std::fs::create_dir_all(&root).unwrap();
-        let _digest = vcd.dump_to_file(root.join("smpte_ltc_decoder.vcd")).unwrap();
+        let _digest = vcd
+            .dump_to_file(root.join("smpte_ltc_decoder.vcd"))
+            .unwrap();
         let _ = expect![[r#""#]];
         Ok(())
     }

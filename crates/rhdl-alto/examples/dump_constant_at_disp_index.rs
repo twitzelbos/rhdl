@@ -25,7 +25,10 @@ fn main() {
     println!();
     println!("MPC=0x153 (BS=InstructionRegister=7, RSEL=0):");
     let idx = (0 << 3) | 7;
-    println!("  constants[{idx}] = 0x{:04x}  (mask AND'd with DISP value)", constants[idx]);
+    println!(
+        "  constants[{idx}] = 0x{:04x}  (mask AND'd with DISP value)",
+        constants[idx]
+    );
     println!();
     println!("MPC=0x150 (BS=ReadR=0, RSEL=5): BS<4, no mask applies (just for reference)");
     println!();

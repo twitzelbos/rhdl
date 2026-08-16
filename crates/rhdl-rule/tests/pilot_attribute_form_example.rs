@@ -242,13 +242,7 @@ fn fn_form_and_attr_form_produce_identical_outputs() {
 
     let attr_uut: AttrFormCounter = AttrFormCounter::default();
     let attr_outputs: Vec<u128> = attr_uut
-        .run(
-            inputs
-                .clone()
-                .into_iter()
-                .with_reset(2)
-                .clock_pos_edge(100),
-        )
+        .run(inputs.clone().into_iter().with_reset(2).clock_pos_edge(100))
         .synchronous_sample()
         .filter(|s| !s.input.0.reset.any())
         .map(|s| s.output.raw())

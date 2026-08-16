@@ -563,9 +563,7 @@ mod tests {
             .join("nand_flash_async");
         std::fs::create_dir_all(&root).unwrap();
         let expect = expect!["d19091b4f03f86aa7aeb3c1d9276826e979f5dcbb5afe7b4327e7941c3e52fd1"];
-        let digest = vcd
-            .dump_to_file(root.join("nand_flash_async.vcd"))
-            .unwrap();
+        let digest = vcd.dump_to_file(root.join("nand_flash_async.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())
     }

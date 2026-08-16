@@ -21,9 +21,7 @@ use crate::Kind;
 use crate::common::sense::Sense;
 use crate::common::symtab::{LiteralId, RegisterId};
 use crate::rhif::object::Object;
-use crate::rhif::spec::{
-    Cast, CaseArgument, FuncId, OpCode, Slot, SlotKind, Wrap,
-};
+use crate::rhif::spec::{CaseArgument, Cast, FuncId, OpCode, Slot, SlotKind, Wrap};
 use crate::rhif::visit::{visit_object_slots, visit_slots};
 use crate::types::path::PathElement;
 
@@ -170,10 +168,9 @@ impl fmt::Display for Violation {
                 "opcode #{opcode_index} is a Wrap with kind = None at lowering time \
                  (unresolved-wrap-kind violation)",
             ),
-            Violation::InvalidReturnSlot { slot } => write!(
-                f,
-                "Object::return_slot {slot:?} is not in the symbol table",
-            ),
+            Violation::InvalidReturnSlot { slot } => {
+                write!(f, "Object::return_slot {slot:?} is not in the symbol table",)
+            }
             Violation::InvalidArgumentRegister { register } => write!(
                 f,
                 "argument register {register:?} is not in the symbol table",
@@ -344,10 +341,8 @@ pub fn check_def_before_use(obj: &Object) -> Vec<Violation> {
 /// registered in `Object::symtab`.
 #[must_use]
 pub fn check_symbol_table_completeness(obj: &Object) -> Vec<Violation> {
-    let valid_regs: HashSet<RegisterId<SlotKind>> =
-        obj.symtab.iter_reg().map(|(r, _)| r).collect();
-    let valid_lits: HashSet<LiteralId<SlotKind>> =
-        obj.symtab.iter_lit().map(|(l, _)| l).collect();
+    let valid_regs: HashSet<RegisterId<SlotKind>> = obj.symtab.iter_reg().map(|(r, _)| r).collect();
+    let valid_lits: HashSet<LiteralId<SlotKind>> = obj.symtab.iter_lit().map(|(l, _)| l).collect();
 
     let mut violations = Vec::new();
     let mut seen_unregistered: HashSet<Slot> = HashSet::new();
@@ -496,10 +491,8 @@ pub fn check_unresolved_holes(obj: &Object) -> Vec<Violation> {
 /// valid entries of `Object::symtab`.
 #[must_use]
 pub fn check_arguments_and_return(obj: &Object) -> Vec<Violation> {
-    let valid_regs: HashSet<RegisterId<SlotKind>> =
-        obj.symtab.iter_reg().map(|(r, _)| r).collect();
-    let valid_lits: HashSet<LiteralId<SlotKind>> =
-        obj.symtab.iter_lit().map(|(l, _)| l).collect();
+    let valid_regs: HashSet<RegisterId<SlotKind>> = obj.symtab.iter_reg().map(|(r, _)| r).collect();
+    let valid_lits: HashSet<LiteralId<SlotKind>> = obj.symtab.iter_lit().map(|(l, _)| l).collect();
 
     let mut violations = Vec::new();
     for r in &obj.arguments {
@@ -541,11 +534,10 @@ pub fn check_widget_well_formed_synchronous<W>() -> Result<(), String>
 where
     W: crate::circuit::synchronous::SynchronousIO,
 {
-    let report =
-        super::property_tests::run_per_pass_well_formedness::<W::Kernel>(
-            crate::CompilationMode::Synchronous,
-        )
-        .map_err(|e| format!("compile failed: {e:?}"))?;
+    let report = super::property_tests::run_per_pass_well_formedness::<W::Kernel>(
+        crate::CompilationMode::Synchronous,
+    )
+    .map_err(|e| format!("compile failed: {e:?}"))?;
     if report.all_well_formed() {
         Ok(())
     } else {
@@ -568,11 +560,10 @@ pub fn check_widget_well_formed_asynchronous<W>() -> Result<(), String>
 where
     W: crate::circuit::circuit_impl::CircuitIO,
 {
-    let report =
-        super::property_tests::run_per_pass_well_formedness::<W::Kernel>(
-            crate::CompilationMode::Asynchronous,
-        )
-        .map_err(|e| format!("compile failed: {e:?}"))?;
+    let report = super::property_tests::run_per_pass_well_formedness::<W::Kernel>(
+        crate::CompilationMode::Asynchronous,
+    )
+    .map_err(|e| format!("compile failed: {e:?}"))?;
     if report.all_well_formed() {
         Ok(())
     } else {
@@ -616,12 +607,12 @@ pub fn check_path_well_formedness(_obj: &Object) -> Vec<Violation> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::ast_impl::FunctionId;
+    use crate::TypedBits;
     use crate::ast::SourceLocation;
+    use crate::ast::ast_impl::FunctionId;
     use crate::common::symtab::SymbolTable;
     use crate::rhif::object::{LocatedOpCode, SourceDetails, SymbolMap};
-    use crate::rhif::spec::{Assign, AluUnary, Binary, AluBinary, Unary};
-    use crate::TypedBits;
+    use crate::rhif::spec::{AluBinary, AluUnary, Assign, Binary, Unary};
 
     fn fid() -> FunctionId {
         FunctionId::from(0u64)
@@ -696,7 +687,10 @@ mod tests {
             "expected violations on degenerate return slot",
         );
         assert!(
-            report.violations.iter().any(|v| matches!(v, Violation::InvalidReturnSlot { .. })),
+            report
+                .violations
+                .iter()
+                .any(|v| matches!(v, Violation::InvalidReturnSlot { .. })),
             "expected InvalidReturnSlot, got {report}",
         );
     }
@@ -802,7 +796,8 @@ mod tests {
         });
         let v = check_symbol_table_completeness(&obj);
         assert!(
-            v.iter().any(|x| matches!(x, Violation::UnregisteredRegister { .. })),
+            v.iter()
+                .any(|x| matches!(x, Violation::UnregisteredRegister { .. })),
             "expected UnregisteredRegister, got {v:?}",
         );
     }

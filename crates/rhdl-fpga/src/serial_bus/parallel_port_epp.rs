@@ -213,11 +213,7 @@ where
 
 #[kernel]
 /// Kernel for [ParallelPortEpp].
-pub fn parallel_port_epp<const T_W: usize>(
-    cr: ClockReset,
-    i: In,
-    q: Q<T_W>,
-) -> (Out, D<T_W>)
+pub fn parallel_port_epp<const T_W: usize>(cr: ClockReset, i: In, q: Q<T_W>) -> (Out, D<T_W>)
 where
     rhdl::bits::W<T_W>: BitWidth,
 {
@@ -260,7 +256,8 @@ where
             }
         }
         EppState::ReleaseStrobe => {
-            let is_read = (q.extras.op_reg == EppOp::AddrRead) || (q.extras.op_reg == EppOp::DataRead);
+            let is_read =
+                (q.extras.op_reg == EppOp::AddrRead) || (q.extras.op_reg == EppOp::DataRead);
             if is_read {
                 next.data_out_reg = i.d_in;
             }
@@ -409,9 +406,9 @@ mod tests {
             .collect();
         assert!(outputs.iter().any(|s| s.output.done));
         assert!(!outputs.iter().any(|s| s.output.timeout));
-        let bad = outputs.iter().any(|s| {
-            !s.output.addr_stb && (s.output.wr_n || !s.output.d_oe)
-        });
+        let bad = outputs
+            .iter()
+            .any(|s| !s.output.addr_stb && (s.output.wr_n || !s.output.d_oe));
         assert!(!bad);
         Ok(())
     }
@@ -479,7 +476,9 @@ mod tests {
     /// device hangs the FSM (matches the original v1 behavior, opt-in).
     #[test]
     fn test_no_timeout_with_t_wait_max_zero() -> miette::Result<()> {
-        let uut = ParallelPortEpp::<8>::new(EppTimings { t_wait_max: bits(0) });
+        let uut = ParallelPortEpp::<8>::new(EppTimings {
+            t_wait_max: bits(0),
+        });
         let mut stream_in: Vec<In> = vec![In {
             op: EppOp::AddrWrite,
             data: bits(0x42),

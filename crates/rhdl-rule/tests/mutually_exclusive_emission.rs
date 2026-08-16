@@ -17,7 +17,9 @@ use quote::quote;
 use rhdl_rule_core::expand_rule_kernel;
 
 fn expansion(input: TokenStream) -> String {
-    expand_rule_kernel(input).expect("expansion succeeds").to_string()
+    expand_rule_kernel(input)
+        .expect("expansion succeeds")
+        .to_string()
 }
 
 #[test]
@@ -81,7 +83,9 @@ fn with_mutually_exclusive_suppressor_is_elided() {
     // The low_writer's `_fire_low_writer` line must NOT mention
     // `_fire_high_writer` — the assertion makes the suppressor
     // redundant and the optimisation drops it.
-    let low_fire_position = s.find("let _fire_low_writer").expect("low_writer fire line");
+    let low_fire_position = s
+        .find("let _fire_low_writer")
+        .expect("low_writer fire line");
     let after = &s[low_fire_position..];
     let semi = after.find(';').expect("statement terminator");
     let fire_stmt = &after[..semi];
@@ -119,7 +123,9 @@ fn mutually_exclusive_is_symmetric_either_side_works() {
         }
     };
     let s = expansion(input);
-    let low_fire_position = s.find("let _fire_low_writer").expect("low_writer fire line");
+    let low_fire_position = s
+        .find("let _fire_low_writer")
+        .expect("low_writer fire line");
     let after = &s[low_fire_position..];
     let semi = after.find(';').expect("statement terminator");
     let fire_stmt = &after[..semi];

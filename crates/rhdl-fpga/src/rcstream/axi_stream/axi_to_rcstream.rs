@@ -183,7 +183,10 @@ mod tests {
             tvalid: false,
             ready: true,
         };
-        let held = Item::<b8, ()> { data: bits::<8>(0x42), frame: () };
+        let held = Item::<b8, ()> {
+            data: bits::<8>(0x42),
+            frame: (),
+        };
         let q = Q::<b8, ()> {
             inbuf: carloni::Out::<Item<b8, ()>> {
                 data_out: held,
@@ -196,7 +199,7 @@ mod tests {
             Some(it) => assert_eq!(it.data.raw(), 0x42),
             None => panic!("expected Some(item) when void_out=false"),
         }
-        assert_eq!(o.tready, true);  // !stop_out = !false = true
+        assert_eq!(o.tready, true); // !stop_out = !false = true
     }
 
     /// Framing test: `F = bool` flows TUSER through into Item::frame.
@@ -205,7 +208,7 @@ mod tests {
         let cr = ClockReset::dont_care();
         let i = In::<b8, bool> {
             tdata: bits::<8>(0xFF),
-            tuser: true,  // end-of-frame marker
+            tuser: true, // end-of-frame marker
             tvalid: true,
             ready: true,
         };
@@ -233,12 +236,14 @@ mod tests {
     #[test]
     fn iverilog_round_trip_f_unit() -> Result<(), RHDLError> {
         let uut: AxiToRCStream<b8, ()> = AxiToRCStream::default();
-        let inputs: Vec<In<b8, ()>> = (0..16).map(|k| In {
-            tdata: bits::<8>(k as u128),
-            tuser: (),
-            tvalid: true,
-            ready: true,
-        }).collect();
+        let inputs: Vec<In<b8, ()>> = (0..16)
+            .map(|k| In {
+                tdata: bits::<8>(k as u128),
+                tuser: (),
+                tvalid: true,
+                ready: true,
+            })
+            .collect();
         let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
         let test_bench = uut.run(stream).collect::<SynchronousTestBench<_, _>>();
         let tm = test_bench.rtl(&uut, &Default::default())?;
@@ -252,12 +257,14 @@ mod tests {
     #[test]
     fn iverilog_round_trip_f_bool() -> Result<(), RHDLError> {
         let uut: AxiToRCStream<b8, bool> = AxiToRCStream::default();
-        let inputs: Vec<In<b8, bool>> = (0..16).map(|k| In {
-            tdata: bits::<8>(k as u128),
-            tuser: k == 15,  // last item carries TUSER=1 (end-of-frame)
-            tvalid: true,
-            ready: true,
-        }).collect();
+        let inputs: Vec<In<b8, bool>> = (0..16)
+            .map(|k| In {
+                tdata: bits::<8>(k as u128),
+                tuser: k == 15, // last item carries TUSER=1 (end-of-frame)
+                tvalid: true,
+                ready: true,
+            })
+            .collect();
         let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
         let test_bench = uut.run(stream).collect::<SynchronousTestBench<_, _>>();
         let tm = test_bench.rtl(&uut, &Default::default())?;

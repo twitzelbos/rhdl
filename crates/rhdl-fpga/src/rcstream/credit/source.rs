@@ -116,8 +116,7 @@ where
     pub downstream_data: Option<Item<T, F>>,
 }
 
-impl<T: Digital, F: Digital, const CREDIT_W: usize> SynchronousIO
-    for CreditSource<T, F, CREDIT_W>
+impl<T: Digital, F: Digital, const CREDIT_W: usize> SynchronousIO for CreditSource<T, F, CREDIT_W>
 where
     rhdl::bits::W<CREDIT_W>: BitWidth,
 {
@@ -192,12 +191,18 @@ mod tests {
     #[test]
     fn kernel_no_credit_does_not_send() {
         let cr = ClockReset::dont_care();
-        let item = Item::<b8, ()> { data: bits::<8>(0xAB), frame: () };
+        let item = Item::<b8, ()> {
+            data: bits::<8>(0xAB),
+            frame: (),
+        };
         let i = In::<b8, (), 4> {
             upstream_data: Some(item),
             credit_grant: bits::<4>(0),
         };
-        let q = Q::<b8, (), 4> { credit: bits::<4>(0), _marker: Item::<b8, ()>::dont_care() };
+        let q = Q::<b8, (), 4> {
+            credit: bits::<4>(0),
+            _marker: Item::<b8, ()>::dont_care(),
+        };
         let (o, d) = credit_source_kernel::<b8, (), 4>(cr, i, q);
         assert!(o.downstream_data.is_none(), "no credit → no send");
         assert!(!o.upstream_ready, "no credit → not ready upstream");
@@ -209,12 +214,18 @@ mod tests {
     #[test]
     fn kernel_with_credit_sends_and_decrements() {
         let cr = ClockReset::dont_care();
-        let item = Item::<b8, ()> { data: bits::<8>(0x42), frame: () };
+        let item = Item::<b8, ()> {
+            data: bits::<8>(0x42),
+            frame: (),
+        };
         let i = In::<b8, (), 4> {
             upstream_data: Some(item),
             credit_grant: bits::<4>(0),
         };
-        let q = Q::<b8, (), 4> { credit: bits::<4>(3), _marker: Item::<b8, ()>::dont_care() };
+        let q = Q::<b8, (), 4> {
+            credit: bits::<4>(3),
+            _marker: Item::<b8, ()>::dont_care(),
+        };
         let (o, d) = credit_source_kernel::<b8, (), 4>(cr, i, q);
         match o.downstream_data {
             Some(it) => assert_eq!(it.data.raw(), 0x42),
@@ -233,7 +244,10 @@ mod tests {
             upstream_data: None,
             credit_grant: bits::<4>(2),
         };
-        let q = Q::<b8, (), 4> { credit: bits::<4>(3), _marker: Item::<b8, ()>::dont_care() };
+        let q = Q::<b8, (), 4> {
+            credit: bits::<4>(3),
+            _marker: Item::<b8, ()>::dont_care(),
+        };
         let (o, d) = credit_source_kernel::<b8, (), 4>(cr, i, q);
         assert!(o.downstream_data.is_none());
         assert!(o.upstream_ready);
@@ -245,12 +259,18 @@ mod tests {
     #[test]
     fn kernel_grant_and_send_simultaneously() {
         let cr = ClockReset::dont_care();
-        let item = Item::<b8, ()> { data: bits::<8>(0x55), frame: () };
+        let item = Item::<b8, ()> {
+            data: bits::<8>(0x55),
+            frame: (),
+        };
         let i = In::<b8, (), 4> {
             upstream_data: Some(item),
             credit_grant: bits::<4>(2),
         };
-        let q = Q::<b8, (), 4> { credit: bits::<4>(1), _marker: Item::<b8, ()>::dont_care() };
+        let q = Q::<b8, (), 4> {
+            credit: bits::<4>(1),
+            _marker: Item::<b8, ()>::dont_care(),
+        };
         let (o, d) = credit_source_kernel::<b8, (), 4>(cr, i, q);
         // Has credit (q.credit = 1 > 0), so sends.
         assert!(o.downstream_data.is_some());
@@ -267,7 +287,10 @@ mod tests {
             credit_grant: bits::<4>(0xF),
         };
         // Counter at max already.
-        let q = Q::<b8, (), 4> { credit: bits::<4>(0xF), _marker: Item::<b8, ()>::dont_care() };
+        let q = Q::<b8, (), 4> {
+            credit: bits::<4>(0xF),
+            _marker: Item::<b8, ()>::dont_care(),
+        };
         let (_o, d) = credit_source_kernel::<b8, (), 4>(cr, i, q);
         // 0xF + 0xF would wrap to 0xE; saturate to 0xF.
         assert_eq!(d.credit.raw(), 0xF);
@@ -287,13 +310,18 @@ mod tests {
     #[test]
     fn iverilog_round_trip() -> Result<(), RHDLError> {
         let uut: CreditSource<b8, (), 4> = CreditSource::default();
-        let inputs: Vec<In<b8, (), 4>> = (0..16).map(|k| {
-            let it = Item::<b8, ()> { data: bits::<8>(k as u128), frame: () };
-            In {
-                upstream_data: Some(it),
-                credit_grant: bits::<4>(1),  // grant 1 per cycle
-            }
-        }).collect();
+        let inputs: Vec<In<b8, (), 4>> = (0..16)
+            .map(|k| {
+                let it = Item::<b8, ()> {
+                    data: bits::<8>(k as u128),
+                    frame: (),
+                };
+                In {
+                    upstream_data: Some(it),
+                    credit_grant: bits::<4>(1), // grant 1 per cycle
+                }
+            })
+            .collect();
         let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
         let test_bench = uut.run(stream).collect::<SynchronousTestBench<_, _>>();
         let tm = test_bench.rtl(&uut, &Default::default())?;

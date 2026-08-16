@@ -93,8 +93,7 @@ where
     t_de_holdoff: Constant<Bits<HW>>,
 }
 
-impl<const DIV_W: usize, const FIFO_W: usize, const HW: usize>
-    Rs485Master<DIV_W, FIFO_W, HW>
+impl<const DIV_W: usize, const FIFO_W: usize, const HW: usize> Rs485Master<DIV_W, FIFO_W, HW>
 where
     rhdl::bits::W<DIV_W>: BitWidth,
     rhdl::bits::W<FIFO_W>: BitWidth,

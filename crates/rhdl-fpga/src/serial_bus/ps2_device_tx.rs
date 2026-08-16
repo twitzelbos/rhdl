@@ -188,11 +188,7 @@ where
 
 #[kernel]
 /// Kernel for [Ps2DeviceTx].
-pub fn ps2_device_tx<const DIV_W: usize>(
-    cr: ClockReset,
-    i: In,
-    q: Q<DIV_W>,
-) -> (Out, D<DIV_W>)
+pub fn ps2_device_tx<const DIV_W: usize>(cr: ClockReset, i: In, q: Q<DIV_W>) -> (Out, D<DIV_W>)
 where
     rhdl::bits::W<DIV_W>: BitWidth,
 {
@@ -322,7 +318,9 @@ mod tests {
             .synchronous_sample()
             .filter(|s| !s.input.0.reset.any())
             .collect();
-        assert!(outputs.iter().all(|s| !s.output.clk_oe && !s.output.data_oe));
+        assert!(outputs
+            .iter()
+            .all(|s| !s.output.clk_oe && !s.output.data_oe));
         Ok(())
     }
 

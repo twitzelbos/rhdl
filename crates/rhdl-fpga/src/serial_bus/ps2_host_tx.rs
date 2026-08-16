@@ -211,11 +211,7 @@ where
 
 #[kernel]
 /// Kernel for [Ps2HostTx].
-pub fn ps2_host_tx<const INH_W: usize>(
-    cr: ClockReset,
-    i: In,
-    q: Q<INH_W>,
-) -> (Out, D<INH_W>)
+pub fn ps2_host_tx<const INH_W: usize>(cr: ClockReset, i: In, q: Q<INH_W>) -> (Out, D<INH_W>)
 where
     rhdl::bits::W<INH_W>: BitWidth,
 {
@@ -245,8 +241,7 @@ where
                 let p7 = (b >> 7) & bits::<8>(1);
                 let xor_all = p0 ^ p1 ^ p2 ^ p3 ^ p4 ^ p5 ^ p6 ^ p7;
                 let parity_bit: Bits<8> = xor_all ^ bits::<8>(1);
-                let packed: Bits<9> =
-                    (b.resize::<9>()) | (parity_bit.resize::<9>() << 8);
+                let packed: Bits<9> = (b.resize::<9>()) | (parity_bit.resize::<9>() << 8);
                 next.shifter = packed;
                 next.bit_idx = bits::<4>(0);
                 next.inhibit_ctr = q.inhibit_cycles;
@@ -407,7 +402,10 @@ mod tests {
         assert!(clk_oe_seen, "clk_oe never asserted (inhibit not entered)");
         // After inhibit, data_oe must have been asserted (start bit).
         let data_oe_seen = outputs.iter().any(|s| s.output.data_oe);
-        assert!(data_oe_seen, "data_oe never asserted (start bit / data clocking not entered)");
+        assert!(
+            data_oe_seen,
+            "data_oe never asserted (start bit / data clocking not entered)"
+        );
         // tx_busy must have been asserted at some point.
         let tx_busy_seen = outputs.iter().any(|s| s.output.tx_busy);
         assert!(tx_busy_seen, "tx_busy never asserted");
@@ -425,7 +423,9 @@ mod tests {
             .filter(|s| !s.input.0.reset.any())
             .collect();
         // Idle: clk_oe and data_oe should be false (released).
-        assert!(outputs.iter().all(|s| !s.output.clk_oe && !s.output.data_oe));
+        assert!(outputs
+            .iter()
+            .all(|s| !s.output.clk_oe && !s.output.data_oe));
         assert!(outputs.iter().all(|s| !s.output.tx_busy));
         Ok(())
     }

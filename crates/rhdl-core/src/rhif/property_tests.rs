@@ -32,16 +32,16 @@
 
 use rand::{Rng, RngCore, SeedableRng};
 
+use crate::DigitalFn;
 use crate::compiler::CompilationMode;
 use crate::error::RHDLError;
 use crate::rhif::object::Object;
 use crate::rhif::spec::Slot;
 use crate::rhif::vm::execute as rhif_execute;
-use crate::rhif::well_formedness::{check_object, check_object_universal, WellFormednessReport};
+use crate::rhif::well_formedness::{WellFormednessReport, check_object, check_object_universal};
 use crate::types::bit_string::BitString;
 use crate::types::kind::Kind;
 use crate::types::typed_bits::TypedBits;
-use crate::DigitalFn;
 
 // ===========================================================
 // Random TypedBits generation
@@ -110,10 +110,7 @@ pub fn zero_typed_bits(kind: Kind) -> TypedBits {
 /// PHYs with byte buffers), this is the right discipline:
 /// fully-random `q` produces ICE rates of nearly 100 %, while
 /// zero-`q` evaluates the kernel's normal first-cycle behaviour.
-pub fn structured_synchronous_arguments<R: RngCore>(
-    obj: &Object,
-    rng: &mut R,
-) -> Vec<TypedBits> {
+pub fn structured_synchronous_arguments<R: RngCore>(obj: &Object, rng: &mut R) -> Vec<TypedBits> {
     obj.arguments
         .iter()
         .enumerate()
@@ -179,9 +176,8 @@ pub fn run_per_pass_well_formedness<K: DigitalFn>(
         report.borrow_mut().checkpoints.push((pass.to_string(), r));
         Ok(())
     };
-    let final_obj = crate::compiler::driver::compile_design_stage1_with_checkpoints::<K>(
-        mode, &mut hook,
-    )?;
+    let final_obj =
+        crate::compiler::driver::compile_design_stage1_with_checkpoints::<K>(mode, &mut hook)?;
     // Replace the last universal-only checkpoint with a full check on
     // the final Object — at that point the late-stage invariants
     // ("unresolved holes") are also expected to hold.
@@ -217,9 +213,7 @@ enum VmOutcome {
 pub enum SemanticPreservationOutcome {
     /// Every checkpoint produced the same outcome as the initial
     /// (post-`infer`) Object — same output, or same error.
-    Preserved {
-        checkpoints: usize,
-    },
+    Preserved { checkpoints: usize },
     /// At one checkpoint, the VM produced a different outcome than
     /// the reference.  Either the output bits differ, or one side
     /// errored when the other succeeded, or both errored but with
@@ -288,7 +282,9 @@ pub fn check_semantic_preservation<K: DigitalFn>(
             }
             Some(reference) => {
                 let equiv = match (reference, &observed) {
-                    (VmOutcome::Ok(a), VmOutcome::Ok(b)) => a.bits() == b.bits() && a.kind() == b.kind(),
+                    (VmOutcome::Ok(a), VmOutcome::Ok(b)) => {
+                        a.bits() == b.bits() && a.kind() == b.kind()
+                    }
                     (VmOutcome::Err(a), VmOutcome::Err(b)) => a == b,
                     _ => false,
                 };
@@ -449,18 +445,14 @@ pub fn synthetic_symbol_map(
 /// `Exec` calls) are deferred — type-correct random program
 /// generation across all 19 opcodes is a longer-tail effort
 /// per the plan.
-pub fn generate_chain_program(
-    bit_width: usize,
-    n_ops: usize,
-    rng: &mut impl RngCore,
-) -> Object {
-    use crate::ast::ast_impl::FunctionId;
+pub fn generate_chain_program(bit_width: usize, n_ops: usize, rng: &mut impl RngCore) -> Object {
+    use crate::TypedBits;
     use crate::ast::SourceLocation;
+    use crate::ast::ast_impl::FunctionId;
     use crate::common::symtab::SymbolTable;
     use crate::rhif::object::{LocatedOpCode, SourceDetails};
     use crate::rhif::rhif_builder::{op_binary, op_unary};
     use crate::rhif::spec::{AluBinary, AluUnary, SlotKind};
-    use crate::TypedBits;
 
     let kind = Kind::Bits(bit_width);
     let fid = FunctionId::from(0u64);
@@ -473,8 +465,7 @@ pub fn generate_chain_program(
         name: None,
     };
 
-    let mut symtab: SymbolTable<TypedBits, Kind, SourceDetails, SlotKind> =
-        SymbolTable::default();
+    let mut symtab: SymbolTable<TypedBits, Kind, SourceDetails, SlotKind> = SymbolTable::default();
     let arg = match symtab.reg(kind, meta.clone()) {
         Slot::Register(r) => r,
         _ => unreachable!(),
@@ -531,7 +522,12 @@ pub fn generate_chain_program(
 /// Internal helper used by every random-program generator.  Owns
 /// the `SymbolTable` and provides an interning helper for slots.
 struct ProgramBuilder {
-    symtab: crate::common::symtab::SymbolTable<TypedBits, Kind, crate::rhif::object::SourceDetails, crate::rhif::spec::SlotKind>,
+    symtab: crate::common::symtab::SymbolTable<
+        TypedBits,
+        Kind,
+        crate::rhif::object::SourceDetails,
+        crate::rhif::spec::SlotKind,
+    >,
     ops: Vec<crate::rhif::object::LocatedOpCode>,
     arg: crate::common::symtab::RegisterId<crate::rhif::spec::SlotKind>,
     arg_kind: Kind,
@@ -541,8 +537,8 @@ struct ProgramBuilder {
 
 impl ProgramBuilder {
     fn new(arg_kind: Kind) -> Self {
-        use crate::ast::ast_impl::{FunctionId, NodeId};
         use crate::ast::SourceLocation;
+        use crate::ast::ast_impl::{FunctionId, NodeId};
         use crate::common::symtab::SymbolTable;
         use crate::rhif::object::SourceDetails;
         use crate::rhif::spec::Slot;
@@ -577,7 +573,10 @@ impl ProgramBuilder {
         }
     }
 
-    fn new_register(&mut self, kind: Kind) -> crate::common::symtab::RegisterId<crate::rhif::spec::SlotKind> {
+    fn new_register(
+        &mut self,
+        kind: Kind,
+    ) -> crate::common::symtab::RegisterId<crate::rhif::spec::SlotKind> {
         let meta = self.meta();
         match self.symtab.reg(kind, meta) {
             crate::rhif::spec::Slot::Register(r) => r,
@@ -591,10 +590,8 @@ impl ProgramBuilder {
     }
 
     fn push(&mut self, op: crate::rhif::spec::OpCode) {
-        self.ops.push(crate::rhif::object::LocatedOpCode {
-            op,
-            loc: self.loc,
-        });
+        self.ops
+            .push(crate::rhif::object::LocatedOpCode { op, loc: self.loc });
     }
 
     fn finish(self, return_slot: crate::rhif::spec::Slot, name: &str) -> Object {
@@ -633,7 +630,11 @@ pub fn generate_tuple_program(bit_width: usize, rng: &mut impl RngCore) -> Objec
     let result_reg = b.new_register(kind);
     let result_slot = Slot::Register(result_reg);
     let pick = if rng.random::<bool>() { 0 } else { 1 };
-    b.push(op_index(result_slot, tuple_slot, Path::default().tuple_index(pick)));
+    b.push(op_index(
+        result_slot,
+        tuple_slot,
+        Path::default().tuple_index(pick),
+    ));
     b.finish(result_slot, &format!("random_tuple_{bit_width}b"))
 }
 
@@ -642,11 +643,7 @@ pub fn generate_tuple_program(bit_width: usize, rng: &mut impl RngCore) -> Objec
 ///
 /// Shape: `arr = [arg, lit, arg, lit]; return arr[k]`.
 /// Exercises `Array` + `Index` (constant index).
-pub fn generate_array_program(
-    bit_width: usize,
-    n_elem: usize,
-    rng: &mut impl RngCore,
-) -> Object {
+pub fn generate_array_program(bit_width: usize, n_elem: usize, rng: &mut impl RngCore) -> Object {
     use crate::rhif::rhif_builder::{op_array, op_index};
     use crate::rhif::spec::Slot;
     use crate::types::path::Path;
@@ -709,11 +706,7 @@ pub fn generate_select_program(bit_width: usize, rng: &mut impl RngCore) -> Obje
 /// Generate a program that builds an array via `Repeat` and indexes
 /// it.  Shape: `arr = [arg; N]; return arr[k]`.  Exercises `Repeat`
 /// + `Index`.
-pub fn generate_repeat_program(
-    bit_width: usize,
-    n_elem: usize,
-    rng: &mut impl RngCore,
-) -> Object {
+pub fn generate_repeat_program(bit_width: usize, n_elem: usize, rng: &mut impl RngCore) -> Object {
     use crate::rhif::rhif_builder::{op_index, op_repeat};
     use crate::rhif::spec::Slot;
     use crate::types::path::Path;
@@ -756,7 +749,12 @@ pub fn generate_splice_program(bit_width: usize, rng: &mut impl RngCore) -> Obje
 
     let t1_reg = b.new_register(tuple_kind);
     let t1_slot = Slot::Register(t1_reg);
-    b.push(op_splice(t1_slot, t0_slot, Path::default().tuple_index(0), lit2));
+    b.push(op_splice(
+        t1_slot,
+        t0_slot,
+        Path::default().tuple_index(0),
+        lit2,
+    ));
 
     let out_reg = b.new_register(kind);
     let out_slot = Slot::Register(out_reg);
@@ -837,7 +835,10 @@ pub fn generate_as_bits_program(in_width: usize, out_width: usize) -> Object {
     let r = b.new_register(out_kind);
     let r_slot = Slot::Register(r);
     b.push(op_as_bits(r_slot, arg_slot, out_width));
-    b.finish(r_slot, &format!("random_as_bits_{in_width}b_to_{out_width}b"))
+    b.finish(
+        r_slot,
+        &format!("random_as_bits_{in_width}b_to_{out_width}b"),
+    )
 }
 
 /// Generate a program that reinterprets the argument as signed via
@@ -863,10 +864,10 @@ pub fn generate_as_signed_program(in_width: usize, out_width: usize) -> Object {
 /// and returns the inner value.  Exercises `Retime` + signal-aware
 /// `Index`.
 pub fn generate_retime_program(bit_width: usize) -> Object {
+    use crate::Color;
     use crate::rhif::rhif_builder::{op_index, op_retime};
     use crate::rhif::spec::Slot;
     use crate::types::path::Path;
-    use crate::Color;
     let inner_kind = Kind::Bits(bit_width);
     let signal_kind = Kind::make_signal(inner_kind, Color::Red);
     let mut b = ProgramBuilder::new(inner_kind);
@@ -876,7 +877,11 @@ pub fn generate_retime_program(bit_width: usize) -> Object {
     b.push(op_retime(signal_slot, arg_slot, Some(Color::Red)));
     let out_reg = b.new_register(inner_kind);
     let out_slot = Slot::Register(out_reg);
-    b.push(op_index(out_slot, signal_slot, Path::default().signal_value()));
+    b.push(op_index(
+        out_slot,
+        signal_slot,
+        Path::default().signal_value(),
+    ));
     b.finish(out_slot, &format!("random_retime_{bit_width}b"))
 }
 
@@ -885,10 +890,10 @@ pub fn generate_retime_program(bit_width: usize) -> Object {
 /// returns it as a `Bits(1)`.  Exercises `Wrap` + enum
 /// discriminant `Index`.
 pub fn generate_wrap_some_program(bit_width: usize) -> Object {
+    use crate::ast::ast_impl::WrapOp;
     use crate::rhif::rhif_builder::op_index;
     use crate::rhif::spec::Slot;
     use crate::types::path::Path;
-    use crate::ast::ast_impl::WrapOp;
     let payload_kind = Kind::Bits(bit_width);
     let option_kind = build_option_kind(payload_kind);
     let mut b = ProgramBuilder::new(payload_kind);
@@ -903,18 +908,22 @@ pub fn generate_wrap_some_program(bit_width: usize) -> Object {
     }));
     let disc_reg = b.new_register(Kind::Bits(1));
     let disc_slot = Slot::Register(disc_reg);
-    b.push(op_index(disc_slot, opt_slot, Path::default().discriminant()));
+    b.push(op_index(
+        disc_slot,
+        opt_slot,
+        Path::default().discriminant(),
+    ));
     b.finish(disc_slot, &format!("random_wrap_some_{bit_width}b"))
 }
 
 /// Generate a program that builds an `Option::None` of the
 /// requested payload kind, returns its discriminant as `Bits(1)`.
 pub fn generate_wrap_none_program(payload_bit_width: usize) -> Object {
+    use crate::TypedBits;
+    use crate::ast::ast_impl::WrapOp;
     use crate::rhif::rhif_builder::{op_assign, op_index};
     use crate::rhif::spec::Slot;
     use crate::types::path::Path;
-    use crate::ast::ast_impl::WrapOp;
-    use crate::TypedBits;
     let payload_kind = Kind::Bits(payload_bit_width);
     let option_kind = build_option_kind(payload_kind);
 
@@ -939,15 +948,16 @@ pub fn generate_wrap_none_program(payload_bit_width: usize) -> Object {
 
     let disc_reg = b.new_register(Kind::Bits(1));
     let disc_slot = Slot::Register(disc_reg);
-    b.push(op_index(disc_slot, opt_slot, Path::default().discriminant()));
+    b.push(op_index(
+        disc_slot,
+        opt_slot,
+        Path::default().discriminant(),
+    ));
 
     // To keep the argument referenced (so it doesn't trigger
     // RemoveUnusedRegisters), assign it into a discard register.
     let _ = op_assign;
-    b.finish(
-        disc_slot,
-        &format!("random_wrap_none_{payload_bit_width}b"),
-    )
+    b.finish(disc_slot, &format!("random_wrap_none_{payload_bit_width}b"))
 }
 
 /// Generate a program that builds a 2-field struct from the
@@ -961,11 +971,7 @@ pub fn generate_struct_program(bit_width: usize, rng: &mut impl RngCore) -> Obje
     let kind = Kind::Bits(bit_width);
     let struct_kind = Kind::make_struct(
         "RandStruct",
-        vec![
-            Kind::make_field("a", kind),
-            Kind::make_field("b", kind),
-        ]
-        .into(),
+        vec![Kind::make_field("a", kind), Kind::make_field("b", kind)].into(),
     );
 
     let mut b = ProgramBuilder::new(kind);
@@ -1013,11 +1019,7 @@ pub fn generate_enum_program(bit_width: usize) -> Object {
         "RandEnum",
         vec![
             Kind::make_variant("A", Kind::Empty, 0),
-            Kind::make_variant(
-                "B",
-                Kind::make_tuple(vec![payload_kind].into()),
-                1,
-            ),
+            Kind::make_variant("B", Kind::make_tuple(vec![payload_kind].into()), 1),
         ],
         Kind::make_discriminant_layout(1, DiscriminantAlignment::Msb, DiscriminantType::Unsigned),
     );
@@ -1116,7 +1118,8 @@ pub fn run_passes_on_random_program(obj: Object) -> Result<Object, (String, Well
     use crate::compiler::rhif_passes::pass::Pass;
     use crate::compiler::rhif_passes::{
         constant_propagation::ConstantPropagation, dead_code_elimination::DeadCodeEliminationPass,
-        propagate_literals::PropagateLiteralsPass, remove_extra_registers::RemoveExtraRegistersPass,
+        propagate_literals::PropagateLiteralsPass,
+        remove_extra_registers::RemoveExtraRegistersPass,
         remove_unneeded_muxes::RemoveUnneededMuxesPass,
         remove_unused_literals::RemoveUnusedLiterals,
         remove_unused_registers::RemoveUnusedRegistersPass,
@@ -1140,9 +1143,7 @@ pub fn run_passes_on_random_program(obj: Object) -> Result<Object, (String, Well
         // We don't have a Violation variant for "pass errored"; treat
         // it as an empty violation set with a synthesised description.
         // The caller distinguishes by checking is_well_formed().
-        WellFormednessReport {
-            violations: vec![],
-        }
+        WellFormednessReport { violations: vec![] }
     }
 
     let mut o = obj;
@@ -1204,11 +1205,13 @@ mod tests {
     #[test]
     fn lowering_outcome_equality_matches_pattern() {
         assert!(LoweringCorrectnessOutcome::Equal.is_equal());
-        assert!(!LoweringCorrectnessOutcome::Mismatch {
-            rhif_bits: vec![],
-            rtl_bits: vec![],
-        }
-        .is_equal());
+        assert!(
+            !LoweringCorrectnessOutcome::Mismatch {
+                rhif_bits: vec![],
+                rtl_bits: vec![],
+            }
+            .is_equal()
+        );
     }
 
     #[test]
@@ -1310,11 +1313,7 @@ mod tests {
             ($name:expr, $obj:expr) => {{
                 let obj: Object = $obj;
                 let r = check_object_universal(&obj);
-                assert!(
-                    r.is_well_formed(),
-                    "{} not well-formed:\n{r}",
-                    $name,
-                );
+                assert!(r.is_well_formed(), "{} not well-formed:\n{r}", $name,);
             }};
         }
         check!("tuple", generate_tuple_program(8, &mut rng));
@@ -1322,7 +1321,7 @@ mod tests {
         check!("select", generate_select_program(8, &mut rng));
         check!("repeat", generate_repeat_program(8, 4, &mut rng));
         check!("splice", generate_splice_program(8, &mut rng));
-        check!("cast",   generate_cast_program(8, 16, 12, &mut rng));
+        check!("cast", generate_cast_program(8, 16, 12, &mut rng));
     }
 
     /// Generators for the remaining 8 RHIF opcodes (`AsBits`,
@@ -1335,11 +1334,7 @@ mod tests {
             ($name:expr, $obj:expr) => {{
                 let obj: Object = $obj;
                 let r = check_object_universal(&obj);
-                assert!(
-                    r.is_well_formed(),
-                    "{} not well-formed:\n{r}",
-                    $name,
-                );
+                assert!(r.is_well_formed(), "{} not well-formed:\n{r}", $name,);
             }};
         }
         check!("as_bits", generate_as_bits_program(8, 16));
@@ -1450,7 +1445,10 @@ mod tests {
 
         // Confirm the input is well-formed.
         let pre = check_object_universal(&obj);
-        assert!(pre.is_well_formed(), "random program isn't well-formed: {pre}");
+        assert!(
+            pre.is_well_formed(),
+            "random program isn't well-formed: {pre}"
+        );
 
         // Buggy pass: duplicate the last opcode (so its lhs is
         // written by both the original and the duplicate).
@@ -1464,10 +1462,12 @@ mod tests {
              checker did not catch it.  The property suite is vacuous.\n{post}",
         );
         // Specifically, expect a DoubleAssignment violation.
-        let has_double = post
-            .violations
-            .iter()
-            .any(|v| matches!(v, crate::rhif::well_formedness::Violation::DoubleAssignment { .. }));
+        let has_double = post.violations.iter().any(|v| {
+            matches!(
+                v,
+                crate::rhif::well_formedness::Violation::DoubleAssignment { .. }
+            )
+        });
         assert!(
             has_double,
             "meta-test failed: violations did not include DoubleAssignment.\n{post}",

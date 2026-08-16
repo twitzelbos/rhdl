@@ -489,7 +489,8 @@ pub fn modbus_rtu_master<const NREG: usize, const NCOIL: usize>(
                             let coil_off: Bits<16> = bits::<16>(b as u128);
                             let coil_idx: Bits<16> = coil_base + coil_off;
                             let in_range: bool = coil_idx < count_v;
-                            let safe_idx: Bits<16> = if in_range { coil_idx } else { bits::<16>(0) };
+                            let safe_idx: Bits<16> =
+                                if in_range { coil_idx } else { bits::<16>(0) };
                             let bit_val: bool = q.write_coils[safe_idx];
                             if in_range && bit_val {
                                 packed = packed | (bits::<8>(1) << bits::<8>(b as u128));
@@ -810,10 +811,7 @@ mod tests {
             .filter(|s| s.output.tx_valid && s.input.1.tx_ready)
             .map(|s| s.output.tx_byte.raw() as u8)
             .collect();
-        let done_out = outputs
-            .iter()
-            .find(|s| s.output.done)
-            .map(|s| s.output);
+        let done_out = outputs.iter().find(|s| s.output.done).map(|s| s.output);
         (tx, done_out)
     }
 
@@ -912,11 +910,7 @@ mod tests {
     fn test_fc03_response_decode() -> miette::Result<()> {
         // FC 0x03: read 3 regs.  Slave response includes 3 regs of data.
         let uut: ModbusRtuMaster<8, 8> = ModbusRtuMaster::default();
-        let response = build_response(
-            0x01,
-            0x03,
-            &[0x06, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66],
-        );
+        let response = build_response(0x01, 0x03, &[0x06, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66]);
         let stream_in =
             drive_request::<8, 8>(0x01, 0x03, 0x0000, 3, [bits(0); 8], [false; 8], &response);
         let (_, done) = run_request(&uut, stream_in);
@@ -1055,9 +1049,7 @@ mod tests {
     // `ref_crc` test helper).
     // ===========================================================
 
-    use crate::serial_bus::modbus_rtu_slave::{
-        In as SlaveIn, ModbusRtuSlave, Out as SlaveOut,
-    };
+    use crate::serial_bus::modbus_rtu_slave::{In as SlaveIn, ModbusRtuSlave, Out as SlaveOut};
 
     /// Run a full request-response round-trip: master starts a
     /// request, master TX bytes flow into slave RX, slave processes
@@ -1218,10 +1210,7 @@ mod tests {
             .synchronous_sample()
             .filter(|s| !s.input.0.reset.any())
             .collect();
-        let master_done_out = outputs_m3
-            .iter()
-            .find(|s| s.output.done)
-            .map(|s| s.output);
+        let master_done_out = outputs_m3.iter().find(|s| s.output.done).map(|s| s.output);
 
         let _ = last_m_cycle;
         let _ = stream_m;
@@ -1234,8 +1223,17 @@ mod tests {
         // Master writes reg[2] = 0xCAFE; slave receives, applies,
         // echoes the request.  Master decodes the response and
         // pulses done with no error.
-        let (tx_m, m_done, s_done) =
-            run_round_trip::<8, 8>(1, 0x06, 0x0002, 0xCAFE, [bits(0); 8], [false; 8], [bits(0); 8], [false; 8], 600);
+        let (tx_m, m_done, s_done) = run_round_trip::<8, 8>(
+            1,
+            0x06,
+            0x0002,
+            0xCAFE,
+            [bits(0); 8],
+            [false; 8],
+            [bits(0); 8],
+            [false; 8],
+            600,
+        );
         // Verify the master sent the canonical FC 0x06 frame.
         let mut expected_req = vec![0x01, 0x06, 0x00, 0x02, 0xCA, 0xFE];
         let crc = ref_crc(&expected_req);
@@ -1244,10 +1242,18 @@ mod tests {
         assert_eq!(tx_m, expected_req, "master TX mismatch");
         // Slave should have responded.
         let s_done = s_done.expect("slave did not produce a response");
-        assert_eq!(s_done.holding_regs[2].raw(), 0xCAFE, "slave didn't apply write");
+        assert_eq!(
+            s_done.holding_regs[2].raw(),
+            0xCAFE,
+            "slave didn't apply write"
+        );
         // Master should have decoded the response and pulsed done.
         let m_done = m_done.expect("master did not pulse done");
-        assert!(!m_done.error, "master saw error: code 0x{:02x}", m_done.error_code.raw());
+        assert!(
+            !m_done.error,
+            "master saw error: code 0x{:02x}",
+            m_done.error_code.raw()
+        );
         Ok(())
     }
 
@@ -1255,8 +1261,17 @@ mod tests {
     fn test_round_trip_fc03_read_holding_registers() -> miette::Result<()> {
         // Master reads regs[0..3].  Slave responds with all-zero
         // (default).  Master decodes; read_regs should be zeros.
-        let (tx_m, m_done, s_done) =
-            run_round_trip::<8, 8>(1, 0x03, 0x0000, 3, [bits(0); 8], [false; 8], [bits(0); 8], [false; 8], 600);
+        let (tx_m, m_done, s_done) = run_round_trip::<8, 8>(
+            1,
+            0x03,
+            0x0000,
+            3,
+            [bits(0); 8],
+            [false; 8],
+            [bits(0); 8],
+            [false; 8],
+            600,
+        );
         let mut expected_req = vec![0x01, 0x03, 0x00, 0x00, 0x00, 0x03];
         let crc = ref_crc(&expected_req);
         expected_req.push((crc & 0xFF) as u8);
@@ -1278,8 +1293,17 @@ mod tests {
         wr[0] = bits(0x1111);
         wr[1] = bits(0x2222);
         wr[2] = bits(0x3333);
-        let (tx_m, m_done, s_done) =
-            run_round_trip::<8, 8>(1, 0x10, 0x0000, 3, wr, [false; 8], [bits(0); 8], [false; 8], 600);
+        let (tx_m, m_done, s_done) = run_round_trip::<8, 8>(
+            1,
+            0x10,
+            0x0000,
+            3,
+            wr,
+            [false; 8],
+            [bits(0); 8],
+            [false; 8],
+            600,
+        );
         let mut expected_req = vec![
             0x01, 0x10, 0x00, 0x00, 0x00, 0x03, 0x06, 0x11, 0x11, 0x22, 0x22, 0x33, 0x33,
         ];
@@ -1299,8 +1323,17 @@ mod tests {
     #[test]
     fn test_round_trip_exception_for_oor_read() -> miette::Result<()> {
         // Master reads addr 99 from slave with NREG=8 → exception 0x02.
-        let (_, m_done, _) =
-            run_round_trip::<8, 8>(1, 0x03, 99, 1, [bits(0); 8], [false; 8], [bits(0); 8], [false; 8], 600);
+        let (_, m_done, _) = run_round_trip::<8, 8>(
+            1,
+            0x03,
+            99,
+            1,
+            [bits(0); 8],
+            [false; 8],
+            [bits(0); 8],
+            [false; 8],
+            600,
+        );
         let m_done = m_done.expect("no done");
         assert!(m_done.error, "master should see exception");
         assert_eq!(m_done.error_code.raw(), 0x02);

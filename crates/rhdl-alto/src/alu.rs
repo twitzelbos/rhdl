@@ -54,22 +54,28 @@ pub fn alu(func: AluFunction, bus: Bits<16>, t: Bits<16>, skip: bool) -> AluOut 
     let diff_m1: Bits<17> = (bus17 - t17) - one17;
 
     let result17: Bits<17> = match func {
-        AluFunction::Bus              => bus17,
-        AluFunction::T                => t17,
-        AluFunction::BusOrT           => bus17 | t17,
-        AluFunction::BusAndT          => bus17 & t17,
-        AluFunction::BusXorT          => bus17 ^ t17,
-        AluFunction::BusPlusOne       => bus_p1,
-        AluFunction::BusMinusOne      => bus_m1,
-        AluFunction::BusPlusT         => sum,
-        AluFunction::BusMinusT        => diff,
+        AluFunction::Bus => bus17,
+        AluFunction::T => t17,
+        AluFunction::BusOrT => bus17 | t17,
+        AluFunction::BusAndT => bus17 & t17,
+        AluFunction::BusXorT => bus17 ^ t17,
+        AluFunction::BusPlusOne => bus_p1,
+        AluFunction::BusMinusOne => bus_m1,
+        AluFunction::BusPlusT => sum,
+        AluFunction::BusMinusT => diff,
         AluFunction::BusMinusTMinusOne => diff_m1,
-        AluFunction::BusPlusTPlusOne  => sum_p1,
-        AluFunction::BusPlusSkip      => if skip { bus_p1 } else { bus17 },
-        AluFunction::BusAndTAlt       => bus17 & t17,
-        AluFunction::BusAndNotT       => bus17 & !t17,
-        AluFunction::Undef14          => bus17,
-        AluFunction::Undef15          => bus17,
+        AluFunction::BusPlusTPlusOne => sum_p1,
+        AluFunction::BusPlusSkip => {
+            if skip {
+                bus_p1
+            } else {
+                bus17
+            }
+        }
+        AluFunction::BusAndTAlt => bus17 & t17,
+        AluFunction::BusAndNotT => bus17 & !t17,
+        AluFunction::Undef14 => bus17,
+        AluFunction::Undef15 => bus17,
     };
 
     AluOut {

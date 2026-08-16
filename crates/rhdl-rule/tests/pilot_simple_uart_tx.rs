@@ -216,7 +216,7 @@ fn rule_uart_transmits_byte_with_correct_frame() {
     let expected_frame = vec![
         false, // start
         true, false, true, false, true, false, true, false, // data, LSB first
-        true, // stop
+        true,  // stop
     ];
     assert!(
         start + expected_frame.len() <= tx.len(),
@@ -239,12 +239,10 @@ fn rule_uart_transmits_byte_with_correct_frame() {
 #[test]
 fn rule_uart_back_to_back_bytes() {
     // Two bytes in succession: 0x01 then 0x80.
-    let inputs: Vec<UartTxIn> = vec![
-        UartTxIn {
-            data: bits::<8>(0x01),
-            send: true,
-        },
-    ]
+    let inputs: Vec<UartTxIn> = vec![UartTxIn {
+        data: bits::<8>(0x01),
+        send: true,
+    }]
     .into_iter()
     .chain(std::iter::repeat_n(
         UartTxIn {
@@ -301,12 +299,10 @@ fn rule_uart_back_to_back_bytes() {
 #[test]
 fn rule_uart_iverilog_round_trip() -> Result<(), RHDLError> {
     let uut: RuleSimpleUartTx = RuleSimpleUartTx::default();
-    let inputs: Vec<UartTxIn> = vec![
-        UartTxIn {
-            data: bits::<8>(0xa5),
-            send: true,
-        },
-    ]
+    let inputs: Vec<UartTxIn> = vec![UartTxIn {
+        data: bits::<8>(0xa5),
+        send: true,
+    }]
     .into_iter()
     .chain(std::iter::repeat_n(
         UartTxIn {

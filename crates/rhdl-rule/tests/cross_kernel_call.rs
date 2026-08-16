@@ -73,8 +73,10 @@ fn increment_via_helper_kernel() {
         .last()
         .map(|s| s.output.raw())
         .unwrap_or(0);
-    assert!(last >= 4 && last <= 5,
-        "expected ~5 increments via helper kernel; got {last}");
+    assert!(
+        last >= 4 && last <= 5,
+        "expected ~5 increments via helper kernel; got {last}"
+    );
 }
 
 // =================================================================
@@ -94,9 +96,13 @@ pub struct Step {
 #[kernel]
 pub fn helper_compute(value: Bits<8>, step: Bits<8>) -> Step {
     let next = value + step;
-    let overflow = next < value;       // wraparound detection
+    let overflow = next < value; // wraparound detection
     let doubled = next + next;
-    Step { next, overflow, doubled }
+    Step {
+        next,
+        overflow,
+        doubled,
+    }
 }
 
 #[derive(Clone, Debug, Default, Synchronous, SynchronousDQ)]
@@ -153,11 +159,17 @@ fn multi_arg_helper_struct_return() {
 // =================================================================
 
 #[kernel]
-pub fn helper_mask_low_4(x: Bits<8>) -> Bits<8> { x & bits::<8>(0x0F) }
+pub fn helper_mask_low_4(x: Bits<8>) -> Bits<8> {
+    x & bits::<8>(0x0F)
+}
 #[kernel]
-pub fn helper_shift_up_4(x: Bits<8>) -> Bits<8> { x << 4 }
+pub fn helper_shift_up_4(x: Bits<8>) -> Bits<8> {
+    x << 4
+}
 #[kernel]
-pub fn helper_combine(low: Bits<8>, high: Bits<8>) -> Bits<8> { low | high }
+pub fn helper_combine(low: Bits<8>, high: Bits<8>) -> Bits<8> {
+    low | high
+}
 
 #[derive(Clone, Debug, Default, Synchronous, SynchronousDQ)]
 pub struct ChainWidget {
@@ -254,7 +266,11 @@ fn helper_works_inside_multi_rule_priority_kernel() {
         .map(|s| s.output)
         .unwrap();
     // 4 increments by 2 each = ~6-8.
-    assert!(last.0.raw() >= 6, "counter should advance by 2 each cycle; got {}", last.0.raw());
+    assert!(
+        last.0.raw() >= 6,
+        "counter should advance by 2 each cycle; got {}",
+        last.0.raw()
+    );
     assert_eq!(last.1.raw(), 1, "high_priority rule should win");
 }
 

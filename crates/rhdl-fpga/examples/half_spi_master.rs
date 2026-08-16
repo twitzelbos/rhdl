@@ -6,9 +6,7 @@ use rhdl_fpga::{
 
 fn main() -> Result<(), RHDLError> {
     // Emit the FSM diagram first — required by CLAUDE.md §12 rule 14.
-    write_fsm_diagram::<HalfSpiMaster<8, 4>>(
-        "half_spi_master_fsm.md",
-    )?;
+    write_fsm_diagram::<HalfSpiMaster<8, 4>>("half_spi_master_fsm.md")?;
 
     let uut = HalfSpiMaster::<8, 4>::default();
     // Simulate writing 0xA5 (8 bits), turnaround for 4 cycles, then reading

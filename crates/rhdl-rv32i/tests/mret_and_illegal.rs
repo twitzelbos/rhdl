@@ -33,11 +33,7 @@ fn r_type(funct7: u32, rs2: u32, rs1: u32, funct3: u32, rd: u32, opcode: u32) ->
 }
 fn i_type(imm: i32, rs1: u32, funct3: u32, rd: u32, opcode: u32) -> u32 {
     let imm_u = (imm as u32) & 0xFFF;
-    (imm_u << 20)
-        | (rs1 & 0x1F) << 15
-        | (funct3 & 0x7) << 12
-        | (rd & 0x1F) << 7
-        | (opcode & 0x7F)
+    (imm_u << 20) | (rs1 & 0x1F) << 15 | (funct3 & 0x7) << 12 | (rd & 0x1F) << 7 | (opcode & 0x7F)
 }
 fn s_type(imm: i32, rs2: u32, rs1: u32, funct3: u32, opcode: u32) -> u32 {
     let imm_u = (imm as u32) & 0xFFF;
@@ -51,11 +47,19 @@ fn s_type(imm: i32, rs2: u32, rs1: u32, funct3: u32, opcode: u32) -> u32 {
         | (opcode & 0x7F)
 }
 
-fn addi(rd: u32, rs1: u32, imm: i32) -> u32 { i_type(imm, rs1, 0, rd, 0x13) }
+fn addi(rd: u32, rs1: u32, imm: i32) -> u32 {
+    i_type(imm, rs1, 0, rd, 0x13)
+}
 #[allow(dead_code)]
-fn add(rd: u32, rs1: u32, rs2: u32) -> u32  { r_type(0, rs2, rs1, 0, rd, 0x33) }
-fn sw(rs2: u32, rs1: u32, imm: i32) -> u32  { s_type(imm, rs2, rs1, 2, 0x23) }
-fn lui(rd: u32, imm20: u32) -> u32          { (imm20 & 0xFFFFF) << 12 | (rd & 0x1F) << 7 | 0x37 }
+fn add(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    r_type(0, rs2, rs1, 0, rd, 0x33)
+}
+fn sw(rs2: u32, rs1: u32, imm: i32) -> u32 {
+    s_type(imm, rs2, rs1, 2, 0x23)
+}
+fn lui(rd: u32, imm20: u32) -> u32 {
+    (imm20 & 0xFFFFF) << 12 | (rd & 0x1F) << 7 | 0x37
+}
 
 fn csrrw(rd: u32, rs1: u32, csr: u32) -> u32 {
     ((csr & 0xFFF) << 20) | (rs1 & 0x1F) << 15 | 1 << 12 | (rd & 0x1F) << 7 | 0x73
@@ -64,10 +68,10 @@ fn csrrs(rd: u32, rs1: u32, csr: u32) -> u32 {
     ((csr & 0xFFF) << 20) | (rs1 & 0x1F) << 15 | 2 << 12 | (rd & 0x1F) << 7 | 0x73
 }
 
-const ECALL: u32  = 0x0000_0073;
-const MRET: u32   = 0x3020_0073;       // funct12 = 0x302, opcode = 0x73
-const HALT: u32   = 0x0000_0063;       // beq x0, x0, +0
-const ILLEGAL: u32 = 0x0000_007F;      // opcode 0x7F is unassigned in RV32I
+const ECALL: u32 = 0x0000_0073;
+const MRET: u32 = 0x3020_0073; // funct12 = 0x302, opcode = 0x73
+const HALT: u32 = 0x0000_0063; // beq x0, x0, +0
+const ILLEGAL: u32 = 0x0000_007F; // opcode 0x7F is unassigned in RV32I
 
 // ---- Closed-loop harnesses ---------------------------------------
 
@@ -78,17 +82,32 @@ fn run_single(program: Vec<u32>, max_cycles: usize) -> [u32; 256] {
     let mut total_cycles: usize = 0;
     uut.run_fn(
         |out: SOut| {
-            if reset_cycles_remaining > 0 { reset_cycles_remaining -= 1; return Some(ResetOrData::Reset); }
-            if total_cycles >= max_cycles { return None; }
+            if reset_cycles_remaining > 0 {
+                reset_cycles_remaining -= 1;
+                return Some(ResetOrData::Reset);
+            }
+            if total_cycles >= max_cycles {
+                return None;
+            }
             total_cycles += 1;
             if out.mem_write {
                 let addr_word = (out.mem_addr.raw() / 4) as usize;
-                if addr_word < data_mem.len() { data_mem[addr_word] = out.mem_wdata.raw() as u32; }
+                if addr_word < data_mem.len() {
+                    data_mem[addr_word] = out.mem_wdata.raw() as u32;
+                }
             }
             let pc_word = (out.pc.raw() / 4) as usize;
-            let instr = if pc_word < program.len() { program[pc_word] } else { 0 };
+            let instr = if pc_word < program.len() {
+                program[pc_word]
+            } else {
+                0
+            };
             let read_word = (out.mem_addr.raw() / 4) as usize;
-            let mem_rdata = if read_word < data_mem.len() { data_mem[read_word] } else { 0 };
+            let mem_rdata = if read_word < data_mem.len() {
+                data_mem[read_word]
+            } else {
+                0
+            };
             Some(ResetOrData::Data(SInIn {
                 instr: bits::<32>(instr as u128),
                 mem_rdata: bits::<32>(mem_rdata as u128),
@@ -96,7 +115,8 @@ fn run_single(program: Vec<u32>, max_cycles: usize) -> [u32; 256] {
             }))
         },
         100,
-    ).for_each(drop);
+    )
+    .for_each(drop);
     data_mem
 }
 
@@ -107,17 +127,32 @@ fn run_pipelined(program: Vec<u32>, max_cycles: usize) -> [u32; 256] {
     let mut total_cycles: usize = 0;
     uut.run_fn(
         |out: POut| {
-            if reset_cycles_remaining > 0 { reset_cycles_remaining -= 1; return Some(ResetOrData::Reset); }
-            if total_cycles >= max_cycles { return None; }
+            if reset_cycles_remaining > 0 {
+                reset_cycles_remaining -= 1;
+                return Some(ResetOrData::Reset);
+            }
+            if total_cycles >= max_cycles {
+                return None;
+            }
             total_cycles += 1;
             if out.mem_write {
                 let addr_word = (out.mem_addr.raw() / 4) as usize;
-                if addr_word < data_mem.len() { data_mem[addr_word] = out.mem_wdata.raw() as u32; }
+                if addr_word < data_mem.len() {
+                    data_mem[addr_word] = out.mem_wdata.raw() as u32;
+                }
             }
             let pc_word = (out.pc.raw() / 4) as usize;
-            let instr = if pc_word < program.len() { program[pc_word] } else { 0 };
+            let instr = if pc_word < program.len() {
+                program[pc_word]
+            } else {
+                0
+            };
             let read_word = (out.mem_addr.raw() / 4) as usize;
-            let mem_rdata = if read_word < data_mem.len() { data_mem[read_word] } else { 0 };
+            let mem_rdata = if read_word < data_mem.len() {
+                data_mem[read_word]
+            } else {
+                0
+            };
             Some(ResetOrData::Data(PIn {
                 instr: bits::<32>(instr as u128),
                 mem_rdata: bits::<32>(mem_rdata as u128),
@@ -125,7 +160,8 @@ fn run_pipelined(program: Vec<u32>, max_cycles: usize) -> [u32; 256] {
             }))
         },
         100,
-    ).for_each(drop);
+    )
+    .for_each(drop);
     data_mem
 }
 
@@ -162,20 +198,20 @@ fn mret_returns_to_user_code_single_cycle() {
     // To avoid colliding with the trap-to-handler vectoring, set
     // mtvec = 0x24 (the handler entry) instead of 0x20.
     let program = vec![
-        lui(1, 0),                     // 0x00
-        addi(1, 1, 0x24),              // 0x04
-        csrrw(0, 1, CSR_MTVEC),        // 0x08
-        addi(0, 0, 0),                 // 0x0C
-        addi(0, 0, 0),                 // 0x10
-        ECALL,                         // 0x14
-        addi(10, 0, 0xAB),             // 0x18: post-MRET landing
-        sw(10, 0, 0),                  // 0x1C: mem[0] = 0xAB
-        HALT,                          // 0x20: park
+        lui(1, 0),              // 0x00
+        addi(1, 1, 0x24),       // 0x04
+        csrrw(0, 1, CSR_MTVEC), // 0x08
+        addi(0, 0, 0),          // 0x0C
+        addi(0, 0, 0),          // 0x10
+        ECALL,                  // 0x14
+        addi(10, 0, 0xAB),      // 0x18: post-MRET landing
+        sw(10, 0, 0),           // 0x1C: mem[0] = 0xAB
+        HALT,                   // 0x20: park
         // 0x24: handler
-        csrrs(2, 0, CSR_MEPC),         // 0x24: x2 ← mepc
-        addi(2, 2, 4),                 // 0x28: x2 += 4
-        csrrw(0, 2, CSR_MEPC),         // 0x2C: mepc = x2
-        MRET,                          // 0x30: return → PC = 0x18
+        csrrs(2, 0, CSR_MEPC), // 0x24: x2 ← mepc
+        addi(2, 2, 4),         // 0x28: x2 += 4
+        csrrw(0, 2, CSR_MEPC), // 0x2C: mepc = x2
+        MRET,                  // 0x30: return → PC = 0x18
     ];
     let mem = run_single(program, 36);
     assert_eq!(
@@ -196,24 +232,24 @@ fn mret_returns_to_user_code_pipelined_parity() {
     // Same program as the single-cycle test but with the handler
     // expanded with NOPs.  Handler at 0x28 (was 0x24) — adjust mtvec.
     let program = vec![
-        lui(1, 0),                     // 0x00
-        addi(1, 1, 0x28),              // 0x04
-        csrrw(0, 1, CSR_MTVEC),        // 0x08
-        addi(0, 0, 0),                 // 0x0C
-        addi(0, 0, 0),                 // 0x10
-        ECALL,                         // 0x14
-        addi(10, 0, 0xAB),             // 0x18
-        sw(10, 0, 0),                  // 0x1C
-        HALT,                          // 0x20
-        addi(0, 0, 0),                 // 0x24: pad
+        lui(1, 0),              // 0x00
+        addi(1, 1, 0x28),       // 0x04
+        csrrw(0, 1, CSR_MTVEC), // 0x08
+        addi(0, 0, 0),          // 0x0C
+        addi(0, 0, 0),          // 0x10
+        ECALL,                  // 0x14
+        addi(10, 0, 0xAB),      // 0x18
+        sw(10, 0, 0),           // 0x1C
+        HALT,                   // 0x20
+        addi(0, 0, 0),          // 0x24: pad
         // 0x28: handler
-        csrrs(2, 0, CSR_MEPC),         // 0x28
-        addi(2, 2, 4),                 // 0x2C
-        csrrw(0, 2, CSR_MEPC),         // 0x30
-        addi(0, 0, 0),                 // 0x34: NOP — wait for CSRRW to commit
-        addi(0, 0, 0),                 // 0x38: NOP
-        addi(0, 0, 0),                 // 0x3C: NOP
-        MRET,                          // 0x40: PC ← mepc (now 0x18)
+        csrrs(2, 0, CSR_MEPC), // 0x28
+        addi(2, 2, 4),         // 0x2C
+        csrrw(0, 2, CSR_MEPC), // 0x30
+        addi(0, 0, 0),         // 0x34: NOP — wait for CSRRW to commit
+        addi(0, 0, 0),         // 0x38: NOP
+        addi(0, 0, 0),         // 0x3C: NOP
+        MRET,                  // 0x40: PC ← mepc (now 0x18)
     ];
     let single = run_single(program.clone(), 50);
     let pipelined = run_pipelined(program, 90);
@@ -238,9 +274,9 @@ fn illegal_instruction_traps_with_cause_2_single_cycle() {
         csrrw(0, 1, CSR_MTVEC),
         addi(0, 0, 0),
         addi(0, 0, 0),
-        ILLEGAL,                       // 0x14: traps with cause = 2
-        addi(0, 0, 0),                 // SQUASHED
-        addi(0, 0, 0),                 // SQUASHED
+        ILLEGAL,       // 0x14: traps with cause = 2
+        addi(0, 0, 0), // SQUASHED
+        addi(0, 0, 0), // SQUASHED
         // 0x20: handler
         csrrs(2, 0, CSR_MEPC),
         csrrs(3, 0, CSR_MCAUSE),

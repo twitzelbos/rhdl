@@ -23,9 +23,7 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
-    DeriveInput, Expr, ExprLit, Lit, Meta, Token,
-    parse::Parser,
-    punctuated::Punctuated,
+    DeriveInput, Expr, ExprLit, Lit, Meta, Token, parse::Parser, punctuated::Punctuated,
     spanned::Spanned,
 };
 

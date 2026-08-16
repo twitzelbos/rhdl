@@ -59,10 +59,14 @@ pub struct SubwidgetCounter {
 }
 
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
-pub struct SubwidgetIn { pub bump: bool }
+pub struct SubwidgetIn {
+    pub bump: bool,
+}
 
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
-pub struct SubwidgetOut { pub current: Bits<8> }
+pub struct SubwidgetOut {
+    pub current: Bits<8>,
+}
 
 impl SynchronousIO for SubwidgetCounter {
     type I = SubwidgetIn;

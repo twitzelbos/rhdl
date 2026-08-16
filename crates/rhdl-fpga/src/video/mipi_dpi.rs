@@ -47,7 +47,7 @@ B<8> |                       | B<8>
 #![doc = include_str!("../../doc/mipi_dpi.md")]
 use rhdl::prelude::*;
 
-use super::video_timing::{VideoTimingCore, video_timing as video_timing_kernel};
+use super::video_timing::{video_timing as video_timing_kernel, VideoTimingCore};
 
 #[allow(unused_imports)]
 use video_timing_kernel as _;
@@ -206,9 +206,8 @@ mod tests {
             .synchronous_sample()
             .filter(|s| !s.input.0.reset.any())
             .any(|s| {
-                let active = s.output.r.raw() != 0
-                    || s.output.g.raw() != 0
-                    || s.output.b.raw() != 0;
+                let active =
+                    s.output.r.raw() != 0 || s.output.g.raw() != 0 || s.output.b.raw() != 0;
                 // RGB nonzero => DE must be high (since input is constant nonzero).
                 active != s.output.de
             });
@@ -228,11 +227,12 @@ mod tests {
             .filter(|s| !s.input.0.reset.any())
             .any(|s| {
                 !s.output.de
-                    && (s.output.r.raw() != 0
-                        || s.output.g.raw() != 0
-                        || s.output.b.raw() != 0)
+                    && (s.output.r.raw() != 0 || s.output.g.raw() != 0 || s.output.b.raw() != 0)
             });
-        assert!(!any_blank_color, "RGB must be zero outside DE-active region");
+        assert!(
+            !any_blank_color,
+            "RGB must be zero outside DE-active region"
+        );
         Ok(())
     }
 

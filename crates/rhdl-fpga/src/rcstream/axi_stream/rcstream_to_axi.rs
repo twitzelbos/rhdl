@@ -106,10 +106,13 @@ pub fn rcstream_to_axi_kernel<T: Digital, F: Digital>(
     // void_in=true).
     let (valid, item_in): (bool, Item<T, F>) = match i.data {
         Some(it) => (true, it),
-        None => (false, Item::<T, F> {
-            data: T::dont_care(),
-            frame: F::dont_care(),
-        }),
+        None => (
+            false,
+            Item::<T, F> {
+                data: T::dont_care(),
+                frame: F::dont_care(),
+            },
+        ),
     };
     d.outbuf.data_in = item_in;
     d.outbuf.void_in = !valid;
@@ -140,7 +143,10 @@ mod tests {
     #[test]
     fn kernel_forwards_rcstream_to_carloni() {
         let cr = ClockReset::dont_care();
-        let item = Item::<b8, ()> { data: bits::<8>(0xCD), frame: () };
+        let item = Item::<b8, ()> {
+            data: bits::<8>(0xCD),
+            frame: (),
+        };
         let i = In::<b8, ()> {
             data: Some(item),
             tready: true,
@@ -186,7 +192,10 @@ mod tests {
             data: None,
             tready: true,
         };
-        let held = Item::<b8, bool> { data: bits::<8>(0xEF), frame: true };
+        let held = Item::<b8, bool> {
+            data: bits::<8>(0xEF),
+            frame: true,
+        };
         let q = Q::<b8, bool> {
             outbuf: carloni::Out::<Item<b8, bool>> {
                 data_out: held,
@@ -213,10 +222,18 @@ mod tests {
     #[test]
     fn iverilog_round_trip_f_unit() -> Result<(), RHDLError> {
         let uut: RCStreamToAxi<b8, ()> = RCStreamToAxi::default();
-        let inputs: Vec<In<b8, ()>> = (0..16).map(|k| {
-            let it = Item::<b8, ()> { data: bits::<8>(k as u128), frame: () };
-            In { data: Some(it), tready: true }
-        }).collect();
+        let inputs: Vec<In<b8, ()>> = (0..16)
+            .map(|k| {
+                let it = Item::<b8, ()> {
+                    data: bits::<8>(k as u128),
+                    frame: (),
+                };
+                In {
+                    data: Some(it),
+                    tready: true,
+                }
+            })
+            .collect();
         let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
         let test_bench = uut.run(stream).collect::<SynchronousTestBench<_, _>>();
         let tm = test_bench.rtl(&uut, &Default::default())?;
@@ -225,7 +242,6 @@ mod tests {
         tm.run_iverilog()?;
         Ok(())
     }
-
 }
 
 /// Round-trip property test in its own nested module so the
@@ -266,9 +282,9 @@ mod round_trip_tests {
         d.a2r = i;
         // RCStreamToAxi sees the AxiToRCStream's output as its input.
         d.r2a.data = q.a2r.data;
-        d.r2a.tready = i.ready;     // pass-through downstream tready
-        // The RCStream-side ready flowing back into AxiToRCStream
-        // comes from RCStreamToAxi's internal `ready` output.
+        d.r2a.tready = i.ready; // pass-through downstream tready
+                                // The RCStream-side ready flowing back into AxiToRCStream
+                                // comes from RCStreamToAxi's internal `ready` output.
         d.a2r.ready = q.r2a.ready;
         // Output of the round-trip is the second translator's AXI side.
         (q.r2a, d)
@@ -291,14 +307,14 @@ mod round_trip_tests {
     fn test_round_trip_compose() {
         let uut: RoundTrip<b8, ()> = RoundTrip::default();
         let n_items: u128 = 32;
-        let inputs: Vec<axi_to_rcstream::In<b8, ()>> = (0..n_items).map(|k| {
-            axi_to_rcstream::In::<b8, ()> {
+        let inputs: Vec<axi_to_rcstream::In<b8, ()>> = (0..n_items)
+            .map(|k| axi_to_rcstream::In::<b8, ()> {
                 tdata: bits::<8>(k & 0xFF),
                 tuser: (),
                 tvalid: true,
                 ready: true,
-            }
-        }).collect();
+            })
+            .collect();
         let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
         // Collect the AXI-side output (Out<b8, ()>) per cycle.  We
         // expect, after the Carloni latency, the tdata sequence to
@@ -310,21 +326,30 @@ mod round_trip_tests {
             .map(|s| s.output)
             .collect();
         // Pull out just the tdata values where tvalid is asserted.
-        let tdata_seq: Vec<u128> = outputs.iter()
+        let tdata_seq: Vec<u128> = outputs
+            .iter()
             .filter(|o| o.tvalid)
             .map(|o| o.tdata.raw())
             .collect();
         // Should see at least n_items - 2 (latency) of the input
         // sequence (= 0..30 of the 0..32 input range).
-        assert!(tdata_seq.len() >= (n_items as usize) - 4,
+        assert!(
+            tdata_seq.len() >= (n_items as usize) - 4,
             "round-trip dropped too many items: got {} valid outputs from \
-             {} inputs", tdata_seq.len(), n_items);
+             {} inputs",
+            tdata_seq.len(),
+            n_items
+        );
         // Spot-check that the sequence is monotonically non-decreasing
         // (= no items dropped or reordered through the back-to-back
         // Carlonis with always-ready downstream).
         for w in tdata_seq.windows(2) {
-            assert!(w[1] == w[0] + 1 || w[1] == w[0],
-                "round-trip out-of-order: saw {} after {}", w[1], w[0]);
+            assert!(
+                w[1] == w[0] + 1 || w[1] == w[0],
+                "round-trip out-of-order: saw {} after {}",
+                w[1],
+                w[0]
+            );
         }
     }
 }

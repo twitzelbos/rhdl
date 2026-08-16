@@ -40,8 +40,8 @@
 //! - MRET return-from-trap.
 //! - Memory: sparse word-addressed map.
 
-use crate::isa::*;
 use crate::decoder::decode;
+use crate::isa::*;
 use rhdl::prelude::*;
 use std::collections::HashMap;
 
@@ -111,7 +111,11 @@ impl Cpu {
 
     /// Read a register; x0 always returns 0.
     pub fn read_reg(&self, idx: u32) -> u32 {
-        if idx == 0 { 0 } else { self.regs[(idx & 0x1F) as usize] }
+        if idx == 0 {
+            0
+        } else {
+            self.regs[(idx & 0x1F) as usize]
+        }
     }
     /// Write a register; writes to x0 are silently dropped.
     pub fn write_reg(&mut self, idx: u32, value: u32) {
@@ -206,9 +210,9 @@ impl Cpu {
     /// set) vector to `(mtvec & ~0x3) + 4 * (cause & 0xF)`; sync
     /// exceptions go to the base regardless of mode.
     fn take_trap_with_val(&mut self, cause: u32, tval: u32) {
-        self.write_csr(0x341, self.pc);     // mepc
-        self.write_csr(0x342, cause);       // mcause
-        self.write_csr(0x343, tval);        // mtval
+        self.write_csr(0x341, self.pc); // mepc
+        self.write_csr(0x342, cause); // mcause
+        self.write_csr(0x343, tval); // mtval
         // mstatus.MIE → MPIE; mstatus.MIE ← 0.
         let mstatus = self.read_csr(0x300);
         let mie_bit = mstatus & 0x8;
@@ -230,11 +234,11 @@ impl Cpu {
     /// MRET: restore mstatus.MIE from MPIE; set MPIE = 1; PC ← mepc.
     pub fn execute_mret(&mut self) {
         let mstatus = self.read_csr(0x300);
-        let mpie_bit = mstatus & 0x80;                // bit 7
-        let cleared = mstatus & !0x88u32;             // clear bits 3 and 7
-        let new_mstatus = cleared | (mpie_bit >> 4) | 0x80;  // bit 7 → bit 3, MPIE = 1
+        let mpie_bit = mstatus & 0x80; // bit 7
+        let cleared = mstatus & !0x88u32; // clear bits 3 and 7
+        let new_mstatus = cleared | (mpie_bit >> 4) | 0x80; // bit 7 → bit 3, MPIE = 1
         self.write_csr(0x300, new_mstatus);
-        self.pc = self.read_csr(0x341);  // PC ← mepc
+        self.pc = self.read_csr(0x341); // PC ← mepc
     }
 
     /// Pending+enabled M-mode interrupts: `mip & mie & MIE_M_MASK`.
@@ -254,11 +258,11 @@ impl Cpu {
     fn interrupt_cause(&self) -> u32 {
         let pe = self.int_pending_enabled();
         if pe & 0x800 != 0 {
-            0x8000_000B  // M-external
+            0x8000_000B // M-external
         } else if pe & 0x008 != 0 {
-            0x8000_0003  // M-software
+            0x8000_0003 // M-software
         } else {
-            0x8000_0007  // M-timer
+            0x8000_0007 // M-timer
         }
     }
 
@@ -284,7 +288,11 @@ impl Cpu {
         }
 
         let pc_word = (self.pc / 4) as usize;
-        let instr = if pc_word < program.len() { program[pc_word] } else { 0 };
+        let instr = if pc_word < program.len() {
+            program[pc_word]
+        } else {
+            0
+        };
         self.retired += 1;
 
         // Detect HALT (`beq x0, x0, +0` = 0x00000063) and stop.
@@ -306,13 +314,19 @@ impl Cpu {
         // external interrupts (per the privileged-ISA spec's
         // explicit allowance).
         match dec.system_op {
-            SystemOp::Ecall  => { self.take_trap(11); return; }
-            SystemOp::Ebreak => { self.take_trap(3); return; }
-            SystemOp::Mret   => {
-                self.execute_mret();              // restore MIE; PC ← mepc
+            SystemOp::Ecall => {
+                self.take_trap(11);
                 return;
             }
-            SystemOp::Wfi    => {
+            SystemOp::Ebreak => {
+                self.take_trap(3);
+                return;
+            }
+            SystemOp::Mret => {
+                self.execute_mret(); // restore MIE; PC ← mepc
+                return;
+            }
+            SystemOp::Wfi => {
                 // NOP: advance PC and retire normally.
                 self.pc = self.pc.wrapping_add(4);
                 return;
@@ -327,13 +341,13 @@ impl Cpu {
             let rs1_val = self.read_reg(dec.rs1.raw() as u32);
             let uimm = dec.rs1.raw() as u32;
             let (new_value, writes) = match dec.csr_op {
-                CsrOp::ReadWrite     => (rs1_val, true),
-                CsrOp::ReadWriteImm  => (uimm, true),
-                CsrOp::ReadSet       => (csr_old | rs1_val, dec.rs1.raw() != 0),
-                CsrOp::ReadSetImm    => (csr_old | uimm, uimm != 0),
-                CsrOp::ReadClear     => (csr_old & !rs1_val, dec.rs1.raw() != 0),
-                CsrOp::ReadClearImm  => (csr_old & !uimm, uimm != 0),
-                CsrOp::None          => (csr_old, false),
+                CsrOp::ReadWrite => (rs1_val, true),
+                CsrOp::ReadWriteImm => (uimm, true),
+                CsrOp::ReadSet => (csr_old | rs1_val, dec.rs1.raw() != 0),
+                CsrOp::ReadSetImm => (csr_old | uimm, uimm != 0),
+                CsrOp::ReadClear => (csr_old & !rs1_val, dec.rs1.raw() != 0),
+                CsrOp::ReadClearImm => (csr_old & !uimm, uimm != 0),
+                CsrOp::None => (csr_old, false),
             };
             if writes {
                 self.write_csr(csr_addr, new_value);
@@ -347,22 +361,42 @@ impl Cpu {
         // Standard ALU / load / store / branch / jump dispatch.
         let rs1_val = self.read_reg(dec.rs1.raw() as u32);
         let rs2_val = self.read_reg(dec.rs2.raw() as u32);
-        let imm     = dec.imm.raw() as u32;
+        let imm = dec.imm.raw() as u32;
 
-        let alu_a = if dec.opcode == Opcode::Auipc { self.pc } else { rs1_val };
-        let alu_b = if dec.alu_src == AluSrc::Imm { imm } else { rs2_val };
+        let alu_a = if dec.opcode == Opcode::Auipc {
+            self.pc
+        } else {
+            rs1_val
+        };
+        let alu_b = if dec.alu_src == AluSrc::Imm {
+            imm
+        } else {
+            rs2_val
+        };
         let shamt = alu_b & 0x1F;
         let alu_result: u32 = match dec.alu_op {
-            AluOp::Add  => alu_a.wrapping_add(alu_b),
-            AluOp::Sub  => alu_a.wrapping_sub(alu_b),
-            AluOp::Sll  => alu_a << shamt,
-            AluOp::Slt  => if (alu_a as i32) < (alu_b as i32) { 1 } else { 0 },
-            AluOp::Sltu => if alu_a < alu_b { 1 } else { 0 },
-            AluOp::Xor  => alu_a ^ alu_b,
-            AluOp::Srl  => alu_a >> shamt,
-            AluOp::Sra  => ((alu_a as i32) >> shamt) as u32,
-            AluOp::Or   => alu_a | alu_b,
-            AluOp::And  => alu_a & alu_b,
+            AluOp::Add => alu_a.wrapping_add(alu_b),
+            AluOp::Sub => alu_a.wrapping_sub(alu_b),
+            AluOp::Sll => alu_a << shamt,
+            AluOp::Slt => {
+                if (alu_a as i32) < (alu_b as i32) {
+                    1
+                } else {
+                    0
+                }
+            }
+            AluOp::Sltu => {
+                if alu_a < alu_b {
+                    1
+                } else {
+                    0
+                }
+            }
+            AluOp::Xor => alu_a ^ alu_b,
+            AluOp::Srl => alu_a >> shamt,
+            AluOp::Sra => ((alu_a as i32) >> shamt) as u32,
+            AluOp::Or => alu_a | alu_b,
+            AluOp::And => alu_a & alu_b,
             AluOp::Pass => alu_b,
         };
 
@@ -370,10 +404,10 @@ impl Cpu {
 
         // Branches.
         let branch_taken = match dec.branch_op {
-            BranchOp::Eq  => rs1_val == rs2_val,
-            BranchOp::Ne  => rs1_val != rs2_val,
-            BranchOp::Lt  => (rs1_val as i32) < (rs2_val as i32),
-            BranchOp::Ge  => (rs1_val as i32) >= (rs2_val as i32),
+            BranchOp::Eq => rs1_val == rs2_val,
+            BranchOp::Ne => rs1_val != rs2_val,
+            BranchOp::Lt => (rs1_val as i32) < (rs2_val as i32),
+            BranchOp::Ge => (rs1_val as i32) >= (rs2_val as i32),
             BranchOp::Ltu => rs1_val < rs2_val,
             BranchOp::Geu => rs1_val >= rs2_val,
         };
@@ -383,8 +417,8 @@ impl Cpu {
         let w_mis = (alu_result & 0x3) != 0;
         let mem_misaligned = match dec.mem_op {
             MemOp::Lh | MemOp::Lhu | MemOp::Sh => h_mis,
-            MemOp::Lw | MemOp::Sw              => w_mis,
-            _                                  => false,
+            MemOp::Lw | MemOp::Sw => w_mis,
+            _ => false,
         };
         if dec.mem_read && mem_misaligned {
             self.take_trap_with_val(4, alu_result);
@@ -403,17 +437,17 @@ impl Cpu {
                 MemOp::Sw => self.store_word(addr, store_data),
                 MemOp::Sh => self.store_halfword(addr, store_data as u16),
                 MemOp::Sb => self.store_byte(addr, store_data as u8),
-                _         => {}
+                _ => {}
             }
         }
         let load_value: u32 = if dec.mem_read {
             match dec.mem_op {
-                MemOp::Lb  => ((self.load_byte(alu_result) as i8) as i32) as u32,
-                MemOp::Lh  => ((self.load_halfword(alu_result) as i16) as i32) as u32,
-                MemOp::Lw  => self.load_word(alu_result),
+                MemOp::Lb => ((self.load_byte(alu_result) as i8) as i32) as u32,
+                MemOp::Lh => ((self.load_halfword(alu_result) as i16) as i32) as u32,
+                MemOp::Lw => self.load_word(alu_result),
                 MemOp::Lbu => self.load_byte(alu_result) as u32,
                 MemOp::Lhu => self.load_halfword(alu_result) as u32,
-                _          => self.load_word(alu_result),
+                _ => self.load_word(alu_result),
             }
         } else {
             0
@@ -424,8 +458,8 @@ impl Cpu {
         // both the writeback and the redirect — matching the
         // hardware (where `writeback_en` is gated by `!take_trap`).
         let take_branch = dec.opcode == Opcode::Branch && branch_taken;
-        let take_jal    = dec.opcode == Opcode::Jal;
-        let take_jalr   = dec.is_jalr;
+        let take_jal = dec.opcode == Opcode::Jal;
+        let take_jalr = dec.is_jalr;
 
         let prospective_target: u32 = if take_jalr {
             (rs1_val.wrapping_add(imm)) & !1u32
@@ -447,11 +481,11 @@ impl Cpu {
 
         // Writeback (only after we know we're not trapping).
         let writeback_value: u32 = match dec.writeback_src {
-            WritebackSrc::None    => 0,
-            WritebackSrc::Alu     => alu_result,
-            WritebackSrc::Mem     => load_value,
+            WritebackSrc::None => 0,
+            WritebackSrc::Alu => alu_result,
+            WritebackSrc::Mem => load_value,
             WritebackSrc::PcPlus4 => pc_plus_4,
-            WritebackSrc::Csr     => 0,  // already handled above
+            WritebackSrc::Csr => 0, // already handled above
         };
         if dec.writeback_src != WritebackSrc::None {
             self.write_reg(dec.rd.raw() as u32, writeback_value);

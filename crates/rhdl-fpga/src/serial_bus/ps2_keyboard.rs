@@ -173,7 +173,11 @@ pub fn ps2_keyboard(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     match q.state {
         Ps2State::Idle => {
             if falling {
-                let new_bit: Bits<11> = if i.data_in { bits::<11>(1) } else { bits::<11>(0) };
+                let new_bit: Bits<11> = if i.data_in {
+                    bits::<11>(1)
+                } else {
+                    bits::<11>(0)
+                };
                 next.shift = new_bit;
                 next.bit_idx = bits::<4>(1);
                 d.state = Ps2State::Shift;
@@ -200,7 +204,11 @@ pub fn ps2_keyboard(cr: ClockReset, i: In, q: Q) -> (Out, D) {
                             ones += bits::<4>(1);
                         }
                     }
-                    let parity_one: Bits<4> = if parity_bit { bits::<4>(1) } else { bits::<4>(0) };
+                    let parity_one: Bits<4> = if parity_bit {
+                        bits::<4>(1)
+                    } else {
+                        bits::<4>(0)
+                    };
                     let total = ones + parity_one;
                     let total_is_odd = (total & bits::<4>(1)) != bits::<4>(0);
                     let frame_ok = !start_bit && stop_bit && total_is_odd;
@@ -255,7 +263,7 @@ mod tests {
         // Compute odd parity bit.
         let ones = data.count_ones();
         let parity = (ones % 2) == 0; // odd parity → parity = 1 if data has even ones
-        // Frame bits, in transmission order: start(0), data LSB→MSB, parity, stop(1).
+                                      // Frame bits, in transmission order: start(0), data LSB→MSB, parity, stop(1).
         let mut frame_bits: Vec<bool> = Vec::with_capacity(11);
         frame_bits.push(false); // start
         for i in 0..8 {
@@ -319,7 +327,10 @@ mod tests {
             .filter(|s| !s.input.0.reset.any())
             .collect();
         let valid_idx = outputs.iter().position(|s| s.output.valid);
-        assert!(valid_idx.is_some(), "no valid pulse for a well-formed frame");
+        assert!(
+            valid_idx.is_some(),
+            "no valid pulse for a well-formed frame"
+        );
         assert_eq!(outputs[valid_idx.unwrap()].output.scan_code.raw(), 0x55);
         Ok(())
     }
@@ -400,9 +411,7 @@ mod tests {
             .join("ps2_keyboard");
         std::fs::create_dir_all(&root).unwrap();
         let expect = expect!["fdf6b6291809dbdd208fd4f62e6c73cc2391eaea7d221cda0ea5bc3b75138646"];
-        let digest = vcd
-            .dump_to_file(root.join("ps2_keyboard.vcd"))
-            .unwrap();
+        let digest = vcd.dump_to_file(root.join("ps2_keyboard.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())
     }

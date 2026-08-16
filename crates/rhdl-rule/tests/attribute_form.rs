@@ -164,7 +164,10 @@ fn attr_generic_counter_at_width_4_counts() {
         .last()
         .map(|s| s.output.raw())
         .unwrap_or(0);
-    assert!(last >= 3 && last <= 5, "expected ~5 bumps at N=4, got {last}");
+    assert!(
+        last >= 3 && last <= 5,
+        "expected ~5 bumps at N=4, got {last}"
+    );
 }
 
 #[test]

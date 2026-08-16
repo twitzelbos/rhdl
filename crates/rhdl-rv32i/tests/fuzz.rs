@@ -51,8 +51,12 @@ use rhdl_rv32i::sim;
 // ---- Encoding helpers (subset we want the fuzzer to emit) -------
 
 fn r_type(funct7: u32, rs2: u32, rs1: u32, funct3: u32, rd: u32, opcode: u32) -> u32 {
-    (funct7 & 0x7F) << 25 | (rs2 & 0x1F) << 20 | (rs1 & 0x1F) << 15
-        | (funct3 & 0x7) << 12 | (rd & 0x1F) << 7 | (opcode & 0x7F)
+    (funct7 & 0x7F) << 25
+        | (rs2 & 0x1F) << 20
+        | (rs1 & 0x1F) << 15
+        | (funct3 & 0x7) << 12
+        | (rd & 0x1F) << 7
+        | (opcode & 0x7F)
 }
 fn i_type(imm: i32, rs1: u32, funct3: u32, rd: u32, opcode: u32) -> u32 {
     let imm_u = (imm as u32) & 0xFFF;
@@ -62,8 +66,12 @@ fn s_type(imm: i32, rs2: u32, rs1: u32, funct3: u32, opcode: u32) -> u32 {
     let imm_u = (imm as u32) & 0xFFF;
     let imm_high = (imm_u >> 5) & 0x7F;
     let imm_low = imm_u & 0x1F;
-    (imm_high << 25) | (rs2 & 0x1F) << 20 | (rs1 & 0x1F) << 15
-        | (funct3 & 0x7) << 12 | imm_low << 7 | (opcode & 0x7F)
+    (imm_high << 25)
+        | (rs2 & 0x1F) << 20
+        | (rs1 & 0x1F) << 15
+        | (funct3 & 0x7) << 12
+        | imm_low << 7
+        | (opcode & 0x7F)
 }
 fn b_type(imm: i32, rs2: u32, rs1: u32, funct3: u32, opcode: u32) -> u32 {
     let imm_u = (imm as u32) & 0x1FFF;
@@ -71,8 +79,14 @@ fn b_type(imm: i32, rs2: u32, rs1: u32, funct3: u32, opcode: u32) -> u32 {
     let bit11 = (imm_u >> 11) & 0x1;
     let b10_5 = (imm_u >> 5) & 0x3F;
     let b4_1 = (imm_u >> 1) & 0xF;
-    (bit12 << 31) | (b10_5 << 25) | (rs2 & 0x1F) << 20 | (rs1 & 0x1F) << 15
-        | (funct3 & 0x7) << 12 | (b4_1 << 8) | (bit11 << 7) | (opcode & 0x7F)
+    (bit12 << 31)
+        | (b10_5 << 25)
+        | (rs2 & 0x1F) << 20
+        | (rs1 & 0x1F) << 15
+        | (funct3 & 0x7) << 12
+        | (b4_1 << 8)
+        | (bit11 << 7)
+        | (opcode & 0x7F)
 }
 fn u_type(imm: u32, rd: u32, opcode: u32) -> u32 {
     (imm & 0xFFFFF000) | (rd & 0x1F) << 7 | (opcode & 0x7F)
@@ -83,8 +97,12 @@ fn j_type(imm: i32, rd: u32, opcode: u32) -> u32 {
     let b19_12 = (imm_u >> 12) & 0xFF;
     let bit11 = (imm_u >> 11) & 0x1;
     let b10_1 = (imm_u >> 1) & 0x3FF;
-    (bit20 << 31) | (b19_12 << 12) | (bit11 << 20) | (b10_1 << 21)
-        | (rd & 0x1F) << 7 | (opcode & 0x7F)
+    (bit20 << 31)
+        | (b19_12 << 12)
+        | (bit11 << 20)
+        | (b10_1 << 21)
+        | (rd & 0x1F) << 7
+        | (opcode & 0x7F)
 }
 
 const HALT: u32 = 0x0000_0063;
@@ -93,14 +111,25 @@ const HALT: u32 = 0x0000_0063;
 
 struct Lcg(u64);
 impl Lcg {
-    fn new(seed: u64) -> Self { Self(seed) }
+    fn new(seed: u64) -> Self {
+        Self(seed)
+    }
     fn next(&mut self) -> u32 {
-        self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         (self.0 >> 32) as u32
     }
-    fn range(&mut self, n: u32) -> u32 { self.next() % n.max(1) }
-    fn reg(&mut self) -> u32 { 1 + self.range(31) }  // never x0 as dest
-    fn rs(&mut self) -> u32 { self.range(32) }       // x0 OK as src
+    fn range(&mut self, n: u32) -> u32 {
+        self.next() % n.max(1)
+    }
+    fn reg(&mut self) -> u32 {
+        1 + self.range(31)
+    } // never x0 as dest
+    fn rs(&mut self) -> u32 {
+        self.range(32)
+    } // x0 OK as src
 }
 
 // ---- Program generation ------------------------------------------
@@ -108,27 +137,74 @@ impl Lcg {
 #[derive(Clone, Copy)]
 enum Op {
     // R-type
-    Add, Sub, Sll, Slt, Sltu, Xor, Srl, Sra, Or, And,
+    Add,
+    Sub,
+    Sll,
+    Slt,
+    Sltu,
+    Xor,
+    Srl,
+    Sra,
+    Or,
+    And,
     // I-type ALU
-    Addi, Slti, Sltiu, Xori, Ori, Andi, Slli, Srli, Srai,
+    Addi,
+    Slti,
+    Sltiu,
+    Xori,
+    Ori,
+    Andi,
+    Slli,
+    Srli,
+    Srai,
     // U-type
-    Lui, Auipc,
+    Lui,
+    Auipc,
     // Loads (word-aligned)
     Lw,
     // Stores (word-aligned)
     Sw,
     // Branches
-    Beq, Bne, Blt, Bge, Bltu, Bgeu,
+    Beq,
+    Bne,
+    Blt,
+    Bge,
+    Bltu,
+    Bgeu,
     // Jumps
     Jal,
 }
 
 const OPS: &[Op] = &[
-    Op::Add, Op::Sub, Op::Sll, Op::Slt, Op::Sltu, Op::Xor, Op::Srl, Op::Sra, Op::Or, Op::And,
-    Op::Addi, Op::Slti, Op::Sltiu, Op::Xori, Op::Ori, Op::Andi, Op::Slli, Op::Srli, Op::Srai,
-    Op::Lui, Op::Auipc,
-    Op::Lw, Op::Sw,
-    Op::Beq, Op::Bne, Op::Blt, Op::Bge, Op::Bltu, Op::Bgeu,
+    Op::Add,
+    Op::Sub,
+    Op::Sll,
+    Op::Slt,
+    Op::Sltu,
+    Op::Xor,
+    Op::Srl,
+    Op::Sra,
+    Op::Or,
+    Op::And,
+    Op::Addi,
+    Op::Slti,
+    Op::Sltiu,
+    Op::Xori,
+    Op::Ori,
+    Op::Andi,
+    Op::Slli,
+    Op::Srli,
+    Op::Srai,
+    Op::Lui,
+    Op::Auipc,
+    Op::Lw,
+    Op::Sw,
+    Op::Beq,
+    Op::Bne,
+    Op::Blt,
+    Op::Bge,
+    Op::Bltu,
+    Op::Bgeu,
     Op::Jal,
 ];
 
@@ -157,36 +233,48 @@ fn random_instr(rng: &mut Lcg, pc_byte: u32, total_words: u32) -> u32 {
     };
     let op = OPS[rng.range(OPS.len() as u32) as usize];
     match op {
-        Op::Add  => r_type(0,        rng.rs(), rng.rs(), 0, rng.reg(), 0x33),
-        Op::Sub  => r_type(0b0100000,rng.rs(), rng.rs(), 0, rng.reg(), 0x33),
-        Op::Sll  => r_type(0,        rng.rs(), rng.rs(), 1, rng.reg(), 0x33),
-        Op::Slt  => r_type(0,        rng.rs(), rng.rs(), 2, rng.reg(), 0x33),
-        Op::Sltu => r_type(0,        rng.rs(), rng.rs(), 3, rng.reg(), 0x33),
-        Op::Xor  => r_type(0,        rng.rs(), rng.rs(), 4, rng.reg(), 0x33),
-        Op::Srl  => r_type(0,        rng.rs(), rng.rs(), 5, rng.reg(), 0x33),
-        Op::Sra  => r_type(0b0100000,rng.rs(), rng.rs(), 5, rng.reg(), 0x33),
-        Op::Or   => r_type(0,        rng.rs(), rng.rs(), 6, rng.reg(), 0x33),
-        Op::And  => r_type(0,        rng.rs(), rng.rs(), 7, rng.reg(), 0x33),
-        Op::Addi  => i_type(rng.next() as i32 % 256 - 128, rng.rs(), 0, rng.reg(), 0x13),
-        Op::Slti  => i_type(rng.next() as i32 % 256 - 128, rng.rs(), 2, rng.reg(), 0x13),
+        Op::Add => r_type(0, rng.rs(), rng.rs(), 0, rng.reg(), 0x33),
+        Op::Sub => r_type(0b0100000, rng.rs(), rng.rs(), 0, rng.reg(), 0x33),
+        Op::Sll => r_type(0, rng.rs(), rng.rs(), 1, rng.reg(), 0x33),
+        Op::Slt => r_type(0, rng.rs(), rng.rs(), 2, rng.reg(), 0x33),
+        Op::Sltu => r_type(0, rng.rs(), rng.rs(), 3, rng.reg(), 0x33),
+        Op::Xor => r_type(0, rng.rs(), rng.rs(), 4, rng.reg(), 0x33),
+        Op::Srl => r_type(0, rng.rs(), rng.rs(), 5, rng.reg(), 0x33),
+        Op::Sra => r_type(0b0100000, rng.rs(), rng.rs(), 5, rng.reg(), 0x33),
+        Op::Or => r_type(0, rng.rs(), rng.rs(), 6, rng.reg(), 0x33),
+        Op::And => r_type(0, rng.rs(), rng.rs(), 7, rng.reg(), 0x33),
+        Op::Addi => i_type(rng.next() as i32 % 256 - 128, rng.rs(), 0, rng.reg(), 0x13),
+        Op::Slti => i_type(rng.next() as i32 % 256 - 128, rng.rs(), 2, rng.reg(), 0x13),
         Op::Sltiu => i_type(rng.next() as i32 % 256 - 128, rng.rs(), 3, rng.reg(), 0x13),
-        Op::Xori  => i_type(rng.next() as i32 % 256 - 128, rng.rs(), 4, rng.reg(), 0x13),
-        Op::Ori   => i_type(rng.next() as i32 % 256 - 128, rng.rs(), 6, rng.reg(), 0x13),
-        Op::Andi  => i_type(rng.next() as i32 % 256 - 128, rng.rs(), 7, rng.reg(), 0x13),
-        Op::Slli  => i_type((rng.range(32)) as i32, rng.rs(), 1, rng.reg(), 0x13),
-        Op::Srli  => i_type((rng.range(32)) as i32, rng.rs(), 5, rng.reg(), 0x13),
-        Op::Srai  => i_type(((1 << 10) | rng.range(32)) as i32, rng.rs(), 5, rng.reg(), 0x13),
-        Op::Lui   => u_type((rng.next() & 0xFFFFF) << 12, rng.reg(), 0x37),
+        Op::Xori => i_type(rng.next() as i32 % 256 - 128, rng.rs(), 4, rng.reg(), 0x13),
+        Op::Ori => i_type(rng.next() as i32 % 256 - 128, rng.rs(), 6, rng.reg(), 0x13),
+        Op::Andi => i_type(rng.next() as i32 % 256 - 128, rng.rs(), 7, rng.reg(), 0x13),
+        Op::Slli => i_type((rng.range(32)) as i32, rng.rs(), 1, rng.reg(), 0x13),
+        Op::Srli => i_type((rng.range(32)) as i32, rng.rs(), 5, rng.reg(), 0x13),
+        Op::Srai => i_type(
+            ((1 << 10) | rng.range(32)) as i32,
+            rng.rs(),
+            5,
+            rng.reg(),
+            0x13,
+        ),
+        Op::Lui => u_type((rng.next() & 0xFFFFF) << 12, rng.reg(), 0x37),
         Op::Auipc => u_type((rng.next() & 0xFFFFF) << 12, rng.reg(), 0x17),
-        Op::Lw    => i_type(pick_data_addr(rng), 0, 2, rng.reg(), 0x03),
-        Op::Sw    => s_type(pick_data_addr(rng), rng.rs(), 0, 2, 0x23),
-        Op::Beq   => b_type(pick_target(rng), rng.rs(), rng.rs(), 0, 0x63),
-        Op::Bne   => b_type(pick_target(rng), rng.rs(), rng.rs(), 1, 0x63),
-        Op::Blt   => b_type(pick_target(rng), rng.rs(), rng.rs(), 4, 0x63),
-        Op::Bge   => b_type(pick_target(rng), rng.rs(), rng.rs(), 5, 0x63),
-        Op::Bltu  => b_type(pick_target(rng), rng.rs(), rng.rs(), 6, 0x63),
-        Op::Bgeu  => b_type(pick_target(rng), rng.rs(), rng.rs(), 7, 0x63),
-        Op::Jal   => j_type(((halt_addr as i32) - (pc_byte as i32)).max(-(total_bytes as i32)).min(total_bytes as i32 - 1), rng.reg(), 0x6F),
+        Op::Lw => i_type(pick_data_addr(rng), 0, 2, rng.reg(), 0x03),
+        Op::Sw => s_type(pick_data_addr(rng), rng.rs(), 0, 2, 0x23),
+        Op::Beq => b_type(pick_target(rng), rng.rs(), rng.rs(), 0, 0x63),
+        Op::Bne => b_type(pick_target(rng), rng.rs(), rng.rs(), 1, 0x63),
+        Op::Blt => b_type(pick_target(rng), rng.rs(), rng.rs(), 4, 0x63),
+        Op::Bge => b_type(pick_target(rng), rng.rs(), rng.rs(), 5, 0x63),
+        Op::Bltu => b_type(pick_target(rng), rng.rs(), rng.rs(), 6, 0x63),
+        Op::Bgeu => b_type(pick_target(rng), rng.rs(), rng.rs(), 7, 0x63),
+        Op::Jal => j_type(
+            ((halt_addr as i32) - (pc_byte as i32))
+                .max(-(total_bytes as i32))
+                .min(total_bytes as i32 - 1),
+            rng.reg(),
+            0x6F,
+        ),
     }
 }
 
@@ -217,20 +305,35 @@ fn run_single_writes(program: Vec<u32>, max_cycles: usize) -> Vec<(u32, u32)> {
     let mut total_cycles: usize = 0;
     uut.run_fn(
         |out: SOut| {
-            if reset_cycles_remaining > 0 { reset_cycles_remaining -= 1; return Some(ResetOrData::Reset); }
-            if total_cycles >= max_cycles { return None; }
+            if reset_cycles_remaining > 0 {
+                reset_cycles_remaining -= 1;
+                return Some(ResetOrData::Reset);
+            }
+            if total_cycles >= max_cycles {
+                return None;
+            }
             total_cycles += 1;
             if out.mem_write {
                 let addr = out.mem_addr.raw() as u32;
                 let val = out.mem_wdata.raw() as u32;
                 writes.push((addr, val));
                 let addr_word = (addr / 4) as usize;
-                if addr_word < data_mem.len() { data_mem[addr_word] = val; }
+                if addr_word < data_mem.len() {
+                    data_mem[addr_word] = val;
+                }
             }
             let pc_word = (out.pc.raw() / 4) as usize;
-            let instr = if pc_word < program.len() { program[pc_word] } else { 0 };
+            let instr = if pc_word < program.len() {
+                program[pc_word]
+            } else {
+                0
+            };
             let read_word = (out.mem_addr.raw() / 4) as usize;
-            let mem_rdata = if read_word < data_mem.len() { data_mem[read_word] } else { 0 };
+            let mem_rdata = if read_word < data_mem.len() {
+                data_mem[read_word]
+            } else {
+                0
+            };
             Some(ResetOrData::Data(SInIn {
                 instr: bits::<32>(instr as u128),
                 mem_rdata: bits::<32>(mem_rdata as u128),
@@ -238,7 +341,8 @@ fn run_single_writes(program: Vec<u32>, max_cycles: usize) -> Vec<(u32, u32)> {
             }))
         },
         100,
-    ).for_each(drop);
+    )
+    .for_each(drop);
     writes
 }
 
@@ -250,20 +354,35 @@ fn run_pipelined_writes(program: Vec<u32>, max_cycles: usize) -> Vec<(u32, u32)>
     let mut total_cycles: usize = 0;
     uut.run_fn(
         |out: POut| {
-            if reset_cycles_remaining > 0 { reset_cycles_remaining -= 1; return Some(ResetOrData::Reset); }
-            if total_cycles >= max_cycles { return None; }
+            if reset_cycles_remaining > 0 {
+                reset_cycles_remaining -= 1;
+                return Some(ResetOrData::Reset);
+            }
+            if total_cycles >= max_cycles {
+                return None;
+            }
             total_cycles += 1;
             if out.mem_write {
                 let addr = out.mem_addr.raw() as u32;
                 let val = out.mem_wdata.raw() as u32;
                 writes.push((addr, val));
                 let addr_word = (addr / 4) as usize;
-                if addr_word < data_mem.len() { data_mem[addr_word] = val; }
+                if addr_word < data_mem.len() {
+                    data_mem[addr_word] = val;
+                }
             }
             let pc_word = (out.pc.raw() / 4) as usize;
-            let instr = if pc_word < program.len() { program[pc_word] } else { 0 };
+            let instr = if pc_word < program.len() {
+                program[pc_word]
+            } else {
+                0
+            };
             let read_word = (out.mem_addr.raw() / 4) as usize;
-            let mem_rdata = if read_word < data_mem.len() { data_mem[read_word] } else { 0 };
+            let mem_rdata = if read_word < data_mem.len() {
+                data_mem[read_word]
+            } else {
+                0
+            };
             Some(ResetOrData::Data(PIn {
                 instr: bits::<32>(instr as u128),
                 mem_rdata: bits::<32>(mem_rdata as u128),
@@ -271,7 +390,8 @@ fn run_pipelined_writes(program: Vec<u32>, max_cycles: usize) -> Vec<(u32, u32)>
             }))
         },
         100,
-    ).for_each(drop);
+    )
+    .for_each(drop);
     writes
 }
 
@@ -280,10 +400,16 @@ fn run_pipelined_writes(program: Vec<u32>, max_cycles: usize) -> Vec<(u32, u32)>
 /// cycle budget, so we compare the longest prefix they share.  A
 /// real divergence (different write CONTENT at the same prefix
 /// position) still fails; only length mismatch is tolerated.
-fn assert_prefix_match(label: &str, seed: u64, n_instrs: usize,
-                       a: &[(u32, u32)], a_name: &str,
-                       b: &[(u32, u32)], b_name: &str,
-                       program: &[u32]) {
+fn assert_prefix_match(
+    label: &str,
+    seed: u64,
+    n_instrs: usize,
+    a: &[(u32, u32)],
+    a_name: &str,
+    b: &[(u32, u32)],
+    b_name: &str,
+    program: &[u32],
+) {
     let n = a.len().min(b.len());
     if a[..n] != b[..n] {
         // Find first divergence index for a clearer message.
@@ -293,7 +419,8 @@ fn assert_prefix_match(label: &str, seed: u64, n_instrs: usize,
             program,
             if div < a.len() { Some(a[div]) } else { None },
             if div < b.len() { Some(b[div]) } else { None },
-            a.len(), b.len(),
+            a.len(),
+            b.len(),
         );
     }
 }
@@ -303,12 +430,36 @@ fn assert_3way(seed: u64, n_instrs: usize, max_cycles: usize) {
     let sim_writes = run_sim(&program, max_cycles as u64);
     let single_writes = run_single_writes(program.clone(), max_cycles);
     let pipelined_writes = run_pipelined_writes(program.clone(), max_cycles * 3);
-    assert_prefix_match("3way", seed, n_instrs,
-        &sim_writes, "sim", &single_writes, "single", &program);
-    assert_prefix_match("3way", seed, n_instrs,
-        &sim_writes, "sim", &pipelined_writes, "pipelined", &program);
-    assert_prefix_match("3way", seed, n_instrs,
-        &single_writes, "single", &pipelined_writes, "pipelined", &program);
+    assert_prefix_match(
+        "3way",
+        seed,
+        n_instrs,
+        &sim_writes,
+        "sim",
+        &single_writes,
+        "single",
+        &program,
+    );
+    assert_prefix_match(
+        "3way",
+        seed,
+        n_instrs,
+        &sim_writes,
+        "sim",
+        &pipelined_writes,
+        "pipelined",
+        &program,
+    );
+    assert_prefix_match(
+        "3way",
+        seed,
+        n_instrs,
+        &single_writes,
+        "single",
+        &pipelined_writes,
+        "pipelined",
+        &program,
+    );
 }
 
 // ---- Sweep tests --------------------------------------------------

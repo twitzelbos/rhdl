@@ -320,9 +320,18 @@ mod tests {
             .filter(|s| !s.input.0.reset.any())
             .collect();
         // Eventually returns to Idle.
-        let last_busy_cycle = outputs.iter().enumerate().filter(|(_, s)| s.output.tx_busy).map(|(i, _)| i).max().unwrap_or(0);
+        let last_busy_cycle = outputs
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.output.tx_busy)
+            .map(|(i, _)| i)
+            .max()
+            .unwrap_or(0);
         let last_cycle = outputs.len() - 1;
-        assert!(last_busy_cycle < last_cycle, "encoder never returned to idle");
+        assert!(
+            last_busy_cycle < last_cycle,
+            "encoder never returned to idle"
+        );
         Ok(())
     }
 
@@ -364,7 +373,9 @@ mod tests {
             .join("vcd")
             .join("ps2_keyboard_encoder");
         std::fs::create_dir_all(&root).unwrap();
-        let _ = vcd.dump_to_file(root.join("ps2_keyboard_encoder.vcd")).unwrap();
+        let _ = vcd
+            .dump_to_file(root.join("ps2_keyboard_encoder.vcd"))
+            .unwrap();
         let _ = expect![[r#""#]];
         Ok(())
     }

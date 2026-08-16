@@ -312,11 +312,7 @@ where
 
 #[kernel]
 /// Kernel for [CanReceiver].
-pub fn can_receiver<const DIV_W: usize>(
-    cr: ClockReset,
-    i: In,
-    q: Q<DIV_W>,
-) -> (Out, D<DIV_W>)
+pub fn can_receiver<const DIV_W: usize>(cr: ClockReset, i: In, q: Q<DIV_W>) -> (Out, D<DIV_W>)
 where
     rhdl::bits::W<DIV_W>: BitWidth,
 {
@@ -457,7 +453,11 @@ where
                     if crc_input_active {
                         next.crc_reg = crc_stepped;
                     }
-                    let bit_b11: Bits<11> = if sampled { bits::<11>(1) } else { bits::<11>(0) };
+                    let bit_b11: Bits<11> = if sampled {
+                        bits::<11>(1)
+                    } else {
+                        bits::<11>(0)
+                    };
                     next.id_reg = (q.extras.id_reg << 1) | bit_b11;
                     if q.extras.field_bit_idx == bits::<7>(10) {
                         d.field = CanRxField::Rtr;
@@ -566,7 +566,11 @@ where
                     if crc_input_active {
                         next.crc_reg = crc_stepped;
                     }
-                    let bit_b64: Bits<64> = if sampled { bits::<64>(1) } else { bits::<64>(0) };
+                    let bit_b64: Bits<64> = if sampled {
+                        bits::<64>(1)
+                    } else {
+                        bits::<64>(0)
+                    };
                     let shifted = (q.extras.data_reg << 1) | bit_b64;
                     let total_data_bits: Bits<7> = match q.extras.dlc_reg {
                         Bits::<4>(0) => bits::<7>(0),
@@ -619,7 +623,11 @@ where
                     next.stuff_run = new_run;
                     next.expecting_stuff = in_stuff_zone && new_run == bits::<3>(5);
                     // Crc field bits do NOT feed crc_reg — they accumulate into rx_crc.
-                    let bit_b15: Bits<15> = if sampled { bits::<15>(1) } else { bits::<15>(0) };
+                    let bit_b15: Bits<15> = if sampled {
+                        bits::<15>(1)
+                    } else {
+                        bits::<15>(0)
+                    };
                     let new_rx_crc = (q.extras.rx_crc << 1) | bit_b15;
                     next.rx_crc = new_rx_crc;
                     if q.extras.field_bit_idx == bits::<7>(14) {
@@ -758,7 +766,10 @@ mod tests {
     #[test]
     fn test_idle_stays_idle_on_recessive() {
         let cr = ClockReset::dont_care();
-        let i = In { rx: true, drive_ack: false };
+        let i = In {
+            rx: true,
+            drive_ack: false,
+        };
         let q = Q::<5> {
             field: CanRxField::Idle,
             extras: CanRxExtras::default(),
@@ -773,7 +784,10 @@ mod tests {
     #[test]
     fn test_idle_to_sof_on_dominant() {
         let cr = ClockReset::dont_care();
-        let i = In { rx: false, drive_ack: false };
+        let i = In {
+            rx: false,
+            drive_ack: false,
+        };
         let q = Q::<5> {
             field: CanRxField::Idle,
             extras: CanRxExtras::default(),
@@ -799,7 +813,10 @@ mod tests {
             bit_period: bits::<5>(4),
         };
         q.extras.bit_phase_counter = bits::<5>(2);
-        let i = In { rx: true, drive_ack: true };
+        let i = In {
+            rx: true,
+            drive_ack: true,
+        };
         let (o, _d) = can_receiver::<5>(cr, i, q);
         assert!(!o.tx); // dominant ACK
     }
@@ -813,7 +830,10 @@ mod tests {
             bit_period: bits::<5>(4),
         };
         q.extras.bit_phase_counter = bits::<5>(2);
-        let i = In { rx: true, drive_ack: false };
+        let i = In {
+            rx: true,
+            drive_ack: false,
+        };
         let (o, _d) = can_receiver::<5>(cr, i, q);
         assert!(o.tx); // recessive
     }
@@ -828,7 +848,10 @@ mod tests {
             bit_period: bits::<5>(4),
         };
         q.extras.id_reg = bits::<11>(0x123);
-        let i = In { rx: false, drive_ack: false };
+        let i = In {
+            rx: false,
+            drive_ack: false,
+        };
         let (_o, d) = can_receiver::<5>(cr, i, q);
         assert_eq!(d.field, CanRxField::Idle);
         assert_eq!(d.extras.id_reg, bits::<11>(0));
@@ -872,7 +895,10 @@ mod tests {
         let uut: CanReceiver<5> = CanReceiver::new(bits(4));
         let mut stream_in: Vec<In> = vec![idle_in(); 10];
         // Inject a falling edge to start an SOF; the rest is recessive.
-        stream_in.push(In { rx: false, drive_ack: false });
+        stream_in.push(In {
+            rx: false,
+            drive_ack: false,
+        });
         for _ in 0..200 {
             stream_in.push(idle_in());
         }

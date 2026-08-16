@@ -164,11 +164,7 @@ where
 
 #[kernel]
 /// Kernel for [ParallelPortCentronics].
-pub fn parallel_port_centronics<const T_W: usize>(
-    cr: ClockReset,
-    i: In,
-    q: Q<T_W>,
-) -> (Out, D<T_W>)
+pub fn parallel_port_centronics<const T_W: usize>(cr: ClockReset, i: In, q: Q<T_W>) -> (Out, D<T_W>)
 where
     rhdl::bits::W<T_W>: BitWidth,
 {

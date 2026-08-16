@@ -121,9 +121,17 @@ fn fn_like_observer_reads_subwidget_output() {
         .unwrap();
     // Counter starts at 0, increments each cycle.  After several
     // cycles, last_seen reflects the previous-cycle counter value.
-    assert!(last.0.raw() >= 4, "last_seen should advance with the counter; got {}", last.0.raw());
+    assert!(
+        last.0.raw() >= 4,
+        "last_seen should advance with the counter; got {}",
+        last.0.raw()
+    );
     // Even count should be roughly half the cycles.
-    assert!(last.1.raw() >= 2, "even_count should accumulate; got {}", last.1.raw());
+    assert!(
+        last.1.raw() >= 2,
+        "even_count should accumulate; got {}",
+        last.1.raw()
+    );
 }
 
 // =================================================================

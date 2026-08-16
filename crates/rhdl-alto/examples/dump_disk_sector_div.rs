@@ -8,7 +8,9 @@ use std::path::PathBuf;
 
 fn main() {
     let dir = PathBuf::from("crates/rhdl-alto/assets/rom");
-    if !dir.join("U55").exists() { return; }
+    if !dir.join("U55").exists() {
+        return;
+    }
     let microcode = microcode_loader::load_alto_ii_microcode_from_dir(&dir).unwrap();
 
     println!("=== Around MPC=0x38c (Disk Sector divergence) ===");
@@ -17,8 +19,14 @@ fn main() {
         let mi = Microinstruction::unpack(raw);
         println!(
             "MPC=0x{mpc:03x} raw=0x{raw:08x} rsel={:>2} aluf={:?} bs={:?} f1={:?} f2={:?} t={} l={} next=0x{:03x}",
-            mi.rsel.raw(), mi.aluf, mi.bs, mi.f1, mi.f2,
-            mi.t_load as u8, mi.l_load as u8, mi.next.raw(),
+            mi.rsel.raw(),
+            mi.aluf,
+            mi.bs,
+            mi.f1,
+            mi.f2,
+            mi.t_load as u8,
+            mi.l_load as u8,
+            mi.next.raw(),
         );
     }
     println!("\n=== Predecessors that point to 0x38c or 0x38d ===");
@@ -28,8 +36,13 @@ fn main() {
         if (n & !1) == 0x38c {
             println!(
                 "MPC=0x{mpc_idx:03x} → next=0x{n:03x}  rsel={:>2} aluf={:?} bs={:?} f1={:?} f2={:?} t={} l={}",
-                mi.rsel.raw(), mi.aluf, mi.bs, mi.f1, mi.f2,
-                mi.t_load as u8, mi.l_load as u8,
+                mi.rsel.raw(),
+                mi.aluf,
+                mi.bs,
+                mi.f1,
+                mi.f2,
+                mi.t_load as u8,
+                mi.l_load as u8,
             );
         }
     }

@@ -70,7 +70,10 @@ fn auto_hold_active_increments_normally() {
         .last()
         .map(|s| s.output.raw())
         .unwrap_or(0);
-    assert!(last >= 4 && last <= 5, "active should increment; got {last}");
+    assert!(
+        last >= 4 && last <= 5,
+        "active should increment; got {last}"
+    );
 }
 
 #[test]

@@ -164,12 +164,7 @@ fn rule_fifo_write_parity_with_original() {
 
     let original: FIFOWriteCore<3> = FIFOWriteCore::default();
     let original_out: Vec<OrigOut<3>> = original
-        .run(
-            inputs_orig
-                .into_iter()
-                .with_reset(1)
-                .clock_pos_edge(100),
-        )
+        .run(inputs_orig.into_iter().with_reset(1).clock_pos_edge(100))
         .synchronous_sample()
         .filter(|s| !s.input.0.reset.any())
         .map(|s| s.output)
@@ -177,12 +172,7 @@ fn rule_fifo_write_parity_with_original() {
 
     let rule = RuleFIFOWriteCore::<3>::default();
     let rule_out: Vec<RuleFIFOWriteOut<3>> = rule
-        .run(
-            inputs_rule
-                .into_iter()
-                .with_reset(1)
-                .clock_pos_edge(100),
-        )
+        .run(inputs_rule.into_iter().with_reset(1).clock_pos_edge(100))
         .synchronous_sample()
         .filter(|s| !s.input.0.reset.any())
         .map(|s| s.output)

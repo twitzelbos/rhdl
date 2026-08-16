@@ -296,14 +296,14 @@ impl Microinstruction {
     ///   `[19:16] f1`, `[15:12] f2`, `[11] t_load`, `[10] l_load`,
     ///   `[9:0]  next`.
     pub fn pack(&self) -> u32 {
-        let rsel   = (self.rsel.raw() as u32 & 0x1F) << 27;
-        let aluf   = (alu_function_index(self.aluf) as u32 & 0xF) << 23;
-        let bs     = (bus_source_index(self.bs) as u32 & 0x7) << 20;
-        let f1     = (f1_function_index(self.f1) as u32 & 0xF) << 16;
-        let f2     = (f2_function_index(self.f2) as u32 & 0xF) << 12;
+        let rsel = (self.rsel.raw() as u32 & 0x1F) << 27;
+        let aluf = (alu_function_index(self.aluf) as u32 & 0xF) << 23;
+        let bs = (bus_source_index(self.bs) as u32 & 0x7) << 20;
+        let f1 = (f1_function_index(self.f1) as u32 & 0xF) << 16;
+        let f2 = (f2_function_index(self.f2) as u32 & 0xF) << 12;
         let t_load = (self.t_load as u32) << 11;
         let l_load = (self.l_load as u32) << 10;
-        let next   =  self.next.raw() as u32 & 0x3FF;
+        let next = self.next.raw() as u32 & 0x3FF;
         rsel | aluf | bs | f1 | f2 | t_load | l_load | next
     }
 
@@ -311,14 +311,14 @@ impl Microinstruction {
     /// binaries from the original Alto sources.
     pub fn unpack(word: u32) -> Self {
         Self {
-            rsel:   bits::<5>(((word >> 27) & 0x1F) as u128),
-            aluf:   alu_function_from_index(((word >> 23) & 0xF) as u8),
-            bs:     bus_source_from_index(((word >> 20) & 0x7) as u8),
-            f1:     f1_function_from_index(((word >> 16) & 0xF) as u8),
-            f2:     f2_function_from_index(((word >> 12) & 0xF) as u8),
+            rsel: bits::<5>(((word >> 27) & 0x1F) as u128),
+            aluf: alu_function_from_index(((word >> 23) & 0xF) as u8),
+            bs: bus_source_from_index(((word >> 20) & 0x7) as u8),
+            f1: f1_function_from_index(((word >> 16) & 0xF) as u8),
+            f2: f2_function_from_index(((word >> 12) & 0xF) as u8),
             t_load: ((word >> 11) & 0x1) != 0,
             l_load: ((word >> 10) & 0x1) != 0,
-            next:   bits::<10>((word & 0x3FF) as u128),
+            next: bits::<10>((word & 0x3FF) as u128),
         }
     }
 }

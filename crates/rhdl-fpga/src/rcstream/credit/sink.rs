@@ -80,12 +80,7 @@ use crate::rcstream::bus::Item;
 /// counter can hold the initial credit pool without truncation.
 #[derive(Clone, Debug, Synchronous, SynchronousDQ)]
 #[rhdl(dq_no_prefix)]
-pub struct CreditSink<
-    T: Digital,
-    F: Digital,
-    const CREDIT_W: usize,
-    const FIFO_N: usize,
->
+pub struct CreditSink<T: Digital, F: Digital, const CREDIT_W: usize, const FIFO_N: usize>
 where
     rhdl::bits::W<CREDIT_W>: BitWidth,
     rhdl::bits::W<FIFO_N>: BitWidth,
@@ -115,7 +110,11 @@ where
         } else {
             (1u128 << CREDIT_W) - 1
         };
-        let initial: u128 = if depth <= max_in_credit { depth } else { max_in_credit };
+        let initial: u128 = if depth <= max_in_credit {
+            depth
+        } else {
+            max_in_credit
+        };
         Self {
             fifo: SyncFIFO::default(),
             pending_grants: dff::DFF::new(bits::<CREDIT_W>(initial)),
@@ -160,12 +159,7 @@ where
 
 #[kernel(allow_weak_partial)]
 #[doc(hidden)]
-pub fn credit_sink_kernel<
-    T: Digital,
-    F: Digital,
-    const CREDIT_W: usize,
-    const FIFO_N: usize,
->(
+pub fn credit_sink_kernel<T: Digital, F: Digital, const CREDIT_W: usize, const FIFO_N: usize>(
     _cr: ClockReset,
     i: In<T, F>,
     q: Q<T, F, CREDIT_W, FIFO_N>,
@@ -210,7 +204,11 @@ where
     } else if grant_now {
         q.pending_grants - one
     } else if popping {
-        if saturated { q.pending_grants } else { q.pending_grants + one }
+        if saturated {
+            q.pending_grants
+        } else {
+            q.pending_grants + one
+        }
     } else {
         q.pending_grants
     };
@@ -243,13 +241,18 @@ mod tests {
     #[test]
     fn iverilog_round_trip() -> Result<(), RHDLError> {
         let uut: CreditSink<b8, (), 5, 4> = CreditSink::default();
-        let inputs: Vec<In<b8, ()>> = (0..32).map(|k| {
-            let it = Item::<b8, ()> { data: bits::<8>(k as u128), frame: () };
-            In {
-                upstream_data: if k < 16 { Some(it) } else { None },
-                downstream_ready: true,
-            }
-        }).collect();
+        let inputs: Vec<In<b8, ()>> = (0..32)
+            .map(|k| {
+                let it = Item::<b8, ()> {
+                    data: bits::<8>(k as u128),
+                    frame: (),
+                };
+                In {
+                    upstream_data: if k < 16 { Some(it) } else { None },
+                    downstream_ready: true,
+                }
+            })
+            .collect();
         let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
         let test_bench = uut.run(stream).collect::<SynchronousTestBench<_, _>>();
         // The FIFO uses a SyncBRAM internally — first 2 cycles need

@@ -136,7 +136,7 @@ pub fn forward_value(
     mem_wb_value: Bits<32>,
 ) -> Bits<32> {
     match sel {
-        ForwardSrc::None  => id_ex_val,
+        ForwardSrc::None => id_ex_val,
         ForwardSrc::ExMem => ex_mem_alu,
         ForwardSrc::MemWb => mem_wb_value,
     }
@@ -173,15 +173,15 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
 
     let mem_value: Bits<32> = load_format(q.ex_mem.mem_op, i.mem_rdata);
     let next_mem_wb_writeback: Bits<32> = match q.ex_mem.writeback_src {
-        WritebackSrc::None    => bits::<32>(0),
-        WritebackSrc::Alu     => q.ex_mem.alu_result,
-        WritebackSrc::Mem     => mem_value,
+        WritebackSrc::None => bits::<32>(0),
+        WritebackSrc::Alu => q.ex_mem.alu_result,
+        WritebackSrc::Mem => mem_value,
         WritebackSrc::PcPlus4 => q.ex_mem.pc_plus_4,
         // For CSR instructions, the Execute stage stashed the
         // pre-modify CSR value in `alu_result` so the writeback
         // path for `rd ← old_csr` is the same shape as for
         // ordinary ALU ops.
-        WritebackSrc::Csr     => q.ex_mem.alu_result,
+        WritebackSrc::Csr => q.ex_mem.alu_result,
     };
     let next_mem_wb_en: bool = q.ex_mem.valid
         && q.ex_mem.writeback_src != WritebackSrc::None
@@ -218,19 +218,31 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let mem_wb_writes: bool = q.mem_wb.valid && q.mem_wb.writeback_en;
 
     let fwd_a: ForwardSrc = forward_select(
-        q.id_ex.rs1, q.ex_mem.rd, ex_mem_writes,
-        q.mem_wb.rd, mem_wb_writes,
+        q.id_ex.rs1,
+        q.ex_mem.rd,
+        ex_mem_writes,
+        q.mem_wb.rd,
+        mem_wb_writes,
     );
     let fwd_b: ForwardSrc = forward_select(
-        q.id_ex.rs2, q.ex_mem.rd, ex_mem_writes,
-        q.mem_wb.rd, mem_wb_writes,
+        q.id_ex.rs2,
+        q.ex_mem.rd,
+        ex_mem_writes,
+        q.mem_wb.rd,
+        mem_wb_writes,
     );
 
     let rs1_fwd: Bits<32> = forward_value(
-        fwd_a, q.id_ex.rs1_val, q.ex_mem.alu_result, q.mem_wb.writeback_value,
+        fwd_a,
+        q.id_ex.rs1_val,
+        q.ex_mem.alu_result,
+        q.mem_wb.writeback_value,
     );
     let rs2_fwd: Bits<32> = forward_value(
-        fwd_b, q.id_ex.rs2_val, q.ex_mem.alu_result, q.mem_wb.writeback_value,
+        fwd_b,
+        q.id_ex.rs2_val,
+        q.ex_mem.alu_result,
+        q.mem_wb.writeback_value,
     );
 
     // ALU operand A: PC for AUIPC, otherwise rs1 (forwarded).
@@ -265,26 +277,26 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let csr_uimm: Bits<32> = q.id_ex.rs1.resize();
     let csr_src: Bits<32> = match q.id_ex.csr_op {
         CsrOp::ReadWriteImm => csr_uimm,
-        CsrOp::ReadSetImm   => csr_uimm,
+        CsrOp::ReadSetImm => csr_uimm,
         CsrOp::ReadClearImm => csr_uimm,
-        _                   => rs1_fwd,
+        _ => rs1_fwd,
     };
     let csr_new_value: Bits<32> = match q.id_ex.csr_op {
-        CsrOp::ReadWrite     => csr_src,
-        CsrOp::ReadWriteImm  => csr_src,
-        CsrOp::ReadSet       => csr_rdata | csr_src,
-        CsrOp::ReadSetImm    => csr_rdata | csr_src,
-        CsrOp::ReadClear     => csr_rdata & !csr_src,
-        CsrOp::ReadClearImm  => csr_rdata & !csr_src,
-        CsrOp::None          => csr_rdata,
+        CsrOp::ReadWrite => csr_src,
+        CsrOp::ReadWriteImm => csr_src,
+        CsrOp::ReadSet => csr_rdata | csr_src,
+        CsrOp::ReadSetImm => csr_rdata | csr_src,
+        CsrOp::ReadClear => csr_rdata & !csr_src,
+        CsrOp::ReadClearImm => csr_rdata & !csr_src,
+        CsrOp::None => csr_rdata,
     };
     let csr_writes_ex: bool = match q.id_ex.csr_op {
-        CsrOp::None         => false,
-        CsrOp::ReadWrite    => true,
+        CsrOp::None => false,
+        CsrOp::ReadWrite => true,
         CsrOp::ReadWriteImm => true,
-        CsrOp::ReadSet      => q.id_ex.rs1 != bits::<5>(0),
-        CsrOp::ReadSetImm   => q.id_ex.rs1 != bits::<5>(0),
-        CsrOp::ReadClear    => q.id_ex.rs1 != bits::<5>(0),
+        CsrOp::ReadSet => q.id_ex.rs1 != bits::<5>(0),
+        CsrOp::ReadSetImm => q.id_ex.rs1 != bits::<5>(0),
+        CsrOp::ReadClear => q.id_ex.rs1 != bits::<5>(0),
         CsrOp::ReadClearImm => q.id_ex.rs1 != bits::<5>(0),
     };
 
@@ -293,10 +305,10 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let take_branch_raw: bool = q.id_ex.valid && q.id_ex.opcode == Opcode::Branch && branch_t;
 
     let branch_target: Bits<32> = q.id_ex.pc + q.id_ex.imm;
-    let jal_target: Bits<32>    = q.id_ex.pc + q.id_ex.imm;
-    let jalr_target: Bits<32>   = (rs1_fwd + q.id_ex.imm) & bits::<32>(0xFFFF_FFFE);
+    let jal_target: Bits<32> = q.id_ex.pc + q.id_ex.imm;
+    let jalr_target: Bits<32> = (rs1_fwd + q.id_ex.imm) & bits::<32>(0xFFFF_FFFE);
 
-    let take_jal_raw: bool  = q.id_ex.valid && q.id_ex.opcode == Opcode::Jal;
+    let take_jal_raw: bool = q.id_ex.valid && q.id_ex.opcode == Opcode::Jal;
     let take_jalr_raw: bool = q.id_ex.valid && q.id_ex.is_jalr;
 
     // Misaligned-target trap detection: any branch/JAL/JALR whose
@@ -319,14 +331,14 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let h_misalign: bool = (alu_result & bits::<32>(0x1)) != bits::<32>(0);
     let w_misalign: bool = (alu_result & bits::<32>(0x3)) != bits::<32>(0);
     let mem_misaligned: bool = match q.id_ex.mem_op {
-        MemOp::Lh  => h_misalign,
+        MemOp::Lh => h_misalign,
         MemOp::Lhu => h_misalign,
-        MemOp::Lw  => w_misalign,
-        MemOp::Sh  => h_misalign,
-        MemOp::Sw  => w_misalign,
-        _          => false,
+        MemOp::Lw => w_misalign,
+        MemOp::Sh => h_misalign,
+        MemOp::Sw => w_misalign,
+        _ => false,
     };
-    let take_load_misaligned:  bool = q.id_ex.valid && q.id_ex.mem_read  && mem_misaligned;
+    let take_load_misaligned: bool = q.id_ex.valid && q.id_ex.mem_read && mem_misaligned;
     let take_store_misaligned: bool = q.id_ex.valid && q.id_ex.mem_write && mem_misaligned;
 
     // External-interrupt detection.  Fired when the in-flight
@@ -342,9 +354,8 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let int_meip: bool = (int_pe & bits::<32>(0x800)) != bits::<32>(0);
     let int_msip: bool = (int_pe & bits::<32>(0x008)) != bits::<32>(0);
     let int_mtip: bool = (int_pe & bits::<32>(0x080)) != bits::<32>(0);
-    let take_interrupt: bool = q.id_ex.valid
-        && q.csrs.mstatus_mie
-        && (int_meip || int_msip || int_mtip);
+    let take_interrupt: bool =
+        q.id_ex.valid && q.csrs.mstatus_mie && (int_meip || int_msip || int_mtip);
     let interrupt_cause: Bits<32> = if int_meip {
         bits::<32>(0x8000_000B)
     } else if int_msip {
@@ -361,16 +372,21 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // trap port.  Interrupts take priority over sync exceptions
     // and over MRET — so any in-flight instruction is squashed when
     // an interrupt fires.  MRET is the inverse: PC ← mepc.
-    let take_ecall:   bool = !take_interrupt && q.id_ex.valid && q.id_ex.system_op == SystemOp::Ecall;
-    let take_ebreak:  bool = !take_interrupt && q.id_ex.valid && q.id_ex.system_op == SystemOp::Ebreak;
+    let take_ecall: bool = !take_interrupt && q.id_ex.valid && q.id_ex.system_op == SystemOp::Ecall;
+    let take_ebreak: bool =
+        !take_interrupt && q.id_ex.valid && q.id_ex.system_op == SystemOp::Ebreak;
     let take_illegal: bool = !take_interrupt && q.id_ex.valid && q.id_ex.opcode == Opcode::Illegal;
-    let take_sync_misaligned:    bool = !take_interrupt && take_misaligned;
-    let take_load_misalign_eff:  bool = !take_interrupt && take_load_misaligned;
+    let take_sync_misaligned: bool = !take_interrupt && take_misaligned;
+    let take_load_misalign_eff: bool = !take_interrupt && take_load_misaligned;
     let take_store_misalign_eff: bool = !take_interrupt && take_store_misaligned;
-    let take_sync_trap: bool = take_ecall || take_ebreak || take_illegal
-        || take_sync_misaligned || take_load_misalign_eff || take_store_misalign_eff;
-    let take_trap:    bool = take_interrupt || take_sync_trap;
-    let take_mret:    bool = !take_interrupt && q.id_ex.valid && q.id_ex.system_op == SystemOp::Mret;
+    let take_sync_trap: bool = take_ecall
+        || take_ebreak
+        || take_illegal
+        || take_sync_misaligned
+        || take_load_misalign_eff
+        || take_store_misalign_eff;
+    let take_trap: bool = take_interrupt || take_sync_trap;
+    let take_mret: bool = !take_interrupt && q.id_ex.valid && q.id_ex.system_op == SystemOp::Mret;
     let trap_cause: Bits<32> = if take_interrupt {
         interrupt_cause
     } else if take_sync_misaligned {
@@ -397,8 +413,8 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // Suppress branch/jump redirect when the same instruction also
     // takes a misaligned-target trap — the trap target wins.
     let take_branch: bool = take_branch_raw && !take_misaligned;
-    let take_jal:    bool = take_jal_raw    && !take_misaligned;
-    let take_jalr:   bool = take_jalr_raw   && !take_misaligned;
+    let take_jal: bool = take_jal_raw && !take_misaligned;
+    let take_jalr: bool = take_jalr_raw && !take_misaligned;
 
     // Redirect = branch / jump / trap / MRET.  Trap target is
     // mtvec (with vectored-mode handling for interrupts); MRET
@@ -485,9 +501,8 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // (e.g. `add x12,…; lui …; addi …; bne x12,…`) reads the
     // stale x12 — EX/MEM and MEM/WB forwarding can only reach
     // back 1 and 2 instructions, not 3.
-    let wb_bypass_x12: bool = q.mem_wb.valid
-        && q.mem_wb.writeback_en
-        && q.mem_wb.rd != bits::<5>(0);
+    let wb_bypass_x12: bool =
+        q.mem_wb.valid && q.mem_wb.writeback_en && q.mem_wb.rd != bits::<5>(0);
     let raw_rs1: Bits<32> = q.rf.rdata1;
     let raw_rs2: Bits<32> = q.rf.rdata2;
     let id_rs1_val: Bits<32> = if wb_bypass_x12 && q.mem_wb.rd == dec.rs1 {
@@ -503,12 +518,13 @@ pub fn pipelined_cpu_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
 
     // Load-use stall: based on ID/EX's load destination + the
     // current IF/ID instruction's source registers.
-    let stall: bool = q.if_id.valid && detect_load_use_stall(
-        q.id_ex.valid && q.id_ex.mem_read,
-        q.id_ex.rd,
-        dec.rs1,
-        dec.rs2,
-    );
+    let stall: bool = q.if_id.valid
+        && detect_load_use_stall(
+            q.id_ex.valid && q.id_ex.mem_read,
+            q.id_ex.rd,
+            dec.rs1,
+            dec.rs2,
+        );
 
     let next_id_ex_real = IdEx {
         pc: q.if_id.pc,

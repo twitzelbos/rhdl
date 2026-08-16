@@ -262,11 +262,7 @@ where
 
 #[kernel]
 /// Kernel for [Ieee1284Negotiator].
-pub fn ieee1284_negotiator<const T_W: usize>(
-    cr: ClockReset,
-    i: In,
-    q: Q<T_W>,
-) -> (Out, D<T_W>)
+pub fn ieee1284_negotiator<const T_W: usize>(cr: ClockReset, i: In, q: Q<T_W>) -> (Out, D<T_W>)
 where
     rhdl::bits::W<T_W>: BitWidth,
 {

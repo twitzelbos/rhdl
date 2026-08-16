@@ -12,10 +12,22 @@ fn main() -> Result<(), RHDLError> {
     // Round-trip validation against can_master lives in
     // can_master::tests::test_two_node_*.
     let bit_period = 4u128;
-    let mut stream_in: Vec<In> = vec![In { rx: true, drive_ack: false }; 4];
-    stream_in.push(In { rx: false, drive_ack: false });
+    let mut stream_in: Vec<In> = vec![
+        In {
+            rx: true,
+            drive_ack: false
+        };
+        4
+    ];
+    stream_in.push(In {
+        rx: false,
+        drive_ack: false,
+    });
     for _ in 0..400 {
-        stream_in.push(In { rx: true, drive_ack: false });
+        stream_in.push(In {
+            rx: true,
+            drive_ack: false,
+        });
     }
     let stream = stream_in.into_iter().with_reset(2).clock_pos_edge(100);
     let rx_uut: CanReceiver<5> = CanReceiver::new(bits(bit_period));

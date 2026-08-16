@@ -23,8 +23,8 @@
 
 use rhdl::prelude::*;
 use rhdl_alto::alto_chip::{AltoChip, ChipIn};
-use rhdl_alto::{disk_image_loader, microcode_loader};
 use rhdl_alto::register_aliases::r_alias_with_emulator_fallback;
+use rhdl_alto::{disk_image_loader, microcode_loader};
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -44,11 +44,15 @@ struct Snap {
 }
 
 fn parse_tsv(stdout: &str) -> Vec<Snap> {
-    stdout.lines().skip(1)
+    stdout
+        .lines()
+        .skip(1)
         .enumerate()
         .filter_map(|(_idx, line)| {
             let p: Vec<&str> = line.split('\t').collect();
-            if p.len() < 7 + 32 { return None; }
+            if p.len() < 7 + 32 {
+                return None;
+            }
             let parse_hex = |s: &str| -> Option<u16> {
                 if let Some(rest) = s.strip_prefix("0x") {
                     u16::from_str_radix(rest, 16).ok()
@@ -66,7 +70,16 @@ fn parse_tsv(stdout: &str) -> Vec<Snap> {
             for i in 0..32 {
                 r[i] = parse_hex(p[7 + i])?;
             }
-            Some(Snap { cycle, task, mpc, t, l, ir, r, mem_stall: false })
+            Some(Snap {
+                cycle,
+                task,
+                mpc,
+                t,
+                l,
+                ir,
+                r,
+                mem_stall: false,
+            })
         })
         .collect()
 }
@@ -88,19 +101,22 @@ fn main() {
     const CYCLES: usize = 300;
 
     // ---- our chip ----
-    let microcode =
-        microcode_loader::load_alto_ii_microcode_from_dir(&rom_dir).unwrap();
-    let constants =
-        microcode_loader::load_alto_ii_constant_rom_from_dir(&rom_dir).unwrap();
-    let disk_image =
-        disk_image_loader::load_disk_image_from_file(&disk).unwrap();
+    let microcode = microcode_loader::load_alto_ii_microcode_from_dir(&rom_dir).unwrap();
+    let constants = microcode_loader::load_alto_ii_constant_rom_from_dir(&rom_dir).unwrap();
+    let disk_image = disk_image_loader::load_disk_image_from_file(&disk).unwrap();
     let boot_sector = disk_image.sector(0, 0, 0);
 
     let uut = AltoChip::with_microcode_constants_boot_and_test_disk_period_at_boundary(
-        &microcode, &constants, &boot_sector.data, &boot_sector.label, 256,
+        &microcode,
+        &constants,
+        &boot_sector.data,
+        &boot_sector.label,
+        256,
     );
     let inputs: Vec<ChipIn> = (0..CYCLES)
-        .map(|_| ChipIn { wakeups: bits::<16>(0x0001) })
+        .map(|_| ChipIn {
+            wakeups: bits::<16>(0x0001),
+        })
         .collect();
     let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
     let ours_raw: Vec<_> = uut
@@ -109,36 +125,46 @@ fn main() {
         .filter(|s| !s.input.0.reset.any())
         .map(|s| s.output)
         .collect();
-    let ours: Vec<Snap> = ours_raw.iter().enumerate().map(|(i, t)| {
-        let mut r = [0u16; 32];
-        for k in 0..32 { r[k] = t.regs[k].raw() as u16; }
-        Snap {
-            cycle: i,
-            task: t.current_task.raw() as u8,
-            mpc: t.mpc.raw() as u16,
-            t: t.t.raw() as u16,
-            l: t.l.raw() as u16,
-            ir: t.ir.raw() as u16,
-            r,
-            mem_stall: t.mem_stall,
-        }
-    }).collect();
+    let ours: Vec<Snap> = ours_raw
+        .iter()
+        .enumerate()
+        .map(|(i, t)| {
+            let mut r = [0u16; 32];
+            for k in 0..32 {
+                r[k] = t.regs[k].raw() as u16;
+            }
+            Snap {
+                cycle: i,
+                task: t.current_task.raw() as u8,
+                mpc: t.mpc.raw() as u16,
+                t: t.t.raw() as u16,
+                l: t.l.raw() as u16,
+                ir: t.ir.raw() as u16,
+                r,
+                mem_stall: t.mem_stall,
+            }
+        })
+        .collect();
 
     // (task-transition timelines printed below, after ctr is parsed)
 
     // ---- ContrAlto ----
-    let exe = workspace_root.join(
-        "crates/rhdl-alto/tools/contralto-trace/bin/Release/net8.0/contralto-trace",
-    );
+    let exe = workspace_root
+        .join("crates/rhdl-alto/tools/contralto-trace/bin/Release/net8.0/contralto-trace");
     if !exe.exists() {
-        eprintln!("[skip] contralto-trace not built — run `dotnet build crates/rhdl-alto/tools/contralto-trace -c Release`");
+        eprintln!(
+            "[skip] contralto-trace not built — run `dotnet build crates/rhdl-alto/tools/contralto-trace -c Release`"
+        );
         return;
     }
     let output = Command::new(&exe)
         .args([
-            "--disk", disk.to_str().unwrap(),
-            "--rom-dir", rom_dir.to_str().unwrap(),
-            "--cycles", &CYCLES.to_string(),
+            "--disk",
+            disk.to_str().unwrap(),
+            "--rom-dir",
+            rom_dir.to_str().unwrap(),
+            "--cycles",
+            &CYCLES.to_string(),
         ])
         .current_dir(workspace_root)
         .output()
@@ -152,8 +178,14 @@ fn main() {
     for (i, t) in ours_raw.iter().enumerate() {
         let task = t.current_task.raw() as i32;
         if task != prev {
-            println!("  cycle {i:3} → task {task}{}",
-                if prev < 0 { " (init)".to_string() } else { format!(" (was {prev})") });
+            println!(
+                "  cycle {i:3} → task {task}{}",
+                if prev < 0 {
+                    " (init)".to_string()
+                } else {
+                    format!(" (was {prev})")
+                }
+            );
             prev = task;
         }
     }
@@ -163,9 +195,15 @@ fn main() {
     for c in &ctr {
         let task = c.task as i32;
         if task != prev {
-            println!("  cycle {:3} → task {task}{}",
+            println!(
+                "  cycle {:3} → task {task}{}",
                 c.cycle,
-                if prev < 0 { " (init)".to_string() } else { format!(" (was {prev})") });
+                if prev < 0 {
+                    " (init)".to_string()
+                } else {
+                    format!(" (was {prev})")
+                }
+            );
             prev = task;
         }
     }
@@ -199,9 +237,9 @@ fn main() {
                 let same_task = c.task == o.task;
                 let same_mpc = c.mpc == o.mpc;
                 let status = match (same_task, same_mpc) {
-                    (true, true)   => "OK",
-                    (true, false)  => "MPC DIFFERS",
-                    (false, _)     => "DIFFERENT TASK",
+                    (true, true) => "OK",
+                    (true, false) => "MPC DIFFERS",
+                    (false, _) => "DIFFERENT TASK",
                 };
                 println!(
                     "  cycle {cyc}: CTR task={} mpc=0x{:03x}  OURS task={} mpc=0x{:03x}  [{status}]{mark}",
@@ -240,10 +278,14 @@ fn main() {
         let mark = if same { "" } else { " *" };
         let ctr_yield = if (c.task as i32) != last_ctr_task && last_ctr_task >= 0 {
             format!("CTR yield {}→{}", last_ctr_task, c.task)
-        } else { String::new() };
+        } else {
+            String::new()
+        };
         let ours_yield = if (o.task as i32) != last_ours_task && last_ours_task >= 0 {
             format!("OURS yield {}→{}", last_ours_task, o.task)
-        } else { String::new() };
+        } else {
+            String::new()
+        };
         let yields = match (ctr_yield.is_empty(), ours_yield.is_empty()) {
             (true, true) => String::new(),
             (false, true) => format!("    [{ctr_yield}]"),
@@ -283,9 +325,9 @@ fn main() {
                 let same_task = c.task == o.task;
                 let same_mpc = c.mpc == o.mpc;
                 let status = match (same_task, same_mpc) {
-                    (true, true)   => "OK",
-                    (true, false)  => "MPC DIFFERS — different microcode path",
-                    (false, _)     => "DIFFERENT TASK",
+                    (true, true) => "OK",
+                    (true, false) => "MPC DIFFERS — different microcode path",
+                    (false, _) => "DIFFERENT TASK",
                 };
                 let mark = if cyc == k { " ←" } else { "" };
                 println!(
@@ -294,11 +336,19 @@ fn main() {
                 );
             }
             println!();
-            println!("Interpretation: at cycle {}-1 (= last matched cycle), both sims",
-                k);
+            println!(
+                "Interpretation: at cycle {}-1 (= last matched cycle), both sims",
+                k
+            );
             println!("are at the same (task, mpc) — i.e., about to execute the same");
-            println!("microinstruction.  At cycle {}, they're at DIFFERENT MPCs.  This means", k);
-            println!("the microinstruction at cycle {}-1 had a CONDITIONAL NEXT (F2 dispatch,", k);
+            println!(
+                "microinstruction.  At cycle {}, they're at DIFFERENT MPCs.  This means",
+                k
+            );
+            println!(
+                "the microinstruction at cycle {}-1 had a CONDITIONAL NEXT (F2 dispatch,",
+                k
+            );
             println!("F2 NEXT-modifier, or branch-on-condition) that selected differently in");
             println!("the two sims.  Suspect: that microinstruction's F1/F2 dispatch handler.");
         }
@@ -311,12 +361,17 @@ fn main() {
     println!();
 
     // ---- find first R-divergence ----
-    println!("=== Per-cycle R-state side-by-side ({}-cycle window) ===", CYCLES);
+    println!(
+        "=== Per-cycle R-state side-by-side ({}-cycle window) ===",
+        CYCLES
+    );
     println!("CTR cycles:  {}", ctr.len());
     println!("OURS cycles: {}", ours.len());
     println!();
     println!("Cycle alignment: BOTH sims report state POST-SingleStep / POST-cycle.");
-    println!("  CTR[k]: TSV emits state after running cycle-k's instruction (mpc = next-to-execute).");
+    println!(
+        "  CTR[k]: TSV emits state after running cycle-k's instruction (mpc = next-to-execute)."
+    );
     println!("  OURS[k]: ChipOut.mpc = current_mpc presented for cycle k+1 (= next-to-execute).");
     println!("Both 'mpc' fields mean 'MPC about to execute' → ctr[k] vs ours[k] aligned directly.");
     println!();
@@ -346,9 +401,15 @@ fn main() {
 
     println!("FIRST R-DIVERGENCE: cycle {k}");
     println!();
-    println!("Surrounding context (cycles {}..={}):", k.saturating_sub(3), (k + 3).min(n - 1));
-    println!("{:>5}  {:>4}  {:>5}  {:>6}  {:>6}  {:>6}  {:>6}  {:>6}",
-        "cycle", "side", "task", "mpc", "T", "L", "IR", "");
+    println!(
+        "Surrounding context (cycles {}..={}):",
+        k.saturating_sub(3),
+        (k + 3).min(n - 1)
+    );
+    println!(
+        "{:>5}  {:>4}  {:>5}  {:>6}  {:>6}  {:>6}  {:>6}  {:>6}",
+        "cycle", "side", "task", "mpc", "T", "L", "IR", ""
+    );
     for cyc in k.saturating_sub(3)..=(k + 3).min(n - 1) {
         let c = &ctr[cyc];
         let o = &ours[cyc];
@@ -374,9 +435,9 @@ fn main() {
         let ctr_just_changed = ctr_v != prev_ctr_v;
         let ours_just_changed = ours_v != prev_ours_v;
         let change_marker = match (ctr_just_changed, ours_just_changed) {
-            (true,  true ) => "BOTH changed this cycle (computed differently)",
-            (true,  false) => "CTR  changed this cycle, OURS held",
-            (false, true ) => "OURS changed this cycle, CTR  held",
+            (true, true) => "BOTH changed this cycle (computed differently)",
+            (true, false) => "CTR  changed this cycle, OURS held",
+            (false, true) => "OURS changed this cycle, CTR  held",
             (false, false) => "NEITHER changed this cycle (divergence inherited from earlier)",
         };
         println!(

@@ -51,7 +51,7 @@ bool |                           | bool
 #![doc = include_str!("../../doc/epaper_ssd16xx.md")]
 use rhdl::prelude::*;
 
-use super::spi_master::{SpiMaster, spi_master as spi_master_kernel};
+use super::spi_master::{spi_master as spi_master_kernel, SpiMaster};
 use crate::core::dff;
 
 #[allow(unused_imports)]
@@ -108,11 +108,7 @@ where
 
 #[kernel]
 /// Kernel for [EpaperSsd16xx].
-pub fn epaper_ssd16xx<const CW: usize>(
-    cr: ClockReset,
-    i: In,
-    q: Q<CW>,
-) -> (Out, D<CW>)
+pub fn epaper_ssd16xx<const CW: usize>(cr: ClockReset, i: In, q: Q<CW>) -> (Out, D<CW>)
 where
     rhdl::bits::W<CW>: BitWidth,
 {
@@ -288,9 +284,7 @@ mod tests {
             .join("epaper_ssd16xx");
         std::fs::create_dir_all(&root).unwrap();
         let expect = expect!["a5dfd291ddcdf1fbecc13260fa5f1e9c31b0dda8d261cc0dded1b548df7e6f0d"];
-        let digest = vcd
-            .dump_to_file(root.join("epaper_ssd16xx.vcd"))
-            .unwrap();
+        let digest = vcd.dump_to_file(root.join("epaper_ssd16xx.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())
     }

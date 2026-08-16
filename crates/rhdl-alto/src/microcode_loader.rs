@@ -59,8 +59,7 @@ pub const NUM_MICROCODE_PROMS: usize = 16;
 /// bank 1 (microaddress 0x400-0x7FF).
 pub const PROM_FILENAMES: [&str; NUM_MICROCODE_PROMS] = [
     // Bank 0
-    "U55", "U64", "U65", "U63", "U53", "U60", "U61", "U62",
-    // Bank 1
+    "U55", "U64", "U65", "U63", "U53", "U60", "U61", "U62", // Bank 1
     "U54", "U74", "U75", "U73", "U52", "U70", "U71", "U72",
 ];
 
@@ -78,7 +77,10 @@ const BIT_INVERSION_MASK: u32 = 0xfff77bff;
 #[derive(Debug)]
 pub enum LoadError {
     /// One of the PROM files wasn't readable.
-    Io { path: PathBuf, source: std::io::Error },
+    Io {
+        path: PathBuf,
+        source: std::io::Error,
+    },
     /// A PROM file wasn't the expected 1024 bytes long.
     WrongRomLength { name: String, len: usize },
 }
@@ -90,7 +92,10 @@ impl std::fmt::Display for LoadError {
                 write!(f, "failed to read PROM file {path:?}: {source}")
             }
             LoadError::WrongRomLength { name, len } => {
-                write!(f, "PROM file {name} has wrong length: expected {PROM_BYTES} bytes, got {len}")
+                write!(
+                    f,
+                    "PROM file {name} has wrong length: expected {PROM_BYTES} bytes, got {len}"
+                )
             }
         }
     }
@@ -111,9 +116,9 @@ fn map_word(word: u32) -> u32 {
 /// Load the Alto II microcode from 16 in-memory PROM byte arrays.
 ///
 /// `roms` must be in the order documented by [`PROM_FILENAMES`].
-pub fn load_alto_ii_microcode(roms: &[&[u8]; NUM_MICROCODE_PROMS])
-    -> Result<[u32; MICROCODE_WORDS], LoadError>
-{
+pub fn load_alto_ii_microcode(
+    roms: &[&[u8]; NUM_MICROCODE_PROMS],
+) -> Result<[u32; MICROCODE_WORDS], LoadError> {
     let mut words = [0u32; MICROCODE_WORDS];
 
     for (rom_idx, &rom) in roms.iter().enumerate() {
@@ -143,25 +148,22 @@ pub fn load_alto_ii_microcode(roms: &[&[u8]; NUM_MICROCODE_PROMS])
 
 /// Load the Alto II microcode from a directory containing the 16
 /// PROM files named [`PROM_FILENAMES`].
-pub fn load_alto_ii_microcode_from_dir(dir: &Path)
-    -> Result<[u32; MICROCODE_WORDS], LoadError>
-{
+pub fn load_alto_ii_microcode_from_dir(dir: &Path) -> Result<[u32; MICROCODE_WORDS], LoadError> {
     let mut bytes: Vec<Vec<u8>> = Vec::with_capacity(NUM_MICROCODE_PROMS);
     for name in PROM_FILENAMES.iter() {
         let path = dir.join(name);
-        let data = std::fs::read(&path)
-            .map_err(|e| LoadError::Io { path: path.clone(), source: e })?;
+        let data = std::fs::read(&path).map_err(|e| LoadError::Io {
+            path: path.clone(),
+            source: e,
+        })?;
         bytes.push(data);
     }
-    let refs: [&[u8]; NUM_MICROCODE_PROMS] =
-        std::array::from_fn(|i| bytes[i].as_slice());
+    let refs: [&[u8]; NUM_MICROCODE_PROMS] = std::array::from_fn(|i| bytes[i].as_slice());
     load_alto_ii_microcode(&refs)
 }
 
 /// Decode a packed microcode-word array into [`Microinstruction`] values.
-pub fn decode_microcode(words: &[u32; MICROCODE_WORDS])
-    -> Vec<Microinstruction>
-{
+pub fn decode_microcode(words: &[u32; MICROCODE_WORDS]) -> Vec<Microinstruction> {
     words.iter().map(|&w| Microinstruction::unpack(w)).collect()
 }
 
@@ -234,9 +236,9 @@ fn data_map_constant_rom(data: u32) -> u32 {
 /// Load the Alto II Constant ROM from 4 in-memory PROM byte arrays.
 ///
 /// `roms` must be in the order documented by [`CONSTANT_PROM_FILENAMES`].
-pub fn load_alto_ii_constant_rom(roms: &[&[u8]; NUM_CONSTANT_PROMS])
-    -> Result<[u16; CONSTANT_ROM_WORDS], LoadError>
-{
+pub fn load_alto_ii_constant_rom(
+    roms: &[&[u8]; NUM_CONSTANT_PROMS],
+) -> Result<[u16; CONSTANT_ROM_WORDS], LoadError> {
     let mut constants = [0u16; CONSTANT_ROM_WORDS];
 
     for (rom_idx, &rom) in roms.iter().enumerate() {
@@ -264,18 +266,19 @@ pub fn load_alto_ii_constant_rom(roms: &[&[u8]; NUM_CONSTANT_PROMS])
 
 /// Load the Alto II Constant ROM from a directory containing the 4
 /// PROM files.
-pub fn load_alto_ii_constant_rom_from_dir(dir: &Path)
-    -> Result<[u16; CONSTANT_ROM_WORDS], LoadError>
-{
+pub fn load_alto_ii_constant_rom_from_dir(
+    dir: &Path,
+) -> Result<[u16; CONSTANT_ROM_WORDS], LoadError> {
     let mut bytes: Vec<Vec<u8>> = Vec::with_capacity(NUM_CONSTANT_PROMS);
     for name in CONSTANT_PROM_FILENAMES.iter() {
         let path = dir.join(name);
-        let data = std::fs::read(&path)
-            .map_err(|e| LoadError::Io { path: path.clone(), source: e })?;
+        let data = std::fs::read(&path).map_err(|e| LoadError::Io {
+            path: path.clone(),
+            source: e,
+        })?;
         bytes.push(data);
     }
-    let refs: [&[u8]; NUM_CONSTANT_PROMS] =
-        std::array::from_fn(|i| bytes[i].as_slice());
+    let refs: [&[u8]; NUM_CONSTANT_PROMS] = std::array::from_fn(|i| bytes[i].as_slice());
     load_alto_ii_constant_rom(&refs)
 }
 
@@ -308,13 +311,15 @@ mod tests {
             // microaddress 0 → PROM index 0x3ff after inversion
             roms_data[chip_idx][address_map_alto_ii(0)] = nibble as u8;
         }
-        let refs: [&[u8]; NUM_MICROCODE_PROMS] =
-            std::array::from_fn(|i| roms_data[i].as_slice());
+        let refs: [&[u8]; NUM_MICROCODE_PROMS] = std::array::from_fn(|i| roms_data[i].as_slice());
         let words = load_alto_ii_microcode(&refs).expect("load ok");
         assert_eq!(words[0], target_word, "bank-0 microaddress 0");
         // Other addresses should still apply MapWord on a zero
         // assembled word: 0 ^ 0xfff77bff = 0xfff77bff.
-        assert_eq!(words[1], BIT_INVERSION_MASK, "bank-0 microaddress 1 (untouched, still XORed)");
+        assert_eq!(
+            words[1], BIT_INVERSION_MASK,
+            "bank-0 microaddress 1 (untouched, still XORed)"
+        );
     }
 
     #[test]
@@ -331,8 +336,7 @@ mod tests {
             let nibble = (pre_word >> bit_pos) & 0xf;
             roms_data[chip_idx][address_map_alto_ii(0)] = nibble as u8;
         }
-        let refs: [&[u8]; NUM_MICROCODE_PROMS] =
-            std::array::from_fn(|i| roms_data[i].as_slice());
+        let refs: [&[u8]; NUM_MICROCODE_PROMS] = std::array::from_fn(|i| roms_data[i].as_slice());
         let words = load_alto_ii_microcode(&refs).expect("load ok");
         assert_eq!(words[0x400], target_word, "bank-1 microaddress 0");
     }
@@ -342,9 +346,8 @@ mod tests {
         let mut roms_data: Vec<Vec<u8>> = (0..NUM_MICROCODE_PROMS)
             .map(|_| vec![0u8; PROM_BYTES])
             .collect();
-        roms_data[3] = vec![0u8; 999];  // wrong size
-        let refs: [&[u8]; NUM_MICROCODE_PROMS] =
-            std::array::from_fn(|i| roms_data[i].as_slice());
+        roms_data[3] = vec![0u8; 999]; // wrong size
+        let refs: [&[u8]; NUM_MICROCODE_PROMS] = std::array::from_fn(|i| roms_data[i].as_slice());
         let err = load_alto_ii_microcode(&refs).unwrap_err();
         match err {
             LoadError::WrongRomLength { name, len } => {
@@ -358,7 +361,13 @@ mod tests {
     #[test]
     fn map_word_is_xor_with_inversion_mask() {
         // Sanity-check the simplification.
-        for &w in &[0u32, 0xffff_ffff, 0xdeadbeef, 0x12345678, BIT_INVERSION_MASK] {
+        for &w in &[
+            0u32,
+            0xffff_ffff,
+            0xdeadbeef,
+            0x12345678,
+            BIT_INVERSION_MASK,
+        ] {
             assert_eq!(map_word(w), w ^ BIT_INVERSION_MASK);
         }
     }
@@ -414,15 +423,16 @@ mod tests {
         let mut roms_data: Vec<Vec<u8>> = (0..NUM_CONSTANT_PROMS)
             .map(|_| vec![0u8; CONSTANT_PROM_BYTES])
             .collect();
-        roms_data[0][0] = 0xC;  // C0
-        roms_data[1][0] = 0xA;  // C1
-        roms_data[2][0] = 0x0;  // C2
-        roms_data[3][0] = 0x8;  // C3
-        let refs: [&[u8]; NUM_CONSTANT_PROMS] =
-            std::array::from_fn(|i| roms_data[i].as_slice());
+        roms_data[0][0] = 0xC; // C0
+        roms_data[1][0] = 0xA; // C1
+        roms_data[2][0] = 0x0; // C2
+        roms_data[3][0] = 0x8; // C3
+        let refs: [&[u8]; NUM_CONSTANT_PROMS] = std::array::from_fn(|i| roms_data[i].as_slice());
         let constants = load_alto_ii_constant_rom(&refs).expect("load ok");
-        assert_eq!(constants[0], 0xCAFE,
-            "constant[0] should round-trip through scramble + reverse + invert");
+        assert_eq!(
+            constants[0], 0xCAFE,
+            "constant[0] should round-trip through scramble + reverse + invert"
+        );
         // Untouched indices: all-zero PROMs → final = !(0) = 0xffff.
         assert_eq!(constants[1], 0xffff);
     }
@@ -430,13 +440,15 @@ mod tests {
     #[test]
     fn real_constant_rom_loads_if_available() {
         let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("assets").join("rom");
+            .join("assets")
+            .join("rom");
         if !dir.join("C0").exists() {
-            eprintln!("[real_constant_rom_loads_if_available] skipping — Constant ROMs not present in {dir:?}");
+            eprintln!(
+                "[real_constant_rom_loads_if_available] skipping — Constant ROMs not present in {dir:?}"
+            );
             return;
         }
-        let constants = load_alto_ii_constant_rom_from_dir(&dir)
-            .expect("load real Constant ROMs");
+        let constants = load_alto_ii_constant_rom_from_dir(&dir).expect("load real Constant ROMs");
         assert_eq!(constants.len(), CONSTANT_ROM_WORDS);
         // Per the Alto ucode, constant index 0 ought to be 0 (the
         // microcode uses a known "constant zero" lookup).  We can't
@@ -445,10 +457,12 @@ mod tests {
         // (not all-zeros, not all-ones).
         let all_zero = constants.iter().all(|&c| c == 0);
         let all_ones = constants.iter().all(|&c| c == 0xffff);
-        assert!(!all_zero && !all_ones,
+        assert!(
+            !all_zero && !all_ones,
             "Constant ROM should contain a meaningful pattern, not {} all of {:04x}",
             if all_zero { "all-zero" } else { "all-one" },
-            constants[0]);
+            constants[0]
+        );
     }
 
     /// Real-PROM integration: only runs if the actual ROM dumps are
@@ -460,13 +474,13 @@ mod tests {
     #[test]
     fn real_proms_load_if_available() {
         let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("assets").join("rom");
+            .join("assets")
+            .join("rom");
         if !dir.join("U55").exists() {
             eprintln!("[real_proms_load_if_available] skipping — PROMs not present in {dir:?}");
             return;
         }
-        let words = load_alto_ii_microcode_from_dir(&dir)
-            .expect("load real PROMs");
+        let words = load_alto_ii_microcode_from_dir(&dir).expect("load real PROMs");
         assert_eq!(words.len(), MICROCODE_WORDS);
 
         // Spot-check microaddress 0 — the Alto's "Silent Boot" entry
@@ -481,7 +495,10 @@ mod tests {
         // The decoded microinstruction must be well-formed (round-trips
         // through pack/unpack).
         let mi = Microinstruction::unpack(w0);
-        assert_eq!(mi.pack(), w0,
-            "microinstruction at addr 0 must round-trip pack/unpack");
+        assert_eq!(
+            mi.pack(),
+            w0,
+            "microinstruction at addr 0 must round-trip pack/unpack"
+        );
     }
 }

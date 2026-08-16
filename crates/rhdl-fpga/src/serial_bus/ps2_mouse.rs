@@ -61,7 +61,7 @@ bool |                          | B<8>
 use rhdl::core::fsm::analysis::Transition;
 use rhdl::prelude::*;
 
-use super::ps2_keyboard::{Ps2Keyboard, ps2_keyboard as ps2_keyboard_kernel};
+use super::ps2_keyboard::{ps2_keyboard as ps2_keyboard_kernel, Ps2Keyboard};
 use crate::core::dff;
 
 #[allow(unused_imports)]
@@ -223,10 +223,16 @@ mod tests {
         let mut out = Vec::new();
         for &b in &frame_bits {
             for _ in 0..3 {
-                out.push(In { clk_in: true, data_in: b });
+                out.push(In {
+                    clk_in: true,
+                    data_in: b,
+                });
             }
             for _ in 0..3 {
-                out.push(In { clk_in: false, data_in: b });
+                out.push(In {
+                    clk_in: false,
+                    data_in: b,
+                });
             }
         }
         // Trailing idle settle.
@@ -316,7 +322,10 @@ mod tests {
             .collect();
         let any_valid = outputs.iter().any(|s| s.output.valid);
         let err_count = outputs.iter().filter(|s| s.output.frame_err).count();
-        assert!(!any_valid, "must NOT produce a valid packet from sync=0 bytes");
+        assert!(
+            !any_valid,
+            "must NOT produce a valid packet from sync=0 bytes"
+        );
         assert!(err_count >= 1);
         Ok(())
     }

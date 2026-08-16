@@ -47,10 +47,14 @@ use rhdl_fpga::core::dff;
 use rhdl_rule::rule_kernel_attr;
 
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
-pub struct CounterIn { pub bump: bool }
+pub struct CounterIn {
+    pub bump: bool,
+}
 
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
-pub struct CounterOut { pub current: Bits<8> }
+pub struct CounterOut {
+    pub current: Bits<8>,
+}
 
 #[derive(Clone, Debug, Default, Synchronous, SynchronousDQ)]
 #[rhdl(dq_no_prefix)]
@@ -110,7 +114,10 @@ fn rule_drives_subwidget_input() {
     // we drive bump=true), and last_seen tracks counter.current
     // (which is the *previous* cycle's value, since we read q.n).
     // Over 5 cycles with bump=true, counter should reach ~4-5.
-    assert!(last >= 3, "counter should advance via rule-driven bump; got {last}");
+    assert!(
+        last >= 3,
+        "counter should advance via rule-driven bump; got {last}"
+    );
 }
 
 #[test]
@@ -210,14 +217,23 @@ impl SynchronousIO for Regfile4x8 {
 }
 
 #[kernel]
-pub fn regfile_4x8_kernel(_cr: ClockReset, i: RegfileIn, q: Regfile4x8Q) -> (RegfileOut, Regfile4x8D) {
+pub fn regfile_4x8_kernel(
+    _cr: ClockReset,
+    i: RegfileIn,
+    q: Regfile4x8Q,
+) -> (RegfileOut, Regfile4x8D) {
     let mut d = Regfile4x8D::dont_care();
     let mut next = q.cells;
     if i.wen {
         next[i.waddr] = i.wdata;
     }
     d.cells = next;
-    (RegfileOut { rdata: q.cells[i.raddr] }, d)
+    (
+        RegfileOut {
+            rdata: q.cells[i.raddr],
+        },
+        d,
+    )
 }
 
 #[derive(Clone, Debug, Default, Synchronous, SynchronousDQ)]

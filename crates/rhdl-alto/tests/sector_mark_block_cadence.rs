@@ -36,14 +36,17 @@ const TEST_DISK_PERIOD: u32 = 256;
 
 fn boot_chip() -> Option<AltoChip> {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("assets").join("rom");
+        .join("assets")
+        .join("rom");
     if !dir.join("U55").exists() || !dir.join("C0").exists() {
         return None;
     }
     let microcode = microcode_loader::load_alto_ii_microcode_from_dir(&dir).ok()?;
     let constants = microcode_loader::load_alto_ii_constant_rom_from_dir(&dir).ok()?;
     Some(AltoChip::with_microcode_constants_and_test_disk_period(
-        &microcode, &constants, TEST_DISK_PERIOD,
+        &microcode,
+        &constants,
+        TEST_DISK_PERIOD,
     ))
 }
 
@@ -58,7 +61,9 @@ struct CycleTuple {
 
 fn capture(uut: AltoChip, cycles: usize) -> Vec<CycleTuple> {
     let inputs: Vec<ChipIn> = (0..cycles)
-        .map(|_| ChipIn { wakeups: bits::<16>(0x0001) })
+        .map(|_| ChipIn {
+            wakeups: bits::<16>(0x0001),
+        })
         .collect();
     let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
     uut.run(stream)
@@ -97,21 +102,29 @@ fn sector_mark_cadence_matches_test_period() {
         }
         prev = t.sector_mark;
     }
-    eprintln!("[cadence] {} sector_mark rising edges in 5000 cycles", rising_edges.len());
-    eprintln!("[cadence] first 10 rising-edge cycles: {:?}",
-        rising_edges.iter().take(10).collect::<Vec<_>>());
+    eprintln!(
+        "[cadence] {} sector_mark rising edges in 5000 cycles",
+        rising_edges.len()
+    );
+    eprintln!(
+        "[cadence] first 10 rising-edge cycles: {:?}",
+        rising_edges.iter().take(10).collect::<Vec<_>>()
+    );
     let n = rising_edges.len();
-    assert!(n >= 15 && n <= 22,
+    assert!(
+        n >= 15 && n <= 22,
         "expected 15..22 sector_mark rising edges in 5000 cycles at \
          {TEST_DISK_PERIOD}-cycle period; got {n} — cadence broken or \
-         BLOCK not clearing the latch");
+         BLOCK not clearing the latch"
+    );
 
     // Inter-edge spacings should hover around TEST_DISK_PERIOD.  Allow
     // ±32 cycles slack to absorb KSEC's microcode runtime between
     // BLOCK and the next sector boundary (KSEC may take 5-30 cycles
     // to execute its handler before yielding).
     if rising_edges.len() >= 2 {
-        let spacings: Vec<i64> = rising_edges.windows(2)
+        let spacings: Vec<i64> = rising_edges
+            .windows(2)
             .map(|w| (w[1] as i64) - (w[0] as i64))
             .collect();
         let min_spacing = *spacings.iter().min().unwrap();
@@ -119,8 +132,8 @@ fn sector_mark_cadence_matches_test_period() {
         eprintln!("[cadence] inter-edge spacings: min={min_spacing}, max={max_spacing}");
         let target = TEST_DISK_PERIOD as i64;
         assert!(
-            (target - 32..=target + 32).contains(&min_spacing) &&
-            (target - 32..=target + 32).contains(&max_spacing),
+            (target - 32..=target + 32).contains(&min_spacing)
+                && (target - 32..=target + 32).contains(&max_spacing),
             "inter-rising-edge spacings should be near {target}; got \
              min={min_spacing} max={max_spacing}",
         );
@@ -140,9 +153,12 @@ fn sector_mark_drives_wakeup_bit_4() {
     let trace = capture(uut, 5000);
     for t in &trace {
         if t.sector_mark {
-            assert!(t.wakeup_disk_sector,
+            assert!(
+                t.wakeup_disk_sector,
                 "cycle {}: sector_mark=true but wakeups[4]=false — \
-                 disk-to-chip wakeup wiring broken", t.cycle);
+                 disk-to-chip wakeup wiring broken",
+                t.cycle
+            );
         }
     }
 }
@@ -172,20 +188,26 @@ fn block_in_ksec_clears_sector_wake_within_one_cycle() {
             }
         }
     }
-    eprintln!("[block] {block_events} (current_task=4, block_task=true) events; \
-              {block_cleared_latch} cleared sector_mark next cycle");
+    eprintln!(
+        "[block] {block_events} (current_task=4, block_task=true) events; \
+              {block_cleared_latch} cleared sector_mark next cycle"
+    );
     // Some BLOCK events may overlap with sector_mark already being
     // low.  But the MAJORITY (= every BLOCK that happened while
     // sector_mark was still high) MUST clear the latch.  Simplest
     // soundness check: at least one BLOCK clears the latch (proves
     // the path works), and every BLOCK is followed by !sector_mark.
-    assert!(block_events > 0,
+    assert!(
+        block_events > 0,
         "in a 5000-cycle KSEC-active trace, KSEC microcode should \
-         have executed F1=Block at least once; got {block_events}");
-    assert_eq!(block_events, block_cleared_latch,
+         have executed F1=Block at least once; got {block_events}"
+    );
+    assert_eq!(
+        block_events, block_cleared_latch,
         "every (current_task=4, block_task=true) cycle should clear \
          sector_mark on the next cycle; got {block_cleared_latch} of \
-         {block_events} — BLOCK-clear path is broken or has a delay");
+         {block_events} — BLOCK-clear path is broken or has a delay"
+    );
 }
 
 /// **Latch-not-stuck test.**  In a 5,000-cycle window with normal
@@ -205,13 +227,17 @@ fn sector_mark_falls_repeatedly_not_stuck() {
     let mut falling_edges = 0usize;
     let mut prev = false;
     for t in &trace {
-        if prev && !t.sector_mark { falling_edges += 1; }
+        if prev && !t.sector_mark {
+            falling_edges += 1;
+        }
         prev = t.sector_mark;
     }
     eprintln!("[latch] sector_mark fell {falling_edges} times in 5000 cycles");
-    assert!(falling_edges >= 5,
+    assert!(
+        falling_edges >= 5,
         "sector_mark should fall at least 5 times in a 5000-cycle \
          trace at 256-cycle period (~19 cycles between rising edges \
          + KSEC's BLOCK clearing the latch); got {falling_edges} — \
-         latch is stuck or BLOCK never executes");
+         latch is stuck or BLOCK never executes"
+    );
 }

@@ -41,7 +41,10 @@ pub enum FsmDiagnosticKind {
     /// arms.  Emitted only when the analysis genuinely had to
     /// give up; carries a pointer to the offending arm name for
     /// the user to decompose.
-    Unanalyzable { source: &'static str, reason: &'static str },
+    Unanalyzable {
+        source: &'static str,
+        reason: &'static str,
+    },
 }
 
 /// A single FSM-structural diagnostic surfaced by the analysis pass.
@@ -261,10 +264,7 @@ mod tests {
             transition(2, 0),
         ];
         let diags = analyze_fsm_structure(&desc, &transitions, &[]);
-        assert!(
-            diags.is_empty(),
-            "expected no diagnostics, got: {diags:#?}"
-        );
+        assert!(diags.is_empty(), "expected no diagnostics, got: {diags:#?}");
     }
 
     #[test]
@@ -279,10 +279,9 @@ mod tests {
             "expected 1 unreachable + 1 deadlock for Done, got: {diags:#?}"
         );
         assert!(
-            diags.iter().any(|d| matches!(
-                d.kind,
-                FsmDiagnosticKind::UnreachableState { name: "Done" }
-            )),
+            diags
+                .iter()
+                .any(|d| matches!(d.kind, FsmDiagnosticKind::UnreachableState { name: "Done" })),
             "expected UnreachableState{{Done}} in: {diags:#?}"
         );
     }
@@ -381,10 +380,9 @@ mod tests {
         // it transitions to Done).  The unreachability diagnostic
         // for Done is still useful.
         assert!(
-            diags.iter().any(|d| matches!(
-                d.kind,
-                FsmDiagnosticKind::UnreachableState { name: "Done" }
-            )),
+            diags
+                .iter()
+                .any(|d| matches!(d.kind, FsmDiagnosticKind::UnreachableState { name: "Done" })),
             "expected UnreachableState{{Done}} despite Running being unanalyzable, got: {diags:#?}"
         );
         assert!(
@@ -400,9 +398,10 @@ mod tests {
         // Running itself should NOT be flagged as a deadlock
         // candidate, because we explicitly couldn't analyse it.
         assert!(
-            !diags
-                .iter()
-                .any(|d| matches!(d.kind, FsmDiagnosticKind::DeadlockCandidate { name: "Running" })),
+            !diags.iter().any(|d| matches!(
+                d.kind,
+                FsmDiagnosticKind::DeadlockCandidate { name: "Running" }
+            )),
             "Running should be skipped for deadlock check (unanalyzable), got: {diags:#?}"
         );
     }
@@ -443,7 +442,10 @@ mod tests {
             msg.contains("test::ThreeState"),
             "missing widget FQDN: {msg}"
         );
-        assert!(msg.contains("`Done`"), "missing state-name backticks: {msg}");
+        assert!(
+            msg.contains("`Done`"),
+            "missing state-name backticks: {msg}"
+        );
         assert!(msg.contains("unreachable"), "missing keyword: {msg}");
         assert!(
             msg.contains("initial state"),
@@ -482,11 +484,7 @@ mod tests {
     fn diagnostic_message_for_self_loop_saturation_distinguishes_from_deadlock() {
         let desc = three_state_descriptor();
         // Running → Running only.
-        let diags = analyze_fsm_structure(
-            &desc,
-            &[transition(0, 1), transition(1, 1)],
-            &[],
-        );
+        let diags = analyze_fsm_structure(&desc, &[transition(0, 1), transition(1, 1)], &[]);
         let sat = diags
             .iter()
             .find(|d| {
@@ -643,7 +641,10 @@ mod tests {
         assert!(
             diags.iter().any(|d| matches!(
                 d.kind,
-                FsmDiagnosticKind::Unanalyzable { source: "Working", .. }
+                FsmDiagnosticKind::Unanalyzable {
+                    source: "Working",
+                    ..
+                }
             )),
             "missing Unanalyzable{{Working}}, got: {diags:#?}"
         );
@@ -653,7 +654,10 @@ mod tests {
         assert!(
             diags.iter().any(|d| matches!(
                 d.kind,
-                FsmDiagnosticKind::Unanalyzable { source: "Orphan", .. }
+                FsmDiagnosticKind::Unanalyzable {
+                    source: "Orphan",
+                    ..
+                }
             )),
             "missing Unanalyzable{{Orphan}}, got: {diags:#?}"
         );
@@ -683,7 +687,11 @@ mod tests {
             },
         ];
         for kind in kinds {
-            let msg = FsmDiagnostic { widget, kind: kind.clone() }.message();
+            let msg = FsmDiagnostic {
+                widget,
+                kind: kind.clone(),
+            }
+            .message();
             assert!(
                 msg.contains(widget),
                 "diagnostic kind {kind:?} dropped the widget name in: {msg}"

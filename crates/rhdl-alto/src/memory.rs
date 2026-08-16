@@ -174,9 +174,10 @@ impl Memory {
     /// Convenience: load a contiguous run of words starting at a base
     /// address (typical for staging a disk sector's data).
     pub fn with_words_at(base: u16, words: &[u16]) -> Self {
-        let initial = words.iter().enumerate().map(|(i, &w)| {
-            (bits::<16>(base as u128 + i as u128), bits::<16>(w as u128))
-        });
+        let initial = words
+            .iter()
+            .enumerate()
+            .map(|(i, &w)| (bits::<16>(base as u128 + i as u128), bits::<16>(w as u128)));
         Self::new(initial)
     }
 }
@@ -224,8 +225,7 @@ pub fn memory_kernel(cr: ClockReset, i: MemIn, q: Q) -> (MemOut, D) {
     //               MAR<- separated by an MD<-.
     let counter: Bits<3> = q.cycles_since_mar;
     let counter_ge_1: bool = counter >= bits::<3>(1);
-    let stall_read: bool =
-        i.md_read_this_cycle && counter_ge_1 && counter < bits::<3>(4);
+    let stall_read: bool = i.md_read_this_cycle && counter_ge_1 && counter < bits::<3>(4);
     // MD<- (write) does NOT stall the microengine.  Per AltoHW §2.3:
     // "Store happens in the third cycle after MAR<-" — the microcode
     // can issue MD<- at K+1, K+2, or K+3 and the write commits at K+3
@@ -238,8 +238,8 @@ pub fn memory_kernel(cr: ClockReset, i: MemIn, q: Q) -> (MemOut, D) {
     // must be ready, not to MD<- (write) which the bus completes
     // asynchronously at K+3.
     let stall_write: bool = false;
-    let _ = i.md_write_this_cycle;  // accepted for the FSM driver-signal
-                                    // contract but unused here
+    let _ = i.md_write_this_cycle; // accepted for the FSM driver-signal
+    // contract but unused here
     // Per AltoHW §2.3 + Alto II "Read result available in cycle four":
     // the memory cycle COMPLETES at K+4 for a read (K+3 for a write).
     // The bus is free for a new MAR<- on the SAME cycle the previous
@@ -248,8 +248,7 @@ pub fn memory_kernel(cr: ClockReset, i: MemIn, q: Q) -> (MemOut, D) {
     // (MPC=0x004 issues MAR<- exactly 4 cycles after Emulator's
     // NOVEM MAR<-; CTR doesn't stall there).  Earlier I used counter
     // ≥ 5, which spuriously stalled KSEC's first instruction.
-    let stall_new_mar: bool =
-        i.mar_load_this_cycle && counter_ge_1 && counter < bits::<3>(4);
+    let stall_new_mar: bool = i.mar_load_this_cycle && counter_ge_1 && counter < bits::<3>(4);
     let stall: bool = stall_read || stall_write || stall_new_mar;
     o.mem_stall = stall;
 
@@ -349,7 +348,9 @@ pub fn memory_kernel(cr: ClockReset, i: MemIn, q: Q) -> (MemOut, D) {
 mod tests {
     use super::*;
 
-    fn b16(v: u16) -> Bits<16> { bits::<16>(v as u128) }
+    fn b16(v: u16) -> Bits<16> {
+        bits::<16>(v as u128)
+    }
 
     fn run_inputs(uut: Memory, inputs: Vec<MemIn>) -> Vec<MemOut> {
         let stream = inputs.into_iter().with_reset(1).clock_pos_edge(100);
@@ -365,48 +366,113 @@ mod tests {
     #[test]
     fn write_then_read_round_trip() {
         let uut = Memory::default();
-        let trace = run_inputs(uut, vec![
-            // Cycle 0: write 0xABCD to addr 0x100.
-            MemIn { address: b16(0x100), write_data: b16(0xABCD), write_en: true, ..Default::default() },
-            // Cycle 1: present read addr (write committed at end of cycle 0).
-            MemIn { address: b16(0x100), write_data: b16(0), write_en: false, ..Default::default() },
-            // Cycle 2: BRAM output reflects the write.
-            MemIn { address: b16(0x100), write_data: b16(0), write_en: false, ..Default::default() },
-            MemIn { address: b16(0x100), write_data: b16(0), write_en: false, ..Default::default() },
-        ]);
+        let trace = run_inputs(
+            uut,
+            vec![
+                // Cycle 0: write 0xABCD to addr 0x100.
+                MemIn {
+                    address: b16(0x100),
+                    write_data: b16(0xABCD),
+                    write_en: true,
+                    ..Default::default()
+                },
+                // Cycle 1: present read addr (write committed at end of cycle 0).
+                MemIn {
+                    address: b16(0x100),
+                    write_data: b16(0),
+                    write_en: false,
+                    ..Default::default()
+                },
+                // Cycle 2: BRAM output reflects the write.
+                MemIn {
+                    address: b16(0x100),
+                    write_data: b16(0),
+                    write_en: false,
+                    ..Default::default()
+                },
+                MemIn {
+                    address: b16(0x100),
+                    write_data: b16(0),
+                    write_en: false,
+                    ..Default::default()
+                },
+            ],
+        );
         // Read appears 2 cycles after the write input was supplied.
-        assert_eq!(trace[2].read_data, b16(0xABCD), "read of 0x100 should yield 0xABCD");
+        assert_eq!(
+            trace[2].read_data,
+            b16(0xABCD),
+            "read of 0x100 should yield 0xABCD"
+        );
     }
 
     #[test]
     fn initial_contents_via_new() {
-        let uut = Memory::new(vec![
-            (b16(0x10), b16(0xCAFE)),
-            (b16(0x20), b16(0xBEEF)),
-        ]);
-        let trace = run_inputs(uut, vec![
-            MemIn { address: b16(0x10), write_data: b16(0), write_en: false, ..Default::default() },
-            MemIn { address: b16(0x20), write_data: b16(0), write_en: false, ..Default::default() },
-            MemIn { address: b16(0x30), write_data: b16(0), write_en: false, ..Default::default() },
-            MemIn::default(),
-        ]);
+        let uut = Memory::new(vec![(b16(0x10), b16(0xCAFE)), (b16(0x20), b16(0xBEEF))]);
+        let trace = run_inputs(
+            uut,
+            vec![
+                MemIn {
+                    address: b16(0x10),
+                    write_data: b16(0),
+                    write_en: false,
+                    ..Default::default()
+                },
+                MemIn {
+                    address: b16(0x20),
+                    write_data: b16(0),
+                    write_en: false,
+                    ..Default::default()
+                },
+                MemIn {
+                    address: b16(0x30),
+                    write_data: b16(0),
+                    write_en: false,
+                    ..Default::default()
+                },
+                MemIn::default(),
+            ],
+        );
         // Read appears 1 cycle after the address is presented.
         assert_eq!(trace[1].read_data, b16(0xCAFE), "preloaded 0x10");
         assert_eq!(trace[2].read_data, b16(0xBEEF), "preloaded 0x20");
-        assert_eq!(trace[3].read_data, b16(0),      "unset 0x30 reads as 0");
+        assert_eq!(trace[3].read_data, b16(0), "unset 0x30 reads as 0");
     }
 
     #[test]
     fn with_words_at_loads_a_run() {
         // Stage a 4-word sequence at base 0x80.
         let uut = Memory::with_words_at(0x80, &[0x1111, 0x2222, 0x3333, 0x4444]);
-        let trace = run_inputs(uut, vec![
-            MemIn { address: b16(0x80), write_data: b16(0), write_en: false, ..Default::default() },
-            MemIn { address: b16(0x81), write_data: b16(0), write_en: false, ..Default::default() },
-            MemIn { address: b16(0x82), write_data: b16(0), write_en: false, ..Default::default() },
-            MemIn { address: b16(0x83), write_data: b16(0), write_en: false, ..Default::default() },
-            MemIn::default(),
-        ]);
+        let trace = run_inputs(
+            uut,
+            vec![
+                MemIn {
+                    address: b16(0x80),
+                    write_data: b16(0),
+                    write_en: false,
+                    ..Default::default()
+                },
+                MemIn {
+                    address: b16(0x81),
+                    write_data: b16(0),
+                    write_en: false,
+                    ..Default::default()
+                },
+                MemIn {
+                    address: b16(0x82),
+                    write_data: b16(0),
+                    write_en: false,
+                    ..Default::default()
+                },
+                MemIn {
+                    address: b16(0x83),
+                    write_data: b16(0),
+                    write_en: false,
+                    ..Default::default()
+                },
+                MemIn::default(),
+            ],
+        );
         assert_eq!(trace[1].read_data, b16(0x1111));
         assert_eq!(trace[2].read_data, b16(0x2222));
         assert_eq!(trace[3].read_data, b16(0x3333));
@@ -416,18 +482,46 @@ mod tests {
     #[test]
     fn writes_are_independent_per_address() {
         let uut = Memory::default();
-        let trace = run_inputs(uut, vec![
-            MemIn { address: b16(0x10), write_data: b16(0x10), write_en: true, ..Default::default() },
-            MemIn { address: b16(0x20), write_data: b16(0x20), write_en: true, ..Default::default() },
-            MemIn { address: b16(0x10), write_data: b16(0), write_en: false, ..Default::default() },
-            MemIn { address: b16(0x20), write_data: b16(0), write_en: false, ..Default::default() },
-            MemIn { address: b16(0x30), write_data: b16(0), write_en: false, ..Default::default() }, // unwritten
-            MemIn::default(),
-            MemIn::default(),
-        ]);
+        let trace = run_inputs(
+            uut,
+            vec![
+                MemIn {
+                    address: b16(0x10),
+                    write_data: b16(0x10),
+                    write_en: true,
+                    ..Default::default()
+                },
+                MemIn {
+                    address: b16(0x20),
+                    write_data: b16(0x20),
+                    write_en: true,
+                    ..Default::default()
+                },
+                MemIn {
+                    address: b16(0x10),
+                    write_data: b16(0),
+                    write_en: false,
+                    ..Default::default()
+                },
+                MemIn {
+                    address: b16(0x20),
+                    write_data: b16(0),
+                    write_en: false,
+                    ..Default::default()
+                },
+                MemIn {
+                    address: b16(0x30),
+                    write_data: b16(0),
+                    write_en: false,
+                    ..Default::default()
+                }, // unwritten
+                MemIn::default(),
+                MemIn::default(),
+            ],
+        );
         assert_eq!(trace[3].read_data, b16(0x10), "0x10 should hold 0x10");
         assert_eq!(trace[4].read_data, b16(0x20), "0x20 should hold 0x20");
-        assert_eq!(trace[5].read_data, b16(0),    "0x30 was never written");
+        assert_eq!(trace[5].read_data, b16(0), "0x30 was never written");
     }
 
     #[test]
@@ -435,14 +529,30 @@ mod tests {
         // Verify the high address space is reachable: write to the very
         // last word (0xFFFF) and read it back.
         let uut = Memory::default();
-        let trace = run_inputs(uut, vec![
-            MemIn { address: b16(0xFFFF), write_data: b16(0xDEAD), write_en: true, ..Default::default() },
-            MemIn { address: b16(0xFFFF), write_data: b16(0), write_en: false, ..Default::default() },
-            MemIn::default(),
-            MemIn::default(),
-        ]);
-        assert_eq!(trace[2].read_data, b16(0xDEAD),
-            "the top of the 64K address space should be reachable");
+        let trace = run_inputs(
+            uut,
+            vec![
+                MemIn {
+                    address: b16(0xFFFF),
+                    write_data: b16(0xDEAD),
+                    write_en: true,
+                    ..Default::default()
+                },
+                MemIn {
+                    address: b16(0xFFFF),
+                    write_data: b16(0),
+                    write_en: false,
+                    ..Default::default()
+                },
+                MemIn::default(),
+                MemIn::default(),
+            ],
+        );
+        assert_eq!(
+            trace[2].read_data,
+            b16(0xDEAD),
+            "the top of the 64K address space should be reachable"
+        );
     }
 
     /// iverilog round-trip — preloads addresses so the BRAM never
@@ -454,12 +564,14 @@ mod tests {
         // Preload addresses 0..6 so every read in the input sequence
         // hits a defined cell.
         let uut = Memory::with_words_at(0, &[0xA000, 0xB000, 0xC000, 0xD000, 0xE000, 0xF000]);
-        let inputs: Vec<MemIn> = (0..6).map(|i| MemIn {
-            address: b16(i as u16),
-            write_data: b16(i as u16 * 0x10),
-            write_en: false,  // read-only — write port stays idle
-            ..Default::default()
-        }).collect();
+        let inputs: Vec<MemIn> = (0..6)
+            .map(|i| MemIn {
+                address: b16(i as u16),
+                write_data: b16(i as u16 * 0x10),
+                write_en: false, // read-only — write port stays idle
+                ..Default::default()
+            })
+            .collect();
         let stream = inputs.into_iter().with_reset(1).clock_pos_edge(100);
         let test_bench = uut.run(stream).collect::<SynchronousTestBench<_, _>>();
         // .skip(2) is the canonical SyncBRAM pattern — see

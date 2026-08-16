@@ -72,7 +72,9 @@ fn require_spike() -> Option<PathBuf> {
     let path = spike_path();
     if path.is_none() {
         eprintln!("spike not found on PATH or at /tmp/spike-install/bin/spike — skipping");
-        eprintln!("  to enable: build riscv-isa-sim from source (https://github.com/riscv-software-src/riscv-isa-sim)");
+        eprintln!(
+            "  to enable: build riscv-isa-sim from source (https://github.com/riscv-software-src/riscv-isa-sim)"
+        );
     }
     path
 }
@@ -82,10 +84,19 @@ fn require_spike() -> Option<PathBuf> {
 const ELF_LOAD_ADDR: u32 = 0x8000_0000;
 
 /// Write a 32-bit ELF section header (40 bytes) into `buf`.
-fn shdr(buf: &mut Vec<u8>,
-        sh_name: u32, sh_type: u32, sh_flags: u32, sh_addr: u32,
-        sh_offset: u32, sh_size: u32, sh_link: u32, sh_info: u32,
-        sh_addralign: u32, sh_entsize: u32) {
+fn shdr(
+    buf: &mut Vec<u8>,
+    sh_name: u32,
+    sh_type: u32,
+    sh_flags: u32,
+    sh_addr: u32,
+    sh_offset: u32,
+    sh_size: u32,
+    sh_link: u32,
+    sh_info: u32,
+    sh_addralign: u32,
+    sh_entsize: u32,
+) {
     buf.extend_from_slice(&sh_name.to_le_bytes());
     buf.extend_from_slice(&sh_type.to_le_bytes());
     buf.extend_from_slice(&sh_flags.to_le_bytes());
@@ -123,34 +134,34 @@ fn build_elf(code: &[u32]) -> Vec<u8> {
 
     // ---- ELF header (52 bytes) ----
     buf.extend_from_slice(&[0x7F, b'E', b'L', b'F']);
-    buf.push(1);  // EI_CLASS = ELFCLASS32
-    buf.push(1);  // EI_DATA  = ELFDATA2LSB
-    buf.push(1);  // EI_VERSION
-    buf.push(0);  // EI_OSABI = SYSV
-    buf.extend_from_slice(&[0u8; 8]);  // padding
-    buf.extend_from_slice(&2u16.to_le_bytes());      // e_type = ET_EXEC
-    buf.extend_from_slice(&0xF3u16.to_le_bytes());   // e_machine = EM_RISCV
-    buf.extend_from_slice(&1u32.to_le_bytes());      // e_version
-    buf.extend_from_slice(&ELF_LOAD_ADDR.to_le_bytes());  // e_entry
-    buf.extend_from_slice(&phdr_offset.to_le_bytes());    // e_phoff
-    buf.extend_from_slice(&shdr_offset.to_le_bytes());    // e_shoff
-    buf.extend_from_slice(&0u32.to_le_bytes());      // e_flags
-    buf.extend_from_slice(&52u16.to_le_bytes());     // e_ehsize
-    buf.extend_from_slice(&32u16.to_le_bytes());     // e_phentsize
-    buf.extend_from_slice(&1u16.to_le_bytes());      // e_phnum
-    buf.extend_from_slice(&40u16.to_le_bytes());     // e_shentsize
-    buf.extend_from_slice(&3u16.to_le_bytes());      // e_shnum
-    buf.extend_from_slice(&2u16.to_le_bytes());      // e_shstrndx = section [2]
+    buf.push(1); // EI_CLASS = ELFCLASS32
+    buf.push(1); // EI_DATA  = ELFDATA2LSB
+    buf.push(1); // EI_VERSION
+    buf.push(0); // EI_OSABI = SYSV
+    buf.extend_from_slice(&[0u8; 8]); // padding
+    buf.extend_from_slice(&2u16.to_le_bytes()); // e_type = ET_EXEC
+    buf.extend_from_slice(&0xF3u16.to_le_bytes()); // e_machine = EM_RISCV
+    buf.extend_from_slice(&1u32.to_le_bytes()); // e_version
+    buf.extend_from_slice(&ELF_LOAD_ADDR.to_le_bytes()); // e_entry
+    buf.extend_from_slice(&phdr_offset.to_le_bytes()); // e_phoff
+    buf.extend_from_slice(&shdr_offset.to_le_bytes()); // e_shoff
+    buf.extend_from_slice(&0u32.to_le_bytes()); // e_flags
+    buf.extend_from_slice(&52u16.to_le_bytes()); // e_ehsize
+    buf.extend_from_slice(&32u16.to_le_bytes()); // e_phentsize
+    buf.extend_from_slice(&1u16.to_le_bytes()); // e_phnum
+    buf.extend_from_slice(&40u16.to_le_bytes()); // e_shentsize
+    buf.extend_from_slice(&3u16.to_le_bytes()); // e_shnum
+    buf.extend_from_slice(&2u16.to_le_bytes()); // e_shstrndx = section [2]
 
     // ---- Program header (32 bytes) ----
-    let memsz: u32 = 0x10_0000;  // 1 MiB load region
-    buf.extend_from_slice(&1u32.to_le_bytes());      // p_type = PT_LOAD
+    let memsz: u32 = 0x10_0000; // 1 MiB load region
+    buf.extend_from_slice(&1u32.to_le_bytes()); // p_type = PT_LOAD
     buf.extend_from_slice(&code_offset.to_le_bytes()); // p_offset
     buf.extend_from_slice(&ELF_LOAD_ADDR.to_le_bytes()); // p_vaddr
     buf.extend_from_slice(&ELF_LOAD_ADDR.to_le_bytes()); // p_paddr
     buf.extend_from_slice(&code_bytes_len.to_le_bytes()); // p_filesz
-    buf.extend_from_slice(&memsz.to_le_bytes());     // p_memsz
-    buf.extend_from_slice(&7u32.to_le_bytes());      // p_flags = RWX
+    buf.extend_from_slice(&memsz.to_le_bytes()); // p_memsz
+    buf.extend_from_slice(&7u32.to_le_bytes()); // p_flags = RWX
     buf.extend_from_slice(&0x1000u32.to_le_bytes()); // p_align
 
     // ---- Code ----
@@ -164,23 +175,33 @@ fn build_elf(code: &[u32]) -> Vec<u8> {
     // [0] SHT_NULL — all zeros (required).
     shdr(&mut buf, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     // [1] .text — SHT_PROGBITS, ALLOC|EXEC, at ELF_LOAD_ADDR.
-    shdr(&mut buf,
-         1,                                          // sh_name = ".text"
-         1,                                          // SHT_PROGBITS
-         0x6,                                        // SHF_ALLOC | SHF_EXECINSTR
-         ELF_LOAD_ADDR,
-         code_offset,
-         code_bytes_len,
-         0, 0, 4, 0);
+    shdr(
+        &mut buf,
+        1,   // sh_name = ".text"
+        1,   // SHT_PROGBITS
+        0x6, // SHF_ALLOC | SHF_EXECINSTR
+        ELF_LOAD_ADDR,
+        code_offset,
+        code_bytes_len,
+        0,
+        0,
+        4,
+        0,
+    );
     // [2] .shstrtab — SHT_STRTAB, no flags, in-file only.
-    shdr(&mut buf,
-         7,                                          // sh_name = ".shstrtab"
-         3,                                          // SHT_STRTAB
-         0,
-         0,
-         strtab_offset,
-         strtab_size,
-         0, 0, 1, 0);
+    shdr(
+        &mut buf,
+        7, // sh_name = ".shstrtab"
+        3, // SHT_STRTAB
+        0,
+        0,
+        strtab_offset,
+        strtab_size,
+        0,
+        0,
+        1,
+        0,
+    );
 
     buf
 }
@@ -195,10 +216,15 @@ fn run_spike(spike: &PathBuf, program: &[u32], _cycles: u32) -> Option<[u32; 8]>
     let tmpdir = std::env::temp_dir();
     // Unique per-test path: use process ID + thread ID + nanos so
     // parallel test threads don't race on the same file.
-    let tag = format!("{}-{:?}-{}",
+    let tag = format!(
+        "{}-{:?}-{}",
         std::process::id(),
         std::thread::current().id(),
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(0));
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or(0)
+    );
     let elf_path = tmpdir.join(format!("rhdl-rv32i-spike-{tag}.elf"));
     let cmd_path = tmpdir.join(format!("rhdl-rv32i-spike-{tag}.cmd"));
 
@@ -257,7 +283,9 @@ fn run_spike(spike: &PathBuf, program: &[u32], _cycles: u32) -> Option<[u32; 8]>
         }
     }
     if idx < 8 {
-        eprintln!("spike output parse failed; got {idx}/8 mem dumps. stderr: {stderr}\nstdout: {stdout}");
+        eprintln!(
+            "spike output parse failed; got {idx}/8 mem dumps. stderr: {stderr}\nstdout: {stdout}"
+        );
         return None;
     }
     Some(words)
@@ -282,17 +310,32 @@ fn run_single_hw(program: Vec<u32>, max_cycles: usize) -> [u32; 8] {
     let mut total_cycles: usize = 0;
     uut.run_fn(
         |out: SOut| {
-            if reset_cycles_remaining > 0 { reset_cycles_remaining -= 1; return Some(ResetOrData::Reset); }
-            if total_cycles >= max_cycles { return None; }
+            if reset_cycles_remaining > 0 {
+                reset_cycles_remaining -= 1;
+                return Some(ResetOrData::Reset);
+            }
+            if total_cycles >= max_cycles {
+                return None;
+            }
             total_cycles += 1;
             if out.mem_write {
                 let addr_word = (out.mem_addr.raw() / 4) as usize;
-                if addr_word < data_mem.len() { data_mem[addr_word] = out.mem_wdata.raw() as u32; }
+                if addr_word < data_mem.len() {
+                    data_mem[addr_word] = out.mem_wdata.raw() as u32;
+                }
             }
             let pc_word = (out.pc.raw() / 4) as usize;
-            let instr = if pc_word < program.len() { program[pc_word] } else { 0 };
+            let instr = if pc_word < program.len() {
+                program[pc_word]
+            } else {
+                0
+            };
             let read_word = (out.mem_addr.raw() / 4) as usize;
-            let mem_rdata = if read_word < data_mem.len() { data_mem[read_word] } else { 0 };
+            let mem_rdata = if read_word < data_mem.len() {
+                data_mem[read_word]
+            } else {
+                0
+            };
             Some(ResetOrData::Data(SInIn {
                 instr: bits::<32>(instr as u128),
                 mem_rdata: bits::<32>(mem_rdata as u128),
@@ -300,7 +343,8 @@ fn run_single_hw(program: Vec<u32>, max_cycles: usize) -> [u32; 8] {
             }))
         },
         100,
-    ).for_each(drop);
+    )
+    .for_each(drop);
     let mut out = [0u32; 8];
     out.copy_from_slice(&data_mem[0..8]);
     out
@@ -313,17 +357,32 @@ fn run_pipelined_hw(program: Vec<u32>, max_cycles: usize) -> [u32; 8] {
     let mut total_cycles: usize = 0;
     uut.run_fn(
         |out: POut| {
-            if reset_cycles_remaining > 0 { reset_cycles_remaining -= 1; return Some(ResetOrData::Reset); }
-            if total_cycles >= max_cycles { return None; }
+            if reset_cycles_remaining > 0 {
+                reset_cycles_remaining -= 1;
+                return Some(ResetOrData::Reset);
+            }
+            if total_cycles >= max_cycles {
+                return None;
+            }
             total_cycles += 1;
             if out.mem_write {
                 let addr_word = (out.mem_addr.raw() / 4) as usize;
-                if addr_word < data_mem.len() { data_mem[addr_word] = out.mem_wdata.raw() as u32; }
+                if addr_word < data_mem.len() {
+                    data_mem[addr_word] = out.mem_wdata.raw() as u32;
+                }
             }
             let pc_word = (out.pc.raw() / 4) as usize;
-            let instr = if pc_word < program.len() { program[pc_word] } else { 0 };
+            let instr = if pc_word < program.len() {
+                program[pc_word]
+            } else {
+                0
+            };
             let read_word = (out.mem_addr.raw() / 4) as usize;
-            let mem_rdata = if read_word < data_mem.len() { data_mem[read_word] } else { 0 };
+            let mem_rdata = if read_word < data_mem.len() {
+                data_mem[read_word]
+            } else {
+                0
+            };
             Some(ResetOrData::Data(PIn {
                 instr: bits::<32>(instr as u128),
                 mem_rdata: bits::<32>(mem_rdata as u128),
@@ -331,7 +390,8 @@ fn run_pipelined_hw(program: Vec<u32>, max_cycles: usize) -> [u32; 8] {
             }))
         },
         100,
-    ).for_each(drop);
+    )
+    .for_each(drop);
     let mut out = [0u32; 8];
     out.copy_from_slice(&data_mem[0..8]);
     out
@@ -340,79 +400,161 @@ fn run_pipelined_hw(program: Vec<u32>, max_cycles: usize) -> [u32; 8] {
 // ---- Encoding helpers (same shape as other test files) ----------
 
 fn r_type(funct7: u32, rs2: u32, rs1: u32, funct3: u32, rd: u32, opcode: u32) -> u32 {
-    (funct7 & 0x7F) << 25 | (rs2 & 0x1F) << 20 | (rs1 & 0x1F) << 15
-        | (funct3 & 0x7) << 12 | (rd & 0x1F) << 7 | (opcode & 0x7F)
+    (funct7 & 0x7F) << 25
+        | (rs2 & 0x1F) << 20
+        | (rs1 & 0x1F) << 15
+        | (funct3 & 0x7) << 12
+        | (rd & 0x1F) << 7
+        | (opcode & 0x7F)
 }
 fn i_type(imm: i32, rs1: u32, funct3: u32, rd: u32, opcode: u32) -> u32 {
     let imm_u = (imm as u32) & 0xFFF;
-    (imm_u << 20) | (rs1 & 0x1F) << 15 | (funct3 & 0x7) << 12
-        | (rd & 0x1F) << 7 | (opcode & 0x7F)
+    (imm_u << 20) | (rs1 & 0x1F) << 15 | (funct3 & 0x7) << 12 | (rd & 0x1F) << 7 | (opcode & 0x7F)
 }
 fn s_type(imm: i32, rs2: u32, rs1: u32, funct3: u32, opcode: u32) -> u32 {
     let imm_u = (imm as u32) & 0xFFF;
     let imm_high = (imm_u >> 5) & 0x7F;
     let imm_low = imm_u & 0x1F;
-    (imm_high << 25) | (rs2 & 0x1F) << 20 | (rs1 & 0x1F) << 15
-        | (funct3 & 0x7) << 12 | imm_low << 7 | (opcode & 0x7F)
+    (imm_high << 25)
+        | (rs2 & 0x1F) << 20
+        | (rs1 & 0x1F) << 15
+        | (funct3 & 0x7) << 12
+        | imm_low << 7
+        | (opcode & 0x7F)
 }
-fn lui(rd: u32, imm20: u32) -> u32 { (imm20 & 0xFFFFF) << 12 | (rd & 0x1F) << 7 | 0x37 }
+fn lui(rd: u32, imm20: u32) -> u32 {
+    (imm20 & 0xFFFFF) << 12 | (rd & 0x1F) << 7 | 0x37
+}
 fn u_type(imm: u32, rd: u32, opcode: u32) -> u32 {
     (imm & 0xFFFFF000) | (rd & 0x1F) << 7 | (opcode & 0x7F)
 }
-fn addi(rd: u32, rs1: u32, imm: i32) -> u32 { i_type(imm, rs1, 0, rd, 0x13) }
-fn slti(rd: u32, rs1: u32, imm: i32) -> u32 { i_type(imm, rs1, 2, rd, 0x13) }
-fn sltiu(rd: u32, rs1: u32, imm: i32) -> u32 { i_type(imm, rs1, 3, rd, 0x13) }
-fn xori(rd: u32, rs1: u32, imm: i32) -> u32 { i_type(imm, rs1, 4, rd, 0x13) }
-fn ori(rd: u32, rs1: u32, imm: i32) -> u32 { i_type(imm, rs1, 6, rd, 0x13) }
-fn andi(rd: u32, rs1: u32, imm: i32) -> u32 { i_type(imm, rs1, 7, rd, 0x13) }
-fn slli(rd: u32, rs1: u32, shamt: u32) -> u32 { i_type(shamt as i32, rs1, 1, rd, 0x13) }
-fn srli(rd: u32, rs1: u32, shamt: u32) -> u32 { i_type(shamt as i32, rs1, 5, rd, 0x13) }
-fn srai(rd: u32, rs1: u32, shamt: u32) -> u32 { i_type(((1 << 10) | shamt) as i32, rs1, 5, rd, 0x13) }
-fn add(rd: u32, rs1: u32, rs2: u32) -> u32 { r_type(0, rs2, rs1, 0, rd, 0x33) }
-fn sub(rd: u32, rs1: u32, rs2: u32) -> u32 { r_type(0b0100000, rs2, rs1, 0, rd, 0x33) }
-fn xor(rd: u32, rs1: u32, rs2: u32) -> u32 { r_type(0, rs2, rs1, 4, rd, 0x33) }
-fn and(rd: u32, rs1: u32, rs2: u32) -> u32 { r_type(0, rs2, rs1, 7, rd, 0x33) }
-fn or_(rd: u32, rs1: u32, rs2: u32) -> u32 { r_type(0, rs2, rs1, 6, rd, 0x33) }
-fn sll(rd: u32, rs1: u32, rs2: u32) -> u32 { r_type(0, rs2, rs1, 1, rd, 0x33) }
-fn srl(rd: u32, rs1: u32, rs2: u32) -> u32 { r_type(0, rs2, rs1, 5, rd, 0x33) }
-fn sra(rd: u32, rs1: u32, rs2: u32) -> u32 { r_type(0b0100000, rs2, rs1, 5, rd, 0x33) }
-fn slt(rd: u32, rs1: u32, rs2: u32) -> u32 { r_type(0, rs2, rs1, 2, rd, 0x33) }
-fn sltu(rd: u32, rs1: u32, rs2: u32) -> u32 { r_type(0, rs2, rs1, 3, rd, 0x33) }
-fn sw(rs2: u32, rs1: u32, imm: i32) -> u32 { s_type(imm, rs2, rs1, 2, 0x23) }
-fn sh(rs2: u32, rs1: u32, imm: i32) -> u32 { s_type(imm, rs2, rs1, 1, 0x23) }
-fn sb(rs2: u32, rs1: u32, imm: i32) -> u32 { s_type(imm, rs2, rs1, 0, 0x23) }
-fn lw(rd: u32, rs1: u32, imm: i32) -> u32 { i_type(imm, rs1, 2, rd, 0x03) }
-fn lh(rd: u32, rs1: u32, imm: i32) -> u32 { i_type(imm, rs1, 1, rd, 0x03) }
-fn lb(rd: u32, rs1: u32, imm: i32) -> u32 { i_type(imm, rs1, 0, rd, 0x03) }
-fn lhu(rd: u32, rs1: u32, imm: i32) -> u32 { i_type(imm, rs1, 5, rd, 0x03) }
-fn lbu(rd: u32, rs1: u32, imm: i32) -> u32 { i_type(imm, rs1, 4, rd, 0x03) }
-fn beq(rs1: u32, rs2: u32, imm: i32) -> u32 { b_type_(imm, rs2, rs1, 0) }
-fn bne(rs1: u32, rs2: u32, imm: i32) -> u32 { b_type_(imm, rs2, rs1, 1) }
-fn blt(rs1: u32, rs2: u32, imm: i32) -> u32 { b_type_(imm, rs2, rs1, 4) }
-fn bge(rs1: u32, rs2: u32, imm: i32) -> u32 { b_type_(imm, rs2, rs1, 5) }
-fn bltu(rs1: u32, rs2: u32, imm: i32) -> u32 { b_type_(imm, rs2, rs1, 6) }
-fn bgeu(rs1: u32, rs2: u32, imm: i32) -> u32 { b_type_(imm, rs2, rs1, 7) }
+fn addi(rd: u32, rs1: u32, imm: i32) -> u32 {
+    i_type(imm, rs1, 0, rd, 0x13)
+}
+fn slti(rd: u32, rs1: u32, imm: i32) -> u32 {
+    i_type(imm, rs1, 2, rd, 0x13)
+}
+fn sltiu(rd: u32, rs1: u32, imm: i32) -> u32 {
+    i_type(imm, rs1, 3, rd, 0x13)
+}
+fn xori(rd: u32, rs1: u32, imm: i32) -> u32 {
+    i_type(imm, rs1, 4, rd, 0x13)
+}
+fn ori(rd: u32, rs1: u32, imm: i32) -> u32 {
+    i_type(imm, rs1, 6, rd, 0x13)
+}
+fn andi(rd: u32, rs1: u32, imm: i32) -> u32 {
+    i_type(imm, rs1, 7, rd, 0x13)
+}
+fn slli(rd: u32, rs1: u32, shamt: u32) -> u32 {
+    i_type(shamt as i32, rs1, 1, rd, 0x13)
+}
+fn srli(rd: u32, rs1: u32, shamt: u32) -> u32 {
+    i_type(shamt as i32, rs1, 5, rd, 0x13)
+}
+fn srai(rd: u32, rs1: u32, shamt: u32) -> u32 {
+    i_type(((1 << 10) | shamt) as i32, rs1, 5, rd, 0x13)
+}
+fn add(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    r_type(0, rs2, rs1, 0, rd, 0x33)
+}
+fn sub(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    r_type(0b0100000, rs2, rs1, 0, rd, 0x33)
+}
+fn xor(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    r_type(0, rs2, rs1, 4, rd, 0x33)
+}
+fn and(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    r_type(0, rs2, rs1, 7, rd, 0x33)
+}
+fn or_(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    r_type(0, rs2, rs1, 6, rd, 0x33)
+}
+fn sll(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    r_type(0, rs2, rs1, 1, rd, 0x33)
+}
+fn srl(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    r_type(0, rs2, rs1, 5, rd, 0x33)
+}
+fn sra(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    r_type(0b0100000, rs2, rs1, 5, rd, 0x33)
+}
+fn slt(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    r_type(0, rs2, rs1, 2, rd, 0x33)
+}
+fn sltu(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    r_type(0, rs2, rs1, 3, rd, 0x33)
+}
+fn sw(rs2: u32, rs1: u32, imm: i32) -> u32 {
+    s_type(imm, rs2, rs1, 2, 0x23)
+}
+fn sh(rs2: u32, rs1: u32, imm: i32) -> u32 {
+    s_type(imm, rs2, rs1, 1, 0x23)
+}
+fn sb(rs2: u32, rs1: u32, imm: i32) -> u32 {
+    s_type(imm, rs2, rs1, 0, 0x23)
+}
+fn lw(rd: u32, rs1: u32, imm: i32) -> u32 {
+    i_type(imm, rs1, 2, rd, 0x03)
+}
+fn lh(rd: u32, rs1: u32, imm: i32) -> u32 {
+    i_type(imm, rs1, 1, rd, 0x03)
+}
+fn lb(rd: u32, rs1: u32, imm: i32) -> u32 {
+    i_type(imm, rs1, 0, rd, 0x03)
+}
+fn lhu(rd: u32, rs1: u32, imm: i32) -> u32 {
+    i_type(imm, rs1, 5, rd, 0x03)
+}
+fn lbu(rd: u32, rs1: u32, imm: i32) -> u32 {
+    i_type(imm, rs1, 4, rd, 0x03)
+}
+fn beq(rs1: u32, rs2: u32, imm: i32) -> u32 {
+    b_type_(imm, rs2, rs1, 0)
+}
+fn bne(rs1: u32, rs2: u32, imm: i32) -> u32 {
+    b_type_(imm, rs2, rs1, 1)
+}
+fn blt(rs1: u32, rs2: u32, imm: i32) -> u32 {
+    b_type_(imm, rs2, rs1, 4)
+}
+fn bge(rs1: u32, rs2: u32, imm: i32) -> u32 {
+    b_type_(imm, rs2, rs1, 5)
+}
+fn bltu(rs1: u32, rs2: u32, imm: i32) -> u32 {
+    b_type_(imm, rs2, rs1, 6)
+}
+fn bgeu(rs1: u32, rs2: u32, imm: i32) -> u32 {
+    b_type_(imm, rs2, rs1, 7)
+}
 fn jal_(rd: u32, imm: i32) -> u32 {
     let imm_u = (imm as u32) & 0x1F_FFFF;
     let bit20 = (imm_u >> 20) & 0x1;
     let b19_12 = (imm_u >> 12) & 0xFF;
     let bit11 = (imm_u >> 11) & 0x1;
     let b10_1 = (imm_u >> 1) & 0x3FF;
-    (bit20 << 31) | (b19_12 << 12) | (bit11 << 20) | (b10_1 << 21)
-        | (rd & 0x1F) << 7 | 0x6F
+    (bit20 << 31) | (b19_12 << 12) | (bit11 << 20) | (b10_1 << 21) | (rd & 0x1F) << 7 | 0x6F
 }
-fn jalr_(rd: u32, rs1: u32, imm: i32) -> u32 { i_type(imm, rs1, 0, rd, 0x67) }
+fn jalr_(rd: u32, rs1: u32, imm: i32) -> u32 {
+    i_type(imm, rs1, 0, rd, 0x67)
+}
 fn b_type_(imm: i32, rs2: u32, rs1: u32, funct3: u32) -> u32 {
     let imm_u = (imm as u32) & 0x1FFF;
     let bit12 = (imm_u >> 12) & 0x1;
     let bit11 = (imm_u >> 11) & 0x1;
     let b10_5 = (imm_u >> 5) & 0x3F;
     let b4_1 = (imm_u >> 1) & 0xF;
-    (bit12 << 31) | (b10_5 << 25) | (rs2 & 0x1F) << 20 | (rs1 & 0x1F) << 15
-        | (funct3 << 12) | (b4_1 << 8) | (bit11 << 7) | 0x63
+    (bit12 << 31)
+        | (b10_5 << 25)
+        | (rs2 & 0x1F) << 20
+        | (rs1 & 0x1F) << 15
+        | (funct3 << 12)
+        | (b4_1 << 8)
+        | (bit11 << 7)
+        | 0x63
 }
 
-const HALT: u32 = 0x0000_0063;  // beq x0, x0, +0
+const HALT: u32 = 0x0000_0063; // beq x0, x0, +0
 
 /// Build a "Spike" program: prepend a `lui x_base, 0x80001` so the
 /// program writes its data window to 0x80001000+offset.  The
@@ -435,7 +577,7 @@ const HALT: u32 = 0x0000_0063;  // beq x0, x0, +0
 /// `(spike_program, hw_program)` differing only in the base setup.
 fn spike_program(body: Vec<u32>) -> Vec<u32> {
     let mut p = vec![
-        lui(31, 0x80001),         // x31 = 0x80001000
+        lui(31, 0x80001), // x31 = 0x80001000
     ];
     p.extend(body);
     p.push(HALT);
@@ -443,7 +585,7 @@ fn spike_program(body: Vec<u32>) -> Vec<u32> {
 }
 fn hw_program(body: Vec<u32>) -> Vec<u32> {
     let mut p = vec![
-        addi(31, 0, 0),           // x31 = 0 (hardware data_mem index 0)
+        addi(31, 0, 0), // x31 = 0 (hardware data_mem index 0)
     ];
     p.extend(body);
     p.push(HALT);
@@ -458,7 +600,8 @@ fn assert_spike_lockstep(label: &str, body: Vec<u32>, cycles: u32) {
         None => panic!("spike run failed for test {label}"),
     };
     let single_words = run_single_hw(hw_program(body.clone()), (cycles as usize + 4).max(20));
-    let pipelined_words = run_pipelined_hw(hw_program(body.clone()), (cycles as usize + 4).max(20) * 3);
+    let pipelined_words =
+        run_pipelined_hw(hw_program(body.clone()), (cycles as usize + 4).max(20) * 3);
     assert_eq!(
         spike_words, single_words,
         "{label}: Spike ↔ single-cycle data-window mismatch\n  spike: {spike_words:#x?}\n  single: {single_words:#x?}",
@@ -486,108 +629,136 @@ fn spike_is_available() {
 #[test]
 fn spike_lockstep_basic_addi() {
     // x1 = 5; x2 = 10; x3 = x1 + x2 = 15; mem[base+0] = x3
-    assert_spike_lockstep("addi+add+sw", vec![
-        addi(1, 0, 5),
-        addi(2, 0, 10),
-        add(3, 1, 2),
-        sw(3, 31, 0),         // mem[base+0] = 15
-    ], 16);
+    assert_spike_lockstep(
+        "addi+add+sw",
+        vec![
+            addi(1, 0, 5),
+            addi(2, 0, 10),
+            add(3, 1, 2),
+            sw(3, 31, 0), // mem[base+0] = 15
+        ],
+        16,
+    );
 }
 
 #[test]
 fn spike_lockstep_arith_chain() {
     // Chain of ALU operations writing successive results.
-    assert_spike_lockstep("alu_chain", vec![
-        addi(1, 0, 7),
-        addi(2, 0, 3),
-        add(3, 1, 2),         // x3 = 10
-        sub(4, 1, 2),         // x4 = 4
-        xor(5, 1, 2),         // x5 = 4
-        and(6, 1, 2),         // x6 = 3
-        or_(7, 1, 2),         // x7 = 7
-        sw(3, 31, 0),
-        sw(4, 31, 4),
-        sw(5, 31, 8),
-        sw(6, 31, 12),
-        sw(7, 31, 16),
-    ], 32);
+    assert_spike_lockstep(
+        "alu_chain",
+        vec![
+            addi(1, 0, 7),
+            addi(2, 0, 3),
+            add(3, 1, 2), // x3 = 10
+            sub(4, 1, 2), // x4 = 4
+            xor(5, 1, 2), // x5 = 4
+            and(6, 1, 2), // x6 = 3
+            or_(7, 1, 2), // x7 = 7
+            sw(3, 31, 0),
+            sw(4, 31, 4),
+            sw(5, 31, 8),
+            sw(6, 31, 12),
+            sw(7, 31, 16),
+        ],
+        32,
+    );
 }
 
 #[test]
 fn spike_lockstep_shifts() {
     // SLL / SRL / SRA — exercise shift semantics.
-    assert_spike_lockstep("shifts", vec![
-        addi(1, 0, 0x100),    // x1 = 0x100
-        addi(2, 0, 4),        // x2 = 4
-        sll(3, 1, 2),         // x3 = 0x1000
-        srl(4, 1, 2),         // x4 = 0x10
-        addi(5, 0, -1),       // x5 = 0xFFFFFFFF
-        sra(6, 5, 2),         // x6 = 0xFFFFFFFF (arithmetic)
-        srl(7, 5, 2),         // x7 = 0x3FFFFFFF (logical)
-        sw(3, 31, 0),
-        sw(4, 31, 4),
-        sw(6, 31, 8),
-        sw(7, 31, 12),
-    ], 32);
+    assert_spike_lockstep(
+        "shifts",
+        vec![
+            addi(1, 0, 0x100), // x1 = 0x100
+            addi(2, 0, 4),     // x2 = 4
+            sll(3, 1, 2),      // x3 = 0x1000
+            srl(4, 1, 2),      // x4 = 0x10
+            addi(5, 0, -1),    // x5 = 0xFFFFFFFF
+            sra(6, 5, 2),      // x6 = 0xFFFFFFFF (arithmetic)
+            srl(7, 5, 2),      // x7 = 0x3FFFFFFF (logical)
+            sw(3, 31, 0),
+            sw(4, 31, 4),
+            sw(6, 31, 8),
+            sw(7, 31, 12),
+        ],
+        32,
+    );
 }
 
 #[test]
 fn spike_lockstep_signed_compares() {
     // SLT / SLTU
-    assert_spike_lockstep("slt_sltu", vec![
-        addi(1, 0, 5),
-        addi(2, 0, -3),       // x2 = 0xFFFFFFFD
-        slt(3, 1, 2),         // signed:  5 < -3 = 0
-        slt(4, 2, 1),         // signed: -3 <  5 = 1
-        sltu(5, 1, 2),        // unsigned: 5 < 0xFFFFFFFD = 1
-        sltu(6, 2, 1),        // unsigned: 0xFFFFFFFD < 5 = 0
-        sw(3, 31, 0),
-        sw(4, 31, 4),
-        sw(5, 31, 8),
-        sw(6, 31, 12),
-    ], 32);
+    assert_spike_lockstep(
+        "slt_sltu",
+        vec![
+            addi(1, 0, 5),
+            addi(2, 0, -3), // x2 = 0xFFFFFFFD
+            slt(3, 1, 2),   // signed:  5 < -3 = 0
+            slt(4, 2, 1),   // signed: -3 <  5 = 1
+            sltu(5, 1, 2),  // unsigned: 5 < 0xFFFFFFFD = 1
+            sltu(6, 2, 1),  // unsigned: 0xFFFFFFFD < 5 = 0
+            sw(3, 31, 0),
+            sw(4, 31, 4),
+            sw(5, 31, 8),
+            sw(6, 31, 12),
+        ],
+        32,
+    );
 }
 
 #[test]
 fn spike_lockstep_negative_arithmetic() {
     // -1 + -1 = -2; -1 - -1 = 0
-    assert_spike_lockstep("negative_arith", vec![
-        addi(1, 0, -1),       // x1 = 0xFFFFFFFF
-        addi(2, 0, -1),       // x2 = 0xFFFFFFFF
-        add(3, 1, 2),         // x3 = 0xFFFFFFFE
-        sub(4, 1, 2),         // x4 = 0
-        sw(3, 31, 0),
-        sw(4, 31, 4),
-    ], 16);
+    assert_spike_lockstep(
+        "negative_arith",
+        vec![
+            addi(1, 0, -1), // x1 = 0xFFFFFFFF
+            addi(2, 0, -1), // x2 = 0xFFFFFFFF
+            add(3, 1, 2),   // x3 = 0xFFFFFFFE
+            sub(4, 1, 2),   // x4 = 0
+            sw(3, 31, 0),
+            sw(4, 31, 4),
+        ],
+        16,
+    );
 }
 
 #[test]
 fn spike_lockstep_load_then_store() {
     // Store a value, load it back, store the loaded value.  Exercises
     // both the load path and the load/store ordering.
-    assert_spike_lockstep("load_store", vec![
-        addi(1, 0, 0xAB),
-        sw(1, 31, 0),                 // mem[base+0] = 0xAB
-        i_type(0, 31, 2, 2, 0x03),    // lw x2, 0(x31)
-        sw(2, 31, 4),                 // mem[base+4] = 0xAB (loaded value)
-    ], 32);
+    assert_spike_lockstep(
+        "load_store",
+        vec![
+            addi(1, 0, 0xAB),
+            sw(1, 31, 0),              // mem[base+0] = 0xAB
+            i_type(0, 31, 2, 2, 0x03), // lw x2, 0(x31)
+            sw(2, 31, 4),              // mem[base+4] = 0xAB (loaded value)
+        ],
+        32,
+    );
 }
 
 #[test]
 fn spike_lockstep_lui_auipc() {
     // LUI puts an upper-immediate; AUIPC is PC + upper-immediate.
     // Just verify the constant LUI computation matches.
-    assert_spike_lockstep("lui_auipc", vec![
-        // x1 = LUI 0xABCDE → 0xABCDE000
-        u_type(0xABCDE000, 1, 0x37),
-        // x2 = AUIPC 0  → x2 = current PC (which is 0x80000008
-        // because the lui_prefix at index 0 is one instr in front
-        // of this body) — value depends on placement, just store it.
-        u_type(0, 2, 0x17),
-        addi(3, 1, 0),                // x3 = x1 = 0xABCDE000
-        sw(1, 31, 0),                 // mem[+0] = LUI value
-        sw(3, 31, 4),                 // mem[+4] = same
-    ], 24);
+    assert_spike_lockstep(
+        "lui_auipc",
+        vec![
+            // x1 = LUI 0xABCDE → 0xABCDE000
+            u_type(0xABCDE000, 1, 0x37),
+            // x2 = AUIPC 0  → x2 = current PC (which is 0x80000008
+            // because the lui_prefix at index 0 is one instr in front
+            // of this body) — value depends on placement, just store it.
+            u_type(0, 2, 0x17),
+            addi(3, 1, 0), // x3 = x1 = 0xABCDE000
+            sw(1, 31, 0),  // mem[+0] = LUI value
+            sw(3, 31, 4),  // mem[+4] = same
+        ],
+        24,
+    );
 }
 
 #[test]
@@ -596,32 +767,44 @@ fn spike_lockstep_branch_taken() {
     // 1: BEQ x0, x0, +8 → skip 1 instruction
     // 2: addi x1 = 0xDD       (SQUASHED)
     // 3: sw x1, 0(x31)        → store x1 (which is 0xCC, since the addi was squashed)
-    assert_spike_lockstep("branch_taken", vec![
-        addi(1, 0, 0xCC),
-        beq(0, 0, 8),
-        addi(1, 0, 0xDD),
-        sw(1, 31, 0),
-    ], 32);
+    assert_spike_lockstep(
+        "branch_taken",
+        vec![
+            addi(1, 0, 0xCC),
+            beq(0, 0, 8),
+            addi(1, 0, 0xDD),
+            sw(1, 31, 0),
+        ],
+        32,
+    );
 }
 
 #[test]
 fn spike_lockstep_branch_not_taken() {
-    assert_spike_lockstep("branch_not_taken", vec![
-        addi(1, 0, 0x11),
-        bne(0, 0, 8),                       // never taken
-        addi(1, 0, 0x22),                   // EXECUTES
-        sw(1, 31, 0),                       // mem[+0] = 0x22
-    ], 32);
+    assert_spike_lockstep(
+        "branch_not_taken",
+        vec![
+            addi(1, 0, 0x11),
+            bne(0, 0, 8),     // never taken
+            addi(1, 0, 0x22), // EXECUTES
+            sw(1, 31, 0),     // mem[+0] = 0x22
+        ],
+        32,
+    );
 }
 
 #[test]
 fn spike_lockstep_jal_skips_squashed_instr() {
-    assert_spike_lockstep("jal_skip", vec![
-        addi(1, 0, 0xAA),
-        jal_(5, 8),                         // jump +8, link to x5 (unobserved)
-        addi(1, 0, 0xBB),                   // SQUASHED
-        sw(1, 31, 0),                       // mem[+0] = 0xAA (proves squash worked)
-    ], 32);
+    assert_spike_lockstep(
+        "jal_skip",
+        vec![
+            addi(1, 0, 0xAA),
+            jal_(5, 8),       // jump +8, link to x5 (unobserved)
+            addi(1, 0, 0xBB), // SQUASHED
+            sw(1, 31, 0),     // mem[+0] = 0xAA (proves squash worked)
+        ],
+        32,
+    );
 }
 
 // =================================================================
@@ -1221,26 +1404,30 @@ spike_tests! {
 fn spike_lockstep_random_seed_42_stress() {
     // A larger random-ish program — exercises multiple ALU types,
     // a branch, multiple stores.
-    assert_spike_lockstep("random_42", vec![
-        addi(1, 0, 0x100),
-        addi(2, 0, 0x10),
-        add(3, 1, 2),                       // 0x110
-        sll(4, 2, 2),                       // 0x10 << 0x10 → arch shamt only uses low 5 bits → 0x10 << 16 = 0x100000
-        sub(5, 3, 4),                       // depends
-        xor(6, 1, 3),                       // 0x100 ^ 0x110 = 0x10
-        or_(7, 2, 4),                       // 0x10 | 0x100000
-        and(8, 3, 6),                       // 0x110 & 0x10 = 0x10
-        slt(9, 4, 1),                       // signed: 0x100000 < 0x100 → 0
-        sltu(10, 1, 4),                     // unsigned: 0x100 < 0x100000 → 1
-        sw(3, 31, 0),
-        sw(4, 31, 4),
-        sw(5, 31, 8),
-        sw(6, 31, 12),
-        sw(7, 31, 16),
-        sw(8, 31, 20),
-        sw(9, 31, 24),
-        sw(10, 31, 28),
-    ], 64);
+    assert_spike_lockstep(
+        "random_42",
+        vec![
+            addi(1, 0, 0x100),
+            addi(2, 0, 0x10),
+            add(3, 1, 2),   // 0x110
+            sll(4, 2, 2), // 0x10 << 0x10 → arch shamt only uses low 5 bits → 0x10 << 16 = 0x100000
+            sub(5, 3, 4), // depends
+            xor(6, 1, 3), // 0x100 ^ 0x110 = 0x10
+            or_(7, 2, 4), // 0x10 | 0x100000
+            and(8, 3, 6), // 0x110 & 0x10 = 0x10
+            slt(9, 4, 1), // signed: 0x100000 < 0x100 → 0
+            sltu(10, 1, 4), // unsigned: 0x100 < 0x100000 → 1
+            sw(3, 31, 0),
+            sw(4, 31, 4),
+            sw(5, 31, 8),
+            sw(6, 31, 12),
+            sw(7, 31, 16),
+            sw(8, 31, 20),
+            sw(9, 31, 24),
+            sw(10, 31, 28),
+        ],
+        64,
+    );
 }
 
 // =================================================================
@@ -1756,13 +1943,22 @@ spike_tests! {
 /// Tiny LCG to generate deterministic-but-varied programs.
 struct Lcg(u64);
 impl Lcg {
-    fn new(seed: u64) -> Self { Self(seed) }
+    fn new(seed: u64) -> Self {
+        Self(seed)
+    }
     fn next(&mut self) -> u32 {
-        self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         (self.0 >> 32) as u32
     }
-    fn range(&mut self, n: u32) -> u32 { self.next() % n.max(1) }
-    fn reg(&mut self) -> u32 { 1 + self.range(30) }  // x1..x30 (skip x0 + x31=base)
+    fn range(&mut self, n: u32) -> u32 {
+        self.next() % n.max(1)
+    }
+    fn reg(&mut self) -> u32 {
+        1 + self.range(30)
+    } // x1..x30 (skip x0 + x31=base)
     fn rs(&mut self) -> u32 {
         let r = self.range(31);
         if r == 31 { 0 } else { r }
@@ -1771,7 +1967,9 @@ impl Lcg {
         let v = self.range(64) as i32;
         if (self.next() & 1) == 1 { -v } else { v }
     }
-    fn shamt(&mut self) -> u32 { self.range(32) }
+    fn shamt(&mut self) -> u32 {
+        self.range(32)
+    }
 }
 
 /// Build a random program of `n` instructions (each `1` instruction
@@ -1786,16 +1984,16 @@ fn straight_line_program(seed: u64, n: usize) -> Vec<u32> {
     for _ in 0..n {
         let kind = rng.range(20);
         let inst = match kind {
-            0  => add(rng.reg(), rng.rs(), rng.rs()),
-            1  => sub(rng.reg(), rng.rs(), rng.rs()),
-            2  => and(rng.reg(), rng.rs(), rng.rs()),
-            3  => or_(rng.reg(), rng.rs(), rng.rs()),
-            4  => xor(rng.reg(), rng.rs(), rng.rs()),
-            5  => slt(rng.reg(), rng.rs(), rng.rs()),
-            6  => sltu(rng.reg(), rng.rs(), rng.rs()),
-            7  => sll(rng.reg(), rng.rs(), rng.rs()),
-            8  => srl(rng.reg(), rng.rs(), rng.rs()),
-            9  => sra(rng.reg(), rng.rs(), rng.rs()),
+            0 => add(rng.reg(), rng.rs(), rng.rs()),
+            1 => sub(rng.reg(), rng.rs(), rng.rs()),
+            2 => and(rng.reg(), rng.rs(), rng.rs()),
+            3 => or_(rng.reg(), rng.rs(), rng.rs()),
+            4 => xor(rng.reg(), rng.rs(), rng.rs()),
+            5 => slt(rng.reg(), rng.rs(), rng.rs()),
+            6 => sltu(rng.reg(), rng.rs(), rng.rs()),
+            7 => sll(rng.reg(), rng.rs(), rng.rs()),
+            8 => srl(rng.reg(), rng.rs(), rng.rs()),
+            9 => sra(rng.reg(), rng.rs(), rng.rs()),
             10 => addi(rng.reg(), rng.rs(), rng.small_imm()),
             11 => andi(rng.reg(), rng.rs(), rng.small_imm()),
             12 => ori(rng.reg(), rng.rs(), rng.small_imm()),
@@ -1805,7 +2003,7 @@ fn straight_line_program(seed: u64, n: usize) -> Vec<u32> {
             16 => slli(rng.reg(), rng.rs(), rng.shamt()),
             17 => srli(rng.reg(), rng.rs(), rng.shamt()),
             18 => srai(rng.reg(), rng.rs(), rng.shamt()),
-            _  => lui(rng.reg(), rng.range(0x100000)),
+            _ => lui(rng.reg(), rng.range(0x100000)),
         };
         prog.push(inst);
     }
@@ -1827,14 +2025,19 @@ fn run_spike_random_sweep(label: &str, seeds: std::ops::Range<u64>, n_instrs: us
             None => panic!("{label} seed={seed}: spike run failed"),
         };
         let single_words = run_single_hw(hw_program(body.clone()), cycles as usize + 16);
-        let pipelined_words = run_pipelined_hw(hw_program(body.clone()), (cycles as usize + 16) * 3);
+        let pipelined_words =
+            run_pipelined_hw(hw_program(body.clone()), (cycles as usize + 16) * 3);
         if spike_words != single_words {
-            panic!("{label} seed={seed}: Spike ↔ single divergence\n  body: {:?}\n  spike: {:?}\n  single: {:?}",
-                   body, spike_words, single_words);
+            panic!(
+                "{label} seed={seed}: Spike ↔ single divergence\n  body: {:?}\n  spike: {:?}\n  single: {:?}",
+                body, spike_words, single_words
+            );
         }
         if spike_words != pipelined_words {
-            panic!("{label} seed={seed}: Spike ↔ pipelined divergence\n  body: {:?}\n  spike: {:?}\n  pipelined: {:?}",
-                   body, spike_words, pipelined_words);
+            panic!(
+                "{label} seed={seed}: Spike ↔ pipelined divergence\n  body: {:?}\n  spike: {:?}\n  pipelined: {:?}",
+                body, spike_words, pipelined_words
+            );
         }
     }
 }

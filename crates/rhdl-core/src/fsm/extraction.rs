@@ -127,10 +127,7 @@ pub struct ExtractionResult {
 ///
 /// Returns `None` if no variant in the descriptor matches —
 /// indicates the discriminant came from a non-state expression.
-fn variant_index_for_discriminant(
-    desc: &FsmDescriptor,
-    discriminant: i128,
-) -> Option<usize> {
+fn variant_index_for_discriminant(desc: &FsmDescriptor, discriminant: i128) -> Option<usize> {
     desc.variants()
         .iter()
         .position(|v| v.discriminant == discriminant)
@@ -541,7 +538,6 @@ fn possible_state_values_under_constraint(
 
     match definer {
         // --- terminal: explicit state value construction ---
-
         OpCode::Enum(e) => {
             let disc = typed_bits_to_discriminant(&e.template)
                 .ok_or("enum template has no resolvable discriminant")?;
@@ -572,7 +568,6 @@ fn possible_state_values_under_constraint(
         }
 
         // --- forwarding cases ---
-
         OpCode::Assign(a) => possible_state_values_under_constraint(
             desc,
             ops,
@@ -584,7 +579,6 @@ fn possible_state_values_under_constraint(
         ),
 
         // --- Splice: state-field-aware ---
-
         OpCode::Splice(s) => {
             if path_targets_state_field(&s.path, state_field) {
                 // Explicit override of d.<state_field> by `subst`.
@@ -612,7 +606,6 @@ fn possible_state_values_under_constraint(
         }
 
         // --- Struct: explicit field set or template fall-through ---
-
         OpCode::Struct(struct_op) => {
             for fv in &struct_op.fields {
                 if let Member::Named(name) = &fv.member {
@@ -638,7 +631,6 @@ fn possible_state_values_under_constraint(
         // ---   (2) q.<state_field> == X comparison              ---
         // ---       statically resolvable under constraint       ---
         // ---   (3) otherwise: union both branches               ---
-
         OpCode::Select(sel) => {
             // (1) Reset special case: the canonical RHDL kernel pattern
             // `if cr.reset.any() { d.<state_field> = INIT; ... }`
@@ -673,7 +665,11 @@ fn possible_state_values_under_constraint(
                 source_variant,
                 literal_lookup,
             ) {
-                let chosen = if resolved { sel.true_value } else { sel.false_value };
+                let chosen = if resolved {
+                    sel.true_value
+                } else {
+                    sel.false_value
+                };
                 return possible_state_values_under_constraint(
                     desc,
                     ops,
@@ -722,7 +718,6 @@ fn possible_state_values_under_constraint(
         }
 
         // --- Case: nested match, with constraint propagation ---
-
         OpCode::Case(case) => {
             // Critical step: if this Case's discriminant reads
             // q.<state_field>, only the arm matching the source
@@ -752,9 +747,9 @@ fn possible_state_values_under_constraint(
                         }
                     }
                 }
-                let arm_slot = matched_arm
-                    .or(wild_arm)
-                    .ok_or("Case on q.<state_field> has no arm matching this variant and no wild arm")?;
+                let arm_slot = matched_arm.or(wild_arm).ok_or(
+                    "Case on q.<state_field> has no arm matching this variant and no wild arm",
+                )?;
                 let mut result = possible_state_values_under_constraint(
                     desc,
                     ops,
@@ -796,7 +791,6 @@ fn possible_state_values_under_constraint(
         }
 
         // --- Anything else: no state value flows from here ---
-
         _ => Ok(BTreeSet::new()),
     }
 }
@@ -907,10 +901,12 @@ pub fn extract_canonical_transitions(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::slot_vec::SlotKey;
     use crate::fsm::descriptor::{FsmKernelTag, FsmWidgetTag};
     use crate::fsm::state::FsmVariantDescriptor;
-    use crate::common::slot_vec::SlotKey;
-    use crate::rhif::rhif_builder::{op_assign, op_case, op_enum, op_index, op_select, op_splice, op_tuple};
+    use crate::rhif::rhif_builder::{
+        op_assign, op_case, op_enum, op_index, op_select, op_splice, op_tuple,
+    };
     use crate::rhif::spec::Slot;
     use crate::types::typed_bits::TypedBits;
     use std::collections::BTreeMap;
@@ -983,9 +979,7 @@ mod tests {
     /// Simulate the literal table — just a wrapper around a
     /// `BTreeMap<Slot, TypedBits>` that satisfies the
     /// `LiteralLookup` signature.
-    fn make_lookup(
-        table: BTreeMap<Slot, TypedBits>,
-    ) -> impl Fn(Slot) -> Option<TypedBits> {
+    fn make_lookup(table: BTreeMap<Slot, TypedBits>) -> impl Fn(Slot) -> Option<TypedBits> {
         move |s: Slot| table.get(&s).cloned()
     }
 
@@ -1028,12 +1022,7 @@ mod tests {
     /// algorithm's locate-step can find the d-component.
     ///
     /// Returns the appended ops and the slot to pass as `return_slot`.
-    fn wrap_return(
-        ops: &mut Vec<OpCode>,
-        next_reg: usize,
-        d_slot: Slot,
-        o_slot: Slot,
-    ) -> Slot {
+    fn wrap_return(ops: &mut Vec<OpCode>, next_reg: usize, d_slot: Slot, o_slot: Slot) -> Slot {
         let return_slot = make_register(next_reg);
         ops.push(op_tuple(return_slot, vec![o_slot, d_slot]));
         return_slot
@@ -1108,12 +1097,8 @@ mod tests {
         let return_slot = wrap_return(&mut ops, 14, r_d_after_case, o_dummy);
 
         let lookup_fn = make_lookup(lookup);
-        let result = extract_canonical_transitions(
-            &ops,
-            return_slot,
-            &three_state_descriptor(),
-            &lookup_fn,
-        );
+        let result =
+            extract_canonical_transitions(&ops, return_slot, &three_state_descriptor(), &lookup_fn);
         assert!(
             result.unanalyzable.is_empty(),
             "got: {:?}",
@@ -1124,9 +1109,18 @@ mod tests {
         assert_eq!(
             t,
             vec![
-                Transition { source_index: 0, target_index: 1 }, // Idle → Running
-                Transition { source_index: 1, target_index: 2 }, // Running → Done
-                Transition { source_index: 2, target_index: 0 }, // Done → Idle
+                Transition {
+                    source_index: 0,
+                    target_index: 1
+                }, // Idle → Running
+                Transition {
+                    source_index: 1,
+                    target_index: 2
+                }, // Running → Done
+                Transition {
+                    source_index: 2,
+                    target_index: 0
+                }, // Done → Idle
             ]
         );
     }
@@ -1223,12 +1217,8 @@ mod tests {
         let return_slot = wrap_return(&mut ops, 30, r_d_after_case, o_dummy);
 
         let lookup_fn = make_lookup(lookup);
-        let result = extract_canonical_transitions(
-            &ops,
-            return_slot,
-            &three_state_descriptor(),
-            &lookup_fn,
-        );
+        let result =
+            extract_canonical_transitions(&ops, return_slot, &three_state_descriptor(), &lookup_fn);
         assert!(
             result.unanalyzable.is_empty(),
             "got: {:?}",
@@ -1239,9 +1229,18 @@ mod tests {
         assert_eq!(
             t,
             vec![
-                Transition { source_index: 0, target_index: 1 }, // Idle → Running
-                Transition { source_index: 1, target_index: 2 }, // Running → Done
-                Transition { source_index: 2, target_index: 0 }, // Done → Idle
+                Transition {
+                    source_index: 0,
+                    target_index: 1
+                }, // Idle → Running
+                Transition {
+                    source_index: 1,
+                    target_index: 2
+                }, // Running → Done
+                Transition {
+                    source_index: 2,
+                    target_index: 0
+                }, // Done → Idle
             ],
             "output-computation Case must NOT contribute to the transition graph"
         );
@@ -1272,21 +1271,26 @@ mod tests {
         let return_slot = wrap_return(&mut ops, 3, r_d_default, o_dummy);
 
         let lookup_fn = make_lookup(lookup);
-        let result = extract_canonical_transitions(
-            &ops,
-            return_slot,
-            &three_state_descriptor(),
-            &lookup_fn,
-        );
+        let result =
+            extract_canonical_transitions(&ops, return_slot, &three_state_descriptor(), &lookup_fn);
         assert!(result.unanalyzable.is_empty());
         let mut t = result.transitions.clone();
         t.sort();
         assert_eq!(
             t,
             vec![
-                Transition { source_index: 0, target_index: 0 },
-                Transition { source_index: 1, target_index: 1 },
-                Transition { source_index: 2, target_index: 2 },
+                Transition {
+                    source_index: 0,
+                    target_index: 0
+                },
+                Transition {
+                    source_index: 1,
+                    target_index: 1
+                },
+                Transition {
+                    source_index: 2,
+                    target_index: 2
+                },
             ]
         );
     }
@@ -1343,12 +1347,8 @@ mod tests {
         let return_slot = wrap_return(&mut ops, 7, r_d_after_case, o_dummy);
 
         let lookup_fn = make_lookup(lookup);
-        let result = extract_canonical_transitions(
-            &ops,
-            return_slot,
-            &three_state_descriptor(),
-            &lookup_fn,
-        );
+        let result =
+            extract_canonical_transitions(&ops, return_slot, &three_state_descriptor(), &lookup_fn);
         assert!(
             result.unanalyzable.is_empty(),
             "got: {:?}",
@@ -1359,10 +1359,22 @@ mod tests {
         assert_eq!(
             t,
             vec![
-                Transition { source_index: 0, target_index: 0 }, // Idle → Idle (else)
-                Transition { source_index: 0, target_index: 1 }, // Idle → Running (then)
-                Transition { source_index: 1, target_index: 1 }, // Running → Running (held)
-                Transition { source_index: 2, target_index: 2 }, // Done → Done (held)
+                Transition {
+                    source_index: 0,
+                    target_index: 0
+                }, // Idle → Idle (else)
+                Transition {
+                    source_index: 0,
+                    target_index: 1
+                }, // Idle → Running (then)
+                Transition {
+                    source_index: 1,
+                    target_index: 1
+                }, // Running → Running (held)
+                Transition {
+                    source_index: 2,
+                    target_index: 2
+                }, // Done → Done (held)
             ]
         );
     }
@@ -1414,21 +1426,26 @@ mod tests {
         let return_slot = wrap_return(&mut ops, 6, r_d_after_case, o_dummy);
 
         let lookup_fn = make_lookup(lookup);
-        let result = extract_canonical_transitions(
-            &ops,
-            return_slot,
-            &three_state_descriptor(),
-            &lookup_fn,
-        );
+        let result =
+            extract_canonical_transitions(&ops, return_slot, &three_state_descriptor(), &lookup_fn);
         assert!(result.unanalyzable.is_empty());
         let mut t = result.transitions.clone();
         t.sort();
         assert_eq!(
             t,
             vec![
-                Transition { source_index: 0, target_index: 2 }, // Idle → Done
-                Transition { source_index: 1, target_index: 2 }, // Running → Done
-                Transition { source_index: 2, target_index: 2 }, // Done → Done (held)
+                Transition {
+                    source_index: 0,
+                    target_index: 2
+                }, // Idle → Done
+                Transition {
+                    source_index: 1,
+                    target_index: 2
+                }, // Running → Done
+                Transition {
+                    source_index: 2,
+                    target_index: 2
+                }, // Done → Done (held)
             ]
         );
     }
@@ -1472,21 +1489,26 @@ mod tests {
         let return_slot = wrap_return(&mut ops, 6, r_d_after_case, o_dummy);
 
         let lookup_fn = make_lookup(lookup);
-        let result = extract_canonical_transitions(
-            &ops,
-            return_slot,
-            &three_state_descriptor(),
-            &lookup_fn,
-        );
+        let result =
+            extract_canonical_transitions(&ops, return_slot, &three_state_descriptor(), &lookup_fn);
         assert!(result.unanalyzable.is_empty());
         let mut t = result.transitions.clone();
         t.sort();
         assert_eq!(
             t,
             vec![
-                Transition { source_index: 0, target_index: 0 }, // Idle → Idle (held)
-                Transition { source_index: 1, target_index: 0 }, // Running → Idle (Wild)
-                Transition { source_index: 2, target_index: 0 }, // Done → Idle (Wild)
+                Transition {
+                    source_index: 0,
+                    target_index: 0
+                }, // Idle → Idle (held)
+                Transition {
+                    source_index: 1,
+                    target_index: 0
+                }, // Running → Idle (Wild)
+                Transition {
+                    source_index: 2,
+                    target_index: 0
+                }, // Done → Idle (Wild)
             ]
         );
     }
@@ -1506,12 +1528,8 @@ mod tests {
         let ops = vec![op_assign(r_d, sl_dont_care)];
 
         let lookup_fn = make_lookup(lookup);
-        let result = extract_canonical_transitions(
-            &ops,
-            r_d,
-            &three_state_descriptor(),
-            &lookup_fn,
-        );
+        let result =
+            extract_canonical_transitions(&ops, r_d, &three_state_descriptor(), &lookup_fn);
         assert!(result.transitions.is_empty());
         assert_eq!(result.unanalyzable.len(), 1);
         assert_eq!(result.unanalyzable[0].0, "<kernel>");
@@ -1562,12 +1580,8 @@ mod tests {
         let return_slot = wrap_return(&mut ops, 6, r_d_after_case, o_dummy);
 
         let lookup_fn = make_lookup(lookup);
-        let result = extract_canonical_transitions(
-            &ops,
-            return_slot,
-            &three_state_descriptor(),
-            &lookup_fn,
-        );
+        let result =
+            extract_canonical_transitions(&ops, return_slot, &three_state_descriptor(), &lookup_fn);
         // Idle should produce Unanalyzable; Running and Done hold.
         assert_eq!(result.unanalyzable.len(), 1);
         assert_eq!(result.unanalyzable[0].0, "Idle");
@@ -1576,8 +1590,14 @@ mod tests {
         assert_eq!(
             t,
             vec![
-                Transition { source_index: 1, target_index: 1 }, // Running → Running (Wild → default → q.state)
-                Transition { source_index: 2, target_index: 2 }, // Done → Done
+                Transition {
+                    source_index: 1,
+                    target_index: 1
+                }, // Running → Running (Wild → default → q.state)
+                Transition {
+                    source_index: 2,
+                    target_index: 2
+                }, // Done → Done
             ]
         );
     }
@@ -1644,12 +1664,8 @@ mod tests {
         let return_slot = wrap_return(&mut ops, 8, r_d_final, o_dummy);
 
         let lookup_fn = make_lookup(lookup);
-        let result = extract_canonical_transitions(
-            &ops,
-            return_slot,
-            &three_state_descriptor(),
-            &lookup_fn,
-        );
+        let result =
+            extract_canonical_transitions(&ops, return_slot, &three_state_descriptor(), &lookup_fn);
         assert!(result.unanalyzable.is_empty());
         let mut t = result.transitions.clone();
         t.sort();
@@ -1660,9 +1676,18 @@ mod tests {
         assert_eq!(
             t,
             vec![
-                Transition { source_index: 0, target_index: 0 },
-                Transition { source_index: 1, target_index: 1 },
-                Transition { source_index: 2, target_index: 2 },
+                Transition {
+                    source_index: 0,
+                    target_index: 0
+                },
+                Transition {
+                    source_index: 1,
+                    target_index: 1
+                },
+                Transition {
+                    source_index: 2,
+                    target_index: 2
+                },
             ]
         );
     }
@@ -1733,12 +1758,8 @@ mod tests {
         let return_slot = wrap_return(&mut ops, 11, r_d_after_case, o_dummy);
 
         let lookup_fn = make_lookup(lookup);
-        let result = extract_canonical_transitions(
-            &ops,
-            return_slot,
-            &three_state_descriptor(),
-            &lookup_fn,
-        );
+        let result =
+            extract_canonical_transitions(&ops, return_slot, &three_state_descriptor(), &lookup_fn);
         assert!(result.unanalyzable.is_empty());
         let mut t = result.transitions.clone();
         t.sort();
@@ -1748,9 +1769,18 @@ mod tests {
         assert_eq!(
             t,
             vec![
-                Transition { source_index: 0, target_index: 1 },
-                Transition { source_index: 1, target_index: 2 },
-                Transition { source_index: 2, target_index: 0 },
+                Transition {
+                    source_index: 0,
+                    target_index: 1
+                },
+                Transition {
+                    source_index: 1,
+                    target_index: 2
+                },
+                Transition {
+                    source_index: 2,
+                    target_index: 0
+                },
             ]
         );
     }
@@ -1789,12 +1819,8 @@ mod tests {
         let return_slot = wrap_return(&mut ops, 5, r_d_with_other, o_dummy);
 
         let lookup_fn = make_lookup(lookup);
-        let result = extract_canonical_transitions(
-            &ops,
-            return_slot,
-            &three_state_descriptor(),
-            &lookup_fn,
-        );
+        let result =
+            extract_canonical_transitions(&ops, return_slot, &three_state_descriptor(), &lookup_fn);
         assert!(result.unanalyzable.is_empty());
         // All variants self-loop from the kernel-top default.
         let mut t = result.transitions.clone();
@@ -1802,9 +1828,18 @@ mod tests {
         assert_eq!(
             t,
             vec![
-                Transition { source_index: 0, target_index: 0 },
-                Transition { source_index: 1, target_index: 1 },
-                Transition { source_index: 2, target_index: 2 },
+                Transition {
+                    source_index: 0,
+                    target_index: 0
+                },
+                Transition {
+                    source_index: 1,
+                    target_index: 1
+                },
+                Transition {
+                    source_index: 2,
+                    target_index: 2
+                },
             ]
         );
     }
@@ -1828,12 +1863,8 @@ mod tests {
         let return_slot = wrap_return(&mut ops, 1, r_d_init, o_dummy);
 
         let lookup_fn = make_lookup(lookup);
-        let result = extract_canonical_transitions(
-            &ops,
-            return_slot,
-            &three_state_descriptor(),
-            &lookup_fn,
-        );
+        let result =
+            extract_canonical_transitions(&ops, return_slot, &three_state_descriptor(), &lookup_fn);
         assert!(result.transitions.is_empty());
         assert_eq!(result.unanalyzable.len(), 1);
         assert_eq!(result.unanalyzable[0].0, "<kernel>");
@@ -1929,12 +1960,8 @@ mod tests {
         let return_slot = wrap_return(&mut ops, 8, r_d_after_case, o_dummy);
 
         let lookup_fn = make_lookup(lookup);
-        let result = extract_canonical_transitions(
-            &ops,
-            return_slot,
-            &three_state_descriptor(),
-            &lookup_fn,
-        );
+        let result =
+            extract_canonical_transitions(&ops, return_slot, &three_state_descriptor(), &lookup_fn);
         assert!(result.unanalyzable.is_empty());
         let mut t = result.transitions.clone();
         t.sort();
@@ -1946,9 +1973,18 @@ mod tests {
         assert_eq!(
             t,
             vec![
-                Transition { source_index: 0, target_index: 1 }, // Idle → Running (explicit)
-                Transition { source_index: 1, target_index: 1 }, // Running → Running (IMPLICIT — masks deadlock)
-                Transition { source_index: 2, target_index: 0 }, // Done → Idle (explicit)
+                Transition {
+                    source_index: 0,
+                    target_index: 1
+                }, // Idle → Running (explicit)
+                Transition {
+                    source_index: 1,
+                    target_index: 1
+                }, // Running → Running (IMPLICIT — masks deadlock)
+                Transition {
+                    source_index: 2,
+                    target_index: 0
+                }, // Done → Idle (explicit)
             ]
         );
     }
@@ -2007,12 +2043,8 @@ mod tests {
         let return_slot = wrap_return(&mut ops, 8, r_d_after_select, o_dummy);
 
         let lookup_fn = make_lookup(lookup);
-        let result = extract_canonical_transitions(
-            &ops,
-            return_slot,
-            &three_state_descriptor(),
-            &lookup_fn,
-        );
+        let result =
+            extract_canonical_transitions(&ops, return_slot, &three_state_descriptor(), &lookup_fn);
         assert!(result.unanalyzable.is_empty());
         let mut t = result.transitions.clone();
         t.sort();
@@ -2024,9 +2056,18 @@ mod tests {
         assert_eq!(
             t,
             vec![
-                Transition { source_index: 0, target_index: 1 }, // Idle → Running (resolved true)
-                Transition { source_index: 1, target_index: 1 }, // Running → Running (resolved false → default)
-                Transition { source_index: 2, target_index: 2 }, // Done → Done (resolved false → default)
+                Transition {
+                    source_index: 0,
+                    target_index: 1
+                }, // Idle → Running (resolved true)
+                Transition {
+                    source_index: 1,
+                    target_index: 1
+                }, // Running → Running (resolved false → default)
+                Transition {
+                    source_index: 2,
+                    target_index: 2
+                }, // Done → Done (resolved false → default)
             ]
         );
     }
@@ -2071,21 +2112,26 @@ mod tests {
         let return_slot = wrap_return(&mut ops, 8, r_d_after_select, o_dummy);
 
         let lookup_fn = make_lookup(lookup);
-        let result = extract_canonical_transitions(
-            &ops,
-            return_slot,
-            &three_state_descriptor(),
-            &lookup_fn,
-        );
+        let result =
+            extract_canonical_transitions(&ops, return_slot, &three_state_descriptor(), &lookup_fn);
         assert!(result.unanalyzable.is_empty());
         let mut t = result.transitions.clone();
         t.sort();
         assert_eq!(
             t,
             vec![
-                Transition { source_index: 0, target_index: 0 }, // Idle hold (false)
-                Transition { source_index: 1, target_index: 2 }, // Running → Done (true)
-                Transition { source_index: 2, target_index: 2 }, // Done hold (false)
+                Transition {
+                    source_index: 0,
+                    target_index: 0
+                }, // Idle hold (false)
+                Transition {
+                    source_index: 1,
+                    target_index: 2
+                }, // Running → Done (true)
+                Transition {
+                    source_index: 2,
+                    target_index: 2
+                }, // Done hold (false)
             ]
         );
     }
@@ -2125,12 +2171,8 @@ mod tests {
         let return_slot = wrap_return(&mut ops, 6, r_d_after_select, o_dummy);
 
         let lookup_fn = make_lookup(lookup);
-        let result = extract_canonical_transitions(
-            &ops,
-            return_slot,
-            &three_state_descriptor(),
-            &lookup_fn,
-        );
+        let result =
+            extract_canonical_transitions(&ops, return_slot, &three_state_descriptor(), &lookup_fn);
         assert!(result.unanalyzable.is_empty());
         let mut t = result.transitions.clone();
         t.sort();
@@ -2139,11 +2181,26 @@ mod tests {
         assert_eq!(
             t,
             vec![
-                Transition { source_index: 0, target_index: 0 },
-                Transition { source_index: 0, target_index: 1 },
-                Transition { source_index: 1, target_index: 1 },
-                Transition { source_index: 2, target_index: 1 },
-                Transition { source_index: 2, target_index: 2 },
+                Transition {
+                    source_index: 0,
+                    target_index: 0
+                },
+                Transition {
+                    source_index: 0,
+                    target_index: 1
+                },
+                Transition {
+                    source_index: 1,
+                    target_index: 1
+                },
+                Transition {
+                    source_index: 2,
+                    target_index: 1
+                },
+                Transition {
+                    source_index: 2,
+                    target_index: 2
+                },
             ]
         );
     }
@@ -2273,7 +2330,10 @@ mod tests {
         assert_eq!(
             t,
             vec![
-                Transition { source_index: 0, target_index: 1 }, // Idle → Running (explicit)
+                Transition {
+                    source_index: 0,
+                    target_index: 1
+                }, // Idle → Running (explicit)
             ]
         );
     }
@@ -2349,7 +2409,10 @@ mod tests {
         // DeadlockCandidate for Running and Done.
         assert_eq!(
             result.transitions,
-            vec![Transition { source_index: 0, target_index: 0 }]
+            vec![Transition {
+                source_index: 0,
+                target_index: 0
+            }]
         );
     }
 

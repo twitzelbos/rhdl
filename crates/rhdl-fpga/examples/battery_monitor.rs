@@ -8,9 +8,7 @@ use rhdl_fpga::{
 };
 
 fn main() -> Result<(), RHDLError> {
-    write_fsm_diagram::<BatteryMonitor<10, 8>>(
-        "battery_monitor_fsm.md",
-    )?;
+    write_fsm_diagram::<BatteryMonitor<10, 8>>("battery_monitor_fsm.md")?;
 
     let timings = TiHdqTimings::<10> {
         t_break: bits(48),

@@ -45,10 +45,10 @@ pub fn r_alias(task: u8, index: usize) -> &'static str {
 
 fn universal_alias(index: usize) -> Option<&'static str> {
     match index {
-        4  => Some("$NWW"),     // interrupt-system state
-        21 => Some("$MTEMP"),   // public temp (R[25 octal])
-        31 => Some("$R37"),     // MRT/timer/EIA
-        _  => None,
+        4 => Some("$NWW"),    // interrupt-system state
+        21 => Some("$MTEMP"), // public temp (R[25 octal])
+        31 => Some("$R37"),   // MRT/timer/EIA
+        _ => None,
     }
 }
 
@@ -59,10 +59,10 @@ fn emulator_alias(index: usize) -> &'static str {
         1 => "$AC2",
         2 => "$AC1",
         3 => "$AC0",
-        5 => "$SAD",      // also $CYRET, $TEMP — SAD is most common in Emulator boot
+        5 => "$SAD", // also $CYRET, $TEMP — SAD is most common in Emulator boot
         6 => "$PC",
-        7 => "$XREG",     // also $CYCOUT, $WIDTH, $PLIER
-        8 => "$XH",       // BLT loop counter
+        7 => "$XREG", // also $CYCOUT, $WIDTH, $PLIER
+        8 => "$XH",   // BLT loop counter
         9 => "$CLOCKTEMP",
         _ => fallback(index),
     }
@@ -75,7 +75,7 @@ fn disk_alias(index: usize) -> &'static str {
         26 => "$CKSUMR",
         27 => "$KNMAR",
         28 => "$DCBR",
-        _  => fallback(index),
+        _ => fallback(index),
     }
 }
 
@@ -90,17 +90,17 @@ fn display_alias(index: usize) -> &'static str {
         23 => "$YPOS",
         24 => "$DWA",
         29 => "$DWAX",
-        _  => fallback(index),
+        _ => fallback(index),
     }
 }
 
 fn fallback(index: usize) -> &'static str {
     // Static strings for indices without a canonical alias.
     static FALLBACKS: [&str; 32] = [
-        "R[0]",  "R[1]",  "R[2]",  "R[3]",  "R[4]",  "R[5]",  "R[6]",  "R[7]",
-        "R[8]",  "R[9]",  "R[10]", "R[11]", "R[12]", "R[13]", "R[14]", "R[15]",
-        "R[16]", "R[17]", "R[18]", "R[19]", "R[20]", "R[21]", "R[22]", "R[23]",
-        "R[24]", "R[25]", "R[26]", "R[27]", "R[28]", "R[29]", "R[30]", "R[31]",
+        "R[0]", "R[1]", "R[2]", "R[3]", "R[4]", "R[5]", "R[6]", "R[7]", "R[8]", "R[9]", "R[10]",
+        "R[11]", "R[12]", "R[13]", "R[14]", "R[15]", "R[16]", "R[17]", "R[18]", "R[19]", "R[20]",
+        "R[21]", "R[22]", "R[23]", "R[24]", "R[25]", "R[26]", "R[27]", "R[28]", "R[29]", "R[30]",
+        "R[31]",
     ];
     FALLBACKS[index]
 }
@@ -205,7 +205,7 @@ mod tests {
     #[test]
     fn fallback_for_unaliased_slots() {
         assert_eq!(r_alias(0, 13), "R[13]");
-        assert_eq!(r_alias(4, 0), "R[0]");  // AC3 in Emulator, no alias in Disk
+        assert_eq!(r_alias(4, 0), "R[0]"); // AC3 in Emulator, no alias in Disk
     }
 
     #[test]

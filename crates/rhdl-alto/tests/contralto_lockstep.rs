@@ -33,11 +33,15 @@ struct CycleState {
 
 fn parse_tsv_line(line: &str) -> Option<CycleState> {
     let parts: Vec<&str> = line.split('\t').collect();
-    if parts.len() < 7 + 32 { return None; }
+    if parts.len() < 7 + 32 {
+        return None;
+    }
     let parse_hex = |s: &str| -> Option<u16> {
         if let Some(stripped) = s.strip_prefix("0x") {
             u16::from_str_radix(stripped, 16).ok()
-        } else { s.parse().ok() }
+        } else {
+            s.parse().ok()
+        }
     };
     let task = parts[1].parse().ok()?;
     let mpc = parse_hex(parts[2])?;
@@ -49,28 +53,49 @@ fn parse_tsv_line(line: &str) -> Option<CycleState> {
     for i in 0..32 {
         r[i] = parse_hex(parts[7 + i])?;
     }
-    Some(CycleState { task, mpc, t, l, ir, aluc0, r })
+    Some(CycleState {
+        task,
+        mpc,
+        t,
+        l,
+        ir,
+        aluc0,
+        r,
+    })
 }
 
 fn run_contralto(disk: &str, rom_dir: &str, cycles: usize) -> Vec<CycleState> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = manifest_dir.parent().unwrap().parent().unwrap();
-    let exe = workspace_root.join(
-        "crates/rhdl-alto/tools/contralto-trace/bin/Release/net8.0/contralto-trace");
+    let exe = workspace_root
+        .join("crates/rhdl-alto/tools/contralto-trace/bin/Release/net8.0/contralto-trace");
     if !exe.exists() {
-        panic!("contralto-trace not built; run: dotnet build crates/rhdl-alto/tools/contralto-trace -c Release");
+        panic!(
+            "contralto-trace not built; run: dotnet build crates/rhdl-alto/tools/contralto-trace -c Release"
+        );
     }
     let output = Command::new(&exe)
-        .args(["--disk", disk, "--rom-dir", rom_dir, "--cycles", &cycles.to_string()])
+        .args([
+            "--disk",
+            disk,
+            "--rom-dir",
+            rom_dir,
+            "--cycles",
+            &cycles.to_string(),
+        ])
         .current_dir(workspace_root)
         .output()
         .expect("spawn contralto-trace");
     if !output.status.success() {
-        panic!("contralto-trace failed: stderr={}",
-            String::from_utf8_lossy(&output.stderr));
+        panic!(
+            "contralto-trace failed: stderr={}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
-    stdout.lines().skip(1)  // skip header
+    stdout
+        .lines()
+        .skip(1) // skip header
         .filter_map(parse_tsv_line)
         .collect()
 }
@@ -80,12 +105,13 @@ fn run_rhdl_chip(disk: &str, rom_dir: &str, cycles: usize) -> Vec<CycleState> {
     use rhdl_alto::alto_chip::{AltoChip, ChipIn};
     use rhdl_alto::{disk_image_loader, microcode_loader};
 
-    let microcode = microcode_loader::load_alto_ii_microcode_from_dir(
-        std::path::Path::new(rom_dir)).unwrap();
-    let constants = microcode_loader::load_alto_ii_constant_rom_from_dir(
-        std::path::Path::new(rom_dir)).unwrap();
-    let disk_image = disk_image_loader::load_disk_image_from_file(
-        std::path::Path::new(disk)).unwrap();
+    let microcode =
+        microcode_loader::load_alto_ii_microcode_from_dir(std::path::Path::new(rom_dir)).unwrap();
+    let constants =
+        microcode_loader::load_alto_ii_constant_rom_from_dir(std::path::Path::new(rom_dir))
+            .unwrap();
+    let disk_image =
+        disk_image_loader::load_disk_image_from_file(std::path::Path::new(disk)).unwrap();
     let boot_sector = disk_image.sector(0, 0, 0);
     // For lockstep against ContrAlto we want our chip's sector_mark
     // to fire on cycle 1 — exactly matching ContrAlto's
@@ -100,11 +126,17 @@ fn run_rhdl_chip(disk: &str, rom_dir: &str, cycles: usize) -> Vec<CycleState> {
     // because the spec-correct ~19,608 would only allow ~1 sector
     // boundary per 2000-cycle test run.
     let uut = AltoChip::with_microcode_constants_boot_and_test_disk_period_at_boundary(
-        &microcode, &constants, &boot_sector.data, &boot_sector.label, 256,
+        &microcode,
+        &constants,
+        &boot_sector.data,
+        &boot_sector.label,
+        256,
     );
-    let inputs: Vec<ChipIn> = (0..cycles).map(|_| ChipIn {
-        wakeups: bits::<16>(0x0001),
-    }).collect();
+    let inputs: Vec<ChipIn> = (0..cycles)
+        .map(|_| ChipIn {
+            wakeups: bits::<16>(0x0001),
+        })
+        .collect();
     let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
     let trace: Vec<_> = uut
         .run(stream)
@@ -117,21 +149,24 @@ fn run_rhdl_chip(disk: &str, rom_dir: &str, cycles: usize) -> Vec<CycleState> {
     // the lockstep harness can compare R[0..32] against ContrAlto.
     // aluc0 is still not exposed; leave as 0 (lockstep doesn't compare
     // it currently).
-    trace.into_iter().map(|t| {
-        let mut r = [0u16; 32];
-        for i in 0..32 {
-            r[i] = t.regs[i].raw() as u16;
-        }
-        CycleState {
-            task: t.current_task.raw() as i32,
-            mpc: t.mpc.raw() as u16,
-            t: t.t.raw() as u16,
-            l: t.l.raw() as u16,
-            ir: t.ir.raw() as u16,
-            aluc0: 0,
-            r,
-        }
-    }).collect()
+    trace
+        .into_iter()
+        .map(|t| {
+            let mut r = [0u16; 32];
+            for i in 0..32 {
+                r[i] = t.regs[i].raw() as u16;
+            }
+            CycleState {
+                task: t.current_task.raw() as i32,
+                mpc: t.mpc.raw() as u16,
+                t: t.t.raw() as u16,
+                l: t.l.raw() as u16,
+                ir: t.ir.raw() as u16,
+                aluc0: 0,
+                r,
+            }
+        })
+        .collect()
 }
 
 #[test]
@@ -165,8 +200,11 @@ fn lockstep_first_divergence() {
     // ContrAlto's window left by 1 — i.e., compare ours[k] to ctr[k+1].
     // This aligns: at cycle 0, both should describe the same executing
     // microinstruction.
-    eprintln!("[lockstep] ContrAlto={} cycles, ours={} cycles (1-cycle offset)",
-        ctr_full.len(), ours.len());
+    eprintln!(
+        "[lockstep] ContrAlto={} cycles, ours={} cycles (1-cycle offset)",
+        ctr_full.len(),
+        ours.len()
+    );
 
     // ContrAlto reports "MPC about to execute" (= MPC of the
     // instruction the engine WILL run next).  Our chip reports "MPC
@@ -188,7 +226,7 @@ fn lockstep_first_divergence() {
     // "MPC of the k-th instruction executed".
     for c in ctr_full.iter().skip(1) {
         if c.mpc as i32 == prev_mpc && c.task == prev_task {
-            continue;  // memory-stall duplicate
+            continue; // memory-stall duplicate
         }
         ctr.push(c);
         prev_mpc = c.mpc as i32;
@@ -245,10 +283,14 @@ fn lockstep_first_divergence() {
         // Divergence — try to re-sync.
         divergences += 1;
         eprintln!("\n[lockstep] DIVERGENCE #{divergences} (matched {matched} so far):");
-        eprintln!("  CTR[{i_ctr}]:  task={} mpc=0x{:03x} T=0x{:04x} L=0x{:04x} IR=0x{:04x}",
-            c.task, c.mpc, c.t, c.l, c.ir);
-        eprintln!("  OURS[{i_ours}]: task={} mpc=0x{:03x} T=0x{:04x} L=0x{:04x} IR=0x{:04x}",
-            o.task, o.mpc, o.t, o.l, o.ir);
+        eprintln!(
+            "  CTR[{i_ctr}]:  task={} mpc=0x{:03x} T=0x{:04x} L=0x{:04x} IR=0x{:04x}",
+            c.task, c.mpc, c.t, c.l, c.ir
+        );
+        eprintln!(
+            "  OURS[{i_ours}]: task={} mpc=0x{:03x} T=0x{:04x} L=0x{:04x} IR=0x{:04x}",
+            o.task, o.mpc, o.t, o.l, o.ir
+        );
 
         // Try to re-sync.  Search forward in `ours` for the first
         // cycle that matches ctr[i_ctr]'s (task, mpc).  If not found,
@@ -261,8 +303,10 @@ fn lockstep_first_divergence() {
             for ours_advance in 0..max_ours_advance {
                 let o2 = &ours[i_ours + ours_advance];
                 if o2.task == target.task && o2.mpc == target.mpc {
-                    eprintln!("[lockstep] resync: CTR advanced {ctr_advance}, OURS advanced {ours_advance} → matched at task={} mpc=0x{:03x}",
-                        target.task, target.mpc);
+                    eprintln!(
+                        "[lockstep] resync: CTR advanced {ctr_advance}, OURS advanced {ours_advance} → matched at task={} mpc=0x{:03x}",
+                        target.task, target.mpc
+                    );
                     i_ctr += ctr_advance;
                     i_ours += ours_advance;
                     resync_found = true;
@@ -271,7 +315,9 @@ fn lockstep_first_divergence() {
             }
         }
         if !resync_found {
-            eprintln!("[lockstep] no resync found in {SKIP_WINDOW}-cycle window — stopping comparison");
+            eprintln!(
+                "[lockstep] no resync found in {SKIP_WINDOW}-cycle window — stopping comparison"
+            );
             break;
         }
         if divergences >= max_divergences {
@@ -279,10 +325,14 @@ fn lockstep_first_divergence() {
             break;
         }
     }
-    eprintln!("\n[lockstep] summary: {matched} matched (task, mpc) pairs, {divergences} divergence events");
+    eprintln!(
+        "\n[lockstep] summary: {matched} matched (task, mpc) pairs, {divergences} divergence events"
+    );
     if !r_divergences.is_empty() {
         eprintln!("\n[lockstep] R-state divergences (where (task, mpc) match but R[i] differs):");
-        eprintln!("  (alias names per spec digest §4.2.1; @Emul = Emulator-context alias for cross-task diagnosis)");
+        eprintln!(
+            "  (alias names per spec digest §4.2.1; @Emul = Emulator-context alias for cross-task diagnosis)"
+        );
         for (i_ctr, i_ours, ri, ctr_v, ours_v) in &r_divergences {
             let task = ours[*i_ours].task as u8;
             let alias = rhdl_alto::register_aliases::r_alias_with_emulator_fallback(task, *ri);

@@ -5,7 +5,9 @@ use rhdl::prelude::*;
 use rhdl_alto::alu::alu;
 use rhdl_alto::isa::AluFunction;
 
-fn b(v: u16) -> Bits<16> { bits::<16>(v as u128) }
+fn b(v: u16) -> Bits<16> {
+    bits::<16>(v as u128)
+}
 
 #[test]
 fn alu_bus_passthrough() {
@@ -126,12 +128,15 @@ fn alu_undef15_treated_as_bus() {
 fn alu_iverilog_round_trip() -> Result<(), RHDLError> {
     use rhdl_alto::alu::alu;
     let inputs: Vec<(AluFunction, Bits<16>, Bits<16>, bool)> = vec![
-        (AluFunction::BusPlusT,  b(7), b(3),  false),
-        (AluFunction::BusMinusT, b(7), b(3),  false),
-        (AluFunction::BusXorT,   b(0xAA), b(0x55), false),
-        (AluFunction::BusAndT,   b(0xF0), b(0x0F), false),
+        (AluFunction::BusPlusT, b(7), b(3), false),
+        (AluFunction::BusMinusT, b(7), b(3), false),
+        (AluFunction::BusXorT, b(0xAA), b(0x55), false),
+        (AluFunction::BusAndT, b(0xF0), b(0x0F), false),
         (AluFunction::BusPlusSkip, b(10), b(0), true),
     ];
-    let _ = inputs.iter().map(|(f, a, b_, s)| alu(*f, *a, *b_, *s)).count();
+    let _ = inputs
+        .iter()
+        .map(|(f, a, b_, s)| alu(*f, *a, *b_, *s))
+        .count();
     Ok(())
 }

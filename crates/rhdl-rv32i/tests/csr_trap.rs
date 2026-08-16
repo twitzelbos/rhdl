@@ -31,11 +31,7 @@ fn r_type(funct7: u32, rs2: u32, rs1: u32, funct3: u32, rd: u32, opcode: u32) ->
 
 fn i_type(imm: i32, rs1: u32, funct3: u32, rd: u32, opcode: u32) -> u32 {
     let imm_u = (imm as u32) & 0xFFF;
-    (imm_u << 20)
-        | (rs1 & 0x1F) << 15
-        | (funct3 & 0x7) << 12
-        | (rd & 0x1F) << 7
-        | (opcode & 0x7F)
+    (imm_u << 20) | (rs1 & 0x1F) << 15 | (funct3 & 0x7) << 12 | (rd & 0x1F) << 7 | (opcode & 0x7F)
 }
 
 fn s_type(imm: i32, rs2: u32, rs1: u32, funct3: u32, opcode: u32) -> u32 {
@@ -60,7 +56,7 @@ fn sw(rs2: u32, rs1: u32, imm: i32) -> u32 {
     s_type(imm, rs2, rs1, 2, 0x23)
 }
 fn lui(rd: u32, imm: u32) -> u32 {
-    ((imm & 0xFFFF_F000)) | (rd & 0x1F) << 7 | 0x37
+    (imm & 0xFFFF_F000) | (rd & 0x1F) << 7 | 0x37
 }
 
 /// `beq x0, x0, +0` — infinite loop terminator.  Used to park the
@@ -119,9 +115,17 @@ fn run_cpu(program: Vec<u32>, max_cycles: usize) -> [u32; 256] {
                 }
             }
             let pc_word = (out.pc.raw() / 4) as usize;
-            let instr: u32 = if pc_word < program.len() { program[pc_word] } else { 0 };
+            let instr: u32 = if pc_word < program.len() {
+                program[pc_word]
+            } else {
+                0
+            };
             let read_word = (out.mem_addr.raw() / 4) as usize;
-            let mem_rdata: u32 = if read_word < data_mem.len() { data_mem[read_word] } else { 0 };
+            let mem_rdata: u32 = if read_word < data_mem.len() {
+                data_mem[read_word]
+            } else {
+                0
+            };
             Some(ResetOrData::Data(SInIn {
                 instr: bits::<32>(instr as u128),
                 mem_rdata: bits::<32>(mem_rdata as u128),
@@ -250,10 +254,7 @@ fn mhartid_is_read_only_returns_zero() {
 fn misa_returns_constant_value() {
     // csrrs x1, x0, misa
     // sw    x1, 0(x0)
-    let program = vec![
-        csrrs(1, 0, CSR_MISA),
-        sw(1, 0, 0),
-    ];
+    let program = vec![csrrs(1, 0, CSR_MISA), sw(1, 0, 0)];
     let mem = run_cpu(program, 8);
     assert_eq!(mem[0], 0x4000_0100, "misa should be RV32I marker");
 }
@@ -293,7 +294,7 @@ fn ecall_traps_to_mtvec_with_correct_mepc_and_mcause() {
         csrrs(3, 0, CSR_MCAUSE),
         sw(2, 0, 0),
         sw(3, 0, 4),
-        HALT,                  // park CPU so PC doesn't fall off the end
+        HALT, // park CPU so PC doesn't fall off the end
     ];
     let mem = run_cpu(program, 24);
     assert_eq!(mem[0], 0x0C, "mepc should hold the ECALL's PC");
@@ -313,7 +314,7 @@ fn ebreak_traps_with_cause_3() {
         csrrs(3, 0, CSR_MCAUSE),
         sw(2, 0, 0),
         sw(3, 0, 4),
-        HALT,                  // park CPU
+        HALT, // park CPU
     ];
     let mem = run_cpu(program, 24);
     assert_eq!(mem[0], 0x0C, "mepc should hold the EBREAK's PC");
@@ -330,12 +331,12 @@ fn csrrw_returns_old_value_to_rd_when_rd_nonzero() {
     // csrrw x3, x2, mscratch    ; x3 ← old mscratch = 0xAA; mscratch = 0xBB
     // sw    x3, 0(x0)            ; mem[0] = 0xAA
     let program = vec![
-        addi(1, 0, 0xAA - 0x100),  // 0xAA fits in -1...-128 sign-extended? No, 0xAA = 170, > 127. Use addi twice.
-        addi(1, 0, 0x55),  // x1 = 0x55
-        add(1, 1, 1),      // x1 = 0xAA (= 0x55 + 0x55)
+        addi(1, 0, 0xAA - 0x100), // 0xAA fits in -1...-128 sign-extended? No, 0xAA = 170, > 127. Use addi twice.
+        addi(1, 0, 0x55),         // x1 = 0x55
+        add(1, 1, 1),             // x1 = 0xAA (= 0x55 + 0x55)
         csrrw(0, 1, CSR_MSCRATCH),
         addi(2, 0, 0x5D),
-        add(2, 2, 2),      // x2 = 0xBA
+        add(2, 2, 2), // x2 = 0xBA
         csrrw(3, 2, CSR_MSCRATCH),
         sw(3, 0, 0),
     ];

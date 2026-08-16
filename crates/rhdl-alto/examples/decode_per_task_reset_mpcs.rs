@@ -17,10 +17,22 @@ fn main() {
 
     println!("Per-task reset MPCs (= task number per Alto Hardware Manual §2):\n");
     let task_names = [
-        "Emulator", "(unused)", "(unused)", "(unused)", "Disk Sector",
-        "(unused)", "(unused)", "Ethernet", "MRT", "Display Word",
-        "Cursor", "Display Horizontal", "Display Vertical", "Parity",
-        "Disk Word", "(unused)",
+        "Emulator",
+        "(unused)",
+        "(unused)",
+        "(unused)",
+        "Disk Sector",
+        "(unused)",
+        "(unused)",
+        "Ethernet",
+        "MRT",
+        "Display Word",
+        "Cursor",
+        "Display Horizontal",
+        "Display Vertical",
+        "Parity",
+        "Disk Word",
+        "(unused)",
     ];
     for k in 0..16u32 {
         let raw = microcode[k as usize];
@@ -44,8 +56,8 @@ fn main() {
 
     println!("\n--- KSEC entry chain (MPC=4 jumps here per real microcode) ---");
     for &mpc in &[
-        0x37cu32, 0x37d, 0x37e, 0x381, 0x382, 0x383, 0x384, 0x385, 0x386, 0x387,
-        0x388, 0x389, 0x38a, 0x368, 0x36a, 0x37a,
+        0x37cu32, 0x37d, 0x37e, 0x381, 0x382, 0x383, 0x384, 0x385, 0x386, 0x387, 0x388, 0x389,
+        0x38a, 0x368, 0x36a, 0x37a,
     ] {
         let raw = microcode[mpc as usize];
         let mi = Microinstruction::unpack(raw);

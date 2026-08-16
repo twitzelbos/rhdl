@@ -102,7 +102,10 @@ impl DiskImage {
 /// Errors that can arise loading a `.dsk` file.
 #[derive(Debug)]
 pub enum LoadError {
-    Io { path: PathBuf, source: std::io::Error },
+    Io {
+        path: PathBuf,
+        source: std::io::Error,
+    },
     /// File size doesn't match the expected `FILE_SIZE_BYTES`.
     WrongFileSize { expected: usize, actual: usize },
 }
@@ -110,9 +113,14 @@ pub enum LoadError {
 impl std::fmt::Display for LoadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LoadError::Io { path, source } => write!(f, "failed to read disk image {path:?}: {source}"),
+            LoadError::Io { path, source } => {
+                write!(f, "failed to read disk image {path:?}: {source}")
+            }
             LoadError::WrongFileSize { expected, actual } => {
-                write!(f, "wrong .dsk file size: expected {expected} bytes (Diablo 31), got {actual}")
+                write!(
+                    f,
+                    "wrong .dsk file size: expected {expected} bytes (Diablo 31), got {actual}"
+                )
             }
         }
     }
@@ -178,8 +186,10 @@ pub fn parse_disk_image(bytes: &[u8]) -> Result<DiskImage, LoadError> {
 
 /// Load a `.dsk` file from disk.
 pub fn load_disk_image_from_file(path: &Path) -> Result<DiskImage, LoadError> {
-    let bytes = std::fs::read(path)
-        .map_err(|e| LoadError::Io { path: path.to_path_buf(), source: e })?;
+    let bytes = std::fs::read(path).map_err(|e| LoadError::Io {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
     parse_disk_image(&bytes)
 }
 
@@ -220,15 +230,21 @@ mod tests {
 
         for s in 0..TOTAL_SECTORS {
             let h0 = (s & 0xffff) as u16;
-            assert_eq!(img.sectors[s].header[0], h0,
-                "sector {s} header[0] mismatch");
-            assert_eq!(img.sectors[s].header[1], h0 ^ 0xa5a5,
-                "sector {s} header[1] mismatch");
-            assert_eq!(img.sectors[s].label[0], 0xdead,
-                "sector {s} label[0] mismatch");
+            assert_eq!(
+                img.sectors[s].header[0], h0,
+                "sector {s} header[0] mismatch"
+            );
+            assert_eq!(
+                img.sectors[s].header[1],
+                h0 ^ 0xa5a5,
+                "sector {s} header[1] mismatch"
+            );
+            assert_eq!(
+                img.sectors[s].label[0], 0xdead,
+                "sector {s} label[0] mismatch"
+            );
             for d in 0..4 {
-                assert_eq!(img.sectors[s].data[d], h0,
-                    "sector {s} data[{d}] mismatch");
+                assert_eq!(img.sectors[s].data[d], h0, "sector {s} data[{d}] mismatch");
             }
         }
     }
@@ -252,7 +268,7 @@ mod tests {
         // Mark sector (5, 1, 7) data[0] with a recognizable pattern.
         let s_idx = 5 * HEADS * SECTORS_PER_TRACK + 1 * SECTORS_PER_TRACK + 7;
         let off = s_idx * SECTOR_BYTES + PAD_BYTES + HEADER_BYTES + LABEL_BYTES;
-        bytes[off]     = 0xCD;
+        bytes[off] = 0xCD;
         bytes[off + 1] = 0xAB;
         let img = parse_disk_image(&bytes).expect("parse ok");
         assert_eq!(img.sector(5, 1, 7).data[0], 0xABCD);
@@ -266,9 +282,13 @@ mod tests {
     #[test]
     fn real_nonprog_dsk_loads_if_available() {
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("assets").join("disk").join("nonprog.dsk");
+            .join("assets")
+            .join("disk")
+            .join("nonprog.dsk");
         if !path.exists() {
-            eprintln!("[real_nonprog_dsk_loads_if_available] skipping — disk image not present at {path:?}");
+            eprintln!(
+                "[real_nonprog_dsk_loads_if_available] skipping — disk image not present at {path:?}"
+            );
             return;
         }
         let img = load_disk_image_from_file(&path).expect("load real .dsk");
@@ -287,14 +307,22 @@ mod tests {
         //
         // Octal 000345 = 0xE5.
         let boot = img.sector(0, 0, 0);
-        assert_ne!(boot.data, [0u16; DATA_WORDS],
-            "boot sector data must not be all-zero");
-        assert_eq!(boot.data[0], 0o000345,
-            "boot sector data[0] must be the JMP-345 entrypoint (memory addr 001)");
-        assert_eq!(boot.data[1], 0o000354,
-            "boot sector data[1] must match boot block address 002");
-        assert_eq!(boot.data[2], 0o000403,
-            "boot sector data[2] must match boot block address 003");
+        assert_ne!(
+            boot.data, [0u16; DATA_WORDS],
+            "boot sector data must not be all-zero"
+        );
+        assert_eq!(
+            boot.data[0], 0o000345,
+            "boot sector data[0] must be the JMP-345 entrypoint (memory addr 001)"
+        );
+        assert_eq!(
+            boot.data[1], 0o000354,
+            "boot sector data[1] must match boot block address 002"
+        );
+        assert_eq!(
+            boot.data[2], 0o000403,
+            "boot sector data[2] must match boot block address 003"
+        );
         // Header is currently zero (no checksum/disk-address recorded);
         // ContrAlto fills these in at runtime from KADR.  Just confirm
         // the structure parsed without complaint.

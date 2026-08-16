@@ -169,11 +169,7 @@ where
 
 #[kernel]
 /// Kernel for [Ps2MouseEncoder].
-pub fn ps2_mouse_encoder<const DIV_W: usize>(
-    cr: ClockReset,
-    i: In,
-    q: Q<DIV_W>,
-) -> (Out, D<DIV_W>)
+pub fn ps2_mouse_encoder<const DIV_W: usize>(cr: ClockReset, i: In, q: Q<DIV_W>) -> (Out, D<DIV_W>)
 where
     rhdl::bits::W<DIV_W>: BitWidth,
 {
@@ -377,7 +373,9 @@ mod tests {
             .join("vcd")
             .join("ps2_mouse_encoder");
         std::fs::create_dir_all(&root).unwrap();
-        let _ = vcd.dump_to_file(root.join("ps2_mouse_encoder.vcd")).unwrap();
+        let _ = vcd
+            .dump_to_file(root.join("ps2_mouse_encoder.vcd"))
+            .unwrap();
         let _ = expect![[r#""#]];
         Ok(())
     }
