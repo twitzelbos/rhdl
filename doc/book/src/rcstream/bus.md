@@ -290,6 +290,95 @@ under-grant and the effective buffer depth will be capped at
 
 See `stream-bus-architecture.md` §11 for the broader design rationale.
 
+## Crossing clock domains
+
+`RCStream<T, F>` carries no clock-domain information: in the
+single-domain (`Synchronous`) family the framework fans one
+`ClockReset` out to every sub-circuit, so the domain is implicit and
+uniform.  Once a design has two clocks, moving a stream between them
+needs a real CDC structure, and that is `rcstream::cdc::RCStreamCdc`.
+
+```rust
+pub struct RCStreamCdc<T: Digital, F: Digital, W: Domain, R: Domain, const N: usize>
+```
+
+`W` is the write (source) domain, `R` the read (sink) domain, and `N`
+the address width of the internal dual-clock FIFO — the crossing holds
+`2^N - 1` items.  Both faces are ordinary `RCStream` ready/valid
+handshakes; only the ports carry `Signal<_, W>` / `Signal<_, R>` types,
+so wiring a `Red` source to a `Blue` sink without a crossing is a
+compile error rather than a silent metastability bug.
+
+Internally it is a single `fifo::asynchronous::AsyncFIFO<Item<T, F>, W,
+R, N>` with gating logic on each face.
+
+### Why the gating is not optional
+
+Both faces would be wrong if wired naively.
+
+On the **write** side, a conforming `RCStream` source may assert
+`data = Some(item)` on a cycle when `ready` is false — the bus contract
+requires that `data.is_some()` *not* depend combinationally on `ready`,
+and the source simply holds the item until both are true.  A raw FIFO
+treats any `Some` as a write, and writing while full is an overflow.
+So the write is gated:
+
+```rust
+accept = if !full { data } else { None }
+```
+
+This is the same hazard the older `stream::stream_to_fifo` widget
+documents — "a FIFO cannot be interfaced to a stream by simply setting
+`ready = !full`".  That widget solves it with a two-element skid buffer
+because it is also minimising resources; here a plain gate suffices.
+
+On the **read** side, asserting the FIFO's `next` while empty
+underflows, so the read is gated on data actually being present:
+
+```rust
+next = ready && data.is_some()
+```
+
+Neither output has a combinational path from any input: `data` out
+comes from the FIFO's registered read port, and `ready` out is `!full`,
+which is a registered output of the FIFO's write logic.
+
+### Sizing
+
+Gray-coded pointer synchronisation makes `full` pessimistic in `W` and
+`empty` pessimistic in `R` — each lags the other domain by the
+synchroniser depth.  A crossing sized too tightly therefore throttles
+throughput even when the average rates match.  Size `N` so the FIFO
+absorbs the synchroniser round-trip; `N >= 4` (8 items) is a sane floor
+for clocks of the same order of magnitude.
+
+### The domain-typed bus type
+
+`bus::AsyncRCStream<T, F, D>` is `RCStream` with both signals carried as
+`Signal<_, D>`:
+
+```rust
+pub struct AsyncRCStream<T: Digital, F: Digital, D: Domain> {
+    pub data: Signal<Option<Item<T, F>>, D>,
+    pub ready: Signal<bool, D>,
+}
+```
+
+It follows the same role convention as `RCStream` — the struct shape is
+identical in both directions and only the meaning of each field changes
+with the role.  `bus::lift` and `bus::lower` move a port between the
+domain-less and domain-typed forms losslessly.
+
+Note that `AsyncRCStream` describes one **end** of a connection, not a
+crossing: both its fields are in the same domain `D`.  A crossing's
+data-in and ready-in are in *different* domains by construction, which
+is why `RCStreamCdc` names its two domains separately in its `In` /
+`Out` structs rather than using this type.  Use `AsyncRCStream` for a
+single-domain widget participating in a multi-domain composition; use
+`RCStreamCdc` to actually move items between domains.
+
+See `stream-bus-architecture.md` §12 for the broader design rationale.
+
 ## See also
 
 - `stream-bus-architecture.md` — full design rationale.

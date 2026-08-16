@@ -275,6 +275,54 @@ This variant is Phase 3 because most kernel-to-kernel connections within a singl
 
 ---
 
+## 11.5 — Cross-clock-domain variant (Phase 2, shipped)
+
+`RCStream<T, F>` as shipped in Phase 1.1 carries no clock-domain
+parameter: in the single-domain (`Synchronous`) family the framework
+fans one `ClockReset` out to every sub-circuit, so the domain is
+implicit and uniform, and a `Signal`-wrapped bus type would be pure
+overhead.  Phase 2 adds the multi-domain story.
+
+**`rcstream::cdc::RCStreamCdc<T, F, W, R, N>`** — the crossing widget.
+A `Circuit`-family widget wrapping a single
+`fifo::asynchronous::AsyncFIFO<Item<T, F>, W, R, N>`, presenting an
+ordinary `RCStream` ready/valid face in each domain.  Holds `2^N - 1`
+items.
+
+**`rcstream::bus::AsyncRCStream<T, F, D>`** — the domain-typed bus
+type from §5, with `Signal<_, D>` fields, plus `bus::lift` / `bus::lower`
+to move a port losslessly between the domain-less and domain-typed
+forms.
+
+**Decision recorded — the bundled type cannot express a crossing.**
+§5's `AsyncRCStream<T, F, D>` bundles `data` and `ready` in a *single*
+domain `D`, so it describes one **end** of a connection.  A crossing's
+data-in (domain `W`) and ready-in (domain `R`) are in different domains
+by construction, so `RCStreamCdc` cannot use the bundled type for its
+ports and names the two domains separately in its `In` / `Out` structs
+instead.  The bundled type is therefore *not* the crossing's interface;
+it is the port type for a single-domain widget participating in a
+multi-domain composition.  Both ship, with the distinction documented on
+the type itself.
+
+**Decision recorded — gating, not a skid buffer.**  A conforming
+`RCStream` source may assert `data = Some(item)` while `ready` is false
+(the contract forbids `data.is_some()` from depending combinationally on
+`ready`).  A raw FIFO would treat that as a write and overflow when
+full.  The crossing therefore gates the write (`accept = if !full { data
+} else { None }`) and the read (`next = ready && data.is_some()`).  The
+alternative — reusing `stream::stream_to_fifo`'s two-element skid buffer
+— was rejected because it would make `rcstream` depend on the
+`stream::Ready<T>` type and blur the module boundary §9 deliberately
+draws; the gate is also strictly cheaper.
+
+**Not shipped:** a *credit-based* cross-domain variant (the credit
+counter in `W`, the grant crossing back through a `Sync1Bit`).  That
+remains a Phase 4 follow-up per §11, and is the natural shape for SerDes
+link layers and PCIe-style protocols.
+
+---
+
 ## 12 — Phasing
 
 | Phase | Deliverable | Status |
@@ -283,7 +331,7 @@ This variant is Phase 3 because most kernel-to-kernel connections within a singl
 | ~~1.2~~ | ~~Migrate existing `stream::*` widgets~~ | **dropped** — see §9 |
 | ~~1.4~~ | ~~Consolidate `axi4lite::channel`~~ | **dropped** — see §9 |
 | 1.5 | AXI4-Stream interop widgets in `rcstream::axi_stream` (`AxiStreamToRCStream<T, F>`, `RCStreamToAxiStream<T, F>`) — parallel to the existing `axi4lite::stream::{axi_to_rhdl, rhdl_to_axi}` | **planned** — see §10; lands when a `RCStream`-using design needs to talk to AXI4-Stream IP |
-| 2 | `AsyncRCStream<T, F, D>` cross-clock-domain variant | when a multi-domain design needs it |
+| 2 | `AsyncRCStream<T, F, D>` cross-clock-domain variant — `rcstream::cdc::RCStreamCdc<T, F, W, R, N>` + the domain-typed `bus::AsyncRCStream<T, F, D>` + `bus::lift`/`bus::lower` | **shipped** — see §11.5 |
 | 3 | `CreditRCStream<T, F, CREDIT_W>` for long-path / multi-source aggregation | when an actual design hits the timing wall |
 | 4 | Auto-pipelining integration: NTL-pass recognition of `RCStream` boundaries as preferred cut points | coordinates with `auto-pipelining-plan.md` Phase 1 |
 
