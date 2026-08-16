@@ -31,6 +31,35 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-16 — `CreditRCStreamRelay`: the long-path variant can finally be pipelined (+ a `SyncFIFO` bug)
+
+**Paths:** `crates/rhdl-fpga/src/rcstream/credit/relay.rs` (new), `crates/rhdl-fpga/src/rcstream/credit/mod.rs`, `crates/rhdl-fpga/src/rcstream/credit/sink.rs` (docs), `crates/rhdl-fpga/tests/rcstream_credit_relay_insertion.rs` (new), `crates/rhdl-fpga/examples/credit_relay.rs` + `doc/credit_relay.md` + `vcd/credit_relay/` (new), `doc/book/src/rcstream/bus.md`, `stream-bus-architecture.md` §11.3.
+
+**Why this, why now:** `CreditRCStream` exists specifically for long inter-block paths — the design plan's words: "inter-block paths where the sink-to-source `ready` signal can't meet timing." It is the variant you reach for *because* you need to break a long path. And it was the one form of the bus with no way to insert a register: `RCStreamRelay` only speaks simple Ready/Valid, and `grep` for any pipelining primitive under `rcstream/credit/` came back empty. The short-path form had a relay whose insertion-safety was proven across depths 1–8 in the previous entry; the long-path form had nothing.
+
+**Design decisions:**
+
+- **A register pair, not a skid buffer.** `RCStreamRelay` is a Carloni buffer because the simple bus has forward backpressure and the item must be held *somewhere*. The credit protocol has none: a source sends only when it holds a credit, and the sink has already reserved space for every credit issued. There is no stall to absorb, so the relay forwards unconditionally and a skid buffer would be dead silicon. It also cannot be overrun — credit accounting bounds in-flight items to the sink's reserved capacity, and the relay holds at most one.
+- **The reverse path stays an ungated register.** `credit_grant` is a *count*, not a level. The invariant is that the running total reaching the source equals the total the sink issued: grants may be delayed, never dropped, merged, or duplicated. Lose one and the source is permanently a token short and the link degrades to deadlock; duplicate one and it can overrun the sink. A plain register shifts each cycle's value by one and conserves the total — that is the whole correctness argument, and it is why nothing may gate or combine grants.
+- **Reset to zero credit, explicitly.** A relay emerging from reset holding a non-zero grant would inflate the source's counter and let it overrun. There is a test for exactly that.
+
+**Surprises and gotchas:**
+
+- **This relay does NOT preserve throughput — the asymmetry with `RCStreamRelay` is real and was worth measuring rather than assuming.** Carloni's theorem makes simple-relay insertion free at any depth. Credit flow control sustains full rate only while `credits >= round-trip latency`, and each stage adds *two* cycles to that loop (one forward on `data`, one back on `credit_grant`). Measured over a 20k-cycle window: with a 4-credit pool, six relays cut delivery from **131 to 48** items; with 16 credits, from **195 to 185**. So insertion is always correct and only conditionally free. The assertions were written *after* measuring, deliberately looser than the observed numbers so they track the property rather than the exact schedule.
+- **Found a pre-existing bug in `SyncFIFO`.** The first throughput run panicked with `assertion failed: rhs <= Self::MASK.raw()` in `rhdl-bits`. It was not the relay: the backtrace lands in `SyncFIFO<_, 1>`, and a bare `SyncFIFO<b8, 1>` simulated on its own panics identically with no `rcstream` code in the picture. `SyncFIFO<b8, 2>` is fine. So **`SyncFIFO` is broken at address width 1** — `Bits<1>` arithmetic overflowing in its read/write logic. `CreditSink` merely instantiates it and inherits the failure. Documented as a `FIFO_N >= 2` floor on `CreditSink` (a 1-item buffer defeats credit-based flow control anyway) rather than worked around, because the panic otherwise surfaces from deep inside the FIFO with no hint of its cause. **The `SyncFIFO` defect itself is left unfixed — it is `fifo::`, not `rcstream`, and deserves its own change.**
+- **Two `#[rhdl(dq_no_prefix)]` widgets in one test file collide** on the generated `Q`/`D` names. Same trap the Phase 1.5 entry recorded for test-module composition; the fix is the same — put each fixture in its own `mod`.
+- **Const-generic inference picks the wrong slot.** `CreditSource::default()` inside a fixture generic over `FIFO_N` bound `FIFO_N` into the `CREDIT_W` position and produced a baffling "expected `5`, found `FIFO_N`". Explicit turbofish is required.
+
+**Validation:** 8 unit tests on the widget (forward delay, reverse delay, no-credit-from-idle, direction independence, reset state, HDL snapshot, `iverilog` RTL+NTL, VCD digest) plus 2 integration tests: sequence preserved at depths 1/2/3/4/6, and the throughput property above. All 21 `rcstream::credit` tests and 7 rcstream doctests pass. Example verified byte-identical across runs.
+
+**Follow-ups:**
+
+- **Fix `SyncFIFO` at `N = 1`** — a core widget panicking at its smallest size, independent of anything here.
+- **Burst-grant sink policy** and **`CreditMux`** remain the open credit items.
+- **Cross-domain credit** — the credit counter in `W` with grants crossing back through a `Sync1Bit` — now composes with both `RCStreamCdc` and this relay, and is the natural SerDes/PCIe-shaped next step.
+
+---
+
 ## 2026-08-16 — RCStream: relay-insertion invariance is finally tested (§13 validation debt)
 
 **Path:** `crates/rhdl-fpga/tests/rcstream_relay_insertion.rs` (new), `stream-bus-architecture.md` §13.

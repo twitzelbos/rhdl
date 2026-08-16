@@ -279,6 +279,42 @@ that meet timing, the simple `RCStream` form is preferred — the
 credit variant adds DFF state at the source for the credit counter
 and at the sink for the buffer + free-slot tracking.
 
+### Pipelining a credit link
+
+`credit::relay::CreditRCStreamRelay<T, F, CREDIT_W>` inserts a pipeline
+stage on a credit connection. Until it existed the credit variant — the
+one that exists *for* long paths — had no way to break a long path with
+a register, while the simple `RCStream` did.
+
+It is a plain register pair, not a skid buffer, because the credit
+protocol has **no forward backpressure**: a source sends only when it
+holds a credit, and the sink has already reserved space for every credit
+it issued. There is no stall to absorb, so the relay forwards
+unconditionally. It cannot be overrun either — credit accounting bounds
+in-flight items to the sink's reserved capacity.
+
+The reverse path must be a *plain* register. `credit_grant` is a count,
+not a level, so the invariant is that the running total reaching the
+source equals the total the sink issued: grants may be delayed, never
+dropped, merged or duplicated. Drop one and the source is permanently
+one token short; duplicate one and it can overrun the sink.
+
+**This relay does not preserve throughput**, and that is the key
+difference from `RCStreamRelay`, where Carloni's theorem guarantees
+insertion is free. Credit flow control sustains full rate only while
+`credits >= round-trip latency`, and each relay adds *two* cycles to
+that loop (one forward, one back). Measured over a 20k-cycle window:
+
+| Credit pool | 1 relay | 6 relays |
+|---|---|---|
+| 4 credits (`FIFO_N=2`) | 131 items | **48 items** |
+| 16 credits (`FIFO_N=4`) | 195 items | 185 items |
+
+So insertion is always **correct** — the item sequence is preserved at
+any depth — but only **free** if the pool covers the lengthened round
+trip. Size `FIFO_N` accordingly. Both halves are checked in
+`crates/rhdl-fpga/tests/rcstream_credit_relay_insertion.rs`.
+
 ### Sizing rule
 
 `CREDIT_W` is the width of both the per-cycle grant signal AND the

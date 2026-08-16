@@ -63,6 +63,18 @@
 //! `CREDIT_W >= FIFO_N + 1`); otherwise the sink will under-grant
 //! and the effective buffer depth will be capped at
 //! `2^CREDIT_W - 1` rather than `2^FIFO_N`.
+//!
+//! **`FIFO_N >= 2` is required.**  The sink's buffer is a
+//! [`crate::fifo::synchronous::SyncFIFO`], and that widget panics at
+//! address width 1 (`Bits<1>` arithmetic overflows inside its
+//! read/write logic) — a defect in `SyncFIFO` itself, reproducible
+//! without any `rcstream` code by simulating a bare
+//! `SyncFIFO<b8, 1>`.  `FIFO_N = 1` would only give a 1-item buffer
+//! anyway, which defeats the point of credit-based flow control, so
+//! this floor costs nothing in practice.  Documented here rather than
+//! worked around, because the panic is otherwise baffling: it surfaces
+//! from deep inside the FIFO with no hint that the sink's own
+//! parameterisation caused it.
 
 use rhdl::prelude::*;
 

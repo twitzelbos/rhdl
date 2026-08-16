@@ -275,6 +275,57 @@ This variant is Phase 3 because most kernel-to-kernel connections within a singl
 
 ---
 
+## 11.3 — Pipelining a credit link: `CreditRCStreamRelay` (shipped)
+
+The credit variant exists for **long inter-block paths**, and until now
+it was the one form of the bus you could *not* break with a register:
+`RCStreamRelay` only speaks simple Ready/Valid. `rcstream::credit::relay`
+closes that.
+
+**Decision recorded — a register pair, not a skid buffer.** The credit
+protocol has no forward backpressure at all: a source sends only when it
+holds a credit, and the sink has already reserved space for every credit
+it issued. There is no stall for a skid buffer to absorb, so the relay
+forwards unconditionally and a Carloni buffer here would be dead
+silicon. It cannot be overrun either — credit accounting bounds
+in-flight items to the sink's reserved capacity, and the relay holds at
+most one.
+
+**Decision recorded — the reverse path must stay an ungated register.**
+`credit_grant` is a *count*, not a level. The invariant is that the
+running total reaching the source equals the total the sink issued:
+grants may be delayed, never dropped, merged, or duplicated. Lose one
+and the source is permanently a token short and the link eventually
+deadlocks; duplicate one and it can overrun the sink's buffer. A plain
+register shifts each cycle's value by one and conserves the total; that
+is the entire correctness argument.
+
+**Decision recorded — this relay does NOT preserve throughput, and that
+asymmetry with `RCStreamRelay` is load-bearing.** There, Carloni's
+theorem makes insertion free at any depth. Credit flow control sustains
+full rate only while `credits >= round-trip latency`, and each stage
+adds two cycles to that loop. Measured over a 20k-cycle window:
+
+| Credit pool | 1 relay | 6 relays |
+|---|---|---|
+| 4 credits (`FIFO_N=2`) | 131 items | 48 items |
+| 16 credits (`FIFO_N=4`) | 195 items | 185 items |
+
+So insertion is always correct and only conditionally free. Both halves
+are checked in `tests/rcstream_credit_relay_insertion.rs`; if the
+throughput property ever stops holding, the sizing guidance in the
+module docs is wrong and must be rewritten rather than the test relaxed.
+
+**Constraint surfaced:** `CreditSink` requires `FIFO_N >= 2`. Its buffer
+is a `SyncFIFO`, and that widget panics at address width 1 —
+`Bits<1>` arithmetic overflow inside its read/write logic, reproducible
+without any `rcstream` code by simulating a bare `SyncFIFO<b8, 1>`. That
+is a defect in `SyncFIFO`, not in the credit variant; documented on
+`CreditSink` because the panic otherwise surfaces from deep inside the
+FIFO with no hint of its cause.
+
+---
+
 ## 11.4 — Combinators (shipped)
 
 Phases 1.1 through 3 all built *transport*: the bus type, the relay, AXI
