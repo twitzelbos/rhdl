@@ -275,6 +275,68 @@ This variant is Phase 3 because most kernel-to-kernel connections within a singl
 
 ---
 
+## 11.4 — Combinators (shipped)
+
+Phases 1.1 through 3 all built *transport*: the bus type, the relay, AXI
+interop, the credit variant, the clock-domain crossing.  None of them
+let a design **transform** a stream.  Because §9 decided the existing
+`stream::*` widgets are not migrating, an `RCStream` pipeline had no
+`map` or `filter` to reach for and had to hand-roll its own.  This was a
+gap in the original phasing rather than a deliberate omission — the plan
+never listed combinators at all.
+
+Shipped in `rcstream::{map, filter, filter_map, zip, tee}`:
+
+| Widget | Function signature | Shape |
+|---|---|---|
+| `RCStreamMap<T, F, S>` | `fn(cr, T) -> S` | `RCStream<T,F>` → `RCStream<S,F>` |
+| `RCStreamFilter<T, F>` | `fn(cr, Item<T,F>) -> bool` | `RCStream<T,F>` → `RCStream<T,F>` |
+| `RCStreamFilterMap<T, F, S>` | `fn(cr, Item<T,F>) -> Option<Item<S,F>>` | `RCStream<T,F>` → `RCStream<S,F>` |
+| `RCStreamZip<A, F, B, G>` | — | two streams → `RCStream<(A,B), (F,G)>` |
+| `RCStreamTee<A, F, B, G>` | — | `RCStream<(A,B), (F,G)>` → two streams |
+
+**Decision recorded — the payload/item asymmetry is a hazard boundary,
+not a style choice.**  `map` takes the payload alone and preserves `F`
+automatically; `filter` and `filter_map` take the whole `Item`.  The
+line is drawn where the operation can *destroy framing*: a `map` cannot
+drop anything, so `F` is orthogonal to it, whereas dropping the item
+that carries an end-of-frame marker means the frame never ends — a
+data-dependent, run-time failure no type check catches.  Exposing `F` to
+the predicate makes it visible at the point of decision, and the
+framing-safe idiom is `it.frame || keep(it.data)`.  Eliminating exactly
+this species of out-of-band convention is the bus's reason for existing.
+
+**Decision recorded — rejected items are consumed without waiting for
+the sink.**  `d.input.ready = i.ready || dropping`.  The contract lets a
+sink gate its `ready` on `data.is_some()`; a dropped item shows such a
+sink nothing, so waiting for downstream would deadlock.  Note that the
+older `stream::filter` sets `d.input_buffer.ready = i.ready`
+unconditionally and therefore appears to have this exposure — flagged
+for investigation rather than asserted as a bug, since its own test
+suite drives unconditionally-ready sinks.
+
+**Decision recorded — `zip` carries `(F, G)` rather than picking one.**
+The two markers are independent run-time values and zipping does not
+synchronise framing, so choosing one would discard information by fiat.
+`((), ())` costs no wire bits in the unframed case.
+
+**Decision recorded — `tee` splits, matching `stream::tee`.**  A genuine
+fan-out needs per-branch delivery state (two sinks can go ready on
+different cycles, and a held item would otherwise be delivered twice);
+it is a separate widget and was not smuggled in.
+
+Every combinator is built from `RCStreamRelay` skid buffers and carries a
+`drc::no_combinatorial_paths` test, so all of them remain valid relay
+insertion points.
+
+**Not shipped:** `flatten`, `chunked`, and the FIFO adapters that
+`stream::*` has.  Also no `rcstream::testing` fixture module — the
+Tier-2 tests use closed-loop `run_fn` directly.  If a third round of
+combinators arrives, consolidating that harness the way
+`stream::testing` does becomes worthwhile.
+
+---
+
 ## 11.5 — Cross-clock-domain variant (Phase 2, shipped)
 
 `RCStream<T, F>` as shipped in Phase 1.1 carries no clock-domain
@@ -346,7 +408,9 @@ Per `CLAUDE.md` §11.1, every phase is a compiler-or-library change with the ful
 Specific test requirements:
 
 - **Phase 1.** Each existing `stream::*` widget gets re-tested with the new `RCStream<T, F, D>` signature; emitted Verilog must be byte-identical to the pre-migration form when `F = ()`. Round-trip test for AXI4-Stream interop (`axi → Stream → axi` is byte-identical on the AXI side). New chapter `doc/book/src/stream/bus.md`.
-- **Phase 2.** Insertion of a `RCStreamRelay` on any `RCStream` connection produces functionally-equivalent output (offset by one cycle of latency, throughput unchanged). Property-based test: pick 100 random `RCStream<T, F, D>`-using widgets and verify that inserting 0–10 relays on each connection preserves all observable outputs.
+- **Phase 2 — relay-insertion invariance. Shipped:** `crates/rhdl-fpga/tests/rcstream_relay_insertion.rs`. A chain of `N` relays delivers exactly the source item sequence for `N = 1..=8`, and a `map → N relays → filter` pipeline produces output independent of `N` for `N = 1..=5`, anchored by a test that the pipeline computes the expected function (so invariance cannot be satisfied vacuously by a uniformly-broken pipeline). A separate test asserts relay depth costs no throughput beyond its one-cycle-per-stage fill. The suite was mutation-checked: breaking the chain's backpressure wiring fails three of the four tests.
+
+  Deliberately *not* the "100 random widgets × 0–10 relays" form originally specified. Fixed depths over a real pipeline give the same signal with a deterministic, debuggable failure — a randomised harness that reports "depth 7 of widget #43 diverged" is far harder to act on, and RHDL tests are required to be deterministic (CLAUDE.md §12 rule 10). Broadening to more widget shapes is worthwhile as `rcstream` grows; randomising the depth is not.
 - **Phase 3.** Round-trip test for `Stream <-> CreditRCStream` translation. Long-path timing test demonstrates that `CreditRCStream` removes the TVALID/TREADY combinational dependency.
 - **Phase 4.** Auto-pipelining meta-test: random `RCStream`-using designs are pipelined to a target frequency and the output is verified functionally equivalent to the un-pipelined version (offset by the inserted latency).
 

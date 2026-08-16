@@ -290,6 +290,97 @@ under-grant and the effective buffer depth will be capped at
 
 See `stream-bus-architecture.md` §11 for the broader design rationale.
 
+## Combinators
+
+Until these landed, `rcstream` was transport only: items could be
+buffered, relayed, credited, crossed between clock domains, and bridged
+to AXI4-Stream — but not *transformed*. Since `stream::*` is explicitly
+not migrating, an `RCStream` pipeline had to hand-roll its own
+processing. These five widgets close that gap.
+
+| Widget | Function | Shape |
+|---|---|---|
+| `map::RCStreamMap<T, F, S>` | `fn(cr, T) -> S` | `RCStream<T,F>` → `RCStream<S,F>` |
+| `filter::RCStreamFilter<T, F>` | `fn(cr, Item<T,F>) -> bool` | `RCStream<T,F>` → `RCStream<T,F>` |
+| `filter_map::RCStreamFilterMap<T, F, S>` | `fn(cr, Item<T,F>) -> Option<Item<S,F>>` | `RCStream<T,F>` → `RCStream<S,F>` |
+| `zip::RCStreamZip<A, F, B, G>` | — | two streams → `RCStream<(A,B), (F,G)>` |
+| `tee::RCStreamTee<A, F, B, G>` | — | `RCStream<(A,B), (F,G)>` → two streams |
+
+Each is built from `RCStreamRelay` skid buffers, so none has a
+combinational path from any input to any output — checked by a
+`drc::no_combinatorial_paths` test on every one. That is what keeps
+relay insertion sound anywhere around them.
+
+### Why `map` sees the payload but `filter` sees the whole item
+
+This asymmetry is deliberate, and it tracks a real hazard rather than
+taste.
+
+`map` cannot drop anything, so framing is orthogonal to what it does:
+`Item { data, frame }` becomes `Item { data: f(data), frame }`, and
+preserving `F` automatically is unambiguously right. Making the user
+rewrap an `Item` would be pure boilerplate.
+
+`filter` and `filter_map` *can* drop items — and dropping an item
+destroys the framing information it carried. If `F` is a
+TLAST-equivalent and the predicate drops the item with `frame = true`,
+the frame never ends and every downstream frame-counter is silently
+wrong from then on. No type check catches that; it is data-dependent
+and shows up at run time. Handing the predicate the whole `Item` puts
+the marker in front of the person writing the rule:
+
+```rust
+#[kernel]
+fn keep_even(_cr: ClockReset, it: Item<b8, bool>) -> bool {
+    it.frame || ((it.data & b8(1)) == b8(0))   // never drop a frame marker
+}
+```
+
+That idiom — `it.frame || predicate(it.data)` — is the framing-safe
+default. Eliminating exactly this class of out-of-band convention is
+what the typed bus is for.
+
+### Dropped items must not wait for the sink
+
+A subtle but load-bearing detail in `filter` and `filter_map`:
+
+```rust
+d.input.ready = i.ready || dropping;
+```
+
+A rejected item is consumed from the internal buffer **regardless of
+downstream `ready`**. The bus contract permits a sink to gate its
+`ready` on `data.is_some()` — a sink may reasonably only accept when it
+can see something. A rejected item shows such a sink no data, so it
+never asserts `ready`; a filter that waited for it would leave the
+dropped item in the buffer forever and the stream would deadlock. Each
+widget has a test driving exactly that sink.
+
+### `zip` carries both framing markers
+
+`zip` produces `RCStream<(A, B), (F, G)>` — payloads pair up and so do
+the markers. Requiring `F == G` and emitting one of them was rejected:
+the two are independent run-time values, zipping two streams does not
+synchronise their framing, and there is no principled reason to prefer
+the `a` side. Carrying both keeps the information; a consumer that
+wants a single marker can `map` the pair down under a rule it chose
+itself. When neither side is framed, `(F, G) = ((), ())` costs no wire
+bits.
+
+Both `zip` and `tee` move in lockstep — they fire only when every side
+can move — so a fast producer or a slow consumer backpressures the
+widget rather than desynchronising the streams. That is what lets a
+`tee` feed a later `zip` and still line up.
+
+### `tee` splits, it does not duplicate
+
+Following the convention `stream::tee` already set, `tee` separates a
+stream of pairs rather than duplicating one stream into two identical
+copies. A genuine fan-out is a different widget with a different
+hazard — two sinks going ready on different cycles need per-branch
+"already delivered" state to avoid handing the same item over twice —
+and it is deliberately not smuggled in here.
+
 ## Crossing clock domains
 
 `RCStream<T, F>` carries no clock-domain information: in the
