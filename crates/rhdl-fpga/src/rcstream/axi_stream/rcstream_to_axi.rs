@@ -211,6 +211,58 @@ mod tests {
     }
 
     /// Smoke test: descriptor + HDL emission.
+    /// Tier 2 — **backpressure**, the mirror of the AXI->RCStream case
+    /// and equally uncovered before now.
+    ///
+    /// Here the AXI *consumer* deasserts TREADY intermittently while the
+    /// RCStream source keeps offering.  Per AMBA the translator must
+    /// hold TDATA/TVALID stable until TREADY, and must not drop the
+    /// held beat.
+    #[test]
+    fn rcstream_to_axi_loses_nothing_when_the_axi_consumer_stalls() {
+        use rhdl::core::sim::ResetOrData;
+        const COUNT: u128 = 20;
+        let uut = RCStreamToAxi::<b8, ()>::default();
+        let mut to_send: u128 = 0;
+        let mut got: Vec<u128> = Vec::new();
+        let mut need_reset = true;
+        let mut phase: u32 = 0;
+
+        uut.run_fn(
+            |output| {
+                if need_reset {
+                    need_reset = false;
+                    return Some(ResetOrData::Reset);
+                }
+                phase = phase.wrapping_add(1);
+                // AXI consumer accepts 1 cycle in 3.
+                let tready = phase.is_multiple_of(3);
+                if output.tvalid && tready {
+                    got.push(output.tdata.raw());
+                }
+                let mut input = In::<b8, ()> { data: None, tready };
+                // RCStream source offers whenever the translator has room.
+                if to_send < COUNT && output.ready {
+                    input.data = Some(Item::<b8, ()> {
+                        data: b8(to_send % 256),
+                        frame: (),
+                    });
+                    to_send += 1;
+                }
+                Some(ResetOrData::Data(input))
+            },
+            100,
+        )
+        .take_while(|t| t.time < 400_000)
+        .for_each(drop);
+
+        let want: Vec<u128> = (0..COUNT).collect();
+        assert_eq!(
+            got, want,
+            "RCStream->AXI must hold its beat and lose nothing when TREADY drops"
+        );
+    }
+
     #[test]
     fn descriptor_smoke() -> miette::Result<()> {
         let uut: RCStreamToAxi<b8, ()> = RCStreamToAxi::default();
