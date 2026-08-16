@@ -33,7 +33,7 @@ fn main() -> Result<(), RHDLError> {
                 if output.ready {
                     input.data = Some(Item::<b8, bool> {
                         data: b8(sent % 256),
-                        frame: sent % 3 == 0,
+                        frame: sent.is_multiple_of(3),
                     });
                     sent += 1;
                 }

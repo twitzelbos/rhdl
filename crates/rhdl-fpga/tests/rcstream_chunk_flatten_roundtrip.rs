@@ -74,7 +74,7 @@ fn chunk_then_flatten_returns_every_payload_and_every_marker() {
             if sent < COUNT && output.ready {
                 input.data = Some(Item::<b8, bool> {
                     data: b8(sent % 256),
-                    frame: sent % 3 == 0,
+                    frame: sent.is_multiple_of(3),
                 });
                 sent += 1;
             }

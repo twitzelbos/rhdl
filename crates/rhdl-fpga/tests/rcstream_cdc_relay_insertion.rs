@@ -67,6 +67,9 @@ impl<const NW: usize, const NR: usize> CircuitIO for CdcPipe<NW, NR> {
 
 #[kernel]
 #[doc(hidden)]
+// Kernels index arrays explicitly; iterator adapters are not in the
+// `#[kernel]` subset.
+#[allow(clippy::needless_range_loop)]
 pub fn cdc_pipe_kernel<const NW: usize, const NR: usize>(
     i: In,
     q: CdcPipeQ<NW, NR>,

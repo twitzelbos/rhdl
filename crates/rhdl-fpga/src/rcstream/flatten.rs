@@ -301,7 +301,7 @@ mod tests {
                     ready: sink_ready,
                 };
                 if sent < GROUPS && output.ready {
-                    input.data = Some(group(sent * 4, sent % 2 == 0));
+                    input.data = Some(group(sent * 4, sent.is_multiple_of(2)));
                     sent += 1;
                 }
                 Some(ResetOrData::Data(input))

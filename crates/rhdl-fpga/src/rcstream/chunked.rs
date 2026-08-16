@@ -339,7 +339,7 @@ mod tests {
                     ready: sink_ready,
                 };
                 if sent < COUNT && output.ready {
-                    input.data = Some(item(sent, sent % 3 == 0));
+                    input.data = Some(item(sent, sent.is_multiple_of(3)));
                     sent += 1;
                 }
                 Some(ResetOrData::Data(input))

@@ -39,7 +39,7 @@ fn main() -> Result<(), RHDLError> {
                             b8((b + 2) % 256),
                             b8((b + 3) % 256),
                         ],
-                        frame: sent % 2 == 0,
+                        frame: sent.is_multiple_of(2),
                     });
                     sent += 1;
                 }
