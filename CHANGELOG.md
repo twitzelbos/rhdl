@@ -31,6 +31,38 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-16 — RCStream combinators: `map`, `filter`, `filter_map`, `zip`, `tee`
+
+**Paths:** `crates/rhdl-fpga/src/rcstream/{map,filter,filter_map,zip,tee}.rs` (new), `crates/rhdl-fpga/src/rcstream/mod.rs`, `crates/rhdl-fpga/examples/rcstream_{map,filter,filter_map,zip,tee}.rs` (new), `crates/rhdl-fpga/doc/rcstream_*.md` (new traces), `crates/rhdl-fpga/vcd/rcstream_*/` (new digests), `doc/book/src/rcstream/bus.md`, `stream-bus-architecture.md` §11.4.
+
+**Why this, why now:** every RCStream phase so far shipped *transport* — the bus type, the Carloni relay, AXI4-Stream interop, the credit variant, the clock-domain crossing. None of it let a design **transform** a stream. Because §9 decided `stream::*` would not migrate, an `RCStream` pipeline had no `map` or `filter` to reach for and had to hand-roll its own. `rcstream` was a well-specified bus nobody could compute with. This was a hole in the original phasing, not a deferred item: the plan never listed combinators at all.
+
+**Design decisions:**
+
+- **The payload/item asymmetry is a hazard boundary, not a style choice.** `map` takes `fn(cr, T) -> S` and preserves `F` automatically; `filter`/`filter_map` take the whole `Item<T, F>`. The line falls exactly where the operation can *destroy framing*. A `map` cannot drop anything, so `F` is orthogonal and rewrapping items would be pure boilerplate. A `filter` **can** drop — and dropping the item carrying an end-of-frame marker means the frame never ends, silently corrupting every downstream frame-counter. That is data-dependent and invisible to the type system, so the predicate is handed `F` to make the decision explicit. The framing-safe idiom, used in every example and test, is `it.frame || keep(it.data)`.
+- **Rejected items are consumed without waiting for the sink.** `d.input.ready = i.ready || dropping`. The bus contract permits a sink to gate `ready` on `data.is_some()`; a dropped item shows such a sink nothing, so it never asserts ready, and a filter that waited would leave the item buffered forever — deadlock. Both `filter` and `filter_map` have a Tier-2 test driving precisely that sink.
+- **`zip` carries `(F, G)`, it does not pick one.** Requiring `F == G` and emitting one marker was rejected: the two are independent run-time values, zipping does not synchronise framing, and preferring the `a` side would be arbitrary. Unframed streams pay nothing — `((), ())` is zero wire bits.
+- **`tee` splits rather than duplicates**, matching `stream::tee`. A genuine fan-out needs per-branch "already delivered" state, because two sinks can go ready on different cycles and a held item would otherwise be handed over twice. That is a different widget and was deliberately not smuggled in; the module docs say so.
+- **Skid buffer in every widget.** All five are built from `RCStreamRelay`, so none has a combinational path input→output, and each carries a `drc::no_combinatorial_paths` test. This is what keeps them valid relay-insertion points, which is the property Phase 4 will eventually depend on.
+
+**Surprises and gotchas:**
+
+- **`stream::filter` may have the deadlock exposure this design avoids.** It sets `d.input_buffer.ready = i.ready` unconditionally, so a rejected item is only discarded when downstream asserts ready — and the contract explicitly allows a sink to withhold ready until it sees data. Flagged for investigation rather than asserted as a bug: its own tests drive unconditionally-ready sinks, so the case may simply never have been exercised. Listed in Follow-ups.
+- **A test of mine was wrong, not the kernel.** `empty_buffer_never_emits_even_if_func_says_some` originally asserted that an idle stage must not assert `ready` upstream. That is backwards — an idle stage *must* propagate ready or the pipeline stalls. Rewritten to hold the sink off, which isolates the invariant actually worth testing (an empty buffer must never manufacture a *drop*), plus a complementary test that an idle stage does pass ready through.
+- **`Synchronous` widgets take `(ClockReset, I)` from `clock_pos_edge`**, unlike the `Circuit`-family widgets whose `In` already carries the clocks. Moving between the two families mid-session produces a confusing type error.
+- **Running `cargo test` rewrites 79 committed `doc/*.md` trace artifacts.** Each widget's rustdoc includes its example inside a fenced block, so *every example runs as a doctest* and regenerates its trace. Since ~19 examples use `rand::random`, those traces are irreproducible and churn on every run. Not caused by this work, but it means a clean `git status` after `cargo test` is currently impossible. All five new examples are deterministic and verified byte-identical across runs.
+
+**Validation:** all five tiers on all five widgets, no deviations. 99 `rcstream::*` lib tests + 6 doctests pass. Tier 1 covers both gates and the framing behaviour per widget; Tier 2 is closed-loop `run_fn` — `map` under periodic backpressure, `filter`/`filter_map` against a **data-gated sink** (the deadlock case), `zip` with mismatched *source* rates, `tee` with mismatched *sink* rates, each asserting exact in-order delivery; Tier 3 snapshots each widget's own emitted Verilog module; Tier 4 is `iverilog` RTL **and** NTL; Tier 5 is a VCD digest. Plus `drc::no_combinatorial_paths` on every widget.
+
+**Follow-ups:**
+
+- **Investigate `stream::filter` / `stream::filter_map` against a data-gated sink.** If they deadlock, it is a real bug in the older widget family.
+- **`flatten` and `chunked`** have no `rcstream` equivalent yet; nor do FIFO adapters.
+- **No `rcstream::testing` fixture.** Tier-2 tests use `run_fn` directly rather than a shared source/sink harness like `stream::testing`. Fine at five widgets; worth consolidating at ten.
+- **A true fan-out widget** (duplicate one stream to N sinks) remains unbuilt — see the `tee` module docs for the per-branch-state hazard it has to solve.
+
+---
+
 ## 2026-08-16 — Follow-ups from RCStream Phase 2: portable diagnostic snapshots, deterministic `async_fifo` example, category drift, workspace formatting
 
 **Paths:**

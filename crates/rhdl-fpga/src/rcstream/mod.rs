@@ -38,11 +38,21 @@ pub mod axi_stream;
 pub mod bus;
 pub mod cdc;
 pub mod credit;
+pub mod filter;
+pub mod filter_map;
+pub mod map;
 pub mod relay;
+pub mod tee;
+pub mod zip;
 
 // Convenience re-exports so downstream code can `use
 // rhdl_fpga::rcstream::{Item, RCStream, RCStreamRelay}` without
 // spelling sub-module paths.
 pub use bus::{AsyncRCStream, Item, RCStream};
 pub use cdc::RCStreamCdc;
+pub use filter::RCStreamFilter;
+pub use filter_map::RCStreamFilterMap;
+pub use map::RCStreamMap;
 pub use relay::RCStreamRelay;
+pub use tee::RCStreamTee;
+pub use zip::RCStreamZip;

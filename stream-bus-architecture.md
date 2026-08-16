@@ -275,6 +275,68 @@ This variant is Phase 3 because most kernel-to-kernel connections within a singl
 
 ---
 
+## 11.4 — Combinators (shipped)
+
+Phases 1.1 through 3 all built *transport*: the bus type, the relay, AXI
+interop, the credit variant, the clock-domain crossing.  None of them
+let a design **transform** a stream.  Because §9 decided the existing
+`stream::*` widgets are not migrating, an `RCStream` pipeline had no
+`map` or `filter` to reach for and had to hand-roll its own.  This was a
+gap in the original phasing rather than a deliberate omission — the plan
+never listed combinators at all.
+
+Shipped in `rcstream::{map, filter, filter_map, zip, tee}`:
+
+| Widget | Function signature | Shape |
+|---|---|---|
+| `RCStreamMap<T, F, S>` | `fn(cr, T) -> S` | `RCStream<T,F>` → `RCStream<S,F>` |
+| `RCStreamFilter<T, F>` | `fn(cr, Item<T,F>) -> bool` | `RCStream<T,F>` → `RCStream<T,F>` |
+| `RCStreamFilterMap<T, F, S>` | `fn(cr, Item<T,F>) -> Option<Item<S,F>>` | `RCStream<T,F>` → `RCStream<S,F>` |
+| `RCStreamZip<A, F, B, G>` | — | two streams → `RCStream<(A,B), (F,G)>` |
+| `RCStreamTee<A, F, B, G>` | — | `RCStream<(A,B), (F,G)>` → two streams |
+
+**Decision recorded — the payload/item asymmetry is a hazard boundary,
+not a style choice.**  `map` takes the payload alone and preserves `F`
+automatically; `filter` and `filter_map` take the whole `Item`.  The
+line is drawn where the operation can *destroy framing*: a `map` cannot
+drop anything, so `F` is orthogonal to it, whereas dropping the item
+that carries an end-of-frame marker means the frame never ends — a
+data-dependent, run-time failure no type check catches.  Exposing `F` to
+the predicate makes it visible at the point of decision, and the
+framing-safe idiom is `it.frame || keep(it.data)`.  Eliminating exactly
+this species of out-of-band convention is the bus's reason for existing.
+
+**Decision recorded — rejected items are consumed without waiting for
+the sink.**  `d.input.ready = i.ready || dropping`.  The contract lets a
+sink gate its `ready` on `data.is_some()`; a dropped item shows such a
+sink nothing, so waiting for downstream would deadlock.  Note that the
+older `stream::filter` sets `d.input_buffer.ready = i.ready`
+unconditionally and therefore appears to have this exposure — flagged
+for investigation rather than asserted as a bug, since its own test
+suite drives unconditionally-ready sinks.
+
+**Decision recorded — `zip` carries `(F, G)` rather than picking one.**
+The two markers are independent run-time values and zipping does not
+synchronise framing, so choosing one would discard information by fiat.
+`((), ())` costs no wire bits in the unframed case.
+
+**Decision recorded — `tee` splits, matching `stream::tee`.**  A genuine
+fan-out needs per-branch delivery state (two sinks can go ready on
+different cycles, and a held item would otherwise be delivered twice);
+it is a separate widget and was not smuggled in.
+
+Every combinator is built from `RCStreamRelay` skid buffers and carries a
+`drc::no_combinatorial_paths` test, so all of them remain valid relay
+insertion points.
+
+**Not shipped:** `flatten`, `chunked`, and the FIFO adapters that
+`stream::*` has.  Also no `rcstream::testing` fixture module — the
+Tier-2 tests use closed-loop `run_fn` directly.  If a third round of
+combinators arrives, consolidating that harness the way
+`stream::testing` does becomes worthwhile.
+
+---
+
 ## 11.5 — Cross-clock-domain variant (Phase 2, shipped)
 
 `RCStream<T, F>` as shipped in Phase 1.1 carries no clock-domain
