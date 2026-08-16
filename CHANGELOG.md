@@ -61,10 +61,20 @@ d.input_buffer.ready = ready::<T>(i.ready.raw || dropping);
 
 **Validation:** a regression test in each widget's own module, driving a data-gated sink and asserting both that the source drains (`to_send == COUNT`) and that every surviving item is delivered. Both verified to **fail with the old behaviour restored** (`left: 3, right: 16`) and pass with the fix. Full `stream::` module green — 186 tests.
 
+**Blast radius, audited rather than assumed.** The defect needs two properties at once: the widget must be a **dropper** (able to consume an item and decide not to emit it), and it must **gate its input consumption on the downstream `ready`**. Checking every candidate:
+
+- `stream::{filter, filter_map}` — both properties. **Affected; fixed here.**
+- `stream::map` — ties its buffer `ready` to downstream identically, but never drops, so its output is `None` only when the buffer is empty and there is nothing to consume. Probed with a data-gated sink: drains fully. **Safe by construction.**
+- `stream::{chunked, flatten, zip, tee}` — absorb without emitting, but drive their input buffers through `StreamToFIFO`/`FIFOToStream` with an explicit `next` they control themselves rather than a tied `ready`. Probed `chunked` and `flatten` with data-gated sinks: both drain fully. **Safe.**
+- `fifo::*` — consumers pull with an explicit `next`; nothing is tied to a downstream `ready`. **Not applicable.**
+- `axi4lite::*` — several widgets tie `.ready` to an incoming ready, but they are protocol translators in which every request produces a response; none is a dropper. Reasoned structurally rather than probed exhaustively. **Not applicable, with that caveat.**
+
+So the class is confined to droppers, and every dropper in the tree is now fixed. `stream::map` being safe *by accident of never dropping* rather than by design is worth remembering: if it ever gains a drop path, it acquires this bug.
+
 **Follow-ups:**
 
-- **`stream::filter` needs Tier 3/4/5.** It has none. The same is likely true of neighbours in `stream::`.
-- **The backpressure audit still has not covered `fifo::*` or `axi4lite::*`.**
+- **`stream::filter` needs Tier 3/4/5.** It has none — only the DRC check and `test_operation`. Neighbours in `stream::` are similarly thin.
+- **A data-gated sink belongs in `stream::testing`.** `lazy_sink` exists there and is used by nothing; a shared, correct data-gated sink would have made this bug findable by construction.
 
 ---
 
