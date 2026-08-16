@@ -31,6 +31,48 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-16 — `CreditMux` + a silent-data-loss bug in `CreditSink`
+
+**Paths:** `crates/rhdl-fpga/src/rcstream/credit/mux.rs` (new), `crates/rhdl-fpga/src/rcstream/credit/sink.rs` (**bug fix**), `crates/rhdl-fpga/tests/rcstream_credit_no_loss.rs` (new regression), `crates/rhdl-fpga/examples/credit_mux.rs` + `doc/credit_mux.md` + `vcd/credit_mux/`, `doc/book/src/rcstream/bus.md`, `stream-bus-architecture.md` §11.3.1 / §11.3.2.
+
+**Why this, why now:** §11 gives credit-based flow control two motivations. The first — breaking a long combinational `ready` path — is served by the existing source/sink pair. The second, which the plan calls *the classical use case*, is multi-source aggregation, and nothing in `rcstream` provided it: there was no arbiter at all.
+
+**The bug this uncovered — silent data loss in `CreditSink`:**
+
+`CreditSink` initialised its credit pool to `2^FIFO_N`. `SyncFIFO<_, FIFO_N>` holds `2^FIFO_N - 1` items ("you cannot fill the FIFO to 2^N elements"). The sink therefore issued **one more token than its buffer could accept**; the source, trusting its credit, sent the item; the write hit a full FIFO; the item was dropped with no error, no flag, and no diagnostic. Credit-based flow control exists precisely to make source overrun impossible, so this defeated the widget's entire purpose.
+
+**Why nothing caught it earlier** — worth recording, because the answer is structural rather than bad luck:
+
+- `CreditSink` had **no behavioural tests at all**: `default_construction`, `descriptor_smoke`, `iverilog_round_trip`. The Phase 3 entry states this outright — five kernel tests on `source.rs`, none on `sink.rs` — and the credit *accounting* lives in the sink.
+- Its one behavioural test drives `downstream_ready: true` for every cycle. That makes the bug **structurally unreachable**: with a downstream that never stalls, the buffer drains as fast as it fills and never reaches capacity, so the extra credit is never cashed. Running that stimulus longer would never have found it.
+- My own credit-relay tests in the previous entry made the identical mistake — "both ends are maximally permissive so that the only thing limiting the rate is the credit loop itself" — an always-ready sink. I reproduced the blind spot one step before finding it.
+- `CreditMux` exposed it only as a side effect of its topology: three sinks sharing one output port each drain about a third of the time, which is the first sustained backpressure any credit sink had ever seen.
+
+**Testing convention this establishes:** *a flow-control widget tested without backpressure is untested.* The whole point of flow control is what happens when the sink cannot keep up; a permissive sink exercises every path except the one that matters. Any future widget whose job is regulating flow needs a stalling-sink test before it is considered covered.
+
+**Design decisions (`CreditMux`):**
+
+- **Per-source credit pools, not a shared one.** Each source gets its own `CreditSink`, hence its own buffer and pool. A shared pool lets a fast or misbehaving source consume everything and starve the others; independent pools mean a source can only exhaust its own credit — the *virtual channel* property §11 lists. Costs `N` buffers, which is the honest price of non-interference.
+- **Round-robin, not priority.** Under strict priority a source that always has data starves every lower-ranked source indefinitely. An aggregator exists to merge streams, so permanently dropping one is a failure of purpose rather than a tunable policy. Work-conserving: idle sources are skipped, not waited on.
+- **Two-pass selection instead of modulo.** The kernel subset rejects `%`, so the round-robin search scans from the pointer upward and then wraps, rather than computing `(rr + j) % N`.
+
+**Cross-domain credit: analysed and parked, not built.** Recorded in design-plan §11.3.1. The long-standing follow-up sketch ("credit counter at the source, grant crossing through a `Sync1Bit`") specifies the *grant* path and omits the *data* path — and multi-bit data cannot cross clock domains by registering it across. Add the dual-clock FIFO it needs and you have rebuilt `RCStreamCdc`, whose gray-coded pointer synchronisation already *is* space accounting; and `RCStreamCdc`'s `ready` is already registered, so the timing motivation is already satisfied on-chip. The genuine use case is an off-chip link with a PHY, which RHDL cannot model and which has no consumer in the tree. Effort redirected here.
+
+**Surprises and gotchas:**
+
+- **The Rust-vs-Verilog divergence at time 0** is the documented non-zero-DFF-reset issue: Verilog's `initial` block sets the sink's grant counter and BRAM at time 0 while the Rust simulator starts from `dont_care`. Fixed with the same `.skip(2)` the sink's own round-trip already uses.
+- **My first Tier-2 failure diagnosis was wrong.** I assumed my test's source model was at fault (gating on the instantaneous grant rather than an accumulating counter) and fixed that first. The drop persisted, which is what pointed at the sink. The counter-based source model is the correct protocol and was kept, but it was not the bug.
+
+**Validation:** 12 tests on `CreditMux` (7 Tier-1 covering selection, wrap, anti-starvation, backpressure and per-source grants; Tier 2 closed-loop with three contending sources; DRC; HDL snapshot; `iverilog` RTL+NTL; VCD digest). The regression test was verified to **fail with the bug restored and pass with the fix** — not merely to pass. 139 `rcstream` lib tests and 10 doctests green.
+
+**Follow-ups:**
+
+- **Audit the other credit widgets for the same class of gap.** `CreditSource` has kernel tests but no stalling-sink composition test either.
+- **Burst-grant sink policy** remains the last open credit item.
+- **A true fan-out widget** (one stream to N sinks, needing per-branch delivery state) is still unbuilt.
+
+---
+
 ## 2026-08-16 — `CreditRCStreamRelay`: the long-path variant can finally be pipelined (+ a `SyncFIFO` bug)
 
 **Paths:** `crates/rhdl-fpga/src/rcstream/credit/relay.rs` (new), `crates/rhdl-fpga/src/rcstream/credit/mod.rs`, `crates/rhdl-fpga/src/rcstream/credit/sink.rs` (docs), `crates/rhdl-fpga/tests/rcstream_credit_relay_insertion.rs` (new), `crates/rhdl-fpga/examples/credit_relay.rs` + `doc/credit_relay.md` + `vcd/credit_relay/` (new), `doc/book/src/rcstream/bus.md`, `stream-bus-architecture.md` §11.3.

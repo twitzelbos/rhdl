@@ -3,8 +3,8 @@
 //! [`super::CreditRCStream`] source into an outgoing
 //! [`crate::rcstream::RCStream`] source.
 //!
-//! Buffers incoming items in an internal `SyncFIFO` of depth
-//! `2^FIFO_N`.  Grants credits to the upstream `CreditRCStream`
+//! Buffers incoming items in an internal `SyncFIFO` holding
+//! `2^FIFO_N - 1` items.  Grants credits to the upstream `CreditRCStream`
 //! source as buffer slots free up.
 //!
 //! # Schematic symbol
@@ -38,10 +38,18 @@
 //! # Credit-grant policy
 //!
 //! On reset, `pending_grants` is initialized to
-//! `min(2^FIFO_N, 2^CREDIT_W - 1)` — i.e. the FIFO's slot count,
-//! clipped to whatever fits in the credit-counter width.  This is
-//! the initial credit pool the sink grants the source so the source
-//! can begin sending.
+//! `min(2^FIFO_N - 1, 2^CREDIT_W - 1)` — i.e. the FIFO's **usable**
+//! capacity, clipped to whatever fits in the credit-counter width.
+//! This is the initial credit pool the sink grants the source so the
+//! source can begin sending.
+//!
+//! The `-1` is load-bearing.  `SyncFIFO<_, FIFO_N>` holds
+//! `2^FIFO_N - 1` items, not `2^FIFO_N` — "you cannot fill the FIFO to
+//! 2^N elements".  An earlier version granted `2^FIFO_N`, handing the
+//! source one more token than the buffer could accept; the source spent
+//! it, the write hit a full FIFO, and the item was **silently dropped**.
+//! It only manifests under sustained backpressure, so a downstream that
+//! is always ready never sees it.
 //!
 //! Each cycle:
 //!
@@ -59,10 +67,10 @@
 //!
 //! `CREDIT_W` is the width of both the per-cycle grant signal AND
 //! the sink's internal `pending_grants` counter.  For correctness,
-//! pick `CREDIT_W` so that `2^CREDIT_W - 1 >= 2^FIFO_N` (i.e.
-//! `CREDIT_W >= FIFO_N + 1`); otherwise the sink will under-grant
-//! and the effective buffer depth will be capped at
-//! `2^CREDIT_W - 1` rather than `2^FIFO_N`.
+//! pick `CREDIT_W` so that `2^CREDIT_W - 1 >= 2^FIFO_N - 1` (i.e.
+//! `CREDIT_W >= FIFO_N`); otherwise the sink will under-grant and the
+//! effective buffer depth will be capped at `2^CREDIT_W - 1` rather
+//! than `2^FIFO_N - 1`.
 //!
 //! **`FIFO_N >= 2` is required.**  The sink's buffer is a
 //! [`crate::fifo::synchronous::SyncFIFO`], and that widget panics at
@@ -88,7 +96,7 @@ use crate::rcstream::bus::Item;
 /// `T` is the payload type, `F` is the framing-marker type, `CREDIT_W`
 /// is the per-cycle credit-grant signal width AND internal counter
 /// width, and `FIFO_N` is the log2 of the buffer depth (= buffer
-/// holds `2^FIFO_N` items).  Pick `CREDIT_W >= FIFO_N + 1` so the
+/// holds `2^FIFO_N - 1` items).  Pick `CREDIT_W >= FIFO_N` so the
 /// counter can hold the initial credit pool without truncation.
 #[derive(Clone, Debug, Synchronous, SynchronousDQ)]
 #[rhdl(dq_no_prefix)]
@@ -101,7 +109,7 @@ where
     /// usable capacity per its convention).
     fifo: SyncFIFO<Item<T, F>, FIFO_N>,
     /// Number of credits the sink owes the source but hasn't yet
-    /// granted.  Initialized to `min(2^FIFO_N, 2^CREDIT_W - 1)` on
+    /// granted.  Initialized to `min(2^FIFO_N - 1, 2^CREDIT_W - 1)` on
     /// reset; ticks down by 1 per cycle as we emit grants; ticks up
     /// by 1 per item popped (= slot freed), saturating at
     /// `2^CREDIT_W - 1`.
@@ -115,8 +123,16 @@ where
     rhdl::bits::W<FIFO_N>: BitWidth,
 {
     fn default() -> Self {
-        // Initialize to min(2^FIFO_N, 2^CREDIT_W - 1).
-        let depth: u128 = 1u128 << FIFO_N;
+        // Initialize to min(2^FIFO_N - 1, 2^CREDIT_W - 1).
+        //
+        // NOTE the -1: `SyncFIFO<_, FIFO_N>` holds 2^FIFO_N - 1 items,
+        // not 2^FIFO_N ("you cannot fill the FIFO to 2^N elements").
+        // Granting 2^FIFO_N credits hands the source one more token than
+        // the buffer can accept; the source spends it, the write is
+        // dropped on a full FIFO, and the item is silently lost.  Only
+        // shows up under sustained backpressure, which is why an
+        // always-ready downstream never caught it.
+        let depth: u128 = (1u128 << FIFO_N) - 1;
         let max_in_credit: u128 = if CREDIT_W >= 128 {
             u128::MAX
         } else {

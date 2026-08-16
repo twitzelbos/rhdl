@@ -326,6 +326,86 @@ FIFO with no hint of its cause.
 
 ---
 
+## 11.3.1 — Cross-domain credit: analysed and parked (NOT shipped)
+
+Recorded so it is not re-derived. The follow-up list has long carried
+"cross-domain credit variants — the credit counter at the source uses
+the source's clock; the credit grant from the sink crosses through a
+`Sync1Bit` synchronizer." On investigation that sketch does not close.
+
+**The sketch omits the data path, and that is load-bearing.** It
+specifies how the *grant* crosses. Multi-bit *data* cannot cross clock
+domains by registering it across — it needs a dual-clock FIFO or a full
+handshake. Add the dual-clock FIFO and you have rebuilt
+[§11.5's `RCStreamCdc`](#115--cross-clock-domain-variant-phase-2-shipped);
+at that point the credit accounting duplicates the async FIFO's own
+gray-coded pointer synchronisation, which *is* space accounting under
+another name.
+
+**The motivation does not survive the crossing either.** §11 justifies
+the credit variant by the need to break a combinational sink→source
+`ready` path. `RCStreamCdc`'s `ready` is already registered — it is
+`!full`, and `full` is a registered output of the FIFO's write logic
+with the incoming data not in its cone (documented and tested in §11.5).
+On-chip, the timing problem credit solves is already solved by the
+crossing itself.
+
+**Where it would genuinely earn its place is off-chip** — SerDes, PCIe —
+where a physical layer handles the data crossing via serialisation and
+clock recovery, and credit rides the link because the two ends share no
+memory. That needs a PHY abstraction RHDL does not have, and there is no
+such consumer in the tree.
+
+**Decision:** parked, not rejected. Revisit when an off-chip link
+consumer exists, and at that point design it around the PHY boundary
+rather than around `Sync1Bit`. The effort was redirected to `CreditMux`
+(§11.3.2), which addresses credit's *other* §11 motivation —
+multi-source aggregation — and is not redundant with anything.
+
+---
+
+## 11.3.2 — `CreditMux`: multi-source aggregation (shipped)
+
+§11 gives credit two motivations.  §11.3.1 shows the first (breaking a
+long `ready` path) does not survive a clock crossing.  This is the
+second, which the plan calls *the classical use case*: one sink
+receiving from many sources, where reverse-direction arbitration would
+be expensive.  Unlike cross-domain credit, nothing in the tree already
+provides it — `rcstream` had no arbiter at all.
+
+`rcstream::credit::mux::CreditMux<T, F, CREDIT_W, FIFO_N, M, N>`.
+
+**Decision recorded — per-source credit pools, not a shared one.**  Each
+source gets its own `CreditSink`, hence its own buffer and pool.  A
+shared pool would let a fast or misbehaving source consume the whole
+thing and starve the others; independent pools mean a source can only
+exhaust its own credit, which is the *virtual channel* property §11
+lists.  The cost is `N` buffers, which is the honest price of
+non-interference.
+
+**Decision recorded — round-robin, not priority.**  With strict priority
+a source that always has data starves every lower-ranked source
+indefinitely.  An aggregator's purpose is to merge streams, so
+permanently dropping one is a failure of purpose rather than a tunable
+policy.  The arbiter is work-conserving: idle sources are skipped, not
+waited on.
+
+**Bug found by this work:** `CreditSink` initialised its credit pool to
+`2^FIFO_N`, but `SyncFIFO<_, FIFO_N>` holds `2^FIFO_N - 1` items.  The
+sink issued one more token than its buffer could accept and the extra
+item was **silently dropped**.  Invisible to an always-ready downstream
+— which is what every pre-existing credit test used — and exposed here
+because three sinks sharing one output port each drain a third of the
+time.  Fixed, with a regression test in
+`tests/rcstream_credit_no_loss.rs`.
+
+**Testing convention this establishes:** a flow-control widget tested
+without backpressure is untested.  The whole point of credit accounting
+is what happens when the sink cannot keep up; a permissive sink
+exercises every path except the one that matters.
+
+---
+
 ## 11.4 — Combinators (shipped)
 
 Phases 1.1 through 3 all built *transport*: the bus type, the relay, AXI

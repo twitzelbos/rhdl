@@ -5,6 +5,27 @@
 //! ports.  The FIFO is parameterized by the number of bits in each element.
 //! The depth of the FIFO is 2^N-1 elements.  You cannot fill the FIFO to 2^N elements.
 //!
+//! # `N >= 2` is required
+//!
+//! `N = 1` does not work and fails loudly: the Rust simulator panics
+//! (`assertion failed: rhs <= Self::MASK.raw()`) and the compiler
+//! rejects it (`UnsignedCastWithWidthFailed { value: 2_b128, bits: 1 }`).
+//! Both come from the `almost_full` term in
+//! [`super::write_logic`], which evaluates `write_address + 2` — and the
+//! literal `2` is not representable in `Bits<1>`.  There is no silent
+//! failure mode here; you cannot ship an `N = 1` FIFO that simulates one
+//! way and synthesises another.
+//!
+//! This is a deliberate limit rather than an oversight.  `almost_full`
+//! is meaningless at a capacity of one element (a 1-deep FIFO is either
+//! empty or full), and making the general logic accommodate the
+//! degenerate case costs an extra adder in *every* instantiation,
+//! because RHDL does not constant-fold `(x + 1) + 1` back into `x + 2`.
+//! For buffers that small use
+//! [`crate::stream::stream_to_fifo::StreamToFIFO`], which is
+//! register-based precisely "since the general FIFO logic doesn't work
+//! with such small sizes".
+//!
 //! Here is the schematic symbol for the FIFO
 #![doc = badascii_doc::badascii_formal!("
       +------+SyncFIFO+-----------+     

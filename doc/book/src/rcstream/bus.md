@@ -315,6 +315,34 @@ any depth — but only **free** if the pool covers the lengthened round
 trip. Size `FIFO_N` accordingly. Both halves are checked in
 `crates/rhdl-fpga/tests/rcstream_credit_relay_insertion.rs`.
 
+### Aggregating many sources: `CreditMux`
+
+`credit::mux::CreditMux<T, F, CREDIT_W, FIFO_N, M, N>` merges `N`
+credit-based sources into one `RCStream`. This is credit's *other*
+motivation from the design plan — "one sink receiving from many sources,
+where reverse-direction arbitration would be expensive."
+
+Each source gets its **own** `CreditSink`, so its own buffer and its own
+credit pool. A shared pool would let a fast source consume everything
+and starve the rest; independent pools mean a source can only exhaust
+its own credit, which is the virtual-channel property. The cost is `N`
+buffers — the honest price of non-interference.
+
+Arbitration is **round-robin**, not priority. Under strict priority a
+source that always has data starves every lower-ranked source forever,
+and an aggregator's job is to merge streams, so silently dropping one is
+a failure of purpose rather than a policy choice. The arbiter is
+work-conserving: idle sources are skipped, not waited on.
+
+> **Test your flow control under backpressure.** Building this widget
+> uncovered a silent-data-loss bug in `CreditSink`: it granted
+> `2^FIFO_N` credits while its `SyncFIFO` holds only `2^FIFO_N - 1`
+> items, so the source spent a token the buffer could not honour and the
+> item vanished. It was invisible to every pre-existing credit test
+> because they all used an always-ready downstream, which never lets the
+> buffer fill. A flow-control widget exercised without backpressure is
+> not really exercised at all.
+
 ### Sizing rule
 
 `CREDIT_W` is the width of both the per-cycle grant signal AND the

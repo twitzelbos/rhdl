@@ -82,6 +82,7 @@
 //! lossless for all framing forms — the framing parameter `F` flows
 //! through both translators unchanged.
 
+pub mod mux;
 pub mod relay;
 pub mod sink;
 pub mod source;
@@ -125,6 +126,7 @@ where
 }
 
 // Convenience re-exports.
+pub use mux::CreditMux;
 pub use relay::CreditRCStreamRelay;
 pub use sink::CreditSink;
 pub use source::CreditSource;
