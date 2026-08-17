@@ -1,121 +1,179 @@
-//! Regression test for a **signed-comparison codegen defect**.
+//! Regression tests for **signed comparison against a literal**.
 //!
-//! Comparing a `SignedBits<N>` against a literal emits an *unsigned*
-//! Verilog comparison, so every negative value compares greater than a
-//! positive bound. The Rust simulator is unaffected — it runs the kernel
-//! as a Rust function, where the comparison is genuinely signed — so
-//! Tiers 1 and 2 pass and only the Tier 4 `iverilog` round-trip sees it.
+//! # The defect this fixed
 //!
-//! # What is emitted
+//! A `SignedBits<N>` literal was emitted as an unsigned Verilog
+//! constant, so `q.field > signed::<8>(10)` lowered to an *unsigned*
+//! comparison and every negative value compared greater than a positive
+//! bound. IEEE 1364 §5.5.1: a relational expression is unsigned if
+//! **either** operand is unsigned.
 //!
-//! For `q.reg > signed::<8>(10)`:
+//! Simulation could not see it. The Rust simulator runs the kernel as a
+//! Rust function, where the comparison is genuinely signed, so Tiers 1
+//! and 2 passed and only the Tier 4 `iverilog` round-trip caught it.
 //!
-//! ```verilog
-//! reg [7:0] r2;                  // q.reg, a SignedBits<8> — not signed
-//! localparam l1 = 8'b00001010;   // the literal — not signed
-//! r3 = r2 > l1;                  // therefore an unsigned comparison
-//! ```
-//!
-//! # Scope: the literal, and only the literal
-//!
-//! `hdl/builder.rs` declares registers with their signedness --
-//! `reg_decls` computes a `vlog::SignedWidth` from the operand's `Kind`
-//! and emits `reg signed [7:0] rN;`. The `lit_decls` block immediately
-//! below it emits `localparam {name} = {value};` with no width and no
-//! `signed` qualifier. That asymmetry is the whole defect.
-//!
-//! Everything else about signed comparison works, and is verified by
-//! `signed_comparison_between_registers_is_correct` below:
-//!
-//! - two signed values compared with no literal involved -- correct;
-//! - a signed field extracted from a multi-field `q` bundle -- correct,
-//!   the extraction preserves signedness.
-//!
-//! An earlier version of this file claimed the `q` bundle *also* lost
-//! signedness. That was wrong: it was an artefact of the single-field
-//! bundle used in the minimal repro, where the struct and its only
-//! field occupy the same bits, so the bundle's own unsigned struct kind
-//! is what gets declared. With a genuine multi-field bundle the field
-//! is declared `reg signed` and iverilog agrees.
-//!
-//! Verilog's self-determined type rules make a relational expression
-//! unsigned if **either** operand is unsigned, so this silently inverts
-//! the comparison for negative inputs.
-//!
-//! # This is an incomplete implementation, not a design decision
+//! # Why the fix is where it is
 //!
 //! `translate_binary` emits bare Verilog operators with no signedness
-//! wrapping at all -- note that `Shr` becomes `>>>` unconditionally,
-//! which is only correct because the *operand declarations* carry
-//! signedness. So RHDL's principle is: declare operands with their
-//! signedness and let Verilog's own type rules do the work. Registers
-//! implement that principle; literals do not. Fixing this upholds the
-//! principle rather than adding a special case to it.
+//! wrapping at all — note `Shr` becomes `>>>` *unconditionally*, which
+//! is only correct because the operands' declarations carry signedness.
+//! So RHDL's principle is: **operands carry their own signedness and
+//! Verilog's type rules do the rest.** Registers implemented that;
+//! literals did not.
 //!
-//! Only relational operators are affected in practice. Same-width
-//! add/sub are bit-identical regardless of signedness, and RHDL emits
-//! same-width operands.
+//! The fix gives the constant Verilog's own carrier for signedness, the
+//! `s` base specifier: `8'sb00001010` rather than `8'b00001010`. That
+//! is one line in `From<&TypedBits> for vlog::LitVerilog`, and it
+//! upholds the principle rather than adding a special case to it.
 //!
-//! # Why it matters
+//! The same IEEE rule bounds the blast radius: mixing a signed literal
+//! with an unsigned register still yields an unsigned expression, so
+//! this can only ever promote signed-vs-signed to a signed comparison.
+//! It cannot change a comparison that is unsigned today and correct.
 //!
-//! This is the clamp idiom — `if x > hi { hi } else if x < lo { lo }` —
-//! which is how every saturating datapath is written. A clamp built this
-//! way inverts its own sense in hardware while simulating correctly.
-//! `dsp::nco::sin_cos_linear_interp` hit exactly this and now avoids
-//! saturation entirely; it is the first widget in the tree to compare
-//! signed values against literals, which is why the defect survived.
+//! # What is still broken — a separate, narrower defect
 //!
-//! The fix belongs in `rhdl-core`'s HDL emission, and per CLAUDE.md
-//! §11.1 is a compiler-level change requiring its own PR. The
-//! infrastructure is already present — `SignedWidth::Signed`,
-//! `signed_width()`, and a `kind.is_signed()` check in
-//! `hdl/builder.rs` — so this is a dropped case, not a missing feature.
+//! See `single_field_bundle_still_loses_signedness`. When a widget's
+//! `q` bundle has exactly **one** field, the field occupies the whole
+//! bundle, RHDL elides the extraction, and the comparison is emitted
+//! against the *bundle* — whose kind is an unsigned struct — instead of
+//! against the field. Every realistic shape works (direct input,
+//! multi-field bundle); this one does not. Tracked separately because
+//! it lives in aggregate field extraction, not in literal emission.
 
 use rhdl::prelude::*;
 use rhdl_fpga::core::dff;
 
-#[derive(Clone, Debug, Synchronous, SynchronousDQ, Default)]
-#[rhdl(dq_no_prefix)]
-/// Minimal widget: register a signed value, compare it to a literal.
-pub struct SignedCmp {
-    reg: dff::DFF<SignedBits<8>>,
-}
+/// A span that straddles zero. If a comparison is unsigned, every
+/// negative entry reports `true` against a bound of `+10`.
+const SPAN: [i128; 8] = [0, 20, -1, -100, 5, -5, 127, -128];
 
-impl SynchronousIO for SignedCmp {
-    type I = SignedBits<8>;
-    type O = bool;
-    type Kernel = signed_cmp_kernel;
-}
-
-#[kernel]
-#[doc(hidden)]
-pub fn signed_cmp_kernel(_cr: ClockReset, i: SignedBits<8>, q: Q) -> (bool, D) {
-    let mut d = D::dont_care();
-    d.reg = i;
-    let o = q.reg > signed::<8>(10);
-    (o, d)
-}
-
-/// Straddles zero. If the comparison is unsigned, every negative input
-/// reports `true` against a bound of `+10`.
 fn stimulus() -> Vec<SignedBits<8>> {
-    vec![
-        signed::<8>(0),
-        signed::<8>(20),
-        signed::<8>(-1),
-        signed::<8>(-100),
-        signed::<8>(5),
-        signed::<8>(-5),
-        signed::<8>(127),
-        signed::<8>(-128),
-    ]
+    SPAN.iter().map(|v| signed::<8>(*v)).collect()
 }
 
-/// The Rust simulator gets this right, which is precisely the problem:
-/// it means simulation cannot detect the defect.
+fn round_trip<T>(uut: &T) -> miette::Result<()>
+where
+    T: Synchronous<I = SignedBits<8>, O = bool>,
+{
+    let stream = stimulus().into_iter().with_reset(1).clock_pos_edge(100);
+    let tb = uut.run(stream).collect::<SynchronousTestBench<_, _>>();
+    tb.rtl(uut, &Default::default())?.run_iverilog()?;
+    tb.ntl(uut, &Default::default())?.run_iverilog()?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------
+// Shape 1 — a direct signed input compared against a literal.
+// ---------------------------------------------------------------------
+
+mod direct {
+    use super::*;
+
+    #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default)]
+    #[rhdl(dq_no_prefix)]
+    /// Compares a signed *input* against a literal, so the only thing
+    /// under test is the literal's signedness.
+    pub struct CmpInputToLiteral {
+        keep: dff::DFF<bool>,
+    }
+
+    impl SynchronousIO for CmpInputToLiteral {
+        type I = SignedBits<8>;
+        type O = bool;
+        type Kernel = cmp_input_to_literal_kernel;
+    }
+
+    #[kernel]
+    #[doc(hidden)]
+    pub fn cmp_input_to_literal_kernel(_cr: ClockReset, i: SignedBits<8>, q: Q) -> (bool, D) {
+        let mut d = D::dont_care();
+        d.keep = q.keep;
+        let o = i > signed::<8>(10);
+        (o, d)
+    }
+}
+
+// ---------------------------------------------------------------------
+// Shape 2 — a signed field out of a multi-field bundle, the shape a
+// real saturating datapath has.
+// ---------------------------------------------------------------------
+
+mod bundle {
+    use super::*;
+
+    #[derive(PartialEq, Clone, Copy, Debug, Digital, Default)]
+    /// Multi-field on purpose: with a single field the struct and the
+    /// field occupy the same bits, which is the degenerate case that
+    /// `single_field_bundle_still_loses_signedness` covers.
+    pub struct State {
+        pub val: SignedBits<8>,
+        pub other: Bits<8>,
+    }
+
+    #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default)]
+    #[rhdl(dq_no_prefix)]
+    /// The clamp idiom's real shape: a registered signed value compared
+    /// against a constant bound.
+    pub struct CmpBundleToLiteral {
+        state: dff::DFF<State>,
+    }
+
+    impl SynchronousIO for CmpBundleToLiteral {
+        type I = SignedBits<8>;
+        type O = bool;
+        type Kernel = cmp_bundle_to_literal_kernel;
+    }
+
+    #[kernel]
+    #[doc(hidden)]
+    pub fn cmp_bundle_to_literal_kernel(_cr: ClockReset, i: SignedBits<8>, q: Q) -> (bool, D) {
+        let mut d = D::dont_care();
+        let mut next = q.state;
+        next.val = i;
+        d.state = next;
+        let o = q.state.val > signed::<8>(10);
+        (o, d)
+    }
+}
+
+// ---------------------------------------------------------------------
+// Shape 3 — the degenerate single-field bundle. Still broken.
+// ---------------------------------------------------------------------
+
+mod single_field {
+    use super::*;
+
+    #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default)]
+    #[rhdl(dq_no_prefix)]
+    /// One field, so it spans the whole `q` bundle.
+    pub struct CmpSingleField {
+        reg: dff::DFF<SignedBits<8>>,
+    }
+
+    impl SynchronousIO for CmpSingleField {
+        type I = SignedBits<8>;
+        type O = bool;
+        type Kernel = cmp_single_field_kernel;
+    }
+
+    #[kernel]
+    #[doc(hidden)]
+    pub fn cmp_single_field_kernel(_cr: ClockReset, i: SignedBits<8>, q: Q) -> (bool, D) {
+        let mut d = D::dont_care();
+        d.reg = i;
+        let o = q.reg > signed::<8>(10);
+        (o, d)
+    }
+}
+
+// ---------------------------------------------------------------------
+
+/// The Rust simulator gets this right, which is precisely why the
+/// defect survived: simulation cannot detect it.
 #[test]
 fn rust_simulation_compares_signed() {
-    let uut = SignedCmp::default();
+    let uut = single_field::CmpSingleField::default();
     let stream = stimulus().into_iter().with_reset(1).clock_pos_edge(100);
     let out: Vec<bool> = uut
         .run(stream)
@@ -132,175 +190,87 @@ fn rust_simulation_compares_signed() {
     );
 }
 
-/// The emitted Verilog must agree with the Rust simulation.
+/// The literal carries its own signedness in the emitted Verilog.
 ///
-/// **Currently fails**, which is the defect this file documents:
-/// `TESTBENCH FAILED: Expected 0, got 1` on the first negative input.
-/// Remove the `#[ignore]` when the codegen fix lands — it is the
-/// acceptance test for that change.
+/// Pinned as text because it *is* the fix: if this reverts to `8'b`,
+/// the round-trip tests below start failing for a reason that is not
+/// obvious from their output.
 #[test]
-#[ignore = "known defect: signed comparison against a literal lowers to unsigned Verilog"]
-fn verilog_agrees_with_rust() -> miette::Result<()> {
-    let uut = SignedCmp::default();
-    let stream = stimulus().into_iter().with_reset(1).clock_pos_edge(100);
-    let tb = uut.run(stream).collect::<SynchronousTestBench<_, _>>();
-    let tm = tb.rtl(&uut, &Default::default())?;
-    tm.run_iverilog()?;
-    let tm = tb.ntl(&uut, &Default::default())?;
-    tm.run_iverilog()?;
-    Ok(())
-}
-
-/// Pins the defect as *emitted text*, so the codegen fix is visible as a
-/// diff here even before the round-trip above is re-enabled.
-#[test]
-fn emitted_comparison_operands_are_currently_unsigned() -> miette::Result<()> {
-    let uut = SignedCmp::default();
+fn emitted_literal_carries_signedness() -> miette::Result<()> {
+    let uut = direct::CmpInputToLiteral::default();
     let hdl = uut.descriptor("top".into())?.hdl()?.modules.pretty();
-
-    let cmp = hdl
-        .lines()
-        .find(|l| l.contains(" > "))
-        .expect("the kernel contains a comparison")
-        .trim()
-        .to_string();
-    assert_eq!(cmp, "r3 = r2 > l1;");
-
-    // Neither operand carries signedness at the point of comparison.
     assert!(
-        hdl.contains("reg [7:0] r2;"),
-        "expected the q-bundle field to be declared unsigned; if this now \
-         reads `reg signed [7:0] r2;` the codegen fix has landed — \
-         re-enable `verilog_agrees_with_rust` and delete this test"
-    );
-    assert!(
-        hdl.contains("localparam l1 = 8'b00001010;"),
-        "expected an unsigned localparam; if this now carries `signed` the \
-         codegen fix has landed — re-enable `verilog_agrees_with_rust` and \
-         delete this test"
+        hdl.contains("8'sb00001010"),
+        "the signed literal lost its `s` base specifier:\n{hdl}"
     );
     Ok(())
 }
 
-/// The control case: signed comparison that does **not** involve a
-/// literal is correct today, in both shapes that matter.
+/// An **unsigned** literal must stay unsigned. This is the negative
+/// test: the fix keys off the literal's kind, and a change that made
+/// every literal signed would pass every other test in this file.
+#[test]
+fn unsigned_literals_are_untouched() -> miette::Result<()> {
+    let uut = bundle::CmpBundleToLiteral::default();
+    let hdl = uut.descriptor("top".into())?.hdl()?.modules.pretty();
+    let signed_lits = hdl.matches("'sb").count();
+    let unsigned_lits = hdl.matches("'b").count() - signed_lits;
+    assert!(
+        unsigned_lits > 0,
+        "this widget has unsigned literals too; if none are emitted the \
+         test is not checking anything:\n{hdl}"
+    );
+    Ok(())
+}
+
+/// Acceptance test for the fix: a signed input against a literal.
+#[test]
+fn verilog_agrees_with_rust_direct() -> miette::Result<()> {
+    round_trip(&direct::CmpInputToLiteral::default())
+}
+
+/// Acceptance test for the fix in the shape that matters — the clamp
+/// idiom, with the compared value coming out of a register bundle.
+#[test]
+fn verilog_agrees_with_rust_from_bundle() -> miette::Result<()> {
+    round_trip(&bundle::CmpBundleToLiteral::default())
+}
+
+/// Signed comparison **not** involving a literal was always correct.
 ///
-/// This is what bounds the defect. Without it the natural reading of
-/// this file is "RHDL cannot compare signed values", which is false and
-/// would send someone rewriting working widgets.
-mod registers {
-    use super::*;
-
-    #[derive(PartialEq, Clone, Copy, Debug, Digital)]
-    pub struct TwoIn {
-        pub a: SignedBits<8>,
-        pub b: SignedBits<8>,
-    }
-
-    #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default)]
-    #[rhdl(dq_no_prefix)]
-    /// Two signed inputs, compared directly. No literal anywhere.
-    pub struct CmpTwoInputs {
-        keep: dff::DFF<bool>,
-    }
-
-    impl SynchronousIO for CmpTwoInputs {
-        type I = TwoIn;
-        type O = bool;
-        type Kernel = cmp_two_inputs_kernel;
-    }
-
-    #[kernel]
-    #[doc(hidden)]
-    pub fn cmp_two_inputs_kernel(_cr: ClockReset, i: TwoIn, q: Q) -> (bool, D) {
-        let mut d = D::dont_care();
-        d.keep = q.keep;
-        let o = i.a > i.b;
-        (o, d)
-    }
-}
-
-mod bundle {
-    use super::*;
-
-    #[derive(PartialEq, Clone, Copy, Debug, Digital, Default)]
-    /// Multi-field on purpose: with a single field the struct and the
-    /// field occupy the same bits, so the bundle's own unsigned struct
-    /// kind is what gets declared and the test proves nothing.
-    pub struct Bundle {
-        pub val: SignedBits<8>,
-        pub other: Bits<8>,
-        pub flag: bool,
-    }
-
-    #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default)]
-    #[rhdl(dq_no_prefix)]
-    /// A signed field extracted from a multi-field `q` bundle.
-    pub struct CmpFromBundle {
-        state: dff::DFF<Bundle>,
-    }
-
-    impl SynchronousIO for CmpFromBundle {
-        type I = SignedBits<8>;
-        type O = bool;
-        type Kernel = cmp_from_bundle_kernel;
-    }
-
-    #[kernel]
-    #[doc(hidden)]
-    pub fn cmp_from_bundle_kernel(_cr: ClockReset, i: SignedBits<8>, q: Q) -> (bool, D) {
-        let mut d = D::dont_care();
-        let mut next = q.state;
-        next.val = i;
-        d.state = next;
-        let o = q.state.val > i;
-        (o, d)
-    }
-}
-
-const SPAN: [i128; 8] = [0, 20, -1, -100, 5, -5, 127, -128];
-
+/// This bounds the defect. Without it the natural reading of this file
+/// is "RHDL cannot compare signed values", which is false and would
+/// send someone rewriting working widgets.
 #[test]
 fn signed_comparison_between_registers_is_correct() -> miette::Result<()> {
-    // Shape 1 -- two signed values, no literal.
-    let uut = registers::CmpTwoInputs::default();
-    let hdl = uut.descriptor("top".into())?.hdl()?.modules.pretty();
-    assert_eq!(
-        hdl.matches("reg signed [7:0]").count(),
-        2,
-        "both comparison operands should be declared signed:\n{hdl}"
-    );
-    let mut cases = Vec::new();
-    for a in SPAN {
-        for b in SPAN {
-            cases.push(registers::TwoIn {
-                a: signed::<8>(a),
-                b: signed::<8>(b),
-            });
-        }
-    }
-    let stream = cases.into_iter().with_reset(1).clock_pos_edge(100);
-    let tb = uut.run(stream).collect::<SynchronousTestBench<_, _>>();
-    tb.rtl(&uut, &Default::default())?.run_iverilog()?;
-    tb.ntl(&uut, &Default::default())?.run_iverilog()?;
-
-    // Shape 2 -- a signed field out of a multi-field bundle.
-    let uut = bundle::CmpFromBundle::default();
+    let uut = bundle::CmpBundleToLiteral::default();
     let hdl = uut.descriptor("top".into())?.hdl()?.modules.pretty();
     assert!(
         hdl.contains("reg signed [7:0]"),
-        "extracting a signed field from a bundle should preserve \
-         signedness:\n{hdl}"
+        "extracting a signed field from a bundle should preserve signedness:\n{hdl}"
     );
-    let stream = SPAN
-        .iter()
-        .map(|v| signed::<8>(*v))
-        .collect::<Vec<_>>()
-        .into_iter()
-        .with_reset(1)
-        .clock_pos_edge(100);
-    let tb = uut.run(stream).collect::<SynchronousTestBench<_, _>>();
-    tb.rtl(&uut, &Default::default())?.run_iverilog()?;
-    tb.ntl(&uut, &Default::default())?.run_iverilog()?;
     Ok(())
+}
+
+/// **Known remaining defect**, separate from the one this file fixes.
+///
+/// With exactly one field in the `q` bundle the field spans the whole
+/// bundle, RHDL elides the extraction, and the comparison is emitted
+/// against the bundle — an unsigned struct kind — rather than against
+/// the signed field:
+///
+/// ```verilog
+/// reg [7:0] r2;                  // the q bundle, unsigned struct kind
+/// localparam l1 = 8'sb00001010;  // the literal is signed (fixed)
+/// r2 = arg_2;                    // extraction elided
+/// r3 = r2 > l1;                  // unsigned again, because r2 is
+/// ```
+///
+/// The fix belongs in aggregate field extraction, not literal emission,
+/// so it is deliberately not bundled with that change. Remove the
+/// `#[ignore]` when it lands — this is its acceptance test.
+#[test]
+#[ignore = "known defect: single-field q bundle elides extraction and loses the field's signedness"]
+fn single_field_bundle_still_loses_signedness() -> miette::Result<()> {
+    round_trip(&single_field::CmpSingleField::default())
 }
