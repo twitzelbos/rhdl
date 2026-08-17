@@ -463,15 +463,20 @@ mod tests {
         let c_rng = a_rng.clone().zip(b_rng.clone());
         let a_rng = stalling(a_rng, 0.23);
         let b_rng = stalling(b_rng, 0.15);
+        let (sink, delivered) = SinkFromFn::new_from_iter_counted(c_rng, 0.2);
         let uut = TestFixture {
             a_source: SourceFromFn::new(a_rng),
             b_source: SourceFromFn::new(b_rng),
             zip: Zip::default(),
-            sink: SinkFromFn::new_from_iter(c_rng, 0.2),
+            sink,
         };
         // Run a few samples through
         let input = repeat_n((), 10_000).with_reset(1).clock_pos_edge(100);
         uut.run(input).for_each(drop);
+        // The pair-equality checks above live inside the sink's
+        // `Some`-guard, so they fire only on delivery. Without this
+        // count, a `Zip` that emitted nothing would pass.
+        delivered.assert_at_least(100);
         Ok(())
     }
 }

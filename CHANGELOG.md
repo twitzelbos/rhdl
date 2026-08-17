@@ -31,6 +31,42 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-16 — Sweep for vacuous assertions: `AcceptCount`, and eight tests that proved nothing
+
+**Paths:** `crates/rhdl-fpga/src/stream/testing/sink_from_fn.rs` (new `AcceptCount`), `stream/{zip,xfer,fifo_to_stream}.rs`, `axi4lite/stream/{rhdl_to_axi,axi_to_rhdl}.rs`, `axi4lite/core/testing/{read,write}.rs`, `axi4lite/register/testing/{single_streaming_writes,axi_adder}.rs`.
+
+**Why this, why now:** the previous entry found `stream::pipe_wrapper` shipping completely dead — zero items delivered, behind a green test — because its only assertions sat inside `if let Some(data) = v.accepted`. A widget that produces nothing runs zero assertions and passes. That is a *shape*, not a one-off, and it was the obvious next question: how many other tests prove nothing?
+
+**Answer: eight, of which two were the only coverage their widget had.**
+
+**What was done:**
+
+- **`SinkFromFn::new_from_iter_counted` / `new_from_iter_counted_with_seed`** return an `AcceptCount` alongside the sink — a shared counter of items actually accepted. `new_from_iter` now delegates to it, so behaviour is unchanged for existing callers. `AcceptCount::record` covers hand-written `SinkFromFn::new` closures, and `assert_at_least(n)` carries an error message explaining the failure mode rather than just a number.
+- **Converted every `new_from_iter` call site** to assert a delivery count: `stream::zip`, `stream::xfer`, both `axi4lite::stream` translators, and both `axi4lite::core::testing` controller/endpoint fixtures.
+- **Two tests had *no* unguarded assertion anywhere in their file**, so a dead widget would have passed with nothing to catch it: `axi4lite::register::testing::axi_adder::test_bank_works` and `stream::fifo_to_stream::test_operation`. Both now count the comparisons that actually ran.
+- **`axi4lite::register::testing::single_streaming_writes::synth_works` asserted nothing at all** — it ran the fixture and dumped a VCD. Its only check was the acceptor's `assert_eq!(res, Ok(()))`, inside a guard. It now asserts a write-ack count.
+
+**Result: no further dead widgets.** `pipe_wrapper` remains the only one. That is a negative result worth stating plainly — but it is a *tested* negative, not an assumed one: every converted test was run and every count came back non-zero.
+
+**Design decisions:**
+
+- **The counter is a type, not a bare `Arc<AtomicUsize>`.** `AcceptCount` hides the atomics, gives `record`/`get`/`assert_at_least`, and makes the intent greppable. The failure message is the point: a bare `assert!(n > 0)` tells a future reader nothing about why the count exists.
+- **The sweep script was not committed as a test.** It is a heuristic that flags any test whose every assertion is guarded, and eight legitimate cases remain — each a widget with a non-vacuous *companion* test elsewhere in its file. Committing it would require an allowlist of eight that rots. The rule went into CLAUDE.md §5 instead, where it is a review obligation rather than a brittle gate.
+
+**Surprises and gotchas:**
+
+- **The risk is per-widget, not per-test.** Ten tests were flagged; eight were harmless because another test in the same file asserts a full sequence. The two that mattered were the ones where the guarded assertion was the *only* one in the file. A sweep that reports per-test findings without that second question produces mostly noise.
+- **The verification is a two-sided mutation.** Making `zip` emit nothing (`data: None`) fails the new count assertion with *"sink accepted 0 items, expected at least 100"*; removing the count assertion under the same mutation makes it **pass**. That pair is the proof — it reproduces `pipe_wrapper`'s exact failure mode on a second widget and shows the old test could not have caught it.
+
+**Validation:** all converted tests pass with non-zero counts. Two-sided mutation on `zip` as above. Full `rhdl-fpga` suite green.
+
+**Follow-ups:**
+
+- `single_streaming_writes` still uses `rand::random_bool(0.85)` for its sink cadence — nondeterministic, same class as the remaining `utils::stalling` callers.
+- Eight tests remain where every assertion is guarded. Each is currently covered by a companion, but that coupling is invisible from the test itself; a widget losing its companion would silently become untested.
+
+---
+
 ## 2026-08-16 — Tier 3/4/5 across all 12 `stream::` widgets — and the two dead widgets it found
 
 **Paths:** all 12 files under `crates/rhdl-fpga/src/stream/` (excluding `testing/`), 12 new VCD digests under `vcd/`.
