@@ -150,6 +150,31 @@
 //! bench measurement at a few frequencies can look far better than the
 //! specification and still be consistent with it.
 //!
+//! ## Linear interpolation vs CORDIC: measured, and not close
+//!
+//! "Hybrid" covers several circuits. The two candidates here share a
+//! coarse table and differ only in the fine rotator. Measured on the
+//! exact analysis, same word, same band:
+//!
+//! | coarse/fine | rotator | worst dBc | cost | latency |
+//! |---|---|---|---|---|
+//! | 10/12 | **linear (Taylor)** | **−116.1** | **2 mult** | **1 cyc** |
+//! | 10/12 | CORDIC 4 stages | −77.4 | 8 add | 4 cyc |
+//! | 10/12 | CORDIC 8 stages | −103.6 | 16 add | 8 cyc |
+//! | 8/10 | linear | −91.3 | 2 mult | 1 cyc |
+//! | 8/10 | CORDIC 8 stages | −91.5 | 16 add | 8 cyc |
+//!
+//! Linear interpolation is exact to **second order** in the remainder;
+//! CORDIC converges at roughly one bit per stage. Matching a
+//! second-order method by linear convergence takes many stages, and
+//! each costs a cycle.
+//!
+//! **Decision: linear interpolation, no parameterised rotator.** A
+//! pluggable fine stage was considered and rejected — CORDIC is worse
+//! on spurs, worse on latency, and cheaper only where DSP slices are
+//! scarce, which on this device they are not. Revisit only if the
+//! multipliers are needed elsewhere.
+//!
 //! ## Why the sweep was required
 
 //!
@@ -168,4 +193,4 @@
 //! the more dangerous mistake, because it looks like rigour.
 pub mod model;
 pub mod phase_accumulator;
-pub mod sin_cos_hybrid;
+pub mod sin_cos_linear_interp;

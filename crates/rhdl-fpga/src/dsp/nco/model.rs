@@ -93,7 +93,11 @@ impl DdsModel {
             self.table[(n - 1 - idx) as usize]
         };
         // Upper half-cycle is negative.
-        if quadrant >= 2 { -mag } else { mag }
+        if quadrant >= 2 {
+            -mag
+        } else {
+            mag
+        }
     }
 
     /// Advance one sample, returning `(sin, cos)`.
@@ -143,7 +147,7 @@ pub struct SpurReport {
 }
 
 /// In-place iterative radix-2 FFT.
-fn fft(re: &mut [f64], im: &mut [f64]) {
+pub(crate) fn fft(re: &mut [f64], im: &mut [f64]) {
     let n = re.len();
     assert!(
         n.is_power_of_two(),
@@ -202,7 +206,7 @@ fn fft(re: &mut [f64], im: &mut [f64]) {
 ///
 /// At −180 dB the window is far below any spur worth finding, so the
 /// measurement floor is set by the device under test.
-fn blackman_harris(n: usize) -> Vec<f64> {
+pub(crate) fn blackman_harris(n: usize) -> Vec<f64> {
     const A: [f64; 7] = [
         0.271_051_400_693_42,
         0.433_297_939_234_48,
@@ -543,6 +547,24 @@ pub enum PhaseToAmp {
         prod_w: u32,
         out_w: u32,
     },
+    /// Coarse table plus **CORDIC micro-rotation** of the fine
+    /// remainder — the other thing "hybrid" can mean.
+    ///
+    /// Starts the CORDIC at iteration `i0 = coarse_w - 2`, chosen so
+    /// `atan(2^-i0)` just covers the largest fine remainder. Because
+    /// the iterations all have large `i`, the CORDIC gain
+    /// `∏ sqrt(1 + 2^-2i)` is within a few LSB of unity, so no gain
+    /// compensation stage is needed — which is the main attraction of
+    /// micro-rotation over a full CORDIC.
+    ///
+    /// Trades the linear variant's 2 multipliers for `2·stages` adders
+    /// and shifts. Worth it only on parts where DSP slices are scarce
+    /// or already committed.
+    LutCordic {
+        coarse_w: u32,
+        fine_w: u32,
+        stages: u32,
+    },
 }
 
 impl PhaseToAmp {
@@ -552,6 +574,9 @@ impl PhaseToAmp {
             PhaseToAmp::Lut { addr_w } => addr_w,
             PhaseToAmp::Hybrid { coarse_w, fine_w } => coarse_w + fine_w,
             PhaseToAmp::HybridQ {
+                coarse_w, fine_w, ..
+            } => coarse_w + fine_w,
+            PhaseToAmp::LutCordic {
                 coarse_w, fine_w, ..
             } => coarse_w + fine_w,
         }
@@ -606,6 +631,35 @@ impl PhaseToAmp {
                 // Sum: quantised to the output width.
                 let qo = ((1i64 << (out_w - 1)) - 1) as f64;
                 ((sin_t + prod) * qo).round() / qo
+            }
+            PhaseToAmp::LutCordic {
+                coarse_w,
+                fine_w,
+                stages,
+            } => {
+                let used = coarse_w + fine_w;
+                let t = phase >> (phase_w - used);
+                let coarse = t >> fine_w;
+                let fine = t & ((1u64 << fine_w) - 1);
+                let theta = 2.0 * PI * (coarse as f64 + 0.5) / (1u64 << coarse_w) as f64;
+                let step = 2.0 * PI / (1u64 << coarse_w) as f64;
+                let mut z = (fine as f64 / (1u64 << fine_w) as f64 - 0.5) * step;
+
+                // Micro-rotation: start where atan(2^-i) just covers the
+                // largest possible remainder.
+                let i0 = coarse_w.saturating_sub(2);
+                let (mut x, mut y) = (theta.cos(), theta.sin());
+                let mut gain = 1.0f64;
+                for i in i0..(i0 + stages) {
+                    let p = 2f64.powi(-(i as i32));
+                    let d = if z >= 0.0 { 1.0 } else { -1.0 };
+                    let (nx, ny) = (x - d * y * p, y + d * x * p);
+                    x = nx;
+                    y = ny;
+                    z -= d * p.atan();
+                    gain *= (1.0 + p * p).sqrt();
+                }
+                y / gain
             }
         };
         actual - ideal
@@ -945,6 +999,44 @@ mod sweep_report {
                     best
                 );
             }
+        }
+    }
+
+    /// **Linear interpolation vs CORDIC micro-rotation.**
+    ///
+    /// Same coarse table, same fine remainder — only the rotator
+    /// differs. This decides whether a parameterised fine stage is
+    /// worth building at all.
+    #[test]
+    #[ignore]
+    fn linear_vs_cordic() {
+        let phase_w = 26u32;
+        let word = (1u64 << 18) | (1u64 << 5);
+        println!("\n  coarse fine  rotator            worst dBc   cost");
+        for (coarse, fine) in [(8u32, 10u32), (10, 12)] {
+            let lin = PhaseToAmp::Hybrid {
+                coarse_w: coarse,
+                fine_w: fine,
+            };
+            if let Some(l) = exact_spur_spectrum_for(lin, phase_w, word, 26) {
+                let w = l.iter().map(|x| x.dbc).fold(f64::NEG_INFINITY, f64::max);
+                println!("  {coarse:>6} {fine:>4}  linear (Taylor)    {w:>9.1}   2 mult");
+            }
+            for stages in [2u32, 3, 4, 6, 8] {
+                let cor = PhaseToAmp::LutCordic {
+                    coarse_w: coarse,
+                    fine_w: fine,
+                    stages,
+                };
+                if let Some(l) = exact_spur_spectrum_for(cor, phase_w, word, 26) {
+                    let w = l.iter().map(|x| x.dbc).fold(f64::NEG_INFINITY, f64::max);
+                    println!(
+                        "  {coarse:>6} {fine:>4}  cordic {stages} stages    {w:>9.1}   {} add",
+                        2 * stages
+                    );
+                }
+            }
+            println!();
         }
     }
 
