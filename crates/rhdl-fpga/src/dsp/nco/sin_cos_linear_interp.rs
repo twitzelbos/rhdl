@@ -28,6 +28,37 @@
 //! cos(θ+δ) ≈ cos θ − sin θ · δ
 //! ```
 //!
+//! Here is the schematic symbol
+#![doc = badascii_doc::badascii_formal!(r"
+      +-+SinCosLinearInterp+-+
+      |                      | [18]
+ [22] |                   sin+----->
++---->+ phase                | [18]
+      |                   cos+----->
+      +----------------------+
+")]
+//!
+//! # Internals
+//!
+//! The phase splits three ways. The top two bits pick the quadrant, the
+//! next eight address the table, and the low twelve are the remainder
+//! the rotation works on. Quadrant and remainder are delayed by one
+//! cycle so they meet the registered table output that belongs to them.
+#![doc = badascii_doc::badascii!(r"
+  phase[21:20]      +-----------+
+  quadrant  +------>| address   | sin_addr  +----------+
+  phase[19:12]      | mirror on +---------->| quarter  | s0
+  index     +------>| odd, cos  | cos_addr  | wave     | c0
+                    | a quarter +---------->| BRAM x2  +------+
+                    | turn on   |           +----------+      |
+                    +-----------+                             v
+  phase[11:0]       +-----------+ quadrant  +----------------+
+  fine      +------>|    DFF    +---------->| sign flip, then| sin
+                    |  (delay)  | fine      | rotate by delta+----->
+                    |           +---------->|                | cos
+                    +-----------+           +----------------+----->
+")]
+//!
 //! # Why this rather than a bigger table
 //!
 //! Interpolation attacks the truncation error instead of merely
@@ -129,6 +160,15 @@
 //! The table read is registered: **data latency is one cycle**, and
 //! there are no control inputs. That figure belongs in the scheduler's
 //! arithmetic.
+//!
+//!# Example
+//!
+//!```
+#![doc = include_str!("../../../examples/sin_cos_linear_interp.rs")]
+//!```
+//!
+//! The trace below demonstrates the result.
+#![doc = include_str!("../../../doc/sin_cos_linear_interp.md")]
 
 use rhdl::prelude::*;
 
@@ -152,11 +192,15 @@ const DELTA_K: i128 = 6434;
 
 /// Table amplitude: **one LSB below** the 18-bit signed maximum.
 ///
+/// Public because the headroom is part of the widget's contract, not an
+/// implementation detail: anything reasoning about the output range
+/// needs it.
+///
 /// That single LSB of headroom is what makes the interpolated sum
 /// unable to leave the output range — see the saturation discussion in
 /// the module docs, and `interpolated_sum_never_leaves_the_range`,
 /// which proves it exhaustively over all 2²² phases.
-const TABLE_SCALE: i128 = (1 << (AMP_W - 1)) - 2;
+pub const TABLE_SCALE: i128 = (1 << (AMP_W - 1)) - 2;
 
 /// Quadrature phase-to-amplitude: coarse quarter-wave table plus
 /// first-order fine rotation.

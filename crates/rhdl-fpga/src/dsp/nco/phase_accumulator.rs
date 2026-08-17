@@ -35,7 +35,7 @@
 //! without disturbing the master trajectory. **When the offset returns
 //! to zero, the output rejoins the phase it would have had if the
 //! offset had never been applied** — see
-//! [`removing_an_offset_rejoins_the_untouched_trajectory`], which is
+//! `removing_an_offset_rejoins_the_untouched_trajectory`, which is
 //! the property this widget exists to guarantee.
 //!
 //! # Frequency composition is deliberately external
@@ -107,7 +107,7 @@ use crate::core::dff;
 /// stops being arguable; 40 or 48 is round-number margin on a register
 /// costing one carry chain. The choice rests on the narrowest linewidth
 /// the instrument must resolve — an application spec, pinned in
-/// [`tests::deployment_width_resolves_the_narrowest_linewidth`] so that
+/// `deployment_width_resolves_the_narrowest_linewidth` so that
 /// changing it tells you the width you now need.
 ///
 /// This is **independent of the phase-to-amplitude stage's addressing
@@ -213,6 +213,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use expect_test::expect;
 
     const W: usize = 32;
 
@@ -232,6 +233,153 @@ mod tests {
             .synchronous_sample()
             .map(|s| (s.output.phase.raw(), s.output.master.raw()))
             .collect()
+    }
+
+    /// A short stimulus reused by Tiers 3 to 5, so the snapshot, the
+    /// Verilog round-trip and the committed waveform all describe the
+    /// same thing.
+    ///
+    /// The offset steps on and off mid-run: that is the only part of
+    /// the input space where `phase` and `master` diverge, so a
+    /// stimulus without it would exercise one adder and call it
+    /// coverage.
+    fn hdl_stimulus() -> Vec<In<W>> {
+        (0..32u128)
+            .map(|k| input(0x0100_0000, if (8..20).contains(&k) { 1 << 30 } else { 0 }))
+            .collect()
+    }
+
+    /// Tier 3 — HDL emission snapshot.
+    ///
+    /// Captured at `W = 8` rather than the `W = 32` the other tests use.
+    /// The structure is identical at any width and the snapshot stays
+    /// readable, which is the point of having one: a digest would catch
+    /// the same regressions and tell a reviewer nothing.
+    #[test]
+    fn test_vlog_generation() -> miette::Result<()> {
+        let uut = PhaseAccumulator::<8>::default();
+        let hdl = uut.descriptor("top".into())?.hdl()?.modules.pretty();
+        let expect = expect![[r#"
+            module top(input wire [1:0] clock_reset, input wire [15:0] i, output wire [15:0] o);
+               wire [23:0] od;
+               wire [7:0] d;
+               wire [7:0] q;
+               assign o = od[15:0];
+               top_master c0(.clock_reset(clock_reset), .i(d[7:0]), .o(q[7:0]));
+               assign d = od[23:16];
+               assign od = kernel_phase_accumulator_kernel(clock_reset, i, q);
+               function [23:0] kernel_phase_accumulator_kernel(input reg [1:0] arg_0, input reg [15:0] arg_1, input reg [7:0] arg_2);
+                     reg [7:0] r0;
+                     reg [7:0] r1;
+                     reg [15:0] r2;
+                     reg [7:0] r3;
+                     // d
+                     reg [7:0] r4;
+                     // o
+                     reg [15:0] r5;
+                     reg [7:0] r6;
+                     reg [7:0] r7;
+                     // o
+                     reg [15:0] r8;
+                     reg [0:0] r9;
+                     reg [1:0] r10;
+                     reg [0:0] r11;
+                     // d
+                     reg [7:0] r12;
+                     // o
+                     reg [15:0] r13;
+                     // o
+                     reg [15:0] r14;
+                     // d
+                     reg [7:0] r15;
+                     // o
+                     reg [15:0] r16;
+                     reg [23:0] r17;
+                     localparam l0 = 8'bXXXXXXXX;
+                     localparam l1 = 16'bXXXXXXXXXXXXXXXX;
+                     localparam l2 = 8'b00000000;
+                     localparam l3 = 8'b00000000;
+                     localparam l4 = 8'b00000000;
+                     begin
+                        r10 = arg_0;
+                        r2 = arg_1;
+                        r0 = arg_2;
+                        r1 = r2[7:0];
+                        r3 = r0 + r1;
+                        r4 = l0;
+                        r4[7:0] = r3;
+                        r5 = l1;
+                        r5[15:8] = r0;
+                        r6 = r2[15:8];
+                        r7 = r0 + r6;
+                        r8 = r5;
+                        r8[7:0] = r7;
+                        r9 = r10[1:1];
+                        r11 = |r9;
+                        r12 = r4;
+                        r12[7:0] = l2;
+                        r13 = r8;
+                        r13[15:8] = l3;
+                        r14 = r13;
+                        r14[7:0] = l4;
+                        r15 = r11 ? r12 : r4;
+                        r16 = r11 ? r14 : r8;
+                        r17 = {r15, r16};
+                        kernel_phase_accumulator_kernel = r17;
+                     end
+               endfunction
+            endmodule
+            module top_master(input wire [1:0] clock_reset, input wire [7:0] i, output reg [7:0] o);
+               wire  clock;
+               wire  reset;
+               assign clock = clock_reset[0];
+               assign reset = clock_reset[1];
+               initial begin
+                  o = 8'b00000000;
+               end
+               always @(posedge clock) begin
+                  if (reset) begin
+                     o <= 8'b00000000;
+                  end else begin
+                     o <= i;
+                  end
+               end
+            endmodule
+        "#]];
+        expect.assert_eq(&hdl);
+        Ok(())
+    }
+
+    /// Tier 4 — the emitted Verilog agrees with the Rust simulation
+    /// cycle by cycle, through both the RTL and the NTL paths.
+    #[test]
+    fn test_phase_accumulator_hdl_works() -> miette::Result<()> {
+        let uut = PhaseAccumulator::<W>::default();
+        let stream = hdl_stimulus().into_iter().with_reset(1).clock_pos_edge(100);
+        let test_bench = uut.run(stream).collect::<SynchronousTestBench<_, _>>();
+        let tm = test_bench.rtl(&uut, &Default::default())?;
+        tm.run_iverilog()?;
+        let tm = test_bench.ntl(&uut, &Default::default())?;
+        tm.run_iverilog()?;
+        Ok(())
+    }
+
+    /// Tier 5 — VCD digest.
+    #[test]
+    fn test_phase_accumulator_trace() -> miette::Result<()> {
+        let uut = PhaseAccumulator::<W>::default();
+        let stream = hdl_stimulus().into_iter().with_reset(1).clock_pos_edge(100);
+        let vcd = uut.run(stream).collect::<VcdFile>();
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("vcd")
+            .join("phase_accumulator");
+        std::fs::create_dir_all(&root).unwrap();
+        let expect = expect!["d9003178ad45687171ea1bb6f2231a973d07ad0e5915018981332c8b9ea1aec0"];
+        let digest = vcd
+            .dump_to_file(root.join("phase_accumulator.vcd"))
+            .unwrap();
+        expect.assert_eq(&digest);
+        Ok(())
     }
 
     #[test]

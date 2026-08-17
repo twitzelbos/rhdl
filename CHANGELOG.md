@@ -31,6 +31,40 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-17 — `dsp::nco`: phase accumulator, bit-accurate DDS model, quadrature phase-to-amplitude
+
+**Paths:** `crates/rhdl-fpga/src/dsp/nco/{mod,phase_accumulator,model,sin_cos_linear_interp}.rs` (all new), `examples/{nco_phase,sin_cos_linear_interp}.rs` (new), `doc/{nco_phase,sin_cos_linear_interp}.md` (new), `tests/signed_literal_comparison.rs` (new), `doc/references/dsp/` (new).
+
+**Why this, why now:** the first tier of the ocra2 NMR/MRI instrument rewrite — replacing stock Xilinx IP connected by AXI4-Stream with purpose-built, validated `RCStream`-connected DSP blocks. The RF synthesizer is the hardest single block and everything downstream (the phase-aware digital down-converter, the modulator) depends on its phase model, so it goes first. The target is 60–70 dB SFDR over a 1 MHz band with quadrature output and phase resolution fine enough for coherent averaging.
+
+**Design decisions:**
+
+- **The accumulator is a separate widget from phase-to-amplitude,** and deliberately minimal — one register. Its whole job is one invariant: *a phase offset perturbs the output and never the master trajectory*, which is what makes an experiment repeated after an arbitrary delay see the phase the free-running oscillator would have had. Proving that on a widget with a dozen control inputs would be much harder, so the control surface (phase composer, frequency composer, ramps) layers around it as plain adder trees carrying no invariant of their own.
+- **Linear (Taylor) interpolation, not CORDIC — measured, and not close.** Same coarse table, same word, same band: linear gives −116.1 dBc for 2 multipliers and 1 cycle; CORDIC needs 8 stages to reach −103.6 dBc for 16 adders and 8 cycles. Linear interpolation is exact to *second* order in the remainder while CORDIC converges about a bit per stage. A pluggable fine-rotator generic was considered and **rejected** — CORDIC is worse on spurs, worse on latency, and cheaper only where DSP slices are scarce, which on a Zynq with 80 of them is not the case here.
+- **Fixed widths, not generics.** The fixed-point scaling constant `DELTA_K` is derived from the chosen widths, and deriving it inside a kernel from const generics is not something the kernel language can do. Concrete widths beat approximately-generic-and-wrong.
+- **Dithering rejected outright.** It trades a discrete spur for a raised noise floor, which in a sensitivity-limited instrument lands directly on the quantity being bought with averaging time.
+- **One LSB of table headroom instead of saturation logic.** Both are standard; the headroom costs no logic and 0.000066 dB, against two 20-bit comparators. The usual objection — that a scaling margin is a silent assumption — is answered by making it not silent: `interpolated_sum_never_leaves_the_range` exhausts all 2²² phases.
+- **Adversarial tuning-word selection is mandatory in the sizing sweep,** not uniform random. Truncation error has period `2^B / gcd(low, 2^B)`; short periods concentrate error into few strong spurs, and every worst case found has `low` at a pure power of two — i.e. exactly what you get when a human types a round number. Uniform sampling lands in the benign regime almost every time.
+
+**Surprises and gotchas:**
+
+- **`SinCosLinearInterp` was never synthesizable, and Tiers 1–2 could not tell.** `descriptor()` failed outright with *"Unparseable integer error"* because the shift literals carried `u128` suffixes: the kernel macro preserves literal text via `stringify!`, so `parse_u128("32u128")` fails. **Simulation never parses literals** — it runs the kernel as a Rust function — so the widget simulated correctly for its entire life. Every other widget in the tree writes bare `>> 8`. *If a widget has no Tier 3/4, it may not be a circuit at all.*
+- **RHDL lowers a signed comparison against a literal to an unsigned Verilog comparison.** Found the moment HDL emission started working, because the saturation clamp inverted its own sense in hardware. `reg signed [19:0] r56` compared against `localparam l14 = 20'b000…` — Verilog makes the whole relational expression unsigned if either operand is, so every negative value compared greater than the positive bound. Two independent losses of signedness contribute (the literal, and fields extracted from the `q` bundle) and either alone is sufficient. Minimal repro committed at `tests/signed_literal_comparison.rs`; **this is the clamp idiom, so it affects any saturating datapath.** Compiler fix deferred to its own PR per CLAUDE.md §11.1.
+- **Five separate analysis errors, every one optimistic, before the spur numbers were trustworthy.** In order: a 4-term Blackman-Harris window measured its own −92 dB sidelobes rather than the signal (fixed with 7-term); a 24-word sweep sampled only the benign regime and falsely claimed a 25 dB in-band bonus; the spur period used the remainder instead of `2^(phase_w − v)`; the band filter compared absolute frequency against zero rather than the carrier, so it searched near DC and reported −400 dBc; and a 12 dB normalisation error survived everything else. **The last was caught only by cross-validating the general analyser against the earlier validated one** — which is the argument for keeping both rather than deleting the narrower one once the general version exists.
+- **Phase offsets are not neutral.** They are provably a pure time shift for odd tuning words, but measured up to 7.56 dB of SFDR spread at `v = 11`. Worth knowing before assuming offset is a free parameter.
+- **18-bit arithmetic hits the architecture ceiling exactly.** 16-bit costs 2.3 dB; wider buys nothing. That it lands on the native DSP48 port width is convenient rather than designed.
+
+**Validation:** `PhaseAccumulator` — Tiers 1–5, 12 tests. `SinCosLinearInterp` — Tiers 1–5, 9 tests; Tier 3 captures module `top` verbatim and pins the child modules by name and line, omitting ~550 lines of table constants (`fifo::synchronous` and `core::ram::option_sync` omit their snapshots entirely for the same reason, so this is more coverage than the existing convention for memory-backed widgets, not less). Both examples deterministic and their traces committed. Four mutation checks confirmed failing and restored: inert clamp, zeroed fine rotation, wrong pipeline latency, and full-scale `TABLE_SCALE`. `model_agrees_with_the_widget` ties the bit-exact model to the real widget, so the exhaustive range proof is about the hardware and not about a model of it. `.skip(2)` on the `SinCosLinearInterp` round-trip matches `core::ram::synchronous`: a block RAM's output register is `x` in Verilog until the first read completes.
+
+**Follow-ups:**
+
+- **Compiler PR for the signed-comparison defect.** `tests/signed_literal_comparison.rs::verilog_agrees_with_rust` is `#[ignore]`d and is the acceptance test; `emitted_comparison_operands_are_currently_unsigned` pins the current emission so the fix shows as a diff. The infrastructure exists (`SignedWidth::Signed`, the `kind.is_signed()` check in `hdl/builder.rs`), so this is a dropped case rather than a missing feature.
+- **The kernel macro should reject or strip suffixed literals** rather than failing later with a span-less "Unparseable integer error". The current diagnostic gives no source location, which is what made this cost an afternoon.
+- **§8 of the ocra2 note is still open:** phase composer, frequency composer, control-latency constants, ramps/chirps, and modulation stream input. Then the phase-aware DDC.
+- **Compare against Palomäki & Nurmi (Sensors 2025)** — a 16-bit quadrature DDFS using *second*-order Taylor interpolation reaching −102.9 dBc on Artix-7. The closest published design to this one; indexed in `doc/references/dsp/README.md` but behind bot protection, so it needs fetching by hand.
+
+---
+
 ## 2026-08-17 — `stream::testing::closed_loop`: retire the hand-rolled Tier-2 loops
 
 **Paths:** `crates/rhdl-fpga/src/stream/testing/closed_loop.rs` (new), `stream/testing/mod.rs`, `stream/{map,filter,filter_map,stream_buffer}.rs`.
