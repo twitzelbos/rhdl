@@ -4,11 +4,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 590 1010" font-family="sans-serif" font-size="13">
 <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#444"/></marker></defs>
 <title>FSM diagram for Ieee1284Negotiator</title>
+<path d="M 283 30 C 270 -5, 320 -5, 307 30" fill="none" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="295" y1="70" x2="295" y2="160" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="295" y1="200" x2="295" y2="290" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M 283 290 C 270 255, 320 255, 307 290" fill="none" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="295" y1="330" x2="225" y2="420" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="295" y1="330" x2="365" y2="420" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M 213 420 C 200 385, 250 385, 237 420" fill="none" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="225" y1="460" x2="225" y2="550" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M 213 550 C 200 515, 250 515, 237 550" fill="none" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="225" y1="590" x2="225" y2="680" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="225" y1="590" x2="365" y2="420" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="225" y1="720" x2="85" y2="810" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
@@ -16,10 +20,12 @@
 <line x1="225" y1="720" x2="365" y2="810" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="85" y1="850" x2="225" y2="810" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="225" y1="850" x2="295" y2="940" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
-<line x1="295" y1="980" x2="295" y2="30" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
+<line x1="295" y1="980" x2="295" y2="160" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M 283 940 C 270 905, 320 905, 307 940" fill="none" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="295" y1="980" x2="365" y2="550" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="365" y1="590" x2="365" y2="680" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="365" y1="720" x2="295" y2="30" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M 353 680 C 340 645, 390 645, 377 680" fill="none" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="365" y1="720" x2="505" y2="810" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="365" y1="460" x2="365" y2="550" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="365" y1="850" x2="365" y2="550" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>

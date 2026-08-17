@@ -4,16 +4,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 450 490" font-family="sans-serif" font-size="13">
 <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#444"/></marker></defs>
 <title>FSM diagram for OneWireMaster</title>
+<path d="M 213 30 C 200 -5, 250 -5, 237 30" fill="none" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="225" y1="70" x2="85" y2="160" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="225" y1="70" x2="225" y2="160" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="225" y1="70" x2="365" y2="160" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M 73 160 C 60 125, 110 125, 97 160" fill="none" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="85" y1="200" x2="85" y2="290" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M 73 290 C 60 255, 110 255, 97 290" fill="none" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="85" y1="330" x2="225" y2="420" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M 213 160 C 200 125, 250 125, 237 160" fill="none" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="225" y1="200" x2="225" y2="290" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="225" y1="330" x2="225" y2="160" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M 213 290 C 200 255, 250 255, 237 290" fill="none" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="225" y1="330" x2="225" y2="420" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M 353 160 C 340 125, 390 125, 377 160" fill="none" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="365" y1="200" x2="365" y2="290" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="365" y1="330" x2="365" y2="160" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M 353 290 C 340 255, 390 255, 377 290" fill="none" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="365" y1="330" x2="225" y2="420" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="225" y1="460" x2="225" y2="30" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <rect x="170" y="30" width="110" height="40" rx="6" ry="6" fill="#e0f2ff" stroke="#2563eb" stroke-width="1"/>
