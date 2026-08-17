@@ -60,7 +60,7 @@ R<T> |            |     |        |                 +   |       |   Ready<T>
 use badascii_doc::{badascii, badascii_formal};
 use rhdl::prelude::*;
 
-use super::{ready, stream_buffer::StreamBuffer, StreamIO};
+use super::{StreamIO, ready, stream_buffer::StreamBuffer};
 
 #[derive(Clone, Synchronous, SynchronousDQ)]
 #[rhdl(dq_no_prefix)]
@@ -275,6 +275,197 @@ mod tests {
             want,
             "a data-gated sink must still receive every kept item"
         );
+        Ok(())
+    }
+
+    /// Open-loop stimulus for Tiers 3-5.
+    ///
+    /// Gaps the offered data on one cadence and withholds `ready` on
+    /// another, coprime to it, so the two drift and all four
+    /// combinations of (offer, accept) occur. For a filter this matters
+    /// twice over: it must also make progress on *rejected* items,
+    /// which present nothing downstream and so cannot rely on the sink
+    /// asserting `ready` to be consumed.
+    fn bench_stream() -> impl Iterator<Item = TimedSample<(ClockReset, In<b4>)>> {
+        (0..24u128)
+            .map(|k| In::<b4> {
+                data: if k.is_multiple_of(4) {
+                    None
+                } else {
+                    Some(b4(k % 16))
+                },
+                ready: ready::<b4>(!k.is_multiple_of(3)),
+            })
+            .with_reset(1)
+            .clock_pos_edge(100)
+    }
+
+    /// Tier 3 — HDL emission snapshot (top module only).
+    #[test]
+    fn hdl_emission_snapshot() -> miette::Result<()> {
+        let uut = Filter::<b4>::try_new::<keep_even>()?;
+        let desc = uut.descriptor("stream_filter".into())?;
+        let hdl = desc.hdl()?;
+        let top = hdl
+            .modules
+            .modules
+            .iter()
+            .find(|m| m.name == "stream_filter")
+            .expect("top module must be emitted");
+        let expect = expect_test::expect![[r#"
+            module stream_filter(input wire [1:0] clock_reset, input wire [5:0] i, output wire [5:0] o);
+               wire [15:0] od;
+               wire [9:0] d;
+               wire [6:0] q;
+               assign o = od[5:0];
+               stream_filter_input_buffer c0(.clock_reset(clock_reset), .i(d[5:0]), .o(q[5:0]));
+               stream_filter_func c1(.clock_reset(clock_reset), .i(d[9:6]), .o(q[6:6]));
+               assign d = od[15:6];
+               assign od = kernel_kernel(clock_reset, i, q);
+               function [15:0] kernel_kernel(input reg [1:0] arg_0, input reg [5:0] arg_1, input reg [6:0] arg_2);
+                     reg [4:0] r0;
+                     reg [5:0] r1;
+                     // d
+                     reg [9:0] r2;
+                     // d
+                     reg [9:0] r3;
+                     reg [5:0] r4;
+                     reg [6:0] r5;
+                     reg [4:0] r6;
+                     reg [0:0] r7;
+                     reg [3:0] r8;
+                     // d
+                     reg [9:0] r9;
+                     // d
+                     reg [9:0] r10;
+                     // have
+                     reg [0:0] r11;
+                     reg [0:0] r12;
+                     reg [0:0] r13;
+                     reg [0:0] r14;
+                     reg [0:0] r15;
+                     reg [0:0] r16;
+                     reg [0:0] r17;
+                     reg [0:0] r18;
+                     reg [0:0] r19;
+                     reg [0:0] r20;
+                     // d
+                     reg [9:0] r21;
+                     reg [5:0] r22;
+                     reg [0:0] r23;
+                     reg [5:0] r24;
+                     reg [5:0] r25;
+                     reg [5:0] r26;
+                     reg [4:0] r27;
+                     reg [0:0] r28;
+                     reg [3:0] r29;
+                     reg [4:0] r30;
+                     reg [3:0] r31;
+                     // o
+                     reg [5:0] r32;
+                     // o
+                     reg [5:0] r33;
+                     // o
+                     reg [5:0] r34;
+                     reg [15:0] r35;
+                     reg [1:0] r36;
+                     localparam l0 = 10'bXXXXXXXXXX;
+                     localparam l1 = 4'bXXXX;
+                     localparam l2 = 1'b1;
+                     localparam l3 = 1'b1;
+                     localparam l4 = 1'b0;
+                     localparam l5 = 1'b0;
+                     localparam l6 = 1'b1;
+                     localparam l7 = 1'b1;
+                     localparam l8 = 6'b000000;
+                     begin
+                        r36 = arg_0;
+                        r1 = arg_1;
+                        r5 = arg_2;
+                        r0 = r1[4:0];
+                        r2 = l0;
+                        r2[4:0] = r0;
+                        r3 = r2;
+                        r3[9:6] = l1;
+                        r4 = r5[5:0];
+                        r6 = r4[4:0];
+                        r7 = r6[4:4];
+                        r8 = r6[3:0];
+                        r9 = r3;
+                        r9[9:6] = r8;
+                        case (r7)
+                           1'b1 : r10 = r9;
+                           default : r10 = r3;
+                        endcase
+                        case (r7)
+                           1'b1 : r11 = l3;
+                           default : r11 = l4;
+                        endcase
+                        r12 = r5[6:6];
+                        r13 = r11 & r12;
+                        r14 = r5[6:6];
+                        r15 = ~r14;
+                        r16 = r11 & r15;
+                        r17 = r1[5:5];
+                        r18 = r17 | r16;
+                        r19 = l5;
+                        r20 = r19;
+                        r20[0:0] = r18;
+                        r21 = r10;
+                        r21[5:5] = r20;
+                        r22 = r5[5:0];
+                        r23 = r22[5:5];
+                        r24 = l8;
+                        r25 = r24;
+                        r25[5:5] = r23;
+                        r26 = r5[5:0];
+                        r27 = r26[4:0];
+                        r28 = r27[4:4];
+                        r29 = r27[3:0];
+                        r31 = r29[3:0];
+                        r30 = {l6, r31};
+                        r32 = r25;
+                        r32[4:0] = r30;
+                        r33 = r13 ? r32 : r25;
+                        case (r28)
+                           1'b1 : r34 = r33;
+                           default : r34 = r25;
+                        endcase
+                        r35 = {r21, r34};
+                        kernel_kernel = r35;
+                     end
+               endfunction
+            endmodule"#]];
+        expect.assert_eq(&top.pretty());
+        Ok(())
+    }
+
+    /// Tier 4 — iverilog round-trip, RTL and NTL.
+    #[test]
+    fn iverilog_round_trip() -> Result<(), RHDLError> {
+        let uut = Filter::<b4>::try_new::<keep_even>()?;
+        let tb = uut
+            .run(bench_stream())
+            .collect::<SynchronousTestBench<_, _>>();
+        tb.rtl(&uut, &Default::default())?.run_iverilog()?;
+        tb.ntl(&uut, &Default::default())?.run_iverilog()?;
+        Ok(())
+    }
+
+    /// Tier 5 — VCD digest.
+    #[test]
+    fn trace_digest() -> miette::Result<()> {
+        let uut = Filter::<b4>::try_new::<keep_even>()?;
+        let vcd = uut.run(bench_stream()).collect::<VcdFile>();
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("vcd")
+            .join("stream_filter");
+        std::fs::create_dir_all(&root).unwrap();
+        let expect = expect_test::expect![
+            "9bb11eaefc44654679cca59cfcbecd35f85b6ea2c291413c4620fbe9eb0aefc5"
+        ];
+        let digest = vcd.dump_to_file(root.join("stream_filter.vcd")).unwrap();
+        expect.assert_eq(&digest);
         Ok(())
     }
 

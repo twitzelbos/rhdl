@@ -273,6 +273,286 @@ mod tests {
         Ok(())
     }
 
+    /// Open-loop stimulus for Tiers 3-5.
+    ///
+    /// This widget's *producer* side is a FIFO write (gated by `full`)
+    /// and its consumer side is Ready/Valid. Offers gapped on 4 and
+    /// `ready` withheld on 3, coprime, so the buffer both fills toward
+    /// `full` and drains rather than sitting at one occupancy.
+    fn bench_stream() -> impl Iterator<Item = TimedSample<(ClockReset, In<b4>)>> {
+        (0..28u128)
+            .map(|k| In::<b4> {
+                data: if k.is_multiple_of(4) {
+                    None
+                } else {
+                    Some(b4(k % 16))
+                },
+                ready: crate::stream::ready::<b4>(!k.is_multiple_of(3)),
+            })
+            .with_reset(1)
+            .clock_pos_edge(100)
+    }
+
+    /// Tier 3 — HDL emission snapshot (top module only).
+    #[test]
+    fn hdl_emission_snapshot() -> miette::Result<()> {
+        let uut = FIFOToStream::<b4>::default();
+        let desc = uut.descriptor("fifo_to_stream".into())?;
+        let hdl = desc.hdl()?;
+        let top = hdl
+            .modules
+            .modules
+            .iter()
+            .find(|m| m.name == "fifo_to_stream")
+            .expect("top module must be emitted");
+        let expect = expect_test::expect![[r#"
+            module fifo_to_stream(input wire [1:0] clock_reset, input wire [5:0] i, output wire [6:0] o);
+               wire [18:0] od;
+               wire [11:0] d;
+               wire [11:0] q;
+               assign o = od[6:0];
+               fifo_to_stream_state c0(.clock_reset(clock_reset), .i(d[1:0]), .o(q[1:0]));
+               fifo_to_stream_zero_slot c1(.clock_reset(clock_reset), .i(d[5:2]), .o(q[5:2]));
+               fifo_to_stream_one_slot c2(.clock_reset(clock_reset), .i(d[9:6]), .o(q[9:6]));
+               fifo_to_stream_write_slot c3(.clock_reset(clock_reset), .i(d[10:10]), .o(q[10:10]));
+               fifo_to_stream_read_slot c4(.clock_reset(clock_reset), .i(d[11:11]), .o(q[11:11]));
+               assign d = od[18:7];
+               assign od = kernel_kernel(clock_reset, i, q);
+               function [18:0] kernel_kernel(input reg [1:0] arg_0, input reg [5:0] arg_1, input reg [11:0] arg_2);
+                     reg [4:0] r0;
+                     reg [5:0] r1;
+                     reg [0:0] r2;
+                     reg [0:0] r3;
+                     reg [0:0] r4;
+                     reg [1:0] r5;
+                     reg [11:0] r6;
+                     reg [1:0] r7;
+                     reg [1:0] r8;
+                     reg [1:0] r9;
+                     reg [1:0] r10;
+                     reg [1:0] r11;
+                     reg [1:0] r12;
+                     // d
+                     reg [11:0] r13;
+                     reg [3:0] r14;
+                     // d
+                     reg [11:0] r15;
+                     reg [3:0] r16;
+                     // d
+                     reg [11:0] r17;
+                     reg [4:0] r18;
+                     reg [0:0] r19;
+                     reg [3:0] r20;
+                     reg [0:0] r21;
+                     reg [0:0] r22;
+                     // d
+                     reg [11:0] r23;
+                     // d
+                     reg [11:0] r24;
+                     // d
+                     reg [11:0] r25;
+                     // d
+                     reg [11:0] r26;
+                     reg [1:0] r27;
+                     reg [0:0] r28;
+                     reg [0:0] r29;
+                     reg [1:0] r30;
+                     reg [0:0] r31;
+                     reg [0:0] r32;
+                     reg [0:0] r33;
+                     reg [0:0] r34;
+                     // d
+                     reg [11:0] r35;
+                     reg [0:0] r36;
+                     reg [0:0] r37;
+                     // d
+                     reg [11:0] r38;
+                     reg [1:0] r39;
+                     reg [0:0] r40;
+                     reg [0:0] r41;
+                     reg [0:0] r42;
+                     reg [3:0] r43;
+                     reg [4:0] r44;
+                     reg [3:0] r45;
+                     // o
+                     reg [6:0] r46;
+                     reg [3:0] r47;
+                     reg [4:0] r48;
+                     reg [3:0] r49;
+                     // o
+                     reg [6:0] r50;
+                     // o
+                     reg [6:0] r51;
+                     // o
+                     reg [6:0] r52;
+                     reg [1:0] r53;
+                     reg [0:0] r54;
+                     // o
+                     reg [6:0] r55;
+                     reg [1:0] r56;
+                     reg [0:0] r57;
+                     // o
+                     reg [6:0] r58;
+                     reg [18:0] r59;
+                     reg [1:0] r60;
+                     localparam l0 = 1'b1;
+                     localparam l1 = 1'b1;
+                     localparam l2 = 1'b0;
+                     localparam l3 = 1'b0;
+                     localparam l4 = 2'b01;
+                     localparam l5 = 2'b00;
+                     localparam l6 = 2'b00;
+                     localparam l7 = 2'b01;
+                     localparam l8 = 2'b01;
+                     localparam l9 = 2'b10;
+                     localparam l10 = 2'b10;
+                     localparam l11 = 2'b00;
+                     localparam l12 = 2'b11;
+                     localparam l13 = 2'b01;
+                     localparam l14 = 2'b01;
+                     localparam l15 = 2'b10;
+                     localparam l16 = 2'b11;
+                     localparam l17 = 2'b00;
+                     localparam l18 = 2'b01;
+                     localparam l19 = 2'b10;
+                     localparam l20 = 2'b11;
+                     localparam l21 = 2'b11;
+                     localparam l22 = 12'bXXXXXXXXXXXX;
+                     localparam l23 = 1'b1;
+                     localparam l24 = 2'b11;
+                     localparam l25 = 2'b00;
+                     localparam l26 = 1'b1;
+                     localparam l27 = 7'bXXXXXXX;
+                     localparam l28 = 1'b1;
+                     localparam l29 = 7'bXX00000;
+                     localparam l30 = 2'b10;
+                     localparam l31 = 2'b11;
+                     begin
+                        r60 = arg_0;
+                        r1 = arg_1;
+                        r6 = arg_2;
+                        r0 = r1[4:0];
+                        r2 = r0[4:4];
+                        case (r2)
+                           1'b1 : r3 = l1;
+                           1'b0 : r3 = l3;
+                        endcase
+                        r4 = r1[5:5];
+                        r5 = r6[1:0];
+                        r7 = r3 ? l4 : l5;
+                        r8 = {r4, r3};
+                        case (r8)
+                           2'b00 : r9 = l7;
+                           2'b01 : r9 = l9;
+                           2'b10 : r9 = l11;
+                           2'b11 : r9 = l13;
+                        endcase
+                        r10 = r4 ? l14 : l15;
+                        r11 = r3 ? l16 : r10;
+                        case (r5)
+                           2'b00 : r12 = r7;
+                           2'b01 : r12 = r9;
+                           2'b10 : r12 = r11;
+                           2'b11 : r12 = l21;
+                        endcase
+                        r13 = l22;
+                        r13[1:0] = r12;
+                        r14 = r6[5:2];
+                        r15 = r13;
+                        r15[5:2] = r14;
+                        r16 = r6[9:6];
+                        r17 = r15;
+                        r17[9:6] = r16;
+                        r18 = r1[4:0];
+                        r19 = r18[4:4];
+                        r20 = r18[3:0];
+                        r21 = r6[10:10];
+                        r22 = ~r21;
+                        r23 = r17;
+                        r23[5:2] = r20;
+                        r24 = r17;
+                        r24[9:6] = r20;
+                        r25 = r22 ? r23 : r24;
+                        case (r19)
+                           1'b1 : r26 = r25;
+                           default : r26 = r17;
+                        endcase
+                        r27 = r6[1:0];
+                        r28 = |r27;
+                        r29 = r4 & r28;
+                        r30 = r6[1:0];
+                        r31 = r30 != l24;
+                        r32 = r29 & r31;
+                        r33 = r6[10:10];
+                        r34 = r3 ^ r33;
+                        r35 = r26;
+                        r35[10:10] = r34;
+                        r36 = r6[11:11];
+                        r37 = r32 ^ r36;
+                        r38 = r35;
+                        r38[11:11] = r37;
+                        r39 = r6[1:0];
+                        r40 = r39 == l25;
+                        r41 = r6[11:11];
+                        r42 = ~r41;
+                        r43 = r6[5:2];
+                        r45 = r43[3:0];
+                        r44 = {l26, r45};
+                        r46 = l27;
+                        r46[4:0] = r44;
+                        r47 = r6[9:6];
+                        r49 = r47[3:0];
+                        r48 = {l28, r49};
+                        r50 = l27;
+                        r50[4:0] = r48;
+                        r51 = r42 ? r46 : r50;
+                        r52 = r40 ? l29 : r51;
+                        r53 = r6[1:0];
+                        r54 = r53 == l30;
+                        r55 = r52;
+                        r55[5:5] = r54;
+                        r56 = r6[1:0];
+                        r57 = r56 == l31;
+                        r58 = r55;
+                        r58[6:6] = r57;
+                        r59 = {r38, r58};
+                        kernel_kernel = r59;
+                     end
+               endfunction
+            endmodule"#]];
+        expect.assert_eq(&top.pretty());
+        Ok(())
+    }
+
+    /// Tier 4 — iverilog round-trip, RTL and NTL.
+    #[test]
+    fn iverilog_round_trip() -> Result<(), RHDLError> {
+        let uut = FIFOToStream::<b4>::default();
+        let tb = uut
+            .run(bench_stream())
+            .collect::<SynchronousTestBench<_, _>>();
+        tb.rtl(&uut, &Default::default())?.run_iverilog()?;
+        tb.ntl(&uut, &Default::default())?.run_iverilog()?;
+        Ok(())
+    }
+
+    /// Tier 5 — VCD digest.
+    #[test]
+    fn trace_digest() -> miette::Result<()> {
+        let uut = FIFOToStream::<b4>::default();
+        let vcd = uut.run(bench_stream()).collect::<VcdFile>();
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("vcd")
+            .join("fifo_to_stream");
+        std::fs::create_dir_all(&root).unwrap();
+        let expect = expect_test::expect![
+            "3d0207215877bccb1365e863cbef6954207b9d9baaba0647cfe83b6041bed793"
+        ];
+        let digest = vcd.dump_to_file(root.join("fifo_to_stream.vcd")).unwrap();
+        expect.assert_eq(&digest);
+        Ok(())
+    }
+
     #[test]
     fn test_operation() -> miette::Result<()> {
         // The buffer will manage items of 4 bits

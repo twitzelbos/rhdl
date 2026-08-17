@@ -31,6 +31,42 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-16 — Tier 3/4/5 across all 12 `stream::` widgets — and the two dead widgets it found
+
+**Paths:** all 12 files under `crates/rhdl-fpga/src/stream/` (excluding `testing/`), 12 new VCD digests under `vcd/`.
+
+**Why this, why now:** the previous entry's follow-up read *"`stream::filter` still has no Tier 3/4/5"*. That understated the gap by a factor of twelve. A survey found **not one `stream::` widget had an HDL snapshot, an iverilog round-trip, or a VCD digest** — `chunked`, `fifo_to_stream`, `filter`, `filter_map`, `flatten`, `map`, `pipe_wrapper`, `stream_buffer`, `stream_to_fifo`, `tee`, `xfer`, `zip`, all at zero. The only files under `src/stream/` touching testbench machinery were the harness files themselves. `filter` had been named in an earlier entry only because it was the widget under discussion at the time, and that made a module-wide hole look like a one-widget debt.
+
+This matters more than the equivalent `rcstream` gap: `rcstream` is opt-in for new widgets, while `stream::*` is what existing code is built on. The module with the weaker validation was the one carrying more weight.
+
+**The two defects this found.** Both were invisible to the simulator, because the simulator never asks for HDL. Both had passing test suites.
+
+- **`stream::xfer` could not be synthesised at all.** It carried its type parameter as `marker: PhantomData<T>`, but `SynchronousDQ` treats every struct field as a child circuit, and `PhantomData` has no HDL — so `descriptor()` failed with `FunctionNotSynthesizable { name: "uut_marker" }`. Not just standalone: **any design containing an `Xfer` could not emit Verilog.** The fix is the idiom already used by `rcstream::credit::source` — `Constant<T>`, which carries the parameter, synthesises to a constant driver with no DFF state, and is ignored by the kernel. Note the `PhantomData` uses in `core::dff` and `core::constant` are *not* the same thing: those are fields of a hand-written `Descriptor`, not fields of a derived widget.
+- **`stream::pipe_wrapper` delivered nothing, ever.** `d.out_buffer.data` was never assigned, so the output buffer's data input was driven by a don't-care that materialised as `None`. Measured: **0 items** delivered, standalone *and* through the widget's own `TestFixture`. Adding the missing `d.out_buffer.data = if will_unload { q.fifo.data } else { None };` takes it to 997. Tier 3 caught it as a partial-initialisation error at `descriptor()`.
+
+**Why `pipe_wrapper` survived, and the lesson.** Its only behavioural test asserted values *inside* `if let Some(data) = v.accepted`. A widget that produces nothing runs zero assertions and passes. This is precisely the shape called out for `filter` two entries ago — *"it only asserts a property of the values that do arrive rather than that all of them do"* — and it was sitting in another widget in the same module the whole time. **A property of what arrives cannot detect nothing arriving.** The regression test added here asserts a *count*, which is the thing the original was missing. Worth noting the fix is also confirmed *correct*, not merely non-empty: the pre-existing `test_operation` compares each delivered value against a reference stream, and those assertions — dead until now — execute and pass.
+
+**Design decisions:**
+
+- **Stall cadences are coprime with offer cadences** (typically gap-on-4 against stall-on-3, with a third at 5 where a widget has three independent signals). Equal cadences alias: they put the two signals in lockstep so the stall always lands at the same point in a chunk or group, and the held-item path never varies. This is the fixed-cadence form of the hazard the `stall_lockstep_audit` guard covers for seeded generators.
+- **`stream_to_fifo` gets a different stall shape, deliberately.** Its downstream consumes with `next` — a pop request — not `ready`, so "withhold ready when idle" has no analogue: asserting `next` on an empty buffer is an underflow it already flags on `error`. Its stimulus throttles the *pop* side instead, so the buffer fills rather than draining as fast as it is written. Forcing the ready/valid pattern here would have tested nothing, the same reason it was excluded from the data-gated sink work earlier.
+- **Snapshots cover the top module only**, as with `rcstream`: sub-modules carry their own, and inlining them makes tests fail for unrelated changes.
+
+**Surprises and gotchas:**
+
+- **A widget can be completely dead and fully green.** `pipe_wrapper` had a Tier 1 DRC test, a Tier 2 stream test, a runnable example, and a committed waveform — and delivered zero items. Every one of those artifacts was consistent with a widget that does nothing.
+- **`PhantomData` is safe in a hand-written `Synchronous` impl and fatal in a derived one.** The same token means "no field here" to Rust and "child circuit with no HDL" to the derive.
+
+**Validation:** all 242 `stream::` lib tests pass. Each of the 12 widgets now has an HDL snapshot, RTL **and** NTL iverilog round-trips, and a VCD digest, plus a stalling stimulus chosen for that widget's flow-control contract. Full `rhdl-fpga` suite green.
+
+**Follow-ups:**
+
+- `utils::stalling` and bare `rand::random` remain in `src` test modules here (`test_operation` in most of these widgets). Unchanged by this entry; still irreproducible.
+- **The `PhantomData` audit was run, not deferred: `xfer` was the only instance crate-wide.** Every other `PhantomData` in `rhdl-fpga` is a field of a hand-written `Descriptor` (`core::dff`, `core::constant`, `core::ram::*`, `cdc::*`, `reset::conditioner`), which is unaffected. The check was verified against the pre-fix `xfer` to confirm it can actually fire — a negative result from an audit that cannot find its own known instance is worthless.
+- **Still open: behavioural tests whose assertions live inside `if let Some(...)`.** That is the shape that hid `pipe_wrapper`, it is not detectable by grep alone (the pattern is legitimate when paired with a count assertion), and it is likely present elsewhere. Worth a deliberate pass.
+
+---
+
 ## 2026-08-16 — Level the `rcstream` validation and docs contract
 
 **Paths:** `crates/rhdl-fpga/src/rcstream/{relay,credit/sink,credit/source,axi_stream/axi_to_rcstream,axi_stream/rcstream_to_axi}.rs`, five new files under `examples/`, five new traces under `doc/`, five new VCDs under `vcd/`.

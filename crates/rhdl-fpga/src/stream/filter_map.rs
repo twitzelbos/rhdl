@@ -66,7 +66,7 @@ use rhdl::prelude::*;
 
 use crate::stream::ready;
 
-use super::{stream_buffer::StreamBuffer, StreamIO};
+use super::{StreamIO, stream_buffer::StreamBuffer};
 
 #[derive(Clone, Synchronous, SynchronousDQ)]
 #[rhdl(dq_no_prefix)]
@@ -245,6 +245,186 @@ mod tests {
         assert_eq!(to_send, COUNT, "the source must not be stalled forever");
         let want: Vec<u128> = (0..COUNT).filter(|k| k % 2 == 0).map(|k| k >> 1).collect();
         assert_eq!(got, want, "every surviving item must be delivered");
+        Ok(())
+    }
+
+    /// Open-loop stimulus for Tiers 3-5.
+    ///
+    /// Gaps the offered data on one cadence and withholds `ready` on
+    /// another, coprime to it. As with `filter`, the rejected-item path
+    /// is the one that needs this: a rejected item presents nothing
+    /// downstream, so it cannot depend on the sink asserting `ready` to
+    /// make progress.
+    fn bench_stream() -> impl Iterator<Item = TimedSample<(ClockReset, In<b4, b2>)>> {
+        (0..24u128)
+            .map(|k| In::<b4, b2> {
+                data: if k.is_multiple_of(4) {
+                    None
+                } else {
+                    Some(b4(k % 16))
+                },
+                ready: ready::<b2>(!k.is_multiple_of(3)),
+            })
+            .with_reset(1)
+            .clock_pos_edge(100)
+    }
+
+    /// Tier 3 — HDL emission snapshot (top module only).
+    #[test]
+    fn hdl_emission_snapshot() -> miette::Result<()> {
+        let uut = FilterMap::<b4, b2>::try_new::<filter_map_item>()?;
+        let desc = uut.descriptor("stream_filter_map".into())?;
+        let hdl = desc.hdl()?;
+        let top = hdl
+            .modules
+            .modules
+            .iter()
+            .find(|m| m.name == "stream_filter_map")
+            .expect("top module must be emitted");
+        let expect = expect_test::expect![[r#"
+            module stream_filter_map(input wire [1:0] clock_reset, input wire [5:0] i, output wire [3:0] o);
+               wire [13:0] od;
+               wire [9:0] d;
+               wire [8:0] q;
+               assign o = od[3:0];
+               stream_filter_map_input_buffer c0(.clock_reset(clock_reset), .i(d[5:0]), .o(q[5:0]));
+               stream_filter_map_func c1(.clock_reset(clock_reset), .i(d[9:6]), .o(q[8:6]));
+               assign d = od[13:4];
+               assign od = kernel_kernel(clock_reset, i, q);
+               function [13:0] kernel_kernel(input reg [1:0] arg_0, input reg [5:0] arg_1, input reg [8:0] arg_2);
+                     reg [4:0] r0;
+                     reg [5:0] r1;
+                     // d
+                     reg [9:0] r2;
+                     // d
+                     reg [9:0] r3;
+                     reg [5:0] r4;
+                     reg [8:0] r5;
+                     reg [4:0] r6;
+                     reg [0:0] r7;
+                     reg [3:0] r8;
+                     // d
+                     reg [9:0] r9;
+                     // d
+                     reg [9:0] r10;
+                     // have
+                     reg [0:0] r11;
+                     reg [2:0] r12;
+                     reg [0:0] r13;
+                     reg [0:0] r14;
+                     reg [0:0] r15;
+                     reg [0:0] r16;
+                     reg [0:0] r17;
+                     reg [0:0] r18;
+                     reg [0:0] r19;
+                     reg [0:0] r20;
+                     reg [0:0] r21;
+                     // d
+                     reg [9:0] r22;
+                     reg [2:0] r23;
+                     reg [2:0] r24;
+                     reg [5:0] r25;
+                     reg [0:0] r26;
+                     reg [3:0] r27;
+                     reg [3:0] r28;
+                     reg [13:0] r29;
+                     reg [1:0] r30;
+                     localparam l0 = 10'bXXXXXXXXXX;
+                     localparam l1 = 4'bXXXX;
+                     localparam l2 = 1'b1;
+                     localparam l3 = 1'b1;
+                     localparam l4 = 1'b0;
+                     localparam l5 = 1'b1;
+                     localparam l6 = 1'b1;
+                     localparam l7 = 1'b0;
+                     localparam l8 = 1'b0;
+                     localparam l9 = 1'b0;
+                     localparam l10 = 3'b000;
+                     localparam l11 = 4'b0000;
+                     begin
+                        r30 = arg_0;
+                        r1 = arg_1;
+                        r5 = arg_2;
+                        r0 = r1[4:0];
+                        r2 = l0;
+                        r2[4:0] = r0;
+                        r3 = r2;
+                        r3[9:6] = l1;
+                        r4 = r5[5:0];
+                        r6 = r4[4:0];
+                        r7 = r6[4:4];
+                        r8 = r6[3:0];
+                        r9 = r3;
+                        r9[9:6] = r8;
+                        case (r7)
+                           1'b1 : r10 = r9;
+                           default : r10 = r3;
+                        endcase
+                        case (r7)
+                           1'b1 : r11 = l3;
+                           default : r11 = l4;
+                        endcase
+                        r12 = r5[8:6];
+                        r13 = r12[2:2];
+                        case (r13)
+                           1'b1 : r14 = l6;
+                           1'b0 : r14 = l8;
+                        endcase
+                        r15 = r11 & r14;
+                        r16 = ~r14;
+                        r17 = r11 & r16;
+                        r18 = r1[5:5];
+                        r19 = r18 | r17;
+                        r20 = l9;
+                        r21 = r20;
+                        r21[0:0] = r19;
+                        r22 = r10;
+                        r22[5:5] = r21;
+                        r23 = r5[8:6];
+                        r24 = r15 ? r23 : l10;
+                        r25 = r5[5:0];
+                        r26 = r25[5:5];
+                        r27 = l11;
+                        r27[2:0] = r24;
+                        r28 = r27;
+                        r28[3:3] = r26;
+                        r29 = {r22, r28};
+                        kernel_kernel = r29;
+                     end
+               endfunction
+            endmodule"#]];
+        expect.assert_eq(&top.pretty());
+        Ok(())
+    }
+
+    /// Tier 4 — iverilog round-trip, RTL and NTL.
+    #[test]
+    fn iverilog_round_trip() -> Result<(), RHDLError> {
+        let uut = FilterMap::<b4, b2>::try_new::<filter_map_item>()?;
+        let tb = uut
+            .run(bench_stream())
+            .collect::<SynchronousTestBench<_, _>>();
+        tb.rtl(&uut, &Default::default())?.run_iverilog()?;
+        tb.ntl(&uut, &Default::default())?.run_iverilog()?;
+        Ok(())
+    }
+
+    /// Tier 5 — VCD digest.
+    #[test]
+    fn trace_digest() -> miette::Result<()> {
+        let uut = FilterMap::<b4, b2>::try_new::<filter_map_item>()?;
+        let vcd = uut.run(bench_stream()).collect::<VcdFile>();
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("vcd")
+            .join("stream_filter_map");
+        std::fs::create_dir_all(&root).unwrap();
+        let expect = expect_test::expect![
+            "2bf878af81a348a0e5a2020fdc85ee2afc231bb97de3a7924f587fe28b362c13"
+        ];
+        let digest = vcd
+            .dump_to_file(root.join("stream_filter_map.vcd"))
+            .unwrap();
+        expect.assert_eq(&digest);
         Ok(())
     }
 

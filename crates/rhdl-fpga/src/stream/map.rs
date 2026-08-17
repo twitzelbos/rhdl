@@ -64,7 +64,7 @@ use rhdl::{
     prelude::*,
 };
 
-use super::{ready_cast, stream_buffer::StreamBuffer, StreamIO};
+use super::{StreamIO, ready_cast, stream_buffer::StreamBuffer};
 
 #[derive(Clone, Synchronous, SynchronousDQ)]
 #[rhdl(dq_no_prefix)]
@@ -182,7 +182,7 @@ mod tests {
     /// — see `stream::testing::sinks` for why that matters.
     #[test]
     fn map_survives_a_data_gated_sink() -> Result<(), RHDLError> {
-        use crate::stream::{ready, StreamIO};
+        use crate::stream::{StreamIO, ready};
         use rhdl::core::sim::ResetOrData;
 
         const COUNT: u128 = 16;
@@ -223,6 +223,170 @@ mod tests {
             got, want,
             "map must deliver every item to a data-gated sink"
         );
+        Ok(())
+    }
+
+    /// Open-loop stimulus for Tiers 3-5.
+    ///
+    /// Gaps the offered data on one cadence and withholds `ready` on
+    /// another, coprime to it, so the two drift and the trace covers all
+    /// four combinations of (offer, accept) rather than only the aligned
+    /// ones. Equal cadences would put them in lockstep and leave the
+    /// held-item path untested.
+    fn bench_stream() -> impl Iterator<Item = TimedSample<(ClockReset, In<b4, b2>)>> {
+        (0..24u128)
+            .map(|k| In::<b4, b2> {
+                data: if k.is_multiple_of(4) {
+                    None
+                } else {
+                    Some(b4(k % 16))
+                },
+                ready: crate::stream::ready::<b2>(!k.is_multiple_of(3)),
+            })
+            .with_reset(1)
+            .clock_pos_edge(100)
+    }
+
+    /// Tier 3 — HDL emission snapshot.
+    ///
+    /// Top module only; `StreamBuffer` and `Func` carry their own
+    /// snapshots, and inlining them here would make this fail for
+    /// changes with nothing to do with `map`.
+    #[test]
+    fn hdl_emission_snapshot() -> miette::Result<()> {
+        let uut = Map::<b4, b2>::try_new::<map_item>()?;
+        let desc = uut.descriptor("stream_map".into())?;
+        let hdl = desc.hdl()?;
+        let top = hdl
+            .modules
+            .modules
+            .iter()
+            .find(|m| m.name == "stream_map")
+            .expect("top module must be emitted");
+        let expect = expect_test::expect![[r#"
+            module stream_map(input wire [1:0] clock_reset, input wire [5:0] i, output wire [3:0] o);
+               wire [13:0] od;
+               wire [9:0] d;
+               wire [7:0] q;
+               assign o = od[3:0];
+               stream_map_input_buffer c0(.clock_reset(clock_reset), .i(d[5:0]), .o(q[5:0]));
+               stream_map_func c1(.clock_reset(clock_reset), .i(d[9:6]), .o(q[7:6]));
+               assign d = od[13:4];
+               assign od = kernel_kernel(clock_reset, i, q);
+               function [13:0] kernel_kernel(input reg [1:0] arg_0, input reg [5:0] arg_1, input reg [7:0] arg_2);
+                     reg [4:0] r0;
+                     reg [5:0] r1;
+                     // d
+                     reg [9:0] r2;
+                     reg [0:0] r3;
+                     reg [0:0] r4;
+                     reg [0:0] r5;
+                     // d
+                     reg [9:0] r6;
+                     reg [5:0] r7;
+                     reg [7:0] r8;
+                     reg [4:0] r9;
+                     reg [0:0] r10;
+                     reg [3:0] r11;
+                     // d
+                     reg [9:0] r12;
+                     reg [1:0] r13;
+                     reg [2:0] r14;
+                     reg [1:0] r15;
+                     // d
+                     reg [9:0] r16;
+                     // d
+                     reg [9:0] r17;
+                     reg [2:0] r18;
+                     reg [5:0] r19;
+                     reg [0:0] r20;
+                     reg [3:0] r21;
+                     reg [3:0] r22;
+                     reg [13:0] r23;
+                     reg [1:0] r24;
+                     localparam l0 = 10'bXXXXXXXXXX;
+                     localparam l1 = 1'b0;
+                     localparam l2 = 1'b1;
+                     localparam l3 = 4'bXXXX;
+                     localparam l4 = 1'b1;
+                     localparam l5 = 3'b000;
+                     localparam l6 = 4'b0000;
+                     begin
+                        r24 = arg_0;
+                        r1 = arg_1;
+                        r8 = arg_2;
+                        r0 = r1[4:0];
+                        r2 = l0;
+                        r2[4:0] = r0;
+                        r3 = r1[5:5];
+                        r4 = l1;
+                        r5 = r4;
+                        r5[0:0] = r3;
+                        r6 = r2;
+                        r6[5:5] = r5;
+                        r7 = r8[5:0];
+                        r9 = r7[4:0];
+                        r10 = r9[4:4];
+                        r11 = r9[3:0];
+                        r12 = r6;
+                        r12[9:6] = r11;
+                        r13 = r8[7:6];
+                        r15 = r13[1:0];
+                        r14 = {l2, r15};
+                        r16 = r6;
+                        r16[9:6] = l3;
+                        case (r10)
+                           1'b1 : r17 = r12;
+                           default : r17 = r16;
+                        endcase
+                        case (r10)
+                           1'b1 : r18 = r14;
+                           default : r18 = l5;
+                        endcase
+                        r19 = r8[5:0];
+                        r20 = r19[5:5];
+                        r21 = l6;
+                        r21[2:0] = r18;
+                        r22 = r21;
+                        r22[3:3] = r20;
+                        r23 = {r17, r22};
+                        kernel_kernel = r23;
+                     end
+               endfunction
+            endmodule"#]];
+        expect.assert_eq(&top.pretty());
+        Ok(())
+    }
+
+    /// Tier 4 — iverilog round-trip, RTL and NTL.
+    ///
+    /// Both paths: the RTL form skips the Stage-3 NTL passes, so an
+    /// RTL-only round-trip cannot catch a bug in those passes.
+    #[test]
+    fn iverilog_round_trip() -> Result<(), RHDLError> {
+        let uut = Map::<b4, b2>::try_new::<map_item>()?;
+        let tb = uut
+            .run(bench_stream())
+            .collect::<SynchronousTestBench<_, _>>();
+        tb.rtl(&uut, &Default::default())?.run_iverilog()?;
+        tb.ntl(&uut, &Default::default())?.run_iverilog()?;
+        Ok(())
+    }
+
+    /// Tier 5 — VCD digest.
+    #[test]
+    fn trace_digest() -> miette::Result<()> {
+        let uut = Map::<b4, b2>::try_new::<map_item>()?;
+        let vcd = uut.run(bench_stream()).collect::<VcdFile>();
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("vcd")
+            .join("stream_map");
+        std::fs::create_dir_all(&root).unwrap();
+        let expect = expect_test::expect![
+            "5ef9668434775def725880681d616e185cefa61ad1580d772ea4b399ad7857b8"
+        ];
+        let digest = vcd.dump_to_file(root.join("stream_map.vcd")).unwrap();
+        expect.assert_eq(&digest);
         Ok(())
     }
 
