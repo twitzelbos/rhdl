@@ -1,13 +1,14 @@
-use rand::random;
 use rhdl::prelude::*;
+use rhdl_fpga::doc::DetRng;
 use rhdl_fpga::{
     cdc::synchronizer::{In, Sync1Bit},
     doc::write_svg_as_markdown,
 };
 
 fn main() -> Result<(), RHDLError> {
+    let mut det = DetRng::new(0x1000);
     // Start with a stream of pulses
-    let red = (0..).map(|_| random::<u8>() > 200).take(100);
+    let red = (0..).map(move |_| det.chance(22)).take(100);
     // Clock them on the red domain
     let red = red.with_reset(1).clock_pos_edge(100);
     // Create an empty stream on the blue domain

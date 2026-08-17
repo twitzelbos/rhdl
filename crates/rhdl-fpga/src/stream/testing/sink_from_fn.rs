@@ -11,7 +11,7 @@ use rhdl::{
     prelude::*,
 };
 
-use crate::stream::{ready, Ready};
+use crate::stream::{Ready, ready};
 
 /// What a [`SinkFromFn`] closure is told each cycle.
 ///
@@ -112,12 +112,40 @@ impl<T: Digital + std::fmt::Debug> SinkFromFn<T> {
     /// Create a new [SinkFromFn] object from the given iterator
     ///
     /// This constructor will create a sink that expects each item from the
-    /// sink to match an item from the generated iterator.  It will also
-    /// return a random number indicating acceptance based on the passed probability.
-    pub fn new_from_iter<S: Iterator<Item = T> + 'static>(
+    /// sink to match an item from the generated iterator.  Acceptance is
+    /// throttled at roughly `1 - stall_probability`.
+    ///
+    /// The throttling is **deterministic** — a seeded generator, not
+    /// `rand::random`. Several examples build their committed trace
+    /// through this constructor, and those traces run as doctests, so a
+    /// random draw here made `cargo test` rewrite checked-in artifacts on
+    /// every run.
+    ///
+    /// The seed is derived from `stall_probability`, so two sinks
+    /// throttled at different rates decorrelate on their own. Two sinks
+    /// at the *same* rate do not — use [`Self::new_from_iter_with_seed`]
+    /// there.
+    pub fn new_from_iter<S: Iterator<Item = T> + 'static>(iter: S, stall_probability: f32) -> Self {
+        let seed = super::utils::seed_for(f64::from(stall_probability));
+        Self::new_from_iter_with_seed(iter, stall_probability, seed)
+    }
+
+    /// [`Self::new_from_iter`], with the generator seed given explicitly.
+    ///
+    /// Needed whenever one test builds **two sinks in the same run**.
+    /// Sharing a seed makes them stall on identical cycles, and a
+    /// request/response pair that stalls in lockstep never exercises the
+    /// case where one side is blocked while the other flows — which is
+    /// the case worth testing. Differing probabilities are not enough on
+    /// their own: drawing from one sequence against two thresholds nests
+    /// one sink's ready-set inside the other's rather than making them
+    /// independent.
+    pub fn new_from_iter_with_seed<S: Iterator<Item = T> + 'static>(
         mut iter: S,
         stall_probability: f32,
+        seed: u32,
     ) -> Self {
+        let mut det = crate::doc::DetRng::new(seed);
         let func = move |v: SinkView<T>| {
             // Check against ACCEPTED, never offered: a stalled item is
             // presented repeatedly and would pop the iterator more than
@@ -126,7 +154,7 @@ impl<T: Digital + std::fmt::Debug> SinkFromFn<T> {
                 let y = iter.next().unwrap();
                 assert_eq!(res, y);
             }
-            rand::random::<f32>() > stall_probability
+            det.chance(((1.0 - stall_probability) * 100.0) as u32)
         };
         Self::new(func)
     }

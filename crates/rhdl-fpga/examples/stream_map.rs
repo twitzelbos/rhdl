@@ -1,6 +1,7 @@
 use std::iter::repeat_n;
 
 use rhdl::prelude::*;
+use rhdl_fpga::doc::DetRng;
 use rhdl_fpga::stream::testing::sink_from_fn::SinkView;
 use rhdl_fpga::{
     core::slice::lsbs,
@@ -20,13 +21,14 @@ fn main() -> Result<(), RHDLError> {
     let a_rng = XorShift128::default().map(|x| b4((x & 0xF) as u128));
     let mut b_rng = a_rng.clone();
     let a_rng = stalling(a_rng, 0.23);
+    let mut det = DetRng::new(0x1000);
     let consume = move |v: SinkView<b2>| {
         if let Some(data) = v.accepted {
             let orig = b_rng.next().unwrap();
             let orig_lsb = lsbs::<2, 4>(orig);
             assert_eq!(data, orig_lsb);
         }
-        rand::random::<f64>() > 0.2
+        det.chance(80)
     };
     let map = Map::try_new::<map_item>()?;
     let uut = single_stage(map, a_rng, consume);

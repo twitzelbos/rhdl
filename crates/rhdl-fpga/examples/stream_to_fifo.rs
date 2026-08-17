@@ -1,7 +1,9 @@
 use rhdl::prelude::*;
+use rhdl_fpga::doc::DetRng;
 use rhdl_fpga::{rng::xorshift::XorShift128, stream::stream_to_fifo::StreamToFIFO};
 
 fn main() -> Result<(), RHDLError> {
+    let mut det = DetRng::new(0x1000);
     // The buffer will manage items of 4 bits
     let uut = StreamToFIFO::<b4>::default();
     // The test harness will include a consumer that
@@ -18,14 +20,14 @@ fn main() -> Result<(), RHDLError> {
                     return Some(rhdl::core::sim::ResetOrData::Reset);
                 }
                 let mut input = rhdl_fpga::stream::stream_to_fifo::In::<b4>::dont_care();
-                let may_accept = rand::random::<u8>() > 150;
+                let may_accept = det.chance(41);
                 let will_accept = may_accept & out.data.is_some();
                 input.next = false;
                 if will_accept {
                     assert_eq!(out.data, dest_rng.next());
                     input.next = true;
                 }
-                let will_offer = rand::random::<u8>() > 150;
+                let will_offer = det.chance(41);
                 if will_offer {
                     input.data = source_datum;
                 } else {

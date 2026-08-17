@@ -1345,3 +1345,104 @@ pub fn write_fsm_diagram_as_markdown<W: FsmWidget>(
     }
     std::fs::write(path, md)
 }
+
+/// A tiny deterministic pseudo-random source for examples.
+///
+/// # Why examples must not use `rand`
+///
+/// Every example in this crate writes a committed artifact — the
+/// `doc/<name>.md` trace that its widget's rustdoc embeds via
+/// `include_str!`. And because that rustdoc includes the example inside
+/// a fenced code block, **the example also runs as a doctest**. So
+/// `cargo test` executes every example and rewrites every trace.
+///
+/// If an example draws from `rand::random`, its trace differs on every
+/// run: `cargo test` mutates the working tree, `git status` is never
+/// clean after a test run, and the committed artifact is noise rather
+/// than a reviewable record of behaviour. It also violates the
+/// determinism requirement in CLAUDE.md §12 rule 10.
+///
+/// This gives examples the *irregular* stimulus they want — bursty
+/// sources, uneven backpressure — while staying reproducible. It is a
+/// plain xorshift; it is not, and does not need to be, a good RNG.
+#[derive(Debug, Clone)]
+pub struct DetRng(u32);
+
+impl DetRng {
+    /// Create a generator from a seed. Any non-zero seed will do;
+    /// different seeds give different-looking traces.
+    #[must_use]
+    pub fn new(seed: u32) -> Self {
+        // Zero is a fixed point of xorshift, so fold it away.
+        Self(if seed == 0 { 0x9E37_79B9 } else { seed })
+    }
+
+    /// Next raw value.
+    pub fn next_u32(&mut self) -> u32 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 17;
+        self.0 ^= self.0 << 5;
+        self.0
+    }
+
+    /// True roughly `percent` of the time.
+    ///
+    /// The deterministic stand-in for `rand::random::<f64>() > p`.
+    pub fn chance(&mut self, percent: u32) -> bool {
+        self.next_u32() % 100 < percent.min(100)
+    }
+
+    /// A value in `0..n`.
+    pub fn below(&mut self, n: u128) -> u128 {
+        if n == 0 {
+            0
+        } else {
+            u128::from(self.next_u32()) % n
+        }
+    }
+}
+
+#[cfg(test)]
+mod det_rng_tests {
+    use super::DetRng;
+
+    /// The whole point: same seed, same sequence, every run.
+    #[test]
+    fn is_reproducible() {
+        let a: Vec<u32> = (0..8).map(|_| DetRng::new(7).next_u32()).collect();
+        let mut r = DetRng::new(7);
+        let b: Vec<u32> = (0..8).map(|_| r.next_u32()).collect();
+        assert_eq!(a[0], b[0], "same seed must give the same first value");
+        let mut r2 = DetRng::new(7);
+        let c: Vec<u32> = (0..8).map(|_| r2.next_u32()).collect();
+        assert_eq!(b, c, "the whole sequence must repeat");
+    }
+
+    /// `chance` must actually vary, and roughly honour its odds —
+    /// a constant would silently remove the irregularity examples want.
+    #[test]
+    fn chance_varies_and_is_roughly_calibrated() {
+        let mut r = DetRng::new(1);
+        let hits = (0..1000).filter(|_| r.chance(30)).count();
+        assert!(hits > 150 && hits < 450, "expected ~30%, got {hits}/1000");
+        let mut r = DetRng::new(1);
+        assert!(!(0..50).all(|_| r.chance(50)), "must not be constant true");
+        let mut r = DetRng::new(1);
+        assert!((0..50).any(|_| r.chance(50)), "must not be constant false");
+    }
+
+    /// A zero seed must not collapse the generator (xorshift's fixed point).
+    #[test]
+    fn zero_seed_still_generates() {
+        let mut r = DetRng::new(0);
+        let v: Vec<u32> = (0..4).map(|_| r.next_u32()).collect();
+        assert!(v.iter().any(|x| *x != 0), "zero seed must not stay zero");
+    }
+
+    #[test]
+    fn below_stays_in_range() {
+        let mut r = DetRng::new(42);
+        assert!((0..200).all(|_| r.below(16) < 16));
+        assert_eq!(r.below(0), 0, "below(0) must not divide by zero");
+    }
+}

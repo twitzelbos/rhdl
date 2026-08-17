@@ -11,7 +11,9 @@ use rhdl_fpga::{
     },
     doc::write_svg_as_markdown,
     rng::xorshift::XorShift128,
-    stream::testing::{sink_from_fn::SinkFromFn, source_from_fn::SourceFromFn, utils::stalling},
+    stream::testing::{
+        sink_from_fn::SinkFromFn, source_from_fn::SourceFromFn, utils::stalling_with_seed,
+    },
 };
 
 #[derive(Clone, Synchronous, SynchronousDQ)]
@@ -55,10 +57,13 @@ pub fn kernel(_cr: ClockReset, _i: (), q: Q) -> ((), D) {
 fn main() -> Result<(), RHDLError> {
     let rng = XorShift128::default().map(|x| bits(x as u128));
     let address_sink = rng.clone();
-    let address = stalling(rng.clone(), 0.23);
+    // Both channels stall at the same rate, so they need distinct seeds:
+    // the default seed is a function of the rate alone, which would stall
+    // address and reply on identical cycles.
+    let address = stalling_with_seed(rng.clone(), 0.23, 0x00A1_5E01);
     let reply = rng.clone().map(ReadResult::Ok);
     let reply_sink = reply.clone();
-    let reply = stalling(reply, 0.23);
+    let reply = stalling_with_seed(reply, 0.23, 0x00B2_5E02);
     let uut = TestFixture {
         req_source: SourceFromFn::new(address),
         controller: ReadController::default(),

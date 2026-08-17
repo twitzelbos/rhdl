@@ -13,6 +13,7 @@
 
 use badascii_doc::badascii;
 use rhdl::prelude::*;
+use rhdl_fpga::doc::DetRng;
 use rhdl_fpga::stream::testing::sink_from_fn::SinkView;
 use rhdl_fpga::{
     rng::xorshift::XorShift128,
@@ -39,13 +40,14 @@ fn main() -> Result<(), RHDLError> {
     let uut = Flatten::<b4, 2, 4>::default();
     // Create the consumption function.  We should get the elements
     // back in the order they were generated
+    let mut det = DetRng::new(0x1000);
     let consume = move |v: SinkView<_>| {
         if let Some(data) = v.accepted {
             let validation = dest_rng.next().unwrap();
             assert_eq!(data, validation);
         }
         // Issue a stall with some low probability.
-        rand::random::<f64>() > 0.3
+        det.chance(70)
     };
     let uut = single_stage(uut, stalling_source, consume);
     // Feed the UUT a steady diet of clock pulses signals

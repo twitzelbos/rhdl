@@ -1,6 +1,7 @@
 use std::iter::repeat_n;
 
 use rhdl::prelude::*;
+use rhdl_fpga::doc::DetRng;
 use rhdl_fpga::stream::testing::sink_from_fn::SinkView;
 use rhdl_fpga::{
     rng::xorshift::XorShift128,
@@ -18,12 +19,13 @@ fn keep_even(_cr: ClockReset, t: b4) -> bool {
 fn main() -> Result<(), RHDLError> {
     let a_rng = XorShift128::default().map(|x| b4((x & 0xF) as u128));
     let a_rng = stalling(a_rng, 0.23);
+    let mut det = DetRng::new(0x1000);
     let consume = move |v: SinkView<b4>| {
         if let Some(data) = v.accepted {
             // Only even values kept
             assert!(data.raw() & 1 == 0);
         }
-        rand::random::<f64>() > 0.2
+        det.chance(80)
     };
     let filter = Filter::try_new::<keep_even>()?;
     let uut = single_stage(filter, a_rng, consume);

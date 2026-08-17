@@ -74,7 +74,8 @@ mod tests {
     use std::iter::repeat_n;
 
     use crate::{
-        axi4lite::types::StrobedData, rng::xorshift::XorShift128, stream::testing::utils::stalling,
+        axi4lite::types::StrobedData, rng::xorshift::XorShift128,
+        stream::testing::utils::stalling_with_seed,
     };
 
     use super::*;
@@ -109,17 +110,23 @@ mod tests {
     fn test_controller_endpoint() -> Result<(), RHDLError> {
         let commands = write_commands();
         let commands_sink = write_commands();
-        let commands = stalling(commands, 0.23);
+        // Commands and results stall at the same rate, so they need
+        // explicit, distinct seeds: sharing one would stall both channels
+        // on identical cycles and never test a blocked request against a
+        // flowing response.
+        let commands = stalling_with_seed(commands, 0.23, 0x00A1_5701);
         let results = iter_results();
         let results_sink = iter_results();
-        let results = stalling(results, 0.23);
+        let results = stalling_with_seed(results, 0.23, 0x00B2_5702);
         let uut = TestFixture {
             req_source: SourceFromFn::new(commands),
             controller: WriteController::default(),
             endpoint: WriteEndpoint::default(),
-            req_sink: SinkFromFn::new_from_iter(commands_sink, 0.1),
+            // Same rate on both sinks — distinct seeds, same reasoning as
+            // the sources above.
+            req_sink: SinkFromFn::new_from_iter_with_seed(commands_sink, 0.1, 0x00C3_5703),
             reply_source: SourceFromFn::new(results),
-            reply_sink: SinkFromFn::new_from_iter(results_sink, 0.1),
+            reply_sink: SinkFromFn::new_from_iter_with_seed(results_sink, 0.1, 0x00D4_5704),
         };
         let input = repeat_n((), 250);
         let input = input.with_reset(1).clock_pos_edge(100);
