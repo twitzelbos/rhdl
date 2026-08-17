@@ -18,6 +18,10 @@
 //! - [`cdc`] — [`cdc::RCStreamCdc`], a clock-domain crossing for an
 //!   `RCStream` connection, plus [`bus::AsyncRCStream`], the
 //!   domain-typed form of the bus for multi-domain compositions.
+//! - [`fanout`] — [`fanout::RCStreamFanout`], a **broadcast** to `N`
+//!   sinks: every branch receives every item, held until the slowest
+//!   has taken it.  Distinct from [`tee`], which *splits* a tuple
+//!   stream so each branch sees a different projection.
 //!
 //! # Relationship to the existing `stream` module
 //!
@@ -39,12 +43,14 @@ pub mod bus;
 pub mod cdc;
 pub mod chunked;
 pub mod credit;
+pub mod fanout;
 pub mod filter;
 pub mod filter_map;
 pub mod flatten;
 pub mod map;
 pub mod relay;
 pub mod tee;
+pub mod testing;
 pub mod zip;
 
 // Convenience re-exports so downstream code can `use

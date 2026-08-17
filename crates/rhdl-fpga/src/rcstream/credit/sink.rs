@@ -1,5 +1,5 @@
 #![warn(missing_docs)]
-//! [`CreditSink<T, F, CREDIT_W, FIFO_N>`] — converts an incoming
+//! [`CreditSink<T, F, CREDIT_W, FIFO_N, MAX_BURST>`] — converts an incoming
 //! [`super::CreditRCStream`] source into an outgoing
 //! [`crate::rcstream::RCStream`] source.
 //!
@@ -53,15 +53,40 @@
 //!
 //! Each cycle:
 //!
-//! - If `pending_grants > 0`, emit `credit_grant = 1` and decrement
-//!   `pending_grants` by 1.
+//! - Emit `credit_grant = min(pending_grants, MAX_BURST)` and subtract
+//!   it from `pending_grants`.
 //! - When an item is popped from the buffer (= `downstream_ready
 //!   && downstream_data.is_some()`), increment `pending_grants` by 1
 //!   (saturating at `2^CREDIT_W - 1`).
 //!
 //! Net effect: over time, the source's credit counter equals the
 //! number of free slots in the sink's buffer, with the initial pool
-//! dribbling out over the first cycles after reset.
+//! handed out over the first cycles after reset.
+//!
+//! # Burst grants (`MAX_BURST`)
+//!
+//! `MAX_BURST` **defaults to 1**, which is the original one-credit-
+//! per-cycle policy: `min(pending, 1)` is 1 whenever anything is owed
+//! and 0 otherwise. Every existing `CreditSink<T, F, CW, FN>` keeps
+//! compiling and behaving identically.
+//!
+//! Raising it lets the sink return several credits in one cycle, which
+//! refills the source's counter faster after a long stall — with a
+//! 1-per-cycle policy a source that has spent a 15-credit pool waits 15
+//! cycles to be fully re-armed even if the buffer drained instantly.
+//!
+//! **`MAX_BURST` changes the rate, never the size of the pool.** The
+//! total credits handed out from reset is the buffer's usable capacity
+//! whatever the burst size; the `min` is what guarantees it. Granting
+//! more than the buffer can hold is precisely the bug described above,
+//! and a burst policy moves the arithmetic that got it wrong — hence
+//! `burst_changes_the_rate_not_the_pool`, which pins the total for
+//! several burst sizes and is mutation-checked.
+//!
+//! `MAX_BURST` must be representable in `CREDIT_W` bits: the kernel
+//! builds `bits::<CREDIT_W>(MAX_BURST)`, and an out-of-range literal is
+//! rejected at compile time rather than silently truncated. There is no
+//! point exceeding the pool size either, since `min` clamps it anyway.
 //!
 //! # Width sizing
 //!
@@ -107,10 +132,19 @@ use crate::rcstream::bus::Item;
 /// width, and `FIFO_N` is the log2 of the buffer depth (= buffer
 /// holds `2^FIFO_N - 1` items).  Pick `CREDIT_W >= FIFO_N` so the
 /// counter can hold the initial credit pool without truncation.
+///
+/// `MAX_BURST` caps how many credits may be returned in one cycle and
+/// defaults to 1, the original policy.  It changes the rate at which
+/// the pool is handed back, never its size — see the module docs.
 #[derive(Clone, Debug, Synchronous, SynchronousDQ)]
 #[rhdl(dq_no_prefix)]
-pub struct CreditSink<T: Digital, F: Digital, const CREDIT_W: usize, const FIFO_N: usize>
-where
+pub struct CreditSink<
+    T: Digital,
+    F: Digital,
+    const CREDIT_W: usize,
+    const FIFO_N: usize,
+    const MAX_BURST: usize = 1,
+> where
     rhdl::bits::W<CREDIT_W>: BitWidth,
     rhdl::bits::W<FIFO_N>: BitWidth,
 {
@@ -119,14 +153,14 @@ where
     fifo: SyncFIFO<Item<T, F>, FIFO_N>,
     /// Number of credits the sink owes the source but hasn't yet
     /// granted.  Initialized to `min(2^FIFO_N - 1, 2^CREDIT_W - 1)` on
-    /// reset; ticks down by 1 per cycle as we emit grants; ticks up
-    /// by 1 per item popped (= slot freed), saturating at
-    /// `2^CREDIT_W - 1`.
+    /// reset; falls by the amount granted each cycle (at most
+    /// `MAX_BURST`); rises by 1 per item popped (= slot freed),
+    /// saturating at `2^CREDIT_W - 1`.
     pending_grants: dff::DFF<Bits<CREDIT_W>>,
 }
 
-impl<T: Digital, F: Digital, const CREDIT_W: usize, const FIFO_N: usize> Default
-    for CreditSink<T, F, CREDIT_W, FIFO_N>
+impl<T: Digital, F: Digital, const CREDIT_W: usize, const FIFO_N: usize, const MAX_BURST: usize>
+    Default for CreditSink<T, F, CREDIT_W, FIFO_N, MAX_BURST>
 where
     rhdl::bits::W<CREDIT_W>: BitWidth,
     rhdl::bits::W<FIFO_N>: BitWidth,
@@ -175,7 +209,8 @@ where
     rhdl::bits::W<CREDIT_W>: BitWidth,
 {
     /// Credit grant flowing back to the `CreditRCStream` source.
-    /// 0 or 1 per cycle in this implementation.
+    /// `min(pending_grants, MAX_BURST)` this cycle — so 0 or 1 with the
+    /// default `MAX_BURST = 1`.
     pub credit_grant: Bits<CREDIT_W>,
     /// Data flowing forward to the downstream `RCStream` sink.
     /// `Some(item)` when the FIFO has an item ready; `None` when
@@ -183,29 +218,35 @@ where
     pub downstream_data: Option<Item<T, F>>,
 }
 
-impl<T: Digital, F: Digital, const CREDIT_W: usize, const FIFO_N: usize> SynchronousIO
-    for CreditSink<T, F, CREDIT_W, FIFO_N>
+impl<T: Digital, F: Digital, const CREDIT_W: usize, const FIFO_N: usize, const MAX_BURST: usize>
+    SynchronousIO for CreditSink<T, F, CREDIT_W, FIFO_N, MAX_BURST>
 where
     rhdl::bits::W<CREDIT_W>: BitWidth,
     rhdl::bits::W<FIFO_N>: BitWidth,
 {
     type I = In<T, F>;
     type O = Out<T, F, CREDIT_W>;
-    type Kernel = credit_sink_kernel<T, F, CREDIT_W, FIFO_N>;
+    type Kernel = credit_sink_kernel<T, F, CREDIT_W, FIFO_N, MAX_BURST>;
 }
 
 #[kernel(allow_weak_partial)]
 #[doc(hidden)]
-pub fn credit_sink_kernel<T: Digital, F: Digital, const CREDIT_W: usize, const FIFO_N: usize>(
+pub fn credit_sink_kernel<
+    T: Digital,
+    F: Digital,
+    const CREDIT_W: usize,
+    const FIFO_N: usize,
+    const MAX_BURST: usize,
+>(
     _cr: ClockReset,
     i: In<T, F>,
-    q: Q<T, F, CREDIT_W, FIFO_N>,
-) -> (Out<T, F, CREDIT_W>, D<T, F, CREDIT_W, FIFO_N>)
+    q: Q<T, F, CREDIT_W, FIFO_N, MAX_BURST>,
+) -> (Out<T, F, CREDIT_W>, D<T, F, CREDIT_W, FIFO_N, MAX_BURST>)
 where
     rhdl::bits::W<CREDIT_W>: BitWidth,
     rhdl::bits::W<FIFO_N>: BitWidth,
 {
-    let mut d = D::<T, F, CREDIT_W, FIFO_N>::dont_care();
+    let mut d = D::<T, F, CREDIT_W, FIFO_N, MAX_BURST>::dont_care();
     let mut o = Out::<T, F, CREDIT_W>::dont_care();
 
     // Wire the FIFO's input.
@@ -222,32 +263,37 @@ where
     // Forward the FIFO's output to downstream.
     o.downstream_data = q.fifo.data;
 
-    // Credit grant: emit 1 if we have pending grants, else 0.
+    // Credit grant: hand back up to MAX_BURST credits this cycle.
+    //
+    // At `MAX_BURST = 1` (the default) this is exactly the original
+    // one-per-cycle policy — `min(pending, 1)` is 1 whenever pending is
+    // non-zero and 0 otherwise — so the generalisation costs existing
+    // instantiations nothing.
     let zero = bits::<CREDIT_W>(0);
     let one = bits::<CREDIT_W>(1);
     let max = !zero;
-    let grant_now: bool = q.pending_grants != zero;
-    o.credit_grant = if grant_now { one } else { zero };
-
-    // Update pending_grants:
-    //   - decrement by 1 if we granted this cycle,
-    //   - increment by 1 if we popped this cycle (saturating at max).
-    // Because grant and pop change pending_grants by ±1 each, the
-    // net delta this cycle is one of {-1, 0, +1}.
-    let saturated: bool = q.pending_grants == max;
-    let next: Bits<CREDIT_W> = if grant_now && popping {
-        // -1 + 1 = 0 (and never saturated past since net = 0)
+    let burst = bits::<CREDIT_W>(MAX_BURST as u128);
+    let grant: Bits<CREDIT_W> = if q.pending_grants < burst {
         q.pending_grants
-    } else if grant_now {
-        q.pending_grants - one
-    } else if popping {
-        if saturated {
-            q.pending_grants
+    } else {
+        burst
+    };
+    o.credit_grant = grant;
+
+    // Update pending_grants: subtract what we granted, add one if we
+    // popped (a pop frees a slot, which is a credit we now owe).
+    //
+    // `grant <= pending` by construction above, so the subtraction
+    // cannot underflow. The addition saturates at `max`.
+    let after_grant: Bits<CREDIT_W> = q.pending_grants - grant;
+    let next: Bits<CREDIT_W> = if popping {
+        if after_grant == max {
+            after_grant
         } else {
-            q.pending_grants + one
+            after_grant + one
         }
     } else {
-        q.pending_grants
+        after_grant
     };
     d.pending_grants = next;
 
@@ -294,7 +340,7 @@ mod tests {
     }
 
     fn q_with(data: Option<Item<b8, ()>>, pending: u128) -> Q<b8, (), 5, 3> {
-        Q::<b8, (), 5, 3> {
+        Q::<b8, (), 5, 3, 1> {
             fifo: fifo_out(data),
             pending_grants: bits::<5>(pending),
         }
@@ -310,7 +356,7 @@ mod tests {
     /// A pending grant is emitted and the counter decremented.
     #[test]
     fn pending_grant_is_emitted_and_decremented() {
-        let (o, d) = credit_sink_kernel::<b8, (), 5, 3>(
+        let (o, d) = credit_sink_kernel::<b8, (), 5, 3, 1>(
             ClockReset::dont_care(),
             in_with(None, false),
             q_with(None, 4),
@@ -322,7 +368,7 @@ mod tests {
     /// With nothing owed, no credit is manufactured.
     #[test]
     fn no_pending_means_no_grant() {
-        let (o, d) = credit_sink_kernel::<b8, (), 5, 3>(
+        let (o, d) = credit_sink_kernel::<b8, (), 5, 3, 1>(
             ClockReset::dont_care(),
             in_with(None, false),
             q_with(None, 0),
@@ -334,7 +380,7 @@ mod tests {
     /// Popping an item frees a slot, so a credit becomes owed.
     #[test]
     fn popping_an_item_owes_a_credit() {
-        let (_o, d) = credit_sink_kernel::<b8, (), 5, 3>(
+        let (_o, d) = credit_sink_kernel::<b8, (), 5, 3, 1>(
             ClockReset::dont_care(),
             in_with(None, true),
             q_with(Some(item(0xAA)), 0),
@@ -346,7 +392,7 @@ mod tests {
     /// one credit goes out, one slot frees.
     #[test]
     fn simultaneous_grant_and_pop_net_to_zero() {
-        let (o, d) = credit_sink_kernel::<b8, (), 5, 3>(
+        let (o, d) = credit_sink_kernel::<b8, (), 5, 3, 1>(
             ClockReset::dont_care(),
             in_with(None, true),
             q_with(Some(item(0xAA)), 4),
@@ -360,7 +406,7 @@ mod tests {
     /// never freed.
     #[test]
     fn ready_against_an_empty_buffer_pops_nothing() {
-        let (_o, d) = credit_sink_kernel::<b8, (), 5, 3>(
+        let (_o, d) = credit_sink_kernel::<b8, (), 5, 3, 1>(
             ClockReset::dont_care(),
             in_with(None, true),
             q_with(None, 0),
@@ -378,7 +424,7 @@ mod tests {
     #[test]
     fn pending_grants_saturate() {
         let max = (1u128 << 5) - 1;
-        let (_o, d) = credit_sink_kernel::<b8, (), 5, 3>(
+        let (_o, d) = credit_sink_kernel::<b8, (), 5, 3, 1>(
             ClockReset::dont_care(),
             in_with(None, true),
             // At max, granting and popping cancel; force pop-only by
@@ -395,7 +441,7 @@ mod tests {
     /// Incoming data is handed to the buffer verbatim.
     #[test]
     fn upstream_data_reaches_the_buffer() {
-        let (_o, d) = credit_sink_kernel::<b8, (), 5, 3>(
+        let (_o, d) = credit_sink_kernel::<b8, (), 5, 3, 1>(
             ClockReset::dont_care(),
             in_with(Some(item(0x5A)), false),
             q_with(None, 0),
@@ -446,6 +492,95 @@ mod tests {
             (1 << 4) - 1,
             "FIFO_N=4 pool must be 15, not 16"
         );
+    }
+
+    /// **Bursting changes the rate, never the size of the pool.**
+    ///
+    /// The total credits emitted from reset must equal the buffer's
+    /// usable capacity for *every* `MAX_BURST` — a burst policy is
+    /// exactly the kind of change that could reintroduce the
+    /// grant-one-too-many bug, since it moves the arithmetic that got it
+    /// wrong the first time. What burst may change is how quickly the
+    /// pool is handed out, and nothing else.
+    ///
+    /// Verified failable: making the kernel grant `burst` unconditionally
+    /// instead of `min(pending, burst)` inflates the totals and fails the
+    /// first two assertions.
+    #[test]
+    fn burst_changes_the_rate_not_the_pool() {
+        fn drain<const MAX_BURST: usize>() -> (u128, usize) {
+            let uut = CreditSink::<b8, (), 8, 4, MAX_BURST>::default();
+            let stream = std::iter::repeat_n(
+                In::<b8, ()> {
+                    upstream_data: None,
+                    downstream_ready: false,
+                },
+                64,
+            )
+            .with_reset(1)
+            .clock_pos_edge(100);
+            let grants: Vec<u128> = uut
+                .run(stream)
+                .synchronous_sample()
+                .map(|s| s.output.credit_grant.raw())
+                .collect();
+            (
+                grants.iter().sum(),
+                grants.iter().filter(|g| **g > 0).count(),
+            )
+        }
+        const POOL: u128 = (1 << 4) - 1; // FIFO_N = 4 -> 15 usable slots
+        let (total_1, cycles_1) = drain::<1>();
+        let (total_4, cycles_4) = drain::<4>();
+        let (total_8, cycles_8) = drain::<8>();
+
+        assert_eq!(
+            total_1, POOL,
+            "the default policy still grants exactly the pool"
+        );
+        assert_eq!(total_4, POOL, "burst=4 must not inflate the pool");
+        assert_eq!(total_8, POOL, "burst=8 must not inflate the pool");
+
+        assert!(
+            cycles_4 < cycles_1,
+            "burst=4 should drain the pool in fewer cycles than burst=1: {cycles_4} vs {cycles_1}"
+        );
+        assert!(
+            cycles_8 <= cycles_4,
+            "burst=8 should be no slower than burst=4: {cycles_8} vs {cycles_4}"
+        );
+    }
+
+    /// Direct kernel check of the grant expression: `min(pending, burst)`.
+    ///
+    /// Both sides of the `min` matter — clamping to `burst` when credits
+    /// are plentiful, and to `pending` when they are not. The second is
+    /// the safety-critical one: granting `burst` while only `pending`
+    /// slots are free is the over-grant that drops items.
+    #[test]
+    fn burst_grant_is_min_of_pending_and_burst() {
+        fn grant<const MAX_BURST: usize>(pending: u128) -> u128 {
+            let q = Q::<b8, (), 8, 3, MAX_BURST> {
+                fifo: fifo_out(None),
+                pending_grants: bits::<8>(pending),
+            };
+            let (o, _d) = credit_sink_kernel::<b8, (), 8, 3, MAX_BURST>(
+                ClockReset::dont_care(),
+                in_with(None, false),
+                q,
+            );
+            o.credit_grant.raw()
+        }
+        // Plentiful credits: clamped to the burst limit.
+        assert_eq!(grant::<4>(10), 4);
+        assert_eq!(grant::<8>(10), 8);
+        // Scarce credits: clamped to what is actually owed.
+        assert_eq!(grant::<4>(3), 3);
+        assert_eq!(grant::<8>(1), 1);
+        assert_eq!(grant::<4>(0), 0);
+        // The default reduces to the original one-per-cycle policy.
+        assert_eq!(grant::<1>(10), 1);
+        assert_eq!(grant::<1>(0), 0);
     }
 
     /// Tier 2 — the sink under **sustained backpressure**, which is the
@@ -545,6 +680,37 @@ mod tests {
         Ok(())
     }
 
+    /// Tier 4 for a **burst** configuration.
+    ///
+    /// The other round-trip covers `MAX_BURST = 1`, where the grant is a
+    /// one-bit decision. Burst turns it into a real comparison and
+    /// subtraction, which is different logic — and the simulator alone
+    /// would not tell us it lowers correctly.
+    #[test]
+    fn burst_iverilog_round_trip() -> Result<(), RHDLError> {
+        let uut: CreditSink<b8, (), 5, 4, 4> = CreditSink::default();
+        let stream = (0..32u128)
+            .map(|k| In::<b8, ()> {
+                upstream_data: if k < 16 {
+                    Some(Item::<b8, ()> {
+                        data: bits::<8>(k),
+                        frame: (),
+                    })
+                } else {
+                    None
+                },
+                downstream_ready: !k.is_multiple_of(3),
+            })
+            .with_reset(2)
+            .clock_pos_edge(100);
+        let tb = uut.run(stream).collect::<SynchronousTestBench<_, _>>();
+        tb.rtl(&uut, &TestBenchOptions::default().skip(2))?
+            .run_iverilog()?;
+        tb.ntl(&uut, &TestBenchOptions::default().skip(2))?
+            .run_iverilog()?;
+        Ok(())
+    }
+
     /// Tier 3 — HDL emission snapshot.
     ///
     /// Top module only; the `SyncFIFO` and DFF sub-modules carry their
@@ -592,26 +758,19 @@ mod tests {
                      reg [4:0] r15;
                      reg [0:0] r16;
                      reg [4:0] r17;
+                     reg [4:0] r18;
                      // o
-                     reg [13:0] r18;
-                     reg [4:0] r19;
-                     reg [0:0] r20;
-                     reg [0:0] r21;
-                     reg [4:0] r22;
+                     reg [13:0] r19;
+                     reg [4:0] r20;
+                     reg [4:0] r21;
+                     reg [0:0] r22;
                      reg [4:0] r23;
                      reg [4:0] r24;
                      reg [4:0] r25;
-                     reg [4:0] r26;
-                     reg [4:0] r27;
-                     reg [4:0] r28;
-                     reg [4:0] r29;
-                     reg [4:0] r30;
-                     reg [4:0] r31;
-                     reg [4:0] r32;
                      // d
-                     reg [14:0] r33;
-                     reg [28:0] r34;
-                     reg [1:0] r35;
+                     reg [14:0] r26;
+                     reg [28:0] r27;
+                     reg [1:0] r28;
                      localparam l0 = 1'b1;
                      localparam l1 = 1'b1;
                      localparam l2 = 1'b0;
@@ -619,11 +778,11 @@ mod tests {
                      localparam l4 = 10'b0000000000;
                      localparam l5 = 15'bXXXXXXXXXXXXXXX;
                      localparam l6 = 14'bXXXXXXXXXXXXXX;
-                     localparam l7 = 5'b00000;
-                     localparam l8 = 5'b00001;
-                     localparam l9 = 5'b11111;
+                     localparam l7 = 5'b00001;
+                     localparam l8 = 5'b11111;
+                     localparam l9 = 5'b00001;
                      begin
-                        r35 = arg_0;
+                        r28 = arg_0;
                         r6 = arg_1;
                         r1 = arg_2;
                         r0 = r1[13:0];
@@ -647,28 +806,21 @@ mod tests {
                         r14 = l6;
                         r14[13:5] = r13;
                         r15 = r1[18:14];
-                        r16 = |r15;
-                        r17 = r16 ? l8 : l7;
-                        r18 = r14;
-                        r18[4:0] = r17;
-                        r19 = r1[18:14];
-                        r20 = r19 == l9;
-                        r21 = r16 & r7;
-                        r22 = r1[18:14];
-                        r23 = r1[18:14];
-                        r24 = r23 - l8;
-                        r25 = r1[18:14];
-                        r26 = r1[18:14];
-                        r27 = r26 + l8;
-                        r28 = r20 ? r25 : r27;
-                        r29 = r1[18:14];
-                        r30 = r7 ? r28 : r29;
-                        r31 = r16 ? r24 : r30;
-                        r32 = r21 ? r22 : r31;
-                        r33 = r11;
-                        r33[14:10] = r32;
-                        r34 = {r33, r18};
-                        kernel_credit_sink_kernel = r34;
+                        r16 = r15 < l7;
+                        r17 = r1[18:14];
+                        r18 = r16 ? r17 : l7;
+                        r19 = r14;
+                        r19[4:0] = r18;
+                        r20 = r1[18:14];
+                        r21 = r20 - r18;
+                        r22 = r21 == l8;
+                        r23 = r21 + l9;
+                        r24 = r22 ? r21 : r23;
+                        r25 = r7 ? r24 : r21;
+                        r26 = r11;
+                        r26[14:10] = r25;
+                        r27 = {r26, r19};
+                        kernel_credit_sink_kernel = r27;
                      end
                endfunction
             endmodule"#]];

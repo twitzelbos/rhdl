@@ -31,6 +31,52 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-17 — Clearing the `rcstream` backlog: burst grants, true fan-out, a testing fixture
+
+**Paths:** `crates/rhdl-fpga/src/rcstream/credit/sink.rs`, `rcstream/fanout.rs` (new), `rcstream/testing.rs` (new), `rcstream/{mod,relay}.rs`, `examples/rcstream_fanout.rs` (new), `doc/rcstream_fanout.md` (new).
+
+**Why this, why now:** these were the three unblocked items left on the `rcstream` list — everything else is gated behind the reachability-matrix → auto-pipelining chain that Phase 4 needs. Taken together in one PR because they are small, independent, and each has been carried across several entries.
+
+### 1. Burst-grant sink policy
+
+`CreditSink` returned at most one credit per cycle, so a source that had spent a 15-credit pool waited 15 cycles to be re-armed even if the buffer drained instantly. `MAX_BURST` caps how many may be returned per cycle.
+
+- **It is a *defaulted* const generic (`= 1`).** At 1 the policy is bit-identical to the old one — `min(pending, 1)` is 1 whenever anything is owed — so every existing `CreditSink<T, F, CW, FN>` compiles and behaves unchanged. Per the package-manager semver rules that is MINOR; a new *required* parameter would have been MAJOR. First defaulted const generic in the codebase, and it works with the RHDL derives. Rust allows defaults on struct generics but **not** on function generics, so the kernel's turbofish call sites spell the parameter out.
+- **The `min` is the safety property, not an optimisation.** Granting more than the buffer can hold is exactly the off-by-one that silently dropped items, and a burst policy moves the arithmetic that got it wrong. `burst_changes_the_rate_not_the_pool` pins the total handed out from reset at the buffer's usable capacity for bursts of 1, 4 and 8, while asserting larger bursts drain it in fewer cycles. Mutation-checked.
+- The rewrite also *simplified* the emitted logic: the four-branch delta chain became a subtract-and-conditional-add, and the snapshot lost seven intermediate registers. Diff audited rather than re-blessed.
+
+### 2. `RCStreamFanout` — a true broadcast
+
+`tee` splits a `(A, B)` stream so each branch sees a different projection; fan-out broadcasts, so every branch sees the same item. The design plan flagged why that is harder: *"two sinks can go ready on different cycles, and a held item would otherwise be delivered twice."*
+
+Branch 0 accepts on cycle 3, branch 1 stalls until cycle 7. The item must stay on branch 1's wire and must **not** reappear on branch 0's — a naive "present it to everyone until the slowest takes it" delivers it to branch 0 five times. Three registers: the held `item`, a `busy` flag, and a `pending` bitmap; a branch is offered the item only while its bit is set.
+
+- **`ready` is driven from the registered `busy`, never from `i.ready[]`.** That costs one idle cycle between items and is deliberate: deriving it from the branch readys would create a combinational input-to-output path and break `no_combinatorial_paths`, which every `rcstream` combinator carries so it stays a valid relay-insertion point under the LID theorem. A relay on the input closes the gap at the cost of latency, not throughput.
+- Tier 2 drives three branches at coprime cadences (1-in-2, 1-in-3, 1-in-5) — equal rates would let all three retire together on every item and never exercise the hold. Mutation-checked: dropping the per-branch condition fails four tests.
+
+### 3. `rcstream::testing`
+
+Every `rcstream` Tier-2 test was the same twenty lines of `run_fn` bookkeeping, hand-written each time — which is where the interesting decisions get made silently.
+
+The fixture encodes three lessons this library learned the hard way: a sink that can **stall** (`Cadence`), the **data-gated** shape as the default (`assert_lossless`), and **whole-sequence** assertions so an empty result fails (`Delivered::assert_exactly`). It also separates "stalled" from "delivered the wrong thing", which the hand-rolled loops could not.
+
+**Scoped honestly:** it covers widgets shaped `I = RCStream<T, F>`, `O = RCStream<S, F>` — `relay`, `map`, `filter`, `filter_map`. The `N`-branch fan-out, the credit pair and the AXI translators keep driving `run_fn` directly, and should: forcing them through a fixture that does not fit would test the adapter rather than the widget.
+
+**Surprises and gotchas:**
+
+- **A fixture nothing uses is not coverage**, so `relay`'s hand-rolled Tier 2 was migrated onto it rather than left as a parallel implementation. The migration is not a weakening: mutating the relay to ignore backpressure fails the migrated test with `delivered 8 items, expected 24` — a sharper diagnostic than the old whole-vector comparison gave.
+- **The fixture's own tests were mutation-checked too**, because a harness that never accepts would make every widget "lossless" vacuously. Forcing its sink to refuse everything fails two of its five tests with *"the run hit its cycle budget … the widget is stalled, not slow"*.
+- **`Delivered::payloads()` was written and deleted.** It tried to render payloads generically over `S: Digital`, for which there is no raw accessor without a further bound; the first draft compiled only because it was quietly measuring a debug string's length. Deleted rather than shipped — a helper that returns plausible nonsense is worse than no helper.
+
+**Validation:** 176 `rcstream` lib tests pass. New: 2 burst tests + a burst-configuration iverilog round-trip (RTL and NTL — at `MAX_BURST = 1` the grant is a one-bit decision, and burst turns it into a real comparison and subtraction, which the simulator alone would not prove lowers correctly); 10 fan-out tests across all five tiers plus example and waveform; 5 fixture tests. Three mutation checks, all confirmed failing then restored.
+
+**Follow-ups:**
+
+- Fan-out's one-cycle inter-item gap is a deliberate DRC trade. If a consumer needs the throughput, the fix is a documented relay on the input rather than relaxing the combinational-path rule.
+- `map` / `filter` / `filter_map` still have hand-rolled Tier-2 loops that the fixture could now absorb. Left alone here so this PR's migration surface stays one widget wide.
+
+---
+
 ## 2026-08-16 — Sweep for vacuous assertions: `AcceptCount`, and eight tests that proved nothing
 
 **Paths:** `crates/rhdl-fpga/src/stream/testing/sink_from_fn.rs` (new `AcceptCount`), `stream/{zip,xfer,fifo_to_stream}.rs`, `axi4lite/stream/{rhdl_to_axi,axi_to_rhdl}.rs`, `axi4lite/core/testing/{read,write}.rs`, `axi4lite/register/testing/{single_streaming_writes,axi_adder}.rs`.

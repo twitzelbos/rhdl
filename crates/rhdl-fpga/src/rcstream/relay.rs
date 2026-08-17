@@ -391,49 +391,43 @@ mod tests {
     /// suite only ever drove `ready: true`.  A skid buffer exists to
     /// absorb stalls, so a test that never stalls exercises everything
     /// except its reason for existing.
+    /// Driven through [`crate::rcstream::testing`] rather than a
+    /// hand-rolled `run_fn`. Same claim, same 1-in-3 sink cadence; the
+    /// fixture owns the reset/collect/terminate bookkeeping and
+    /// distinguishes "stalled" from "delivered the wrong thing", which
+    /// the hand-rolled version could not.
     #[test]
     fn relay_loses_nothing_under_backpressure() {
-        use rhdl::core::sim::ResetOrData;
+        use crate::rcstream::testing::{Cadence, drive};
         const COUNT: u128 = 24;
         let uut = RCStreamRelay::<b8, bool>::default();
-        let mut to_send: u128 = 0;
-        let mut got: Vec<(u128, bool)> = Vec::new();
-        let mut need_reset = true;
-        let mut phase: u32 = 0;
+        let want: Vec<Item<b8, bool>> = (0..COUNT)
+            .map(|k| Item::<b8, bool> {
+                data: bits::<8>(k),
+                frame: k % 8 == 7,
+            })
+            .collect();
+        let out = drive::<_, b8, bool, b8>(&uut, &want, Cadence::Periodic(3), 20_000);
+        out.assert_exactly(&want);
+    }
 
-        uut.run_fn(
-            |output| {
-                if need_reset {
-                    need_reset = false;
-                    return Some(ResetOrData::Reset);
-                }
-                phase = phase.wrapping_add(1);
-                let ready = phase.is_multiple_of(3);
-                if let Some(it) = output.data {
-                    if ready {
-                        got.push((it.data.raw(), it.frame));
-                    }
-                }
-                let mut input = RCStream::<b8, bool> { data: None, ready };
-                if to_send < COUNT && output.ready {
-                    input.data = Some(Item::<b8, bool> {
-                        data: bits::<8>(to_send),
-                        frame: to_send % 8 == 7,
-                    });
-                    to_send += 1;
-                }
-                Some(ResetOrData::Data(input))
-            },
-            100,
-        )
-        .take_while(|t| t.time < 400_000)
-        .for_each(drop);
-
-        let want: Vec<(u128, bool)> = (0..COUNT).map(|k| (k, k % 8 == 7)).collect();
-        assert_eq!(
-            got, want,
-            "a skid buffer must lose nothing when the sink stalls"
-        );
+    /// The same relay against a **data-gated** sink — one that withholds
+    /// `ready` whenever it sees nothing on the wire.
+    ///
+    /// A skid buffer presents `None` while empty, so this is the shape
+    /// that deadlocks a widget which waits for a downstream it never
+    /// showed anything to. One line, because the fixture exists.
+    #[test]
+    fn relay_survives_a_data_gated_sink() {
+        use crate::rcstream::testing::assert_lossless;
+        let uut = RCStreamRelay::<b8, ()>::default();
+        let want: Vec<Item<b8, ()>> = (0..24u128)
+            .map(|k| Item::<b8, ()> {
+                data: bits::<8>(k),
+                frame: (),
+            })
+            .collect();
+        assert_lossless(&uut, &want);
     }
 
     /// iverilog round-trip: the relay's emitted Verilog matches the
