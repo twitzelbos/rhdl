@@ -64,7 +64,7 @@
 //! | amplitude | 18 bit (native DSP48 port; reaches the ceiling exactly) |
 //! | phase resolution | 360° / 2²² ≈ 0.000086° |
 //!
-//! # Saturation at the rails is load-bearing
+//! # One LSB of table headroom, and why it is load-bearing
 //!
 //! Near a peak the table value is already at full scale and the
 //! first-order correction can push the sum **one LSB** past the 18-bit
@@ -79,7 +79,7 @@
 //! not added noise. Measured on the cosine output, 65536-point
 //! Blackman-Harris, worst spur outside the carrier:
 //!
-//! | tuning word | wrapping | saturating |
+//! | tuning word | if it wrapped | as built |
 //! |---|---|---|
 //! | 524288 | **−0.0 dBc** | −106.8 dBc |
 //! | 262144 | −9.5 dBc | −105.5 dBc |
@@ -92,14 +92,33 @@
 //! wrapping — including innocuous-looking odd ones, so this is not
 //! confined to the round-number adversarial class.
 //!
-//! Two fixes are standard. **Saturate**, as here — two comparators on an
-//! 18-bit path, no amplitude loss, and correct however the widths later
-//! change. Or **scale the table one LSB below full scale**, which costs
-//! no logic at all and only 0.000066 dB of amplitude. Saturation is
-//! chosen because it stays correct if `TBL_W`, `FINE_W`, or `AMP_W` are
-//! ever retuned, whereas the scaling margin would have to be
-//! re-derived — and silently under-scaling reintroduces exactly this
-//! failure.
+//! Two fixes are standard: saturate the sum, or scale the table so the
+//! sum cannot overflow in the first place. **This widget scales**, via
+//! [`TABLE_SCALE`] — one LSB below the 18-bit maximum, which costs
+//! 0.000066 dB of amplitude and **no logic at all**, against two
+//! 20-bit comparators and a pair of muxes for saturation.
+//!
+//! The usual objection to scaling is that the margin is a silent
+//! assumption which a later width change can invalidate. Here it is not
+//! silent: `interpolated_sum_never_leaves_the_range` evaluates all 2²²
+//! phases and fails if the headroom ever stops being sufficient, which
+//! is a stronger guarantee than a comparator provides — a clamp keeps
+//! the output in range but says nothing about whether the design still
+//! makes sense.
+//!
+//! Note that the positive rail is where this bites, and that is a
+//! property of two's complement rather than of trigonometry: the range
+//! is asymmetric, `[−2¹⁷, 2¹⁷−1]`, so a table scaled to `2¹⁷−1` sits
+//! one code short of the negative limit and has nowhere to go when the
+//! interpolation rounds upward.
+//!
+//! Saturation was implemented first and then removed, for a second
+//! reason worth recording: RHDL currently emits signed comparisons
+//! against literals as **unsigned** Verilog, so the clamp inverted its
+//! own sense in hardware while simulating correctly. See
+//! `tests/scratch_signed_literal_cmp.rs`. Scaling is the better design
+//! on cost alone, so this only settled an already-close call — but if
+//! saturation is ever reinstated, that defect must be fixed first.
 //!
 //! Note the asymmetry with the phase accumulator, where wrapping is not
 //! a bug but *the arithmetic*: phase is modulo 2π. Wrapping is correct
@@ -130,6 +149,14 @@ pub const AMP_W: usize = 18;
 /// ≤0.3% of full scale, i.e. about −161 dBc: far below the −116 dBc the
 /// architecture delivers.
 const DELTA_K: i128 = 6434;
+
+/// Table amplitude: **one LSB below** the 18-bit signed maximum.
+///
+/// That single LSB of headroom is what makes the interpolated sum
+/// unable to leave the output range — see the saturation discussion in
+/// the module docs, and `interpolated_sum_never_leaves_the_range`,
+/// which proves it exhaustively over all 2²² phases.
+const TABLE_SCALE: i128 = (1 << (AMP_W - 1)) - 2;
 
 /// Quadrature phase-to-amplitude: coarse quarter-wave table plus
 /// first-order fine rotation.
@@ -169,7 +196,7 @@ pub struct Pipelined {
 /// than off-by-one.
 fn quarter_table() -> Vec<(Bits<TBL_W>, SignedBits<AMP_W>)> {
     let coarse_w = TBL_W + 2;
-    let scale = ((1i128 << (AMP_W - 1)) - 1) as f64;
+    let scale = TABLE_SCALE as f64;
     (0..(1usize << TBL_W))
         .map(|i| {
             let theta = 2.0 * std::f64::consts::PI * (i as f64 + 0.5) / (1u64 << coarse_w) as f64;
@@ -219,8 +246,8 @@ pub fn sin_cos_linear_interp_kernel(_cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let mut d = D::dont_care();
 
     // Split phase into quadrant | index | fine.
-    let coarse = (i.phase >> 12u128).resize::<TBL_W>();
-    let quadrant = (i.phase >> 20u128).resize::<2>();
+    let coarse = (i.phase >> 12).resize::<TBL_W>();
+    let quadrant = (i.phase >> 20).resize::<2>();
     let fine = i.phase.resize::<FINE_W>();
 
     // Odd quadrants read the table mirrored.
@@ -270,36 +297,18 @@ pub fn sin_cos_linear_interp_kernel(_cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // First-order rotation.  Wide intermediate: 18 + 12 + 13 = 43 bits
     // of true product, carried in 48.
     let k = signed::<48>(DELTA_K);
-    let corr_sin = ((c0.resize::<48>() * delta * k) >> 32u128).resize::<AMP_W>();
-    let corr_cos = ((s0.resize::<48>() * delta * k) >> 32u128).resize::<AMP_W>();
+    let corr_sin = ((c0.resize::<48>() * delta * k) >> 32).resize::<AMP_W>();
+    let corr_cos = ((s0.resize::<48>() * delta * k) >> 32).resize::<AMP_W>();
 
-    // Saturate rather than wrap.  Near |sin| or |cos| = 1 the table
-    // value is already at full scale, and the interpolation can push the
-    // sum one LSB past the 18-bit signed range — where wrapping flips it
-    // to the opposite rail, an error of the full 2^18. It happens for
-    // roughly 1 phase in 2000, which is exactly the density that hides
-    // behind an average and only shows in a worst-case sweep.
-    let lim = signed::<20>(131071);
-    let sum_sin = s0.resize::<20>() + corr_sin.resize::<20>();
-    let sum_cos = c0.resize::<20>() - corr_cos.resize::<20>();
-    let sat_sin = if sum_sin > lim {
-        lim
-    } else if sum_sin < -lim {
-        -lim
-    } else {
-        sum_sin
-    };
-    let sat_cos = if sum_cos > lim {
-        lim
-    } else if sum_cos < -lim {
-        -lim
-    } else {
-        sum_cos
-    };
-
+    // No clamp.  `TABLE_SCALE` leaves one LSB of headroom, which is
+    // exactly the largest overshoot the rotation can produce, so the sum
+    // provably cannot leave the output range —
+    // `interpolated_sum_never_leaves_the_range` checks all 2^22 phases.
+    // Wrapping here would be catastrophic rather than cosmetic: see the
+    // module docs.
     let o = Out {
-        sin: sat_sin.resize::<AMP_W>(),
-        cos: sat_cos.resize::<AMP_W>(),
+        sin: s0 + corr_sin,
+        cos: c0 - corr_cos,
     };
     (o, d)
 }
@@ -307,6 +316,7 @@ pub fn sin_cos_linear_interp_kernel(_cr: ClockReset, i: In, q: Q) -> (Out, D) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use expect_test::expect;
 
     #[test]
     fn default_construction() {
@@ -314,119 +324,76 @@ mod tests {
     }
 
     /// Scratch: hold one phase constant and watch the pipeline settle.
+    /// Tier 1 — the kernel alone, driven with a hand-built `q`, matches
+    /// `f64` trigonometry across every quadrant and both ends of the
+    /// fine remainder.
+    ///
+    /// The kernel takes its sign and its interpolation input from
+    /// `q.delayed`, **not** from `i.phase` — that separation is what the
+    /// one-cycle pipeline alignment rests on. Driving the kernel
+    /// directly is the only place it can be checked in isolation from
+    /// the alignment itself, which is why `i.phase` is left at zero
+    /// here and the assertion still means something.
     #[test]
-    #[ignore]
-    fn scratch_settle() {
-        let uut = SinCosLinearInterp::default();
-        let full = 1u128 << TOTAL_W;
-        let scale = ((1i128 << (AMP_W - 1)) - 1) as f64;
-        let ph = 700_000u128;
-        let th = 2.0 * std::f64::consts::PI * ph as f64 / full as f64;
-        println!(
-            "\n  phase {ph} -> want sin {:.0} cos {:.0}",
-            th.sin() * scale,
-            th.cos() * scale
-        );
-        let stream = std::iter::repeat_n(
-            In {
-                phase: bits::<TOTAL_W>(ph),
-            },
-            8,
-        )
-        .with_reset(1)
-        .clock_pos_edge(100);
-        println!("  cycle   got sin    got cos");
-        for (k, s) in uut.run(stream).synchronous_sample().enumerate() {
-            println!(
-                "  {k:>5}  {:>9}  {:>9}",
-                s.output.sin.raw(),
-                s.output.cos.raw()
-            );
-        }
-    }
-
-    /// Scratch: drive the kernel directly with a hand-built Q, so the
-    /// BRAM and its latency are out of the picture entirely.
-    #[test]
-    #[ignore]
-    fn scratch_kernel_direct() {
+    fn kernel_matches_trigonometry_directly() {
         let tbl = quarter_table();
         let scale = ((1i128 << (AMP_W - 1)) - 1) as f64;
         let two_pi = 2.0 * std::f64::consts::PI;
-        println!("\n  quad idx  fine    want sin   want cos    got sin    got cos");
-        for (quad, idx, fine) in [
-            (0u128, 128u128, 2048u128),
-            (0, 128, 0),
-            (0, 128, 4095),
-            (1, 64, 2048),
-            (2, 200, 2048),
-            (3, 10, 2048),
-        ] {
-            // Addresses the kernel would have issued for this phase.
-            let mirrored = 255 - idx;
-            let sin_addr = if quad % 2 == 1 { mirrored } else { idx };
-            let cq = (quad + 1) % 4;
-            let cos_addr = if cq % 2 == 1 { mirrored } else { idx };
 
-            let q = Q {
-                sin_tbl: tbl[sin_addr as usize].1,
-                cos_tbl: tbl[cos_addr as usize].1,
-                delayed: Pipelined {
-                    quadrant: bits::<2>(quad),
-                    fine: bits::<FINE_W>(fine),
-                },
-            };
-            let (o, _d) = sin_cos_linear_interp_kernel(
-                ClockReset::dont_care(),
-                In {
-                    phase: bits::<TOTAL_W>(0),
-                },
-                q,
-            );
-            // True angle for this (quadrant, index, fine).
-            let coarse_angle = two_pi * ((quad * 256 + idx) as f64 + 0.5) / 1024.0;
-            let delta = (fine as f64 / 4096.0 - 0.5) * (two_pi / 1024.0);
-            let th = coarse_angle + delta;
-            println!(
-                "  {quad:>4} {idx:>4} {fine:>5}  {:>10.0} {:>10.0}  {:>10} {:>10}",
-                th.sin() * scale,
-                th.cos() * scale,
-                o.sin.raw(),
-                o.cos.raw()
-            );
-        }
-    }
+        let mut worst = 0.0f64;
+        let mut worst_at = (0u128, 0u128, 0u128);
+        let mut checked = 0usize;
 
-    /// Scratch: print actual vs expected for a few phases.
-    #[test]
-    #[ignore]
-    fn scratch_dump() {
-        let uut = SinCosLinearInterp::default();
-        let full = 1u128 << TOTAL_W;
-        let scale = ((1i128 << (AMP_W - 1)) - 1) as f64;
-        let phases: Vec<u128> = (0..12u128).map(|k| k * (full / 12)).collect();
-        let stream = phases
-            .iter()
-            .map(|p| In {
-                phase: bits::<TOTAL_W>(*p),
-            })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .with_reset(1)
-            .clock_pos_edge(100);
-        let out: Vec<(i128, i128)> = uut
-            .run(stream)
-            .synchronous_sample()
-            .map(|s| (s.output.sin.raw(), s.output.cos.raw()))
-            .collect();
-        println!("\n  idx  phase      want sin   want cos   got sin    got cos");
-        for (i, ph) in phases.iter().enumerate() {
-            let th = 2.0 * std::f64::consts::PI * *ph as f64 / full as f64;
-            let (ws, wc) = ((th.sin() * scale) as i128, (th.cos() * scale) as i128);
-            let (gs, gc) = if i < out.len() { out[i] } else { (0, 0) };
-            println!("  {i:>3}  {ph:>9}  {ws:>9}  {wc:>9}  {gs:>9}  {gc:>9}");
+        for quad in 0..4u128 {
+            for idx in [0u128, 1, 64, 128, 200, 255] {
+                for fine in [0u128, 1, 2048, 4094, 4095] {
+                    let mirrored = 255 - idx;
+                    let sin_addr = if quad % 2 == 1 { mirrored } else { idx };
+                    let cq = (quad + 1) % 4;
+                    let cos_addr = if cq % 2 == 1 { mirrored } else { idx };
+
+                    let q = Q {
+                        sin_tbl: tbl[sin_addr as usize].1,
+                        cos_tbl: tbl[cos_addr as usize].1,
+                        delayed: Pipelined {
+                            quadrant: bits::<2>(quad),
+                            fine: bits::<FINE_W>(fine),
+                        },
+                    };
+                    let (o, _d) = sin_cos_linear_interp_kernel(
+                        ClockReset::dont_care(),
+                        In {
+                            phase: bits::<TOTAL_W>(0),
+                        },
+                        q,
+                    );
+
+                    let coarse_angle = two_pi * ((quad * 256 + idx) as f64 + 0.5) / 1024.0;
+                    let delta = (fine as f64 / 4096.0 - 0.5) * (two_pi / 1024.0);
+                    let th = coarse_angle + delta;
+                    let e = (o.sin.raw() as f64 - th.sin() * scale)
+                        .abs()
+                        .max((o.cos.raw() as f64 - th.cos() * scale).abs());
+                    if e > worst {
+                        worst = e;
+                        worst_at = (quad, idx, fine);
+                    }
+                    checked += 1;
+                }
+            }
         }
-        println!("  (out len {})", out.len());
+
+        assert_eq!(checked, 120, "the sweep did not cover what it claims to");
+        assert!(
+            worst < 4.0,
+            "worst error {worst:.1} LSB at (quadrant, index, fine) = {worst_at:?}"
+        );
+        // Zero would mean the comparison is vacuous — the kernel is
+        // fixed-point and cannot match f64 exactly.
+        assert!(
+            worst > 0.0,
+            "exactly zero error suggests a vacuous comparison"
+        );
     }
 
     /// The interpolated output tracks `f64` trigonometry to within a
@@ -523,10 +490,374 @@ mod tests {
         );
     }
 
+    /// The bit-exact model used by the proof below really does describe
+    /// the widget.
+    ///
+    /// Without this the exhaustive check would prove a property of the
+    /// model and say nothing about the hardware — the exact substitution
+    /// CLAUDE.md forbids. Compared against the widget's own output, at
+    /// the same alignment the Tier 2 test asserts.
+    #[test]
+    fn model_agrees_with_the_widget() {
+        let uut = SinCosLinearInterp::default();
+        let full = 1u128 << TOTAL_W;
+        let stride = 7919u128;
+        let phases: Vec<u128> = (0..2048u128).map(|k| (k * stride) % full).collect();
+        let stream = phases
+            .iter()
+            .map(|p| In {
+                phase: bits::<TOTAL_W>(*p),
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .with_reset(1)
+            .clock_pos_edge(100);
+        let out: Vec<(i128, i128)> = uut
+            .run(stream)
+            .synchronous_sample()
+            .map(|s| (s.output.sin.raw(), s.output.cos.raw()))
+            .collect();
+
+        let tbl = model_table();
+        let mut compared = 0usize;
+        for (i, p) in phases.iter().enumerate().skip(4) {
+            if i + 2 >= out.len() {
+                break;
+            }
+            assert_eq!(model_pair_raw(&tbl, *p), out[i + 2], "phase {p}");
+            compared += 1;
+        }
+        assert!(compared > 2000, "only {compared} samples compared");
+    }
+
+    /// Exhaustive proof that the one-LSB headroom in [`TABLE_SCALE`] is
+    /// sufficient: across all 2²² phases neither interpolated sum leaves
+    /// the 18-bit signed range, so the output cannot wrap.
+    ///
+    /// **This test is the saturation logic.** The widget carries no
+    /// clamp; the margin is what keeps it in range, and a margin is only
+    /// as good as the thing that checks it. If `TBL_W`, `FINE_W`,
+    /// `AMP_W` or `DELTA_K` are ever retuned so the headroom stops being
+    /// enough, this fails instead of the hardware silently inverting
+    /// sign at the peaks.
+    ///
+    /// Verified able to fail: setting `TABLE_SCALE` back to the
+    /// full-scale `(1 << (AMP_W - 1)) - 1` reports 1550 overflowing
+    /// phases, which is where the whole investigation started.
+    #[test]
+    fn interpolated_sum_never_leaves_the_range() {
+        let tbl = model_table();
+        let limit = (1i128 << (AMP_W - 1)) - 1;
+        let mut n_over = 0u64;
+        let mut worst = 0i128;
+        let mut worst_phase = 0u128;
+        for phase in 0..(1u128 << TOTAL_W) {
+            let (s, c) = model_pair_raw(&tbl, phase);
+            for v in [s, c] {
+                if v.abs() > limit {
+                    n_over += 1;
+                    if v.abs() > worst {
+                        worst = v.abs();
+                        worst_phase = phase;
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            n_over, 0,
+            "{n_over} components leave the range; worst |value| {worst} at phase \
+             {worst_phase} against a limit of {limit}.  The table headroom is no \
+             longer sufficient — either restore it or reinstate a clamp."
+        );
+    }
+
+    /// Tier 3 — HDL emission snapshot.
+    ///
+    /// Only module `top` is captured verbatim. The two table instances
+    /// emit ~278 lines each of BRAM initialisation: 550 lines of
+    /// trigonometric constants that no reviewer will audit, and whose
+    /// correctness is already asserted by
+    /// [`quarter_table_is_a_rising_quarter_sine`]. The child modules are
+    /// pinned by name and start line instead, so adding, removing or
+    /// resizing one still fails the test.
+    ///
+    /// `fifo::synchronous` and `core::ram::option_sync` omit an HDL
+    /// snapshot entirely for the same reason; capturing `top` is
+    /// strictly more coverage than the existing convention for
+    /// memory-backed widgets, not less.
+    #[test]
+    fn test_vlog_generation() -> miette::Result<()> {
+        let uut = SinCosLinearInterp::default();
+        let hdl = uut.descriptor("top".into())?.hdl()?.modules.pretty();
+
+        let shape = hdl
+            .lines()
+            .enumerate()
+            .filter(|(_, l)| l.starts_with("module ") || l.starts_with("endmodule"))
+            .map(|(n, l)| format!("{}: {}", n + 1, l.split('(').next().unwrap()))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let expect_shape = expect![[r#"
+            1: module top
+            173: endmodule
+            174: module top_sin_tbl
+            452: endmodule
+            453: module top_cos_tbl
+            731: endmodule
+            732: module top_delayed
+            747: endmodule"#]];
+        expect_shape.assert_eq(&shape);
+
+        let top = hdl
+            .lines()
+            .take_while(|l| !l.starts_with("module top_"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let expect_top = expect![[r#"
+            module top(input wire [1:0] clock_reset, input wire [21:0] i, output wire [35:0] o);
+               wire [119:0] od;
+               wire [83:0] d;
+               wire [49:0] q;
+               assign o = od[35:0];
+               top_sin_tbl c0(.clock_reset(clock_reset), .i(d[34:0]), .o(q[17:0]));
+               top_cos_tbl c1(.clock_reset(clock_reset), .i(d[69:35]), .o(q[35:18]));
+               top_delayed c2(.clock_reset(clock_reset), .i(d[83:70]), .o(q[49:36]));
+               assign d = od[119:36];
+               assign od = kernel_sin_cos_linear_interp_kernel(clock_reset, i, q);
+               function [119:0] kernel_sin_cos_linear_interp_kernel(input reg [1:0] arg_0, input reg [21:0] arg_1, input reg [49:0] arg_2);
+                     reg [21:0] r0;
+                     reg [21:0] r1;
+                     reg [7:0] r2;
+                     reg [21:0] r3;
+                     reg [1:0] r4;
+                     reg [11:0] r5;
+                     reg [7:0] r6;
+                     reg [1:0] r7;
+                     reg [0:0] r8;
+                     reg [7:0] r9;
+                     reg [1:0] r10;
+                     reg [1:0] r11;
+                     reg [0:0] r12;
+                     reg [7:0] r13;
+                     reg [34:0] r14;
+                     reg [34:0] r15;
+                     // d
+                     reg [83:0] r16;
+                     reg [34:0] r17;
+                     reg [34:0] r18;
+                     // d
+                     reg [83:0] r19;
+                     reg [13:0] r20;
+                     reg [13:0] r21;
+                     // d
+                     reg [83:0] r22;
+                     reg [13:0] r23;
+                     reg [49:0] r24;
+                     reg [1:0] r25;
+                     reg [1:0] r26;
+                     reg [1:0] r27;
+                     reg [0:0] r28;
+                     reg [1:0] r29;
+                     reg [0:0] r30;
+                     reg signed [17:0] r31;
+                     reg signed [17:0] r32;
+                     reg signed [17:0] r33;
+                     reg signed [17:0] r34;
+                     reg signed [17:0] r35;
+                     reg signed [17:0] r36;
+                     reg signed [17:0] r37;
+                     reg signed [17:0] r38;
+                     reg [13:0] r39;
+                     reg [11:0] r40;
+                     reg [47:0] r41;
+                     reg signed [47:0] r42;
+                     reg signed [47:0] r43;
+                     reg signed [47:0] r44;
+                     reg signed [47:0] r45;
+                     reg signed [47:0] r46;
+                     reg signed [47:0] r47;
+                     reg signed [17:0] r48;
+                     reg signed [47:0] r49;
+                     reg signed [47:0] r50;
+                     reg signed [47:0] r51;
+                     reg signed [47:0] r52;
+                     reg signed [17:0] r53;
+                     reg signed [17:0] r54;
+                     reg signed [17:0] r55;
+                     reg [35:0] r56;
+                     reg [35:0] r57;
+                     reg [119:0] r58;
+                     reg [1:0] r59;
+                     reg [33:0] r60;
+                     reg [41:0] r61;
+                     reg signed [79:0] r62;
+                     reg signed [79:0] r63;
+                     localparam l0 = 8'b11111111;
+                     localparam l1 = 2'b01;
+                     localparam l2 = 2'b01;
+                     localparam l3 = 2'b01;
+                     localparam l4 = 35'b00000000000000000000000000000000000;
+                     localparam l5 = 27'b000000000000000000000000000;
+                     localparam l6 = 84'bXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX;
+                     localparam l7 = 35'b00000000000000000000000000000000000;
+                     localparam l8 = 14'b00000000000000;
+                     localparam l9 = 2'b01;
+                     localparam l10 = 2'b10;
+                     localparam l11 = 2'b10;
+                     localparam l12 = 48'b000000000000000000000000000000000000100000000000;
+                     localparam l13 = 48'b000000000000000000000000000000000001100100100010;
+                     localparam l14 = 36'b000000000000000000000000000000000000;
+                     begin
+                        r59 = arg_0;
+                        r0 = arg_1;
+                        r24 = arg_2;
+                        r60 = {{12{1'b0}}, r0};
+                        r1 = r60[33:12];
+                        r2 = r1[7:0];
+                        r61 = {{20{1'b0}}, r0};
+                        r3 = r61[41:20];
+                        r4 = r3[1:0];
+                        r5 = r0[11:0];
+                        r6 = l0 - r2;
+                        r7 = r4 & l1;
+                        r8 = |r7;
+                        r9 = r8 ? r6 : r2;
+                        r10 = r4 + l2;
+                        r11 = r10 & l3;
+                        r12 = |r11;
+                        r13 = r12 ? r6 : r2;
+                        r14 = l4;
+                        r14[7:0] = r9;
+                        r15 = r14;
+                        r15[34:8] = l5;
+                        r16 = l6;
+                        r16[34:0] = r15;
+                        r17 = l7;
+                        r17[7:0] = r13;
+                        r18 = r17;
+                        r18[34:8] = l5;
+                        r19 = r16;
+                        r19[69:35] = r18;
+                        r20 = l8;
+                        r20[1:0] = r4;
+                        r21 = r20;
+                        r21[13:2] = r5;
+                        r22 = r19;
+                        r22[83:70] = r21;
+                        r23 = r24[49:36];
+                        r25 = r23[1:0];
+                        r26 = r25 + l9;
+                        r27 = r25 & l10;
+                        r28 = |r27;
+                        r29 = r26 & l11;
+                        r30 = |r29;
+                        r31 = r24[17:0];
+                        r32 = -r31;
+                        r33 = r24[17:0];
+                        r34 = r28 ? r32 : r33;
+                        r35 = r24[35:18];
+                        r36 = -r35;
+                        r37 = r24[35:18];
+                        r38 = r30 ? r36 : r37;
+                        r39 = r24[49:36];
+                        r40 = r39[13:2];
+                        r41 = {{36{1'b0}}, r40};
+                        r42 = $signed(r41);
+                        r43 = r42 - l12;
+                        r44 = $signed({{30{r38[17]}}, r38});
+                        r45 = r44 * r43;
+                        r46 = r45 * l13;
+                        r62 = $signed({{32{r46[47]}}, r46});
+                        r47 = r62[79:32];
+                        r48 = $signed(r47[17:0]);
+                        r49 = $signed({{30{r34[17]}}, r34});
+                        r50 = r49 * r43;
+                        r51 = r50 * l13;
+                        r63 = $signed({{32{r51[47]}}, r51});
+                        r52 = r63[79:32];
+                        r53 = $signed(r52[17:0]);
+                        r54 = r34 + r48;
+                        r55 = r38 - r53;
+                        r56 = l14;
+                        r56[17:0] = r54;
+                        r57 = r56;
+                        r57[35:18] = r55;
+                        r58 = {r22, r57};
+                        kernel_sin_cos_linear_interp_kernel = r58;
+                     end
+               endfunction
+            endmodule"#]];
+        expect_top.assert_eq(&top);
+        Ok(())
+    }
+
+    /// A short phase ramp, reused by Tiers 4 and 5 so the Verilog
+    /// round-trip and the committed waveform describe the same stimulus.
+    fn hdl_stimulus() -> impl Iterator<Item = In> {
+        // A stride that is not a divisor of the phase space, so the ramp
+        // crosses quadrant boundaries and lands on assorted fine
+        // remainders rather than repeating one alignment.
+        (0..64u128).map(|k| In {
+            phase: bits::<TOTAL_W>((k * 65_537) % (1 << TOTAL_W)),
+        })
+    }
+
+    /// Tier 4 — the emitted Verilog agrees with the Rust simulation,
+    /// cycle by cycle, through both the RTL and the NTL paths.
+    ///
+    /// This is the tier that would have caught the widget being
+    /// unsynthesisable: it simulated correctly for its entire life while
+    /// `descriptor()` failed outright, because simulation runs the
+    /// kernel as a Rust function and never parses a literal.
+    #[test]
+    fn test_sin_cos_linear_interp_hdl_works() -> miette::Result<()> {
+        let uut = SinCosLinearInterp::default();
+        let stream = hdl_stimulus()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .with_reset(1)
+            .clock_pos_edge(100);
+        let test_bench = uut.run(stream).collect::<SynchronousTestBench<_, _>>();
+        // `.skip(2)` matches `core::ram::synchronous`: a block RAM's
+        // output register is `x` in Verilog until the first read
+        // completes, while the Rust simulator reports the initial value
+        // immediately.  The two agree from the moment the pipeline is
+        // primed, which for this widget is the BRAM read plus the
+        // attribute DFF — the same two cycles as `LATENCY` above.
+        let opts = TestBenchOptions::default().skip(2);
+        let tm = test_bench.rtl(&uut, &opts)?;
+        tm.run_iverilog()?;
+        let tm = test_bench.ntl(&uut, &opts)?;
+        tm.run_iverilog()?;
+        Ok(())
+    }
+
+    /// Tier 5 — VCD digest.
+    #[test]
+    fn test_sin_cos_linear_interp_trace() -> miette::Result<()> {
+        let uut = SinCosLinearInterp::default();
+        let stream = hdl_stimulus()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .with_reset(1)
+            .clock_pos_edge(100);
+        let vcd = uut.run(stream).collect::<VcdFile>();
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("vcd")
+            .join("sin_cos_linear_interp");
+        std::fs::create_dir_all(&root).unwrap();
+        let expect = expect!["cb1701e2304efd26a47b1dccb86d7a10f82486c6136b5628669a19486e1bab8e"];
+        let digest = vcd
+            .dump_to_file(root.join("sin_cos_linear_interp.vcd"))
+            .unwrap();
+        expect.assert_eq(&digest);
+        Ok(())
+    }
+
     /// Bit-exact software model of the datapath, so the overflow
     /// question can be answered spectrally without running 65536 cycles
     /// of simulation.  Mirrors the kernel line for line.
-    fn model_pair(tbl: &[i128], phase: u128, saturate: bool) -> (i128, i128) {
+    fn model_pair_raw(tbl: &[i128], phase: u128) -> (i128, i128) {
         let coarse = ((phase >> 12) & 0xFF) as usize;
         let quadrant = (phase >> 20) & 0x3;
         let fine = (phase & 0xFFF) as i128;
@@ -551,6 +882,14 @@ mod tests {
         let delta = fine - 2048;
         let sum_sin = s0 + ((c0 * delta * DELTA_K) >> 32);
         let sum_cos = c0 - ((s0 * delta * DELTA_K) >> 32);
+        (sum_sin, sum_cos)
+    }
+
+    /// [`model_pair_raw`] with the output range enforced, either by
+    /// saturating or by wrapping — used only by the diagnostics that
+    /// document *why* the headroom exists.
+    fn model_pair(tbl: &[i128], phase: u128, saturate: bool) -> (i128, i128) {
+        let (sum_sin, sum_cos) = model_pair_raw(tbl, phase);
         let fix = |v: i128| -> i128 {
             if saturate {
                 v.clamp(-131071, 131071)

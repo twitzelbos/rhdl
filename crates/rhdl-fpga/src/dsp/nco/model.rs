@@ -353,6 +353,32 @@ pub struct SweepEntry {
     pub worst_spur_hz: f64,
 }
 
+/// Parameters for an adversarial tuning-word sweep.
+///
+/// Grouped into a struct rather than passed positionally: eight bare
+/// numeric arguments, six of which are widths or frequencies, is a
+/// transposition waiting to happen — and a transposed sweep reports a
+/// plausible number for the wrong configuration.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct SweepConfig {
+    /// Phase accumulator width.
+    pub phase_w: u32,
+    /// Phase bits addressing the table.
+    pub addr_w: u32,
+    /// Bits per amplitude sample.
+    pub amp_w: u32,
+    /// Sample clock, Hz.
+    pub f_clk: f64,
+    /// Nominal output frequency, Hz.
+    pub carrier_hz: f64,
+    /// Analysis bandwidth centred on `carrier_hz`, Hz.
+    pub band_hz: f64,
+    /// Samples analysed per candidate word.
+    pub record: usize,
+    /// Random words added beyond the adversarial set.
+    pub extra_random: usize,
+}
+
 /// Sweep tuning words and return every result, worst first.
 ///
 /// Returning the whole distribution rather than only the minimum is
@@ -362,16 +388,17 @@ pub struct SweepEntry {
 /// `carrier_hz` sets the nominal output; the analysis band is
 /// `carrier ± band_hz/2`. Only the low-order bits are varied, so every
 /// candidate stays inside that band.
-pub fn sizing_sweep(
-    phase_w: u32,
-    addr_w: u32,
-    amp_w: u32,
-    f_clk: f64,
-    carrier_hz: f64,
-    band_hz: f64,
-    record: usize,
-    extra_random: usize,
-) -> Vec<SweepEntry> {
+pub fn sizing_sweep(cfg: SweepConfig) -> Vec<SweepEntry> {
+    let SweepConfig {
+        phase_w,
+        addr_w,
+        amp_w,
+        f_clk,
+        carrier_hz,
+        band_hz,
+        record,
+        extra_random,
+    } = cfg;
     let base = ((carrier_hz / f_clk) * (1u64 << phase_w) as f64).round() as u64;
     let (band_lo, band_hi) = (carrier_hz - band_hz / 2.0, carrier_hz + band_hz / 2.0);
     let mut model = DdsModel::new(phase_w, addr_w, amp_w);
@@ -393,26 +420,8 @@ pub fn sizing_sweep(
 }
 
 /// Worst in-band SFDR over an adversarial sweep.
-pub fn worst_in_band_sfdr_over_sweep(
-    phase_w: u32,
-    addr_w: u32,
-    amp_w: u32,
-    f_clk: f64,
-    carrier_hz: f64,
-    band_hz: f64,
-    record: usize,
-    extra_random: usize,
-) -> (f64, u64) {
-    let sweep = sizing_sweep(
-        phase_w,
-        addr_w,
-        amp_w,
-        f_clk,
-        carrier_hz,
-        band_hz,
-        record,
-        extra_random,
-    );
+pub fn worst_in_band_sfdr_over_sweep(cfg: SweepConfig) -> (f64, u64) {
+    let sweep = sizing_sweep(cfg);
     let w = sweep.first().expect("sweep produced no candidates");
     (w.sfdr_db, w.word)
 }
@@ -512,7 +521,10 @@ pub fn exact_spur_spectrum(
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum PhaseToAmp {
     /// Plain lookup: truncate phase to `addr_w` and read the table.
-    Lut { addr_w: u32 },
+    Lut {
+        /// Phase bits addressing the table.
+        addr_w: u32,
+    },
     /// Coarse table plus first-order rotation by the fine remainder —
     /// the §8.7 hybrid.
     ///
@@ -526,7 +538,12 @@ pub enum PhaseToAmp {
     /// accuracy improves far faster per coarse bit than enlarging the
     /// table does — and unlike dither it costs no noise floor, which
     /// matters when the instrument is sensitivity-limited.
-    Hybrid { coarse_w: u32, fine_w: u32 },
+    Hybrid {
+        /// Phase bits addressing the coarse table.
+        coarse_w: u32,
+        /// Phase bits of fine remainder driving the rotation.
+        fine_w: u32,
+    },
     /// The hybrid with **finite-precision arithmetic**, as it will
     /// actually be built.
     ///
@@ -541,10 +558,15 @@ pub enum PhaseToAmp {
     /// - `prod_w` — bits retained after the `cos θ · δ` multiply
     /// - `out_w` — bits of the final sum (the DAC-facing width)
     HybridQ {
+        /// Phase bits addressing the coarse table.
         coarse_w: u32,
+        /// Phase bits of fine remainder driving the rotation.
         fine_w: u32,
+        /// Bits per table entry.
         amp_w: u32,
+        /// Bits retained after the `cos θ · δ` multiply.
         prod_w: u32,
+        /// Bits of the final sum — the DAC-facing width.
         out_w: u32,
     },
     /// Coarse table plus **CORDIC micro-rotation** of the fine
@@ -561,15 +583,18 @@ pub enum PhaseToAmp {
     /// and shifts. Worth it only on parts where DSP slices are scarce
     /// or already committed.
     LutCordic {
+        /// Phase bits addressing the coarse table.
         coarse_w: u32,
+        /// Phase bits of fine remainder fed to the micro-rotation.
         fine_w: u32,
+        /// CORDIC iterations performed.
         stages: u32,
     },
 }
 
 impl PhaseToAmp {
     /// Bits of phase the architecture actually consumes.
-    fn phase_bits_used(self) -> u32 {
+    pub fn phase_bits_used(self) -> u32 {
         match self {
             PhaseToAmp::Lut { addr_w } => addr_w,
             PhaseToAmp::Hybrid { coarse_w, fine_w } => coarse_w + fine_w,
@@ -977,7 +1002,16 @@ mod sweep_report {
         println!("\n  carrier    P   words   worst    p10     median   best");
         for carrier in [1.0e6, 10.0e6, 21.0e6, 45.0e6] {
             for addr_w in [9u32, 10, 11, 12, 13] {
-                let sweep = sizing_sweep(48, addr_w, 16, F_CLK, carrier, BAND, record, 400);
+                let sweep = sizing_sweep(SweepConfig {
+                    phase_w: 48,
+                    addr_w,
+                    amp_w: 16,
+                    f_clk: F_CLK,
+                    carrier_hz: carrier,
+                    band_hz: BAND,
+                    record,
+                    extra_random: 400,
+                });
                 let n = sweep.len();
                 let finite: Vec<f64> = sweep
                     .iter()
@@ -1269,7 +1303,16 @@ mod sweep_report {
         let record = 1 << 16;
         let addr_w = 11u32;
         let b = 48 - addr_w;
-        let sweep = sizing_sweep(48, addr_w, 16, F_CLK, 10.0e6, BAND, record, 400);
+        let sweep = sizing_sweep(SweepConfig {
+            phase_w: 48,
+            addr_w,
+            amp_w: 16,
+            f_clk: F_CLK,
+            carrier_hz: 10.0e6,
+            band_hz: BAND,
+            record,
+            extra_random: 400,
+        });
         println!("\n  worst 12 tuning words at P={addr_w} (B={b} truncated bits)");
         println!("  SFDR dB   spur MHz    low bits (hex)   low/2^B");
         for e in sweep.iter().take(12) {
