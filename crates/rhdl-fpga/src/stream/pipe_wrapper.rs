@@ -225,6 +225,12 @@ where
     let will_unload = t_tag && !q.out_buffer.full;
     d.fifo.next = will_unload;
     d.fifo.data = i.from_pipe;
+    // Route the unloaded FIFO item into the output buffer.
+    //
+    // This assignment was missing: `d.out_buffer.data` was never
+    // driven, so the output buffer was fed a don't-care that
+    // materialised as `None` and the widget emitted nothing, ever.
+    d.out_buffer.data = if will_unload { q.fifo.data } else { None };
     d.counter = match (will_accept, will_unload) {
         (false, false) => q.counter,
         (true, true) => q.counter,
@@ -322,6 +328,308 @@ mod tests {
         d.delay = q.wrapper.to_pipe;
         d.wrapper.from_pipe = q.delay;
         ((), d)
+    }
+
+    /// Open-loop stimulus for Tiers 3-5.
+    ///
+    /// `PipeWrapper` straddles two interfaces: a Ready/Valid stream and
+    /// a fixed-latency pipeline it feeds via `to_pipe` / `from_pipe`.
+    /// Three signals move on three coprime cadences (4, 3, 5) so the
+    /// stream side, the sink side, and the pipeline return never line
+    /// up — a wrapper whose job is holding results until the downstream
+    /// takes them is uninteresting if they do.
+    fn bench_stream() -> impl Iterator<Item = TimedSample<(ClockReset, In<b6, b4>)>> {
+        (0..30u128)
+            .map(|k| In::<b6, b4> {
+                data: if k.is_multiple_of(4) {
+                    None
+                } else {
+                    Some(b6(k % 64))
+                },
+                ready: crate::stream::ready::<b4>(!k.is_multiple_of(3)),
+                from_pipe: if k.is_multiple_of(5) {
+                    None
+                } else {
+                    Some(b4(k % 16))
+                },
+            })
+            .with_reset(1)
+            .clock_pos_edge(100)
+    }
+
+    /// **Regression: the wrapper delivered nothing at all.**
+    ///
+    /// `d.out_buffer.data` was never assigned, so the output buffer was
+    /// driven by a don't-care that materialised as `None`. The widget
+    /// emitted zero items — for its whole life, through its own fixture
+    /// as well as standalone.
+    ///
+    /// It survived because the only behavioural test asserted values
+    /// *inside* `if let Some(data) = v.accepted`, so a widget that never
+    /// produced anything ran zero assertions and passed. Tier 3 is what
+    /// finally caught it, as a partial-initialisation error at
+    /// `descriptor()` — the simulator never asks for HDL and so never
+    /// noticed the undriven input.
+    ///
+    /// This test asserts a **count**, which is what the original was
+    /// missing: a property of what arrives cannot detect nothing
+    /// arriving.
+    #[test]
+    fn wrapper_actually_delivers_items() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static SEEN: AtomicUsize = AtomicUsize::new(0);
+        SEEN.store(0, Ordering::Relaxed);
+        let b_rng = XorShift128::default().map(|x| b6(((x >> 8) & 0x3F) as u128));
+        let consume = move |v: SinkView<_>| {
+            if v.accepted.is_some() {
+                SEEN.fetch_add(1, Ordering::Relaxed);
+            }
+            true
+        };
+        let uut = TestFixture {
+            source: SourceFromFn::new(b_rng.map(Some)),
+            delay: DelayLine::default(),
+            wrapper: PipeWrapper::default(),
+            sink: SinkFromFn::new(consume),
+        };
+        let input = repeat_n((), 2_000).with_reset(1).clock_pos_edge(100);
+        uut.run(input).for_each(drop);
+        let seen = SEEN.load(Ordering::Relaxed);
+        assert!(
+            seen > 500,
+            "the wrapper must actually deliver items; got {seen}"
+        );
+    }
+
+    /// Tier 3 — HDL emission snapshot (top module only).
+    #[test]
+    fn hdl_emission_snapshot() -> miette::Result<()> {
+        let uut = PipeWrapper::<b6, b4, 2>::default();
+        let desc = uut.descriptor("pipe_wrapper".into())?;
+        let hdl = desc.hdl()?;
+        let top = hdl
+            .modules
+            .modules
+            .iter()
+            .find(|m| m.name == "pipe_wrapper")
+            .expect("top module must be emitted");
+        let expect = expect_test::expect![[r#"
+            module pipe_wrapper(input wire [1:0] clock_reset, input wire [12:0] i, output wire [12:0] o);
+               wire [34:0] od;
+               wire [21:0] d;
+               wire [27:0] q;
+               assign o = od[12:0];
+               pipe_wrapper_in_buffer c0(.clock_reset(clock_reset), .i(d[7:0]), .o(q[8:0]));
+               pipe_wrapper_fifo c1(.clock_reset(clock_reset), .i(d[13:8]), .o(q[18:9]));
+               pipe_wrapper_out_buffer c2(.clock_reset(clock_reset), .i(d[19:14]), .o(q[25:19]));
+               pipe_wrapper_counter c3(.clock_reset(clock_reset), .i(d[21:20]), .o(q[27:26]));
+               assign d = od[34:13];
+               assign od = kernel_kernel(clock_reset, i, q);
+               function [34:0] kernel_kernel(input reg [1:0] arg_0, input reg [12:0] arg_1, input reg [27:0] arg_2);
+                     reg [1:0] r0;
+                     reg [27:0] r1;
+                     reg [0:0] r2;
+                     reg [6:0] r3;
+                     reg [0:0] r4;
+                     reg [0:0] r5;
+                     reg [0:0] r6;
+                     reg [8:0] r7;
+                     reg [6:0] r8;
+                     reg [0:0] r9;
+                     reg [5:0] r10;
+                     reg [6:0] r11;
+                     reg [5:0] r12;
+                     // o
+                     reg [12:0] r13;
+                     // o
+                     reg [12:0] r14;
+                     // will_accept
+                     reg [0:0] r15;
+                     // o
+                     reg [12:0] r16;
+                     // will_accept
+                     reg [0:0] r17;
+                     reg [8:0] r18;
+                     reg [0:0] r19;
+                     // o
+                     reg [12:0] r20;
+                     reg [6:0] r21;
+                     reg [4:0] r22;
+                     // o
+                     reg [12:0] r23;
+                     // d
+                     reg [21:0] r24;
+                     reg [6:0] r25;
+                     reg [12:0] r26;
+                     // d
+                     reg [21:0] r27;
+                     reg [0:0] r28;
+                     // d
+                     reg [21:0] r29;
+                     reg [9:0] r30;
+                     reg [4:0] r31;
+                     reg [0:0] r32;
+                     reg [0:0] r33;
+                     reg [6:0] r34;
+                     reg [0:0] r35;
+                     reg [0:0] r36;
+                     reg [0:0] r37;
+                     // d
+                     reg [21:0] r38;
+                     reg [4:0] r39;
+                     // d
+                     reg [21:0] r40;
+                     reg [9:0] r41;
+                     reg [4:0] r42;
+                     reg [4:0] r43;
+                     // d
+                     reg [21:0] r44;
+                     reg [1:0] r45;
+                     reg [1:0] r46;
+                     reg [1:0] r47;
+                     reg [1:0] r48;
+                     reg [1:0] r49;
+                     reg [1:0] r50;
+                     reg [1:0] r51;
+                     reg [1:0] r52;
+                     // d
+                     reg [21:0] r53;
+                     reg [34:0] r54;
+                     reg [1:0] r55;
+                     localparam l0 = 2'b00;
+                     localparam l1 = 1'b1;
+                     localparam l2 = 13'b0000000XXXXXX;
+                     localparam l3 = 1'b1;
+                     localparam l4 = 1'b1;
+                     localparam l5 = 1'b0;
+                     localparam l6 = 22'bXXXXXXXXXXXXXXXXXXXXXX;
+                     localparam l7 = 1'b1;
+                     localparam l8 = 1'b1;
+                     localparam l9 = 1'b0;
+                     localparam l10 = 1'b0;
+                     localparam l11 = 5'b00000;
+                     localparam l12 = 2'b01;
+                     localparam l13 = 2'b01;
+                     localparam l14 = 2'b00;
+                     localparam l15 = 2'b11;
+                     localparam l16 = 2'b01;
+                     localparam l17 = 2'b10;
+                     begin
+                        r55 = arg_0;
+                        r26 = arg_1;
+                        r1 = arg_2;
+                        r0 = r1[27:26];
+                        r2 = r0 > l0;
+                        r3 = r1[25:19];
+                        r4 = r3[5:5];
+                        r5 = ~r4;
+                        r6 = r2 & r5;
+                        r7 = r1[8:0];
+                        r8 = r7[6:0];
+                        r9 = r8[6:6];
+                        r10 = r8[5:0];
+                        r12 = r10[5:0];
+                        r11 = {l1, r12};
+                        r13 = l2;
+                        r13[12:6] = r11;
+                        case (r9)
+                           1'b1 : r14 = r13;
+                           default : r14 = l2;
+                        endcase
+                        case (r9)
+                           1'b1 : r15 = l4;
+                           default : r15 = l5;
+                        endcase
+                        r16 = r6 ? r14 : l2;
+                        r17 = r6 ? r15 : l5;
+                        r18 = r1[8:0];
+                        r19 = r18[7:7];
+                        r20 = r16;
+                        r20[5:5] = r19;
+                        r21 = r1[25:19];
+                        r22 = r21[4:0];
+                        r23 = r20;
+                        r23[4:0] = r22;
+                        r24 = l6;
+                        r24[7:7] = r17;
+                        r25 = r26[6:0];
+                        r27 = r24;
+                        r27[6:0] = r25;
+                        r28 = r26[7:7];
+                        r29 = r27;
+                        r29[19:19] = r28;
+                        r30 = r1[18:9];
+                        r31 = r30[4:0];
+                        r32 = r31[4:4];
+                        case (r32)
+                           1'b1 : r33 = l8;
+                           1'b0 : r33 = l10;
+                        endcase
+                        r34 = r1[25:19];
+                        r35 = r34[5:5];
+                        r36 = ~r35;
+                        r37 = r33 & r36;
+                        r38 = r29;
+                        r38[13:13] = r37;
+                        r39 = r26[12:8];
+                        r40 = r38;
+                        r40[12:8] = r39;
+                        r41 = r1[18:9];
+                        r42 = r41[4:0];
+                        r43 = r37 ? r42 : l11;
+                        r44 = r40;
+                        r44[18:14] = r43;
+                        r45 = {r37, r17};
+                        r46 = r1[27:26];
+                        r47 = r1[27:26];
+                        r48 = r1[27:26];
+                        r49 = r48 - l12;
+                        r50 = r1[27:26];
+                        r51 = r50 + l13;
+                        case (r45)
+                           2'b00 : r52 = r46;
+                           2'b11 : r52 = r47;
+                           2'b01 : r52 = r49;
+                           2'b10 : r52 = r51;
+                        endcase
+                        r53 = r44;
+                        r53[21:20] = r52;
+                        r54 = {r53, r23};
+                        kernel_kernel = r54;
+                     end
+               endfunction
+            endmodule"#]];
+        expect.assert_eq(&top.pretty());
+        Ok(())
+    }
+
+    /// Tier 4 — iverilog round-trip, RTL and NTL.
+    #[test]
+    fn iverilog_round_trip() -> Result<(), RHDLError> {
+        let uut = PipeWrapper::<b6, b4, 2>::default();
+        let tb = uut
+            .run(bench_stream())
+            .collect::<SynchronousTestBench<_, _>>();
+        tb.rtl(&uut, &Default::default())?.run_iverilog()?;
+        tb.ntl(&uut, &Default::default())?.run_iverilog()?;
+        Ok(())
+    }
+
+    /// Tier 5 — VCD digest.
+    #[test]
+    fn trace_digest() -> miette::Result<()> {
+        let uut = PipeWrapper::<b6, b4, 2>::default();
+        let vcd = uut.run(bench_stream()).collect::<VcdFile>();
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("vcd")
+            .join("pipe_wrapper");
+        std::fs::create_dir_all(&root).unwrap();
+        let expect = expect_test::expect![
+            "7bc6729d2c6ce28000a06f1bd999159ae2815528b7519ab1ccbd7e43c7f90d4f"
+        ];
+        let digest = vcd.dump_to_file(root.join("pipe_wrapper.vcd")).unwrap();
+        expect.assert_eq(&digest);
+        Ok(())
     }
 
     #[test]

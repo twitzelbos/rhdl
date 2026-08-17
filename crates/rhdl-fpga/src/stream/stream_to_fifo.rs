@@ -216,12 +216,299 @@ mod tests {
 
     use crate::rng::xorshift::XorShift128;
 
-    use super::StreamToFIFO;
+    use super::{In, StreamToFIFO};
 
     #[test]
     fn test_no_combinatorial_paths() -> miette::Result<()> {
         let uut = StreamToFIFO::<b16>::default();
         drc::no_combinatorial_paths(&uut)?;
+        Ok(())
+    }
+
+    /// Open-loop stimulus for Tiers 3-5.
+    ///
+    /// **The stall shape differs here.** This widget's downstream
+    /// consumes with `next` — a pop request — not `ready`, so
+    /// "withhold ready when idle" has no analogue: asserting `next` on
+    /// an empty buffer is an underflow, which the widget already flags
+    /// on its `error` output. The stalling done here is therefore on
+    /// the *pop* side: `next` is asserted only 2 cycles in 3, so the
+    /// buffer fills rather than draining as fast as it is written, and
+    /// `ready` is exercised going low.
+    fn bench_stream() -> impl Iterator<Item = TimedSample<(ClockReset, In<b4>)>> {
+        (0..28u128)
+            .map(|k| In::<b4> {
+                data: if k.is_multiple_of(4) {
+                    None
+                } else {
+                    Some(b4(k % 16))
+                },
+                next: !k.is_multiple_of(3),
+            })
+            .with_reset(1)
+            .clock_pos_edge(100)
+    }
+
+    /// Tier 3 — HDL emission snapshot (top module only).
+    #[test]
+    fn hdl_emission_snapshot() -> miette::Result<()> {
+        let uut = StreamToFIFO::<b4>::default();
+        let desc = uut.descriptor("stream_to_fifo".into())?;
+        let hdl = desc.hdl()?;
+        let top = hdl
+            .modules
+            .modules
+            .iter()
+            .find(|m| m.name == "stream_to_fifo")
+            .expect("top module must be emitted");
+        let expect = expect_test::expect![[r#"
+            module stream_to_fifo(input wire [1:0] clock_reset, input wire [5:0] i, output wire [6:0] o);
+               wire [18:0] od;
+               wire [11:0] d;
+               wire [11:0] q;
+               assign o = od[6:0];
+               stream_to_fifo_state c0(.clock_reset(clock_reset), .i(d[1:0]), .o(q[1:0]));
+               stream_to_fifo_zero_slot c1(.clock_reset(clock_reset), .i(d[5:2]), .o(q[5:2]));
+               stream_to_fifo_one_slot c2(.clock_reset(clock_reset), .i(d[9:6]), .o(q[9:6]));
+               stream_to_fifo_write_slot c3(.clock_reset(clock_reset), .i(d[10:10]), .o(q[10:10]));
+               stream_to_fifo_read_slot c4(.clock_reset(clock_reset), .i(d[11:11]), .o(q[11:11]));
+               assign d = od[18:7];
+               assign od = kernel_kernel(clock_reset, i, q);
+               function [18:0] kernel_kernel(input reg [1:0] arg_0, input reg [5:0] arg_1, input reg [11:0] arg_2);
+                     reg [0:0] r0;
+                     reg [5:0] r1;
+                     reg [4:0] r2;
+                     reg [0:0] r3;
+                     reg [0:0] r4;
+                     reg [1:0] r5;
+                     reg [11:0] r6;
+                     reg [1:0] r7;
+                     reg [1:0] r8;
+                     reg [1:0] r9;
+                     reg [1:0] r10;
+                     reg [1:0] r11;
+                     reg [1:0] r12;
+                     // d
+                     reg [11:0] r13;
+                     reg [1:0] r14;
+                     reg [0:0] r15;
+                     reg [1:0] r16;
+                     reg [0:0] r17;
+                     reg [0:0] r18;
+                     reg [0:0] r19;
+                     reg [3:0] r20;
+                     // d
+                     reg [11:0] r21;
+                     reg [3:0] r22;
+                     // d
+                     reg [11:0] r23;
+                     reg [4:0] r24;
+                     reg [0:0] r25;
+                     reg [3:0] r26;
+                     reg [0:0] r27;
+                     // d
+                     reg [11:0] r28;
+                     // d
+                     reg [11:0] r29;
+                     // d
+                     reg [11:0] r30;
+                     // d
+                     reg [11:0] r31;
+                     // d
+                     reg [11:0] r32;
+                     reg [0:0] r33;
+                     reg [0:0] r34;
+                     // d
+                     reg [11:0] r35;
+                     reg [0:0] r36;
+                     reg [0:0] r37;
+                     // d
+                     reg [11:0] r38;
+                     reg [1:0] r39;
+                     reg [0:0] r40;
+                     reg [0:0] r41;
+                     reg [0:0] r42;
+                     reg [3:0] r43;
+                     reg [4:0] r44;
+                     reg [3:0] r45;
+                     // o
+                     reg [6:0] r46;
+                     reg [3:0] r47;
+                     reg [4:0] r48;
+                     reg [3:0] r49;
+                     // o
+                     reg [6:0] r50;
+                     // o
+                     reg [6:0] r51;
+                     // o
+                     reg [6:0] r52;
+                     reg [0:0] r53;
+                     reg [0:0] r54;
+                     // o
+                     reg [6:0] r55;
+                     reg [1:0] r56;
+                     reg [0:0] r57;
+                     // o
+                     reg [6:0] r58;
+                     reg [18:0] r59;
+                     reg [1:0] r60;
+                     localparam l0 = 1'b1;
+                     localparam l1 = 1'b1;
+                     localparam l2 = 1'b0;
+                     localparam l3 = 1'b0;
+                     localparam l4 = 2'b11;
+                     localparam l5 = 2'b00;
+                     localparam l6 = 2'b01;
+                     localparam l7 = 2'b00;
+                     localparam l8 = 2'b01;
+                     localparam l9 = 2'b01;
+                     localparam l10 = 2'b10;
+                     localparam l11 = 2'b10;
+                     localparam l12 = 2'b00;
+                     localparam l13 = 2'b11;
+                     localparam l14 = 2'b01;
+                     localparam l15 = 2'b01;
+                     localparam l16 = 2'b10;
+                     localparam l17 = 2'b00;
+                     localparam l18 = 2'b01;
+                     localparam l19 = 2'b10;
+                     localparam l20 = 2'b11;
+                     localparam l21 = 2'b11;
+                     localparam l22 = 12'bXXXXXXXXXXXX;
+                     localparam l23 = 2'b10;
+                     localparam l24 = 2'b11;
+                     localparam l25 = 1'b1;
+                     localparam l26 = 2'b00;
+                     localparam l27 = 1'b1;
+                     localparam l28 = 7'bXXXXXXX;
+                     localparam l29 = 1'b1;
+                     localparam l30 = 7'bXX00000;
+                     localparam l31 = 1'b0;
+                     localparam l32 = 2'b11;
+                     begin
+                        r60 = arg_0;
+                        r1 = arg_1;
+                        r6 = arg_2;
+                        r0 = r1[5:5];
+                        r2 = r1[4:0];
+                        r3 = r2[4:4];
+                        case (r3)
+                           1'b1 : r4 = l1;
+                           1'b0 : r4 = l3;
+                        endcase
+                        r5 = r6[1:0];
+                        r7 = r0 ? l4 : l5;
+                        r8 = r4 ? l6 : r7;
+                        r9 = {r0, r4};
+                        case (r9)
+                           2'b00 : r10 = l8;
+                           2'b01 : r10 = l10;
+                           2'b10 : r10 = l12;
+                           2'b11 : r10 = l14;
+                        endcase
+                        r11 = r0 ? l15 : l16;
+                        case (r5)
+                           2'b00 : r12 = r8;
+                           2'b01 : r12 = r10;
+                           2'b10 : r12 = r11;
+                           2'b11 : r12 = l21;
+                        endcase
+                        r13 = l22;
+                        r13[1:0] = r12;
+                        r14 = r6[1:0];
+                        r15 = r14 != l23;
+                        r16 = r6[1:0];
+                        r17 = r16 != l24;
+                        r18 = r15 & r17;
+                        r19 = r4 & r18;
+                        r20 = r6[5:2];
+                        r21 = r13;
+                        r21[5:2] = r20;
+                        r22 = r6[9:6];
+                        r23 = r21;
+                        r23[9:6] = r22;
+                        r24 = r1[4:0];
+                        r25 = r24[4:4];
+                        r26 = r24[3:0];
+                        r27 = r6[10:10];
+                        r28 = r23;
+                        r28[9:6] = r26;
+                        r29 = r23;
+                        r29[5:2] = r26;
+                        r30 = r27 ? r28 : r29;
+                        r31 = r19 ? r30 : r23;
+                        case (r25)
+                           1'b1 : r32 = r31;
+                           default : r32 = r23;
+                        endcase
+                        r33 = r6[10:10];
+                        r34 = r19 ^ r33;
+                        r35 = r32;
+                        r35[10:10] = r34;
+                        r36 = r6[11:11];
+                        r37 = r0 ^ r36;
+                        r38 = r35;
+                        r38[11:11] = r37;
+                        r39 = r6[1:0];
+                        r40 = r39 == l26;
+                        r41 = r6[11:11];
+                        r42 = ~r41;
+                        r43 = r6[5:2];
+                        r45 = r43[3:0];
+                        r44 = {l27, r45};
+                        r46 = l28;
+                        r46[4:0] = r44;
+                        r47 = r6[9:6];
+                        r49 = r47[3:0];
+                        r48 = {l29, r49};
+                        r50 = l28;
+                        r50[4:0] = r48;
+                        r51 = r42 ? r46 : r50;
+                        r52 = r40 ? l30 : r51;
+                        r53 = l31;
+                        r54 = r53;
+                        r54[0:0] = r18;
+                        r55 = r52;
+                        r55[5:5] = r54;
+                        r56 = r6[1:0];
+                        r57 = r56 == l32;
+                        r58 = r55;
+                        r58[6:6] = r57;
+                        r59 = {r38, r58};
+                        kernel_kernel = r59;
+                     end
+               endfunction
+            endmodule"#]];
+        expect.assert_eq(&top.pretty());
+        Ok(())
+    }
+
+    /// Tier 4 — iverilog round-trip, RTL and NTL.
+    #[test]
+    fn iverilog_round_trip() -> Result<(), RHDLError> {
+        let uut = StreamToFIFO::<b4>::default();
+        let tb = uut
+            .run(bench_stream())
+            .collect::<SynchronousTestBench<_, _>>();
+        tb.rtl(&uut, &Default::default())?.run_iverilog()?;
+        tb.ntl(&uut, &Default::default())?.run_iverilog()?;
+        Ok(())
+    }
+
+    /// Tier 5 — VCD digest.
+    #[test]
+    fn trace_digest() -> miette::Result<()> {
+        let uut = StreamToFIFO::<b4>::default();
+        let vcd = uut.run(bench_stream()).collect::<VcdFile>();
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("vcd")
+            .join("stream_to_fifo");
+        std::fs::create_dir_all(&root).unwrap();
+        let expect = expect_test::expect![
+            "0e2c7e9586efe6bbab68396d58eaf8688ce1d8323027db96ba273b05070a6205"
+        ];
+        let digest = vcd.dump_to_file(root.join("stream_to_fifo.vcd")).unwrap();
+        expect.assert_eq(&digest);
         Ok(())
     }
 

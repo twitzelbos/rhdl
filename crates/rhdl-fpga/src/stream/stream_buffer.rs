@@ -69,7 +69,7 @@ use rhdl::prelude::*;
 use crate::{
     core::option::pack,
     lid::carloni::Carloni,
-    stream::{ready, StreamIO},
+    stream::{StreamIO, ready},
 };
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ)]
@@ -132,7 +132,7 @@ mod tests {
     /// this pins that down instead of leaving it inferred.
     #[test]
     fn data_gated_sink_does_not_stall_the_buffer() -> Result<(), RHDLError> {
-        use crate::stream::{ready, StreamIO};
+        use crate::stream::{StreamIO, ready};
         use rhdl::core::sim::ResetOrData;
 
         const COUNT: u128 = 16;
@@ -176,6 +176,164 @@ mod tests {
     use crate::rng::xorshift::XorShift128;
 
     use super::*;
+
+    /// Open-loop stimulus for Tiers 3-5: offers gapped on 4, `ready`
+    /// withheld on 3. Coprime so they drift and the skid path — hold an
+    /// item while the sink stalls — is actually entered.
+    fn bench_stream() -> impl Iterator<Item = TimedSample<(ClockReset, In<b4>)>> {
+        (0..24u128)
+            .map(|k| In::<b4> {
+                data: if k.is_multiple_of(4) {
+                    None
+                } else {
+                    Some(b4(k % 16))
+                },
+                ready: crate::stream::ready::<b4>(!k.is_multiple_of(3)),
+            })
+            .with_reset(1)
+            .clock_pos_edge(100)
+    }
+
+    /// Tier 3 — HDL emission snapshot (top module only).
+    #[test]
+    fn hdl_emission_snapshot() -> miette::Result<()> {
+        let uut = StreamBuffer::<b4>::default();
+        let desc = uut.descriptor("stream_buffer".into())?;
+        let hdl = desc.hdl()?;
+        let top = hdl
+            .modules
+            .modules
+            .iter()
+            .find(|m| m.name == "stream_buffer")
+            .expect("top module must be emitted");
+        let expect = expect_test::expect![[r#"
+            module stream_buffer(input wire [1:0] clock_reset, input wire [5:0] i, output wire [5:0] o);
+               wire [11:0] od;
+               wire [5:0] d;
+               wire [5:0] q;
+               assign o = od[5:0];
+               stream_buffer_inner c0(.clock_reset(clock_reset), .i(d[5:0]), .o(q[5:0]));
+               assign d = od[11:6];
+               assign od = kernel_option_carloni_kernel(clock_reset, i, q);
+               function [11:0] kernel_option_carloni_kernel(input reg [1:0] arg_0, input reg [5:0] arg_1, input reg [5:0] arg_2);
+                     reg [4:0] r0;
+                     reg [5:0] r1;
+                     reg [0:0] r2;
+                     reg [3:0] r3;
+                     reg [4:0] r4;
+                     reg [4:0] r5;
+                     reg [0:0] r6;
+                     reg [3:0] r7;
+                     // d
+                     reg [5:0] r8;
+                     reg [0:0] r9;
+                     // d
+                     reg [5:0] r10;
+                     reg [0:0] r11;
+                     reg [0:0] r12;
+                     // d
+                     reg [5:0] r13;
+                     reg [5:0] r14;
+                     reg [0:0] r15;
+                     reg [0:0] r16;
+                     reg [0:0] r17;
+                     reg [0:0] r18;
+                     // o
+                     reg [5:0] r19;
+                     reg [0:0] r20;
+                     reg [0:0] r21;
+                     reg [3:0] r22;
+                     reg [4:0] r23;
+                     reg [3:0] r24;
+                     reg [4:0] r25;
+                     // o
+                     reg [5:0] r26;
+                     reg [11:0] r27;
+                     reg [1:0] r28;
+                     localparam l0 = 1'b1;
+                     localparam l1 = 1'b1;
+                     localparam l2 = 1'b0;
+                     localparam l3 = 5'bXXXX0;
+                     localparam l4 = 6'bXXXXXX;
+                     localparam l5 = 1'b0;
+                     localparam l6 = 6'bXXXXXX;
+                     localparam l7 = 1'b1;
+                     localparam l8 = 5'b00000;
+                     begin
+                        r28 = arg_0;
+                        r1 = arg_1;
+                        r14 = arg_2;
+                        r0 = r1[4:0];
+                        r2 = r0[4:4];
+                        r3 = r0[3:0];
+                        r4 = {r3, l0};
+                        case (r2)
+                           1'b1 : r5 = r4;
+                           1'b0 : r5 = l3;
+                        endcase
+                        r6 = r5[0:0];
+                        r7 = r5[4:1];
+                        r8 = l4;
+                        r8[3:0] = r7;
+                        r9 = ~r6;
+                        r10 = r8;
+                        r10[4:4] = r9;
+                        r11 = r1[5:5];
+                        r12 = ~r11;
+                        r13 = r10;
+                        r13[5:5] = r12;
+                        r15 = r14[5:5];
+                        r16 = ~r15;
+                        r17 = l5;
+                        r18 = r17;
+                        r18[0:0] = r16;
+                        r19 = l6;
+                        r19[5:5] = r18;
+                        r20 = r14[4:4];
+                        r21 = ~r20;
+                        r22 = r14[3:0];
+                        r24 = r22[3:0];
+                        r23 = {l7, r24};
+                        r25 = r21 ? r23 : l8;
+                        r26 = r19;
+                        r26[4:0] = r25;
+                        r27 = {r13, r26};
+                        kernel_option_carloni_kernel = r27;
+                     end
+               endfunction
+            endmodule"#]];
+        expect.assert_eq(&top.pretty());
+        Ok(())
+    }
+
+    /// Tier 4 — iverilog round-trip, RTL and NTL.
+    #[test]
+    fn iverilog_round_trip() -> Result<(), RHDLError> {
+        let uut = StreamBuffer::<b4>::default();
+        let tb = uut
+            .run(bench_stream())
+            .collect::<SynchronousTestBench<_, _>>();
+        tb.rtl(&uut, &Default::default())?.run_iverilog()?;
+        tb.ntl(&uut, &Default::default())?.run_iverilog()?;
+        Ok(())
+    }
+
+    /// Tier 5 — VCD digest.
+    #[test]
+    fn trace_digest() -> miette::Result<()> {
+        let uut = StreamBuffer::<b4>::default();
+        let vcd = uut.run(bench_stream()).collect::<VcdFile>();
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("vcd")
+            .join("stream_buffer");
+        std::fs::create_dir_all(&root).unwrap();
+        let expect = expect_test::expect![
+            "678bfc13d3c98ee382019f9df6acd3a6a6157e6a05f91119093b761ea49a9bfc"
+        ];
+        let digest = vcd.dump_to_file(root.join("stream_buffer.vcd")).unwrap();
+        expect.assert_eq(&digest);
+        Ok(())
+    }
 
     #[test]
     fn test_option_carloni_buffer() {

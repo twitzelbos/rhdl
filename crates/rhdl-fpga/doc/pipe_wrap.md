@@ -229,23 +229,83 @@ Some(2e)
    .data
 <title>top.wrapper.outputs.data</title>
 </text>
-<path d="M 130 90 L 133 83 L 1777 83 L 1780 90 L 1777 97 L 133 97 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="955" xml:space="preserve" y="90">
+<path d="M 130 90 L 133 83 L 977 83 L 980 90 L 977 97 L 133 97 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="555" xml:space="preserve" y="90">
 None
 <title>None</title>
+</text>
+<path d="M 980 90 L 983 83 L 1077 83 L 1080 90 L 1077 97 L 983 97 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1030" xml:space="preserve" y="90">
+Some(c)
+<title>Some(c)</title>
+</text>
+<path d="M 1080 90 L 1083 83 L 1177 83 L 1180 90 L 1177 97 L 1083 97 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1130" xml:space="preserve" y="90">
+Some(a)
+<title>Some(a)</title>
+</text>
+<path d="M 1180 90 L 1183 83 L 1477 83 L 1480 90 L 1477 97 L 1183 97 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1330" xml:space="preserve" y="90">
+None
+<title>None</title>
+</text>
+<path d="M 1480 90 L 1483 83 L 1577 83 L 1580 90 L 1577 97 L 1483 97 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1530" xml:space="preserve" y="90">
+Some(9)
+<title>Some(9)</title>
+</text>
+<path d="M 1580 90 L 1583 83 L 1677 83 L 1680 90 L 1677 97 L 1583 97 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1630" xml:space="preserve" y="90">
+None
+<title>None</title>
+</text>
+<path d="M 1680 90 L 1683 83 L 1777 83 L 1780 90 L 1777 97 L 1683 97 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1730" xml:space="preserve" y="90">
+Some(3)
+<title>Some(3)</title>
 </text>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="start" x="3" xml:space="preserve" y="110">
       #None
 <title>top.wrapper.outputs.data#None</title>
 </text>
-<path d="M 130 110 L 133 103 L 1777 103 L 1780 110 L 1777 117 L 133 117 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="955" xml:space="preserve" y="110">
+<path d="M 130 110 L 133 103 L 977 103 L 980 110 L 977 117 L 133 117 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="555" xml:space="preserve" y="110">
+
+<title></title>
+</text>
+<path d="M 1180 110 L 1183 103 L 1477 103 L 1480 110 L 1477 117 L 1183 117 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1330" xml:space="preserve" y="110">
+
+<title></title>
+</text>
+<path d="M 1580 110 L 1583 103 L 1677 103 L 1680 110 L 1677 117 L 1583 117 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1630" xml:space="preserve" y="110">
 
 <title></title>
 </text>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="start" x="3" xml:space="preserve" y="130">
       #Some.0
 <title>top.wrapper.outputs.data#Some.0</title>
+</text>
+<path d="M 980 130 L 983 123 L 1077 123 L 1080 130 L 1077 137 L 983 137 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1030" xml:space="preserve" y="130">
+c
+<title>c</title>
+</text>
+<path d="M 1080 130 L 1083 123 L 1177 123 L 1180 130 L 1177 137 L 1083 137 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1130" xml:space="preserve" y="130">
+a
+<title>a</title>
+</text>
+<path d="M 1480 130 L 1483 123 L 1577 123 L 1580 130 L 1577 137 L 1483 137 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1530" xml:space="preserve" y="130">
+9
+<title>9</title>
+</text>
+<path d="M 1680 130 L 1683 123 L 1777 123 L 1780 130 L 1777 137 L 1683 137 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1730" xml:space="preserve" y="130">
+3
+<title>3</title>
 </text>
 </svg>
 </p>

@@ -129,7 +129,10 @@ where
     rhdl::bits::W<N>: BitWidth,
 {
     fn default() -> Self {
-        assert!((1 << M) >= N, "Expect that the bitwidth of the counter is sufficient to count the elements in the array.  I.e., (1 << M) >= N");
+        assert!(
+            (1 << M) >= N,
+            "Expect that the bitwidth of the counter is sufficient to count the elements in the array.  I.e., (1 << M) >= N"
+        );
         Self {
             delay: core::array::from_fn(|_| dff::DFF::new(T::dont_care())),
             input_buffer: StreamToFIFO::default(),
@@ -320,6 +323,385 @@ mod tests {
     fn test_no_combinatorial_paths() -> miette::Result<()> {
         let uut = Flatten::<b4, 2, 4>::default();
         drc::no_combinatorial_paths(&uut)?;
+        Ok(())
+    }
+
+    /// Open-loop stimulus for Tiers 3-5.
+    ///
+    /// `Flatten` holds an array while emitting its elements one at a
+    /// time, so it presents `None` to its *input* between groups.
+    /// Offers gapped on 4, `ready` withheld on 3 — coprime, so the
+    /// stall lands at different positions within a group rather than
+    /// always at the same element.
+    fn bench_stream() -> impl Iterator<Item = TimedSample<(ClockReset, In<b4, 4>)>> {
+        (0..32u128)
+            .map(|k| In::<b4, 4> {
+                data: if k.is_multiple_of(4) {
+                    None
+                } else {
+                    Some([
+                        b4(k % 16),
+                        b4((k + 1) % 16),
+                        b4((k + 2) % 16),
+                        b4((k + 3) % 16),
+                    ])
+                },
+                ready: crate::stream::ready::<b4>(!k.is_multiple_of(3)),
+            })
+            .with_reset(1)
+            .clock_pos_edge(100)
+    }
+
+    /// Tier 3 — HDL emission snapshot (top module only).
+    #[test]
+    fn hdl_emission_snapshot() -> miette::Result<()> {
+        let uut = Flatten::<b4, 2, 4>::default();
+        let desc = uut.descriptor("stream_flatten".into())?;
+        let hdl = desc.hdl()?;
+        let top = hdl
+            .modules
+            .modules
+            .iter()
+            .find(|m| m.name == "stream_flatten")
+            .expect("top module must be emitted");
+        let expect = expect_test::expect![[r#"
+            module stream_flatten(input wire [1:0] clock_reset, input wire [17:0] i, output wire [5:0] o);
+               wire [48:0] od;
+               wire [42:0] d;
+               wire [44:0] q;
+               assign o = od[5:0];
+               stream_flatten_input_buffer c0(.clock_reset(clock_reset), .i(d[17:0]), .o(q[18:0]));
+               stream_flatten_delay c1(.clock_reset(clock_reset), .i(d[33:18]), .o(q[34:19]));
+               stream_flatten_count c2(.clock_reset(clock_reset), .i(d[35:34]), .o(q[36:35]));
+               stream_flatten_output_buffer c3(.clock_reset(clock_reset), .i(d[41:36]), .o(q[43:37]));
+               stream_flatten_state c4(.clock_reset(clock_reset), .i(d[42:42]), .o(q[44:44]));
+               assign d = od[48:6];
+               assign od = kernel_kernel(clock_reset, i, q);
+               function [48:0] kernel_kernel(input reg [1:0] arg_0, input reg [17:0] arg_1, input reg [44:0] arg_2);
+                     reg [16:0] r0;
+                     reg [17:0] r1;
+                     // d
+                     reg [42:0] r2;
+                     // d
+                     reg [42:0] r3;
+                     reg [1:0] r4;
+                     reg [44:0] r5;
+                     // d
+                     reg [42:0] r6;
+                     reg [0:0] r7;
+                     // d
+                     reg [42:0] r8;
+                     reg [6:0] r9;
+                     reg [0:0] r10;
+                     reg [18:0] r11;
+                     reg [16:0] r12;
+                     reg [0:0] r13;
+                     reg [0:0] r14;
+                     reg [0:0] r15;
+                     // d
+                     reg [42:0] r16;
+                     // d
+                     reg [42:0] r17;
+                     // d
+                     reg [42:0] r18;
+                     // d
+                     reg [42:0] r19;
+                     // load_line
+                     reg [0:0] r20;
+                     reg [0:0] r21;
+                     reg [1:0] r22;
+                     reg [0:0] r23;
+                     reg [1:0] r24;
+                     reg [1:0] r25;
+                     // d
+                     reg [42:0] r26;
+                     // d
+                     reg [42:0] r27;
+                     // d
+                     reg [42:0] r28;
+                     // d
+                     reg [42:0] r29;
+                     // d
+                     reg [42:0] r30;
+                     // load_line
+                     reg [0:0] r31;
+                     // d
+                     reg [42:0] r32;
+                     // load_line
+                     reg [0:0] r33;
+                     // d
+                     reg [42:0] r34;
+                     // load_line
+                     reg [0:0] r35;
+                     // write
+                     reg [0:0] r36;
+                     // d
+                     reg [42:0] r37;
+                     // load_line
+                     reg [0:0] r38;
+                     // write
+                     reg [0:0] r39;
+                     reg [15:0] r40;
+                     reg [3:0] r41;
+                     // d
+                     reg [42:0] r42;
+                     reg [15:0] r43;
+                     reg [3:0] r44;
+                     // d
+                     reg [42:0] r45;
+                     reg [15:0] r46;
+                     reg [3:0] r47;
+                     // d
+                     reg [42:0] r48;
+                     reg [15:0] r49;
+                     reg [3:0] r50;
+                     // d
+                     reg [42:0] r51;
+                     reg [15:0] r52;
+                     reg [3:0] r53;
+                     // d
+                     reg [42:0] r54;
+                     reg [15:0] r55;
+                     reg [3:0] r56;
+                     // d
+                     reg [42:0] r57;
+                     reg [15:0] r58;
+                     reg [3:0] r59;
+                     // d
+                     reg [42:0] r60;
+                     // d
+                     reg [42:0] r61;
+                     reg [18:0] r62;
+                     reg [16:0] r63;
+                     reg [0:0] r64;
+                     reg [15:0] r65;
+                     reg [3:0] r66;
+                     // d
+                     reg [42:0] r67;
+                     reg [3:0] r68;
+                     // d
+                     reg [42:0] r69;
+                     reg [3:0] r70;
+                     // d
+                     reg [42:0] r71;
+                     reg [3:0] r72;
+                     // d
+                     reg [42:0] r73;
+                     // d
+                     reg [42:0] r74;
+                     // d
+                     reg [42:0] r75;
+                     reg [15:0] r76;
+                     reg [3:0] r77;
+                     reg [4:0] r78;
+                     reg [3:0] r79;
+                     reg [4:0] r80;
+                     // d
+                     reg [42:0] r81;
+                     reg [0:0] r82;
+                     // d
+                     reg [42:0] r83;
+                     reg [6:0] r84;
+                     reg [4:0] r85;
+                     reg [18:0] r86;
+                     reg [0:0] r87;
+                     reg [5:0] r88;
+                     reg [5:0] r89;
+                     reg [48:0] r90;
+                     reg [1:0] r91;
+                     localparam l0 = 43'bXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX;
+                     localparam l1 = 1'b0;
+                     localparam l2 = 1'b1;
+                     localparam l3 = 1'b1;
+                     localparam l4 = 1'b0;
+                     localparam l5 = 1'b0;
+                     localparam l6 = 1'b1;
+                     localparam l7 = 2'b00;
+                     localparam l8 = 1'b1;
+                     localparam l9 = 1'b1;
+                     localparam l10 = 1'b0;
+                     localparam l11 = 2'b11;
+                     localparam l12 = 2'b01;
+                     localparam l13 = 1'b1;
+                     localparam l14 = 2'b00;
+                     localparam l15 = 1'b0;
+                     localparam l16 = 1'b1;
+                     localparam l17 = 1'b1;
+                     localparam l18 = 1'b0;
+                     localparam l19 = 1'b0;
+                     localparam l20 = 1'b1;
+                     localparam l21 = 1'b1;
+                     localparam l22 = 1'b1;
+                     localparam l23 = 5'b00000;
+                     localparam l24 = 6'b000000;
+                     begin
+                        r91 = arg_0;
+                        r1 = arg_1;
+                        r5 = arg_2;
+                        r0 = r1[16:0];
+                        r2 = l0;
+                        r2[16:0] = r0;
+                        r3 = r2;
+                        r3[17:17] = l1;
+                        r4 = r5[36:35];
+                        r6 = r3;
+                        r6[35:34] = r4;
+                        r7 = r5[44:44];
+                        r8 = r6;
+                        r8[42:42] = r7;
+                        r9 = r5[43:37];
+                        r10 = r9[5:5];
+                        r11 = r5[18:0];
+                        r12 = r11[16:0];
+                        r13 = r12[16:16];
+                        case (r13)
+                           1'b1 : r14 = l3;
+                           1'b0 : r14 = l5;
+                        endcase
+                        r15 = r5[44:44];
+                        r16 = r8;
+                        r16[17:17] = l6;
+                        r17 = r16;
+                        r17[35:34] = l7;
+                        r18 = r17;
+                        r18[42:42] = l8;
+                        r19 = r14 ? r18 : r8;
+                        r20 = r14 ? l9 : l10;
+                        r21 = ~r10;
+                        r22 = r5[36:35];
+                        r23 = r22 != l11;
+                        r24 = r5[36:35];
+                        r25 = r24 + l12;
+                        r26 = r8;
+                        r26[35:34] = r25;
+                        r27 = r8;
+                        r27[17:17] = l13;
+                        r28 = r27;
+                        r28[35:34] = l14;
+                        r29 = r8;
+                        r29[42:42] = l15;
+                        r30 = r14 ? r28 : r29;
+                        r31 = r14 ? l16 : l10;
+                        r32 = r23 ? r26 : r30;
+                        r33 = r23 ? l10 : r31;
+                        r34 = r21 ? r32 : r8;
+                        r35 = r21 ? r33 : l10;
+                        r36 = r21 ? l17 : l18;
+                        case (r15)
+                           1'b0 : r37 = r19;
+                           1'b1 : r37 = r34;
+                        endcase
+                        case (r15)
+                           1'b0 : r38 = r20;
+                           1'b1 : r38 = r35;
+                        endcase
+                        case (r15)
+                           1'b0 : r39 = l18;
+                           1'b1 : r39 = r36;
+                        endcase
+                        r40 = r5[34:19];
+                        r41 = r40[3:0];
+                        r42 = r37;
+                        r42[21:18] = r41;
+                        r43 = r5[34:19];
+                        r44 = r43[7:4];
+                        r45 = r42;
+                        r45[25:22] = r44;
+                        r46 = r5[34:19];
+                        r47 = r46[11:8];
+                        r48 = r45;
+                        r48[29:26] = r47;
+                        r49 = r5[34:19];
+                        r50 = r49[15:12];
+                        r51 = r48;
+                        r51[33:30] = r50;
+                        r52 = r5[34:19];
+                        r53 = r52[7:4];
+                        r54 = r51;
+                        r54[21:18] = r53;
+                        r55 = r5[34:19];
+                        r56 = r55[11:8];
+                        r57 = r54;
+                        r57[25:22] = r56;
+                        r58 = r5[34:19];
+                        r59 = r58[15:12];
+                        r60 = r57;
+                        r60[29:26] = r59;
+                        r61 = r39 ? r60 : r51;
+                        r62 = r5[18:0];
+                        r63 = r62[16:0];
+                        r64 = r63[16:16];
+                        r65 = r63[15:0];
+                        r66 = r65[3:0];
+                        r67 = r61;
+                        r67[21:18] = r66;
+                        r68 = r65[7:4];
+                        r69 = r67;
+                        r69[25:22] = r68;
+                        r70 = r65[11:8];
+                        r71 = r69;
+                        r71[29:26] = r70;
+                        r72 = r65[15:12];
+                        r73 = r71;
+                        r73[33:30] = r72;
+                        case (r64)
+                           1'b1 : r74 = r73;
+                           default : r74 = r61;
+                        endcase
+                        r75 = r38 ? r74 : r61;
+                        r76 = r5[34:19];
+                        r77 = r76[3:0];
+                        r79 = r77[3:0];
+                        r78 = {l22, r79};
+                        r80 = r39 ? r78 : l23;
+                        r81 = r75;
+                        r81[40:36] = r80;
+                        r82 = r1[17:17];
+                        r83 = r81;
+                        r83[41:41] = r82;
+                        r84 = r5[43:37];
+                        r85 = r84[4:0];
+                        r86 = r5[18:0];
+                        r87 = r86[17:17];
+                        r88 = l24;
+                        r88[4:0] = r85;
+                        r89 = r88;
+                        r89[5:5] = r87;
+                        r90 = {r83, r89};
+                        kernel_kernel = r90;
+                     end
+               endfunction
+            endmodule"#]];
+        expect.assert_eq(&top.pretty());
+        Ok(())
+    }
+
+    /// Tier 4 — iverilog round-trip, RTL and NTL.
+    #[test]
+    fn iverilog_round_trip() -> Result<(), RHDLError> {
+        let uut = Flatten::<b4, 2, 4>::default();
+        let tb = uut
+            .run(bench_stream())
+            .collect::<SynchronousTestBench<_, _>>();
+        tb.rtl(&uut, &Default::default())?.run_iverilog()?;
+        tb.ntl(&uut, &Default::default())?.run_iverilog()?;
+        Ok(())
+    }
+
+    /// Tier 5 — VCD digest.
+    #[test]
+    fn trace_digest() -> miette::Result<()> {
+        let uut = Flatten::<b4, 2, 4>::default();
+        let vcd = uut.run(bench_stream()).collect::<VcdFile>();
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("vcd")
+            .join("stream_flatten");
+        std::fs::create_dir_all(&root).unwrap();
+        let expect = expect_test::expect![
+            "e02140220462767f69da53f6cd84e6fc552120a5c2de0565e0b388fd12903705"
+        ];
+        let digest = vcd.dump_to_file(root.join("stream_flatten.vcd")).unwrap();
+        expect.assert_eq(&digest);
         Ok(())
     }
 
