@@ -35,6 +35,15 @@
 //!     counter is non-zero.
 //!   - `downstream_data: Option<Item<T, F>>` — the data flowing
 //!     forward to the downstream `CreditRCStream` sink.
+//!
+//!# Example
+//!
+//!```
+#![doc = include_str!("../../../examples/credit_source.rs")]
+//!```
+//!
+//! The trace below demonstrates the result.
+#![doc = include_str!("../../../doc/credit_source.md")]
 
 use rhdl::prelude::*;
 
@@ -296,7 +305,6 @@ mod tests {
         assert_eq!(d.credit.raw(), 0xF);
     }
 
-    /// Smoke test: descriptor + HDL emission.
     /// Tier 2 — **the source's core invariant, under credit starvation.**
     ///
     /// A credit source must never send more items than it has been
@@ -369,10 +377,145 @@ mod tests {
         );
     }
 
+    /// Stimulus for the Tier-5 digest.
+    ///
+    /// Grants credit only on one cycle in four, so the source runs its
+    /// counter to zero and has to stop sending. Credit starvation is
+    /// this widget's form of backpressure — a stream that grants every
+    /// cycle keeps the counter saturated and never exercises the
+    /// can't-send path, which is the path the widget exists to
+    /// implement.
+    fn starving_stream() -> impl Iterator<Item = TimedSample<(ClockReset, In<b8, (), 4>)>> {
+        (0..32u128)
+            .map(|k| In {
+                upstream_data: Some(Item::<b8, ()> {
+                    data: bits::<8>(k),
+                    frame: (),
+                }),
+                credit_grant: bits::<4>(u128::from(k.is_multiple_of(4))),
+            })
+            .with_reset(2)
+            .clock_pos_edge(100)
+    }
+
+    /// Tier 3 — HDL emission snapshot.
+    ///
+    /// Top module only; the DFF and `Constant` sub-modules are covered
+    /// by their own snapshots.
     #[test]
-    fn descriptor_smoke() -> miette::Result<()> {
+    fn hdl_emission_snapshot() -> miette::Result<()> {
         let uut: CreditSource<b8, (), 4> = CreditSource::default();
-        let _desc = uut.descriptor("credit_source_b8_w4".into())?;
+        let desc = uut.descriptor("credit_source".into())?;
+        let hdl = desc.hdl()?;
+        let top = hdl
+            .modules
+            .modules
+            .iter()
+            .find(|m| m.name == "credit_source")
+            .expect("top module must be emitted");
+        let expect = expect_test::expect![[r#"
+            module credit_source(input wire [1:0] clock_reset, input wire [12:0] i, output wire [9:0] o);
+               wire [13:0] od;
+               wire [3:0] d;
+               wire [11:0] q;
+               assign o = od[9:0];
+               credit_source_credit c0(.clock_reset(clock_reset), .i(d[3:0]), .o(q[3:0]));
+               credit_source__marker c1(.clock_reset(clock_reset), .o(q[11:4]));
+               assign d = od[13:10];
+               assign od = kernel_credit_source_kernel(clock_reset, i, q);
+               function [13:0] kernel_credit_source_kernel(input reg [1:0] arg_0, input reg [12:0] arg_1, input reg [11:0] arg_2);
+                     reg [3:0] r0;
+                     reg [11:0] r1;
+                     reg [0:0] r2;
+                     reg [8:0] r3;
+                     reg [12:0] r4;
+                     reg [0:0] r5;
+                     reg [0:0] r6;
+                     reg [0:0] r7;
+                     // o
+                     reg [9:0] r8;
+                     reg [8:0] r9;
+                     reg [8:0] r10;
+                     // o
+                     reg [9:0] r11;
+                     reg [3:0] r12;
+                     reg [3:0] r13;
+                     reg [3:0] r14;
+                     reg [3:0] r15;
+                     reg [3:0] r16;
+                     reg [0:0] r17;
+                     reg [3:0] r18;
+                     reg [0:0] r19;
+                     reg [0:0] r20;
+                     reg [3:0] r21;
+                     // d
+                     reg [3:0] r22;
+                     reg [13:0] r23;
+                     reg [1:0] r24;
+                     localparam l0 = 1'b1;
+                     localparam l1 = 1'b1;
+                     localparam l2 = 1'b0;
+                     localparam l3 = 1'b0;
+                     localparam l4 = 10'bXXXXXXXXXX;
+                     localparam l5 = 9'b000000000;
+                     localparam l6 = 4'b0001;
+                     localparam l7 = 4'b0000;
+                     localparam l8 = 4'b1111;
+                     localparam l9 = 4'bXXXX;
+                     begin
+                        r24 = arg_0;
+                        r4 = arg_1;
+                        r1 = arg_2;
+                        r0 = r1[3:0];
+                        r2 = |r0;
+                        r3 = r4[8:0];
+                        r5 = r3[8:8];
+                        case (r5)
+                           1'b1 : r6 = l1;
+                           1'b0 : r6 = l3;
+                        endcase
+                        r7 = r2 & r6;
+                        r8 = l4;
+                        r8[0:0] = r2;
+                        r9 = r4[8:0];
+                        r10 = r7 ? r9 : l5;
+                        r11 = r8;
+                        r11[9:1] = r10;
+                        r12 = r4[12:9];
+                        r13 = r7 ? l6 : l7;
+                        r14 = r1[3:0];
+                        r15 = r14 + r12;
+                        r16 = r15 - r13;
+                        r17 = r12 > r13;
+                        r18 = r1[3:0];
+                        r19 = r16 < r18;
+                        r20 = r17 & r19;
+                        r21 = r20 ? l8 : r16;
+                        r22 = l9;
+                        r22[3:0] = r21;
+                        r23 = {r22, r11};
+                        kernel_credit_source_kernel = r23;
+                     end
+               endfunction
+            endmodule"#]];
+        expect.assert_eq(&top.pretty());
+        Ok(())
+    }
+
+    /// Tier 5 — VCD digest, over the credit-starving stimulus.
+    #[test]
+    fn trace_digest() -> miette::Result<()> {
+        let uut: CreditSource<b8, (), 4> = CreditSource::default();
+        let vcd = uut.run(starving_stream()).collect::<VcdFile>();
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("vcd")
+            .join("credit_source");
+        std::fs::create_dir_all(&root).unwrap();
+        let expect = expect_test::expect![
+            "5231c351c1a5549aa8466e4b4a65c9fb227879290a62dd0018cf00cd8975f805"
+        ];
+        let digest = vcd.dump_to_file(root.join("credit_source.vcd")).unwrap();
+        expect.assert_eq(&digest);
         Ok(())
     }
 

@@ -54,6 +54,15 @@
 //!   plan, this is the auto-pipeliner's preferred cut point).
 //! - Anywhere a vendor's IP block expects a registered Ready/Valid
 //!   handshake (to avoid combinational paths through the IP boundary).
+//!
+//!# Example
+//!
+//!```
+#![doc = include_str!("../../examples/rcstream_relay.rs")]
+//!```
+//!
+//! The trace below demonstrates the result.
+#![doc = include_str!("../../doc/rcstream_relay.md")]
 
 use rhdl::prelude::*;
 
@@ -133,6 +142,26 @@ pub fn relay_kernel<T: Digital, F: Digital>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Stimulus for the Tier-5 digest.
+    ///
+    /// Deliberately **stalls**: `ready` is withheld on one cycle in
+    /// three. A skid buffer exists to absorb stalls, so a digest taken
+    /// over an always-ready stream would anchor the one trajectory that
+    /// never uses the buffer, and would stay green through a regression
+    /// in exactly the logic this widget is for.
+    fn digest_stream() -> impl Iterator<Item = TimedSample<(ClockReset, RCStream<b8, ()>)>> {
+        (0..24u128)
+            .map(|k| RCStream::<b8, ()> {
+                data: Some(Item::<b8, ()> {
+                    data: bits::<8>(k),
+                    frame: (),
+                }),
+                ready: !k.is_multiple_of(3),
+            })
+            .with_reset(2)
+            .clock_pos_edge(100)
+    }
 
     /// A relay with no items in flight should idle: data out = None,
     /// ready out = false (Carloni starts in Run with stop_out=true to
@@ -224,14 +253,134 @@ mod tests {
         assert_eq!(d.inner.stop_in, true); // !ready = true
     }
 
-    /// Property: a `RCStreamRelay<T, F>` is a `Synchronous` widget that
-    /// can be `descriptor()`-ed and asked for its HDL representation.
-    /// Smoke test that the `Synchronous` derive composes cleanly with
-    /// the wrapped Carloni.
+    /// Tier 3 — HDL emission snapshot.
+    ///
+    /// Snapshots the top module only: the sub-modules are the Carloni
+    /// primitive's own emission, covered by its snapshot, and including
+    /// them here would make this test fail for changes that have nothing
+    /// to do with the relay.
+    ///
+    /// This replaces a `descriptor()`-only smoke test. That test proved
+    /// the `Synchronous` derive composed with the wrapped Carloni, which
+    /// is worth knowing but is not Tier 3 — it could not detect a change
+    /// in what the relay actually emits.
     #[test]
-    fn relay_descriptor_smoke() -> miette::Result<()> {
+    fn hdl_emission_snapshot() -> miette::Result<()> {
         let uut: RCStreamRelay<b8, ()> = RCStreamRelay::default();
-        let _desc = uut.descriptor("rcstream_relay_b8".into())?;
+        let desc = uut.descriptor("rcstream_relay".into())?;
+        let hdl = desc.hdl()?;
+        let top = hdl
+            .modules
+            .modules
+            .iter()
+            .find(|m| m.name == "rcstream_relay")
+            .expect("top module must be emitted");
+        let expect = expect_test::expect![[r#"
+            module rcstream_relay(input wire [1:0] clock_reset, input wire [9:0] i, output wire [9:0] o);
+               wire [19:0] od;
+               wire [9:0] d;
+               wire [9:0] q;
+               assign o = od[9:0];
+               rcstream_relay_inner c0(.clock_reset(clock_reset), .i(d[9:0]), .o(q[9:0]));
+               assign d = od[19:10];
+               assign od = kernel_relay_kernel(clock_reset, i, q);
+               function [19:0] kernel_relay_kernel(input reg [1:0] arg_0, input reg [9:0] arg_1, input reg [9:0] arg_2);
+                     reg [8:0] r0;
+                     reg [9:0] r1;
+                     reg [0:0] r2;
+                     reg [7:0] r3;
+                     reg [8:0] r4;
+                     reg [8:0] r5;
+                     reg [0:0] r6;
+                     reg [7:0] r7;
+                     // d
+                     reg [9:0] r8;
+                     reg [0:0] r9;
+                     // d
+                     reg [9:0] r10;
+                     reg [0:0] r11;
+                     reg [0:0] r12;
+                     // d
+                     reg [9:0] r13;
+                     reg [9:0] r14;
+                     reg [0:0] r15;
+                     reg [7:0] r16;
+                     reg [8:0] r17;
+                     reg [7:0] r18;
+                     reg [8:0] r19;
+                     // o
+                     reg [9:0] r20;
+                     reg [0:0] r21;
+                     reg [0:0] r22;
+                     // o
+                     reg [9:0] r23;
+                     reg [19:0] r24;
+                     reg [1:0] r25;
+                     localparam l0 = 1'b1;
+                     localparam l1 = 1'b1;
+                     localparam l2 = 1'b0;
+                     localparam l3 = 9'bXXXXXXXX0;
+                     localparam l4 = 10'bXXXXXXXXXX;
+                     localparam l5 = 1'b1;
+                     localparam l6 = 9'b000000000;
+                     localparam l7 = 10'bXXXXXXXXXX;
+                     begin
+                        r25 = arg_0;
+                        r1 = arg_1;
+                        r14 = arg_2;
+                        r0 = r1[8:0];
+                        r2 = r0[8:8];
+                        r3 = r0[7:0];
+                        r4 = {r3, l0};
+                        case (r2)
+                           1'b1 : r5 = r4;
+                           1'b0 : r5 = l3;
+                        endcase
+                        r6 = r5[0:0];
+                        r7 = r5[8:1];
+                        r8 = l4;
+                        r8[7:0] = r7;
+                        r9 = ~r6;
+                        r10 = r8;
+                        r10[8:8] = r9;
+                        r11 = r1[9:9];
+                        r12 = ~r11;
+                        r13 = r10;
+                        r13[9:9] = r12;
+                        r15 = r14[8:8];
+                        r16 = r14[7:0];
+                        r18 = r16[7:0];
+                        r17 = {l5, r18};
+                        r19 = r15 ? l6 : r17;
+                        r20 = l7;
+                        r20[8:0] = r19;
+                        r21 = r14[9:9];
+                        r22 = ~r21;
+                        r23 = r20;
+                        r23[9:9] = r22;
+                        r24 = {r13, r23};
+                        kernel_relay_kernel = r24;
+                     end
+               endfunction
+            endmodule"#]];
+        expect.assert_eq(&top.pretty());
+        Ok(())
+    }
+
+    /// Tier 5 — VCD digest.
+    #[test]
+    fn trace_digest() -> miette::Result<()> {
+        let uut: RCStreamRelay<b8, ()> = RCStreamRelay::default();
+        let vcd = uut.run(digest_stream()).collect::<VcdFile>();
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("vcd")
+            .join("rcstream_relay");
+        std::fs::create_dir_all(&root).unwrap();
+        let expect = expect_test::expect![
+            "604f9a06e19cc971b3318a09cdd90e5fa6b0c837e4ae7da769346a722c90d095"
+        ];
+        let digest = vcd.dump_to_file(root.join("rcstream_relay.vcd")).unwrap();
+        expect.assert_eq(&digest);
         Ok(())
     }
 
@@ -333,6 +482,10 @@ mod tests {
         let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
         let test_bench = uut.run(stream).collect::<SynchronousTestBench<_, _>>();
         let tm = test_bench.rtl(&uut, &Default::default())?;
+        tm.run_iverilog()?;
+        // NTL as well as RTL: the RTL form skips the Stage-3 NTL passes,
+        // so an RTL-only round-trip cannot detect a bug in those passes.
+        let tm = test_bench.ntl(&uut, &Default::default())?;
         tm.run_iverilog()?;
         Ok(())
     }

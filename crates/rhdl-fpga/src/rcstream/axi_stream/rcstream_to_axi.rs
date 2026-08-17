@@ -30,6 +30,15 @@
 //! [`crate::lid::carloni::Carloni`] skid-buffer on the output isolates
 //! the AXI bus from any combinatorial paths in the upstream RCStream-
 //! side logic.
+//!
+//!# Example
+//!
+//!```
+#![doc = include_str!("../../../examples/rcstream_to_axi.rs")]
+//!```
+//!
+//! The trace below demonstrates the result.
+#![doc = include_str!("../../../doc/rcstream_to_axi.md")]
 
 use rhdl::prelude::*;
 
@@ -210,7 +219,6 @@ mod tests {
         assert_eq!(o.ready, true);
     }
 
-    /// Smoke test: descriptor + HDL emission.
     /// Tier 2 — **backpressure**, the mirror of the AXI->RCStream case
     /// and equally uncovered before now.
     ///
@@ -263,10 +271,145 @@ mod tests {
         );
     }
 
+    /// Stimulus for the Tier-5 digest.
+    ///
+    /// Gaps the incoming data and drops `TREADY` on different cadences
+    /// (4 and 3) so they never coincide. AXI requires a beat to be held
+    /// stable until TREADY is seen, so a stream that never drops TREADY
+    /// exercises everything except that obligation.
+    fn handshake_stream() -> impl Iterator<Item = TimedSample<(ClockReset, In<b8, ()>)>> {
+        (0..24u128)
+            .map(|k| In {
+                data: if k.is_multiple_of(4) {
+                    None
+                } else {
+                    Some(Item::<b8, ()> {
+                        data: bits::<8>(k),
+                        frame: (),
+                    })
+                },
+                tready: !k.is_multiple_of(3),
+            })
+            .with_reset(2)
+            .clock_pos_edge(100)
+    }
+
+    /// Tier 3 — HDL emission snapshot (top module only).
     #[test]
-    fn descriptor_smoke() -> miette::Result<()> {
+    fn hdl_emission_snapshot() -> miette::Result<()> {
         let uut: RCStreamToAxi<b8, ()> = RCStreamToAxi::default();
-        let _desc = uut.descriptor("rcstream_to_axi_b8".into())?;
+        let desc = uut.descriptor("rcstream_to_axi".into())?;
+        let hdl = desc.hdl()?;
+        let top = hdl
+            .modules
+            .modules
+            .iter()
+            .find(|m| m.name == "rcstream_to_axi")
+            .expect("top module must be emitted");
+        let expect = expect_test::expect![[r#"
+            module rcstream_to_axi(input wire [1:0] clock_reset, input wire [9:0] i, output wire [9:0] o);
+               wire [19:0] od;
+               wire [9:0] d;
+               wire [9:0] q;
+               assign o = od[9:0];
+               rcstream_to_axi_outbuf c0(.clock_reset(clock_reset), .i(d[9:0]), .o(q[9:0]));
+               assign d = od[19:10];
+               assign od = kernel_rcstream_to_axi_kernel(clock_reset, i, q);
+               function [19:0] kernel_rcstream_to_axi_kernel(input reg [1:0] arg_0, input reg [9:0] arg_1, input reg [9:0] arg_2);
+                     reg [8:0] r0;
+                     reg [9:0] r1;
+                     reg [0:0] r2;
+                     reg [7:0] r3;
+                     reg [8:0] r4;
+                     reg [8:0] r5;
+                     reg [0:0] r6;
+                     reg [7:0] r7;
+                     // d
+                     reg [9:0] r8;
+                     reg [0:0] r9;
+                     // d
+                     reg [9:0] r10;
+                     reg [0:0] r11;
+                     reg [0:0] r12;
+                     // d
+                     reg [9:0] r13;
+                     reg [9:0] r14;
+                     reg [7:0] r15;
+                     // o
+                     reg [9:0] r16;
+                     reg [0:0] r17;
+                     reg [0:0] r18;
+                     // o
+                     reg [9:0] r19;
+                     reg [0:0] r20;
+                     reg [0:0] r21;
+                     // o
+                     reg [9:0] r22;
+                     reg [19:0] r23;
+                     reg [1:0] r24;
+                     localparam l0 = 1'b1;
+                     localparam l1 = 1'b1;
+                     localparam l2 = 1'b0;
+                     localparam l3 = 9'bXXXXXXXX0;
+                     localparam l4 = 10'bXXXXXXXXXX;
+                     localparam l5 = 10'bXXXXXXXXXX;
+                     begin
+                        r24 = arg_0;
+                        r1 = arg_1;
+                        r14 = arg_2;
+                        r0 = r1[8:0];
+                        r2 = r0[8:8];
+                        r3 = r0[7:0];
+                        r4 = {r3, l0};
+                        case (r2)
+                           1'b1 : r5 = r4;
+                           1'b0 : r5 = l3;
+                        endcase
+                        r6 = r5[0:0];
+                        r7 = r5[8:1];
+                        r8 = l4;
+                        r8[7:0] = r7;
+                        r9 = ~r6;
+                        r10 = r8;
+                        r10[8:8] = r9;
+                        r11 = r1[9:9];
+                        r12 = ~r11;
+                        r13 = r10;
+                        r13[9:9] = r12;
+                        r15 = r14[7:0];
+                        r16 = l5;
+                        r16[7:0] = r15;
+                        r17 = r14[8:8];
+                        r18 = ~r17;
+                        r19 = r16;
+                        r19[8:8] = r18;
+                        r20 = r14[9:9];
+                        r21 = ~r20;
+                        r22 = r19;
+                        r22[9:9] = r21;
+                        r23 = {r13, r22};
+                        kernel_rcstream_to_axi_kernel = r23;
+                     end
+               endfunction
+            endmodule"#]];
+        expect.assert_eq(&top.pretty());
+        Ok(())
+    }
+
+    /// Tier 5 — VCD digest, over the gapped/stalled handshake.
+    #[test]
+    fn trace_digest() -> miette::Result<()> {
+        let uut: RCStreamToAxi<b8, ()> = RCStreamToAxi::default();
+        let vcd = uut.run(handshake_stream()).collect::<VcdFile>();
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("vcd")
+            .join("rcstream_to_axi");
+        std::fs::create_dir_all(&root).unwrap();
+        let expect = expect_test::expect![
+            "6aec5876c80c97d99b3b1d39ec29bbbc148178ddaf1265f108069400f743ad51"
+        ];
+        let digest = vcd.dump_to_file(root.join("rcstream_to_axi.vcd")).unwrap();
+        expect.assert_eq(&digest);
         Ok(())
     }
 
@@ -335,8 +478,8 @@ mod round_trip_tests {
         // RCStreamToAxi sees the AxiToRCStream's output as its input.
         d.r2a.data = q.a2r.data;
         d.r2a.tready = i.ready; // pass-through downstream tready
-                                // The RCStream-side ready flowing back into AxiToRCStream
-                                // comes from RCStreamToAxi's internal `ready` output.
+        // The RCStream-side ready flowing back into AxiToRCStream
+        // comes from RCStreamToAxi's internal `ready` output.
         d.a2r.ready = q.r2a.ready;
         // Output of the round-trip is the second translator's AXI side.
         (q.r2a, d)

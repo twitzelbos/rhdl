@@ -83,6 +83,15 @@
 //! worked around, because the panic is otherwise baffling: it surfaces
 //! from deep inside the FIFO with no hint that the sink's own
 //! parameterisation caused it.
+//!
+//!# Example
+//!
+//!```
+#![doc = include_str!("../../../examples/credit_sink.rs")]
+//!```
+//!
+//! The trace below demonstrates the result.
+#![doc = include_str!("../../../doc/credit_sink.md")]
 
 use rhdl::prelude::*;
 
@@ -253,14 +262,6 @@ mod tests {
     fn default_construction() {
         let _u: CreditSink<b8, (), 5, 4> = CreditSink::default();
         let _u2: CreditSink<b16, bool, 8, 6> = CreditSink::default();
-    }
-
-    /// Smoke test: descriptor + HDL emission.
-    #[test]
-    fn descriptor_smoke() -> miette::Result<()> {
-        let uut: CreditSink<b8, (), 5, 4> = CreditSink::default();
-        let _desc = uut.descriptor("credit_sink_b8_w5_n4".into())?;
-        Ok(())
     }
 
     /// iverilog round-trip: drive items in with downstream always
@@ -500,27 +501,195 @@ mod tests {
         );
     }
 
+    /// Shared stimulus for the round-trip and the digest.
+    ///
+    /// `downstream_ready` is withheld on one cycle in three. The
+    /// previous version of this stream drove it `true` on every cycle,
+    /// which drains the buffer as fast as it fills and therefore can
+    /// never reach capacity — the same blind spot that let this
+    /// widget's credit off-by-one ship, where the surplus token was
+    /// spent against a full FIFO and the item was silently dropped.
+    /// A flow-control widget tested without backpressure is untested
+    /// where it matters (CLAUDE.md §5).
+    fn stalling_stream() -> impl Iterator<Item = TimedSample<(ClockReset, In<b8, ()>)>> {
+        (0..32u128)
+            .map(|k| In {
+                upstream_data: if k < 16 {
+                    Some(Item::<b8, ()> {
+                        data: bits::<8>(k),
+                        frame: (),
+                    })
+                } else {
+                    None
+                },
+                downstream_ready: !k.is_multiple_of(3),
+            })
+            .with_reset(2)
+            .clock_pos_edge(100)
+    }
+
     #[test]
     fn iverilog_round_trip() -> Result<(), RHDLError> {
         let uut: CreditSink<b8, (), 5, 4> = CreditSink::default();
-        let inputs: Vec<In<b8, ()>> = (0..32)
-            .map(|k| {
-                let it = Item::<b8, ()> {
-                    data: bits::<8>(k as u128),
-                    frame: (),
-                };
-                In {
-                    upstream_data: if k < 16 { Some(it) } else { None },
-                    downstream_ready: true,
-                }
-            })
-            .collect();
-        let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
-        let test_bench = uut.run(stream).collect::<SynchronousTestBench<_, _>>();
+        let test_bench = uut
+            .run(stalling_stream())
+            .collect::<SynchronousTestBench<_, _>>();
         // The FIFO uses a SyncBRAM internally — first 2 cycles need
         // skipping to let the BRAM exit its X-state.
         let tm = test_bench.rtl(&uut, &TestBenchOptions::default().skip(2))?;
         tm.run_iverilog()?;
+        // NTL as well: the RTL form skips the Stage-3 NTL passes, so an
+        // RTL-only round-trip cannot catch a bug in those passes.
+        let tm = test_bench.ntl(&uut, &TestBenchOptions::default().skip(2))?;
+        tm.run_iverilog()?;
+        Ok(())
+    }
+
+    /// Tier 3 — HDL emission snapshot.
+    ///
+    /// Top module only; the `SyncFIFO` and DFF sub-modules carry their
+    /// own snapshots, and including them here would make this test fail
+    /// for changes unrelated to the credit logic.
+    #[test]
+    fn hdl_emission_snapshot() -> miette::Result<()> {
+        let uut: CreditSink<b8, (), 5, 4> = CreditSink::default();
+        let desc = uut.descriptor("credit_sink".into())?;
+        let hdl = desc.hdl()?;
+        let top = hdl
+            .modules
+            .modules
+            .iter()
+            .find(|m| m.name == "credit_sink")
+            .expect("top module must be emitted");
+        let expect = expect_test::expect![[r#"
+            module credit_sink(input wire [1:0] clock_reset, input wire [9:0] i, output wire [13:0] o);
+               wire [28:0] od;
+               wire [14:0] d;
+               wire [18:0] q;
+               assign o = od[13:0];
+               credit_sink_fifo c0(.clock_reset(clock_reset), .i(d[9:0]), .o(q[13:0]));
+               credit_sink_pending_grants c1(.clock_reset(clock_reset), .i(d[14:10]), .o(q[18:14]));
+               assign d = od[28:14];
+               assign od = kernel_credit_sink_kernel(clock_reset, i, q);
+               function [28:0] kernel_credit_sink_kernel(input reg [1:0] arg_0, input reg [9:0] arg_1, input reg [18:0] arg_2);
+                     reg [13:0] r0;
+                     reg [18:0] r1;
+                     reg [8:0] r2;
+                     reg [0:0] r3;
+                     reg [0:0] r4;
+                     reg [0:0] r5;
+                     reg [9:0] r6;
+                     reg [0:0] r7;
+                     reg [8:0] r8;
+                     reg [9:0] r9;
+                     reg [9:0] r10;
+                     // d
+                     reg [14:0] r11;
+                     reg [13:0] r12;
+                     reg [8:0] r13;
+                     // o
+                     reg [13:0] r14;
+                     reg [4:0] r15;
+                     reg [0:0] r16;
+                     reg [4:0] r17;
+                     // o
+                     reg [13:0] r18;
+                     reg [4:0] r19;
+                     reg [0:0] r20;
+                     reg [0:0] r21;
+                     reg [4:0] r22;
+                     reg [4:0] r23;
+                     reg [4:0] r24;
+                     reg [4:0] r25;
+                     reg [4:0] r26;
+                     reg [4:0] r27;
+                     reg [4:0] r28;
+                     reg [4:0] r29;
+                     reg [4:0] r30;
+                     reg [4:0] r31;
+                     reg [4:0] r32;
+                     // d
+                     reg [14:0] r33;
+                     reg [28:0] r34;
+                     reg [1:0] r35;
+                     localparam l0 = 1'b1;
+                     localparam l1 = 1'b1;
+                     localparam l2 = 1'b0;
+                     localparam l3 = 1'b0;
+                     localparam l4 = 10'b0000000000;
+                     localparam l5 = 15'bXXXXXXXXXXXXXXX;
+                     localparam l6 = 14'bXXXXXXXXXXXXXX;
+                     localparam l7 = 5'b00000;
+                     localparam l8 = 5'b00001;
+                     localparam l9 = 5'b11111;
+                     begin
+                        r35 = arg_0;
+                        r6 = arg_1;
+                        r1 = arg_2;
+                        r0 = r1[13:0];
+                        r2 = r0[8:0];
+                        r3 = r2[8:8];
+                        case (r3)
+                           1'b1 : r4 = l1;
+                           1'b0 : r4 = l3;
+                        endcase
+                        r5 = r6[9:9];
+                        r7 = r5 & r4;
+                        r8 = r6[8:0];
+                        r9 = l4;
+                        r9[8:0] = r8;
+                        r10 = r9;
+                        r10[9:9] = r7;
+                        r11 = l5;
+                        r11[9:0] = r10;
+                        r12 = r1[13:0];
+                        r13 = r12[8:0];
+                        r14 = l6;
+                        r14[13:5] = r13;
+                        r15 = r1[18:14];
+                        r16 = |r15;
+                        r17 = r16 ? l8 : l7;
+                        r18 = r14;
+                        r18[4:0] = r17;
+                        r19 = r1[18:14];
+                        r20 = r19 == l9;
+                        r21 = r16 & r7;
+                        r22 = r1[18:14];
+                        r23 = r1[18:14];
+                        r24 = r23 - l8;
+                        r25 = r1[18:14];
+                        r26 = r1[18:14];
+                        r27 = r26 + l8;
+                        r28 = r20 ? r25 : r27;
+                        r29 = r1[18:14];
+                        r30 = r7 ? r28 : r29;
+                        r31 = r16 ? r24 : r30;
+                        r32 = r21 ? r22 : r31;
+                        r33 = r11;
+                        r33[14:10] = r32;
+                        r34 = {r33, r18};
+                        kernel_credit_sink_kernel = r34;
+                     end
+               endfunction
+            endmodule"#]];
+        expect.assert_eq(&top.pretty());
+        Ok(())
+    }
+
+    /// Tier 5 — VCD digest, over the stalling stimulus.
+    #[test]
+    fn trace_digest() -> miette::Result<()> {
+        let uut: CreditSink<b8, (), 5, 4> = CreditSink::default();
+        let vcd = uut.run(stalling_stream()).collect::<VcdFile>();
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("vcd")
+            .join("credit_sink");
+        std::fs::create_dir_all(&root).unwrap();
+        let expect = expect_test::expect![
+            "77876d34030fbd458f53f4516b4a6706bcba3a0a938dd8a37ff5ffec343c019c"
+        ];
+        let digest = vcd.dump_to_file(root.join("credit_sink.vcd")).unwrap();
+        expect.assert_eq(&digest);
         Ok(())
     }
 }

@@ -28,6 +28,15 @@
 //! `ready` directly.  A [`crate::lid::carloni::Carloni`] skid-buffer
 //! on the input isolates the AXI bus from any combinatorial paths in
 //! the downstream RCStream-side logic.
+//!
+//!# Example
+//!
+//!```
+#![doc = include_str!("../../../examples/axi_to_rcstream.rs")]
+//!```
+//!
+//! The trace below demonstrates the result.
+#![doc = include_str!("../../../doc/axi_to_rcstream.md")]
 
 use rhdl::prelude::*;
 
@@ -224,7 +233,6 @@ mod tests {
         assert_eq!(d.inbuf.data_in.frame, true);
     }
 
-    /// Smoke test: descriptor + HDL emission.
     /// Tier 2 — **backpressure**, which this translator had no coverage
     /// of at all.  Its entire job is bridging two ready/valid
     /// handshakes, so a test that never stalls either side exercises
@@ -280,10 +288,126 @@ mod tests {
         );
     }
 
+    /// Stimulus for the Tier-5 digest.
+    ///
+    /// Gaps `tvalid` and withholds `ready`, on different cadences (4
+    /// and 3) so the two never line up. A translator sitting between
+    /// two handshakes has to hold an item when the downstream stalls;
+    /// driving both signals high throughout exercises only the
+    /// everything-flows path.
+    fn handshake_stream() -> impl Iterator<Item = TimedSample<(ClockReset, In<b8, ()>)>> {
+        (0..24u128)
+            .map(|k| In {
+                tdata: bits::<8>(k),
+                tuser: (),
+                tvalid: !k.is_multiple_of(4),
+                ready: !k.is_multiple_of(3),
+            })
+            .with_reset(2)
+            .clock_pos_edge(100)
+    }
+
+    /// Tier 3 — HDL emission snapshot (top module only).
     #[test]
-    fn descriptor_smoke() -> miette::Result<()> {
+    fn hdl_emission_snapshot() -> miette::Result<()> {
         let uut: AxiToRCStream<b8, ()> = AxiToRCStream::default();
-        let _desc = uut.descriptor("axi_to_rcstream_b8".into())?;
+        let desc = uut.descriptor("axi_to_rcstream".into())?;
+        let hdl = desc.hdl()?;
+        let top = hdl
+            .modules
+            .modules
+            .iter()
+            .find(|m| m.name == "axi_to_rcstream")
+            .expect("top module must be emitted");
+        let expect = expect_test::expect![[r#"
+            module axi_to_rcstream(input wire [1:0] clock_reset, input wire [9:0] i, output wire [9:0] o);
+               wire [19:0] od;
+               wire [9:0] d;
+               wire [9:0] q;
+               assign o = od[9:0];
+               axi_to_rcstream_inbuf c0(.clock_reset(clock_reset), .i(d[9:0]), .o(q[9:0]));
+               assign d = od[19:10];
+               assign od = kernel_axi_to_rcstream_kernel(clock_reset, i, q);
+               function [19:0] kernel_axi_to_rcstream_kernel(input reg [1:0] arg_0, input reg [9:0] arg_1, input reg [9:0] arg_2);
+                     reg [7:0] r0;
+                     reg [9:0] r1;
+                     // d
+                     reg [9:0] r2;
+                     reg [0:0] r3;
+                     reg [0:0] r4;
+                     // d
+                     reg [9:0] r5;
+                     reg [0:0] r6;
+                     reg [0:0] r7;
+                     // d
+                     reg [9:0] r8;
+                     reg [9:0] r9;
+                     reg [0:0] r10;
+                     reg [7:0] r11;
+                     reg [8:0] r12;
+                     reg [7:0] r13;
+                     reg [8:0] r14;
+                     // o
+                     reg [9:0] r15;
+                     reg [0:0] r16;
+                     reg [0:0] r17;
+                     // o
+                     reg [9:0] r18;
+                     reg [19:0] r19;
+                     reg [1:0] r20;
+                     localparam l0 = 10'bXXXXXXXXXX;
+                     localparam l1 = 1'b1;
+                     localparam l2 = 9'b000000000;
+                     localparam l3 = 10'bXXXXXXXXXX;
+                     begin
+                        r20 = arg_0;
+                        r1 = arg_1;
+                        r9 = arg_2;
+                        r0 = r1[7:0];
+                        r2 = l0;
+                        r2[7:0] = r0;
+                        r3 = r1[8:8];
+                        r4 = ~r3;
+                        r5 = r2;
+                        r5[8:8] = r4;
+                        r6 = r1[9:9];
+                        r7 = ~r6;
+                        r8 = r5;
+                        r8[9:9] = r7;
+                        r10 = r9[8:8];
+                        r11 = r9[7:0];
+                        r13 = r11[7:0];
+                        r12 = {l1, r13};
+                        r14 = r10 ? l2 : r12;
+                        r15 = l3;
+                        r15[8:0] = r14;
+                        r16 = r9[9:9];
+                        r17 = ~r16;
+                        r18 = r15;
+                        r18[9:9] = r17;
+                        r19 = {r8, r18};
+                        kernel_axi_to_rcstream_kernel = r19;
+                     end
+               endfunction
+            endmodule"#]];
+        expect.assert_eq(&top.pretty());
+        Ok(())
+    }
+
+    /// Tier 5 — VCD digest, over the gapped/stalled handshake.
+    #[test]
+    fn trace_digest() -> miette::Result<()> {
+        let uut: AxiToRCStream<b8, ()> = AxiToRCStream::default();
+        let vcd = uut.run(handshake_stream()).collect::<VcdFile>();
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("vcd")
+            .join("axi_to_rcstream");
+        std::fs::create_dir_all(&root).unwrap();
+        let expect = expect_test::expect![
+            "33385be4a38000d4b25c608bdd10a194e279d5b96befd44697c28253a1821d2a"
+        ];
+        let digest = vcd.dump_to_file(root.join("axi_to_rcstream.vcd")).unwrap();
+        expect.assert_eq(&digest);
         Ok(())
     }
 
@@ -323,6 +447,9 @@ mod tests {
         let stream = inputs.into_iter().with_reset(2).clock_pos_edge(100);
         let test_bench = uut.run(stream).collect::<SynchronousTestBench<_, _>>();
         let tm = test_bench.rtl(&uut, &Default::default())?;
+        tm.run_iverilog()?;
+        // NTL as well as RTL: the RTL form skips the Stage-3 NTL passes.
+        let tm = test_bench.ntl(&uut, &Default::default())?;
         tm.run_iverilog()?;
         Ok(())
     }
