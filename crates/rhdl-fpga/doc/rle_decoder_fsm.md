@@ -6,6 +6,7 @@
 <title>FSM diagram for RleDecoder</title>
 <path d="M 73 30 C 60 -5, 110 -5, 97 30" fill="none" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="85" y1="70" x2="85" y2="160" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M 73 160 C 60 125, 110 125, 97 160" fill="none" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="85" y1="200" x2="85" y2="290" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <line x1="85" y1="330" x2="85" y2="30" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
 <path d="M 73 290 C 60 255, 110 255, 97 290" fill="none" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>

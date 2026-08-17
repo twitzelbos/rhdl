@@ -1,12 +1,14 @@
 use rhdl::{core::sim::ResetOrData, prelude::*};
+use rhdl_fpga::doc::DetRng;
 use rhdl_fpga::{doc::write_svg_as_markdown, fifo::synchronous::SyncFIFO};
 
 fn main() -> Result<(), RHDLError> {
+    let mut det = DetRng::new(0x1000);
     type Uut = SyncFIFO<Bits<16>, 4>;
     let uut = Uut::default();
     let mut need_reset = true;
     let test_seq = (0..)
-        .map(|_| b16(rand::random::<u16>() as u128))
+        .map(|_| b16(det.below(1 << 16)))
         .take(100)
         .collect::<Vec<_>>();
     let mut input_seq = test_seq.iter().copied();
@@ -23,13 +25,13 @@ fn main() -> Result<(), RHDLError> {
                 // By default, we do not insert more data.
                 input.data = None;
                 // The FIFO is not full, so we can insert data.  Toss a coin.
-                if !output.full && rand::random::<bool>() {
+                if !output.full && det.chance(50) {
                     input.data = input_seq.next();
                 }
                 // By default, we do not advance the FIFO
                 input.next = false;
                 // The FIFO has valid data.  So we can receive data. Toss a coin.
-                if output.data.is_some() && rand::random::<bool>() {
+                if output.data.is_some() && det.chance(50) {
                     input.next = true;
                     assert_eq!(output_seq.next().unwrap(), output.data.unwrap());
                 }

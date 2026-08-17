@@ -11,7 +11,9 @@ use rhdl_fpga::{
     },
     doc::write_svg_as_markdown,
     rng::xorshift::XorShift128,
-    stream::testing::{sink_from_fn::SinkFromFn, source_from_fn::SourceFromFn, utils::stalling},
+    stream::testing::{
+        sink_from_fn::SinkFromFn, source_from_fn::SourceFromFn, utils::stalling_with_seed,
+    },
 };
 
 #[derive(Clone, Synchronous, SynchronousDQ)]
@@ -76,17 +78,22 @@ fn iter_results() -> impl Iterator<Item = WriteResult> {
 fn main() -> Result<(), RHDLError> {
     let commands = write_commands();
     let commands_sink = write_commands();
-    let commands = stalling(commands, 0.23);
+    // Both channels stall at the same rate, so they need distinct seeds:
+    // the default seed is a function of the rate alone, which would stall
+    // commands and results on identical cycles.
+    let commands = stalling_with_seed(commands, 0.23, 0x00A1_5701);
     let results = iter_results();
     let results_sink = iter_results();
-    let results = stalling(results, 0.23);
+    let results = stalling_with_seed(results, 0.23, 0x00B2_5702);
     let uut = TestFixture {
         req_source: SourceFromFn::new(commands),
         controller: WriteController::default(),
         endpoint: WriteEndpoint::default(),
-        req_sink: SinkFromFn::new_from_iter(commands_sink, 0.1),
+        // Same rate on both sinks — distinct seeds, same reasoning as the
+        // sources above.
+        req_sink: SinkFromFn::new_from_iter_with_seed(commands_sink, 0.1, 0x00C3_5703),
         reply_source: SourceFromFn::new(results),
-        reply_sink: SinkFromFn::new_from_iter(results_sink, 0.1),
+        reply_sink: SinkFromFn::new_from_iter_with_seed(results_sink, 0.1, 0x00D4_5704),
     };
     let input = repeat_n((), 250);
     let input = input

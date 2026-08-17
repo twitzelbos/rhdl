@@ -13,6 +13,7 @@
 
 use badascii_doc::badascii;
 use rhdl::prelude::*;
+use rhdl_fpga::doc::DetRng;
 use rhdl_fpga::stream::testing::sink_from_fn::SinkView;
 use rhdl_fpga::{
     rng::xorshift::XorShift128,
@@ -41,6 +42,7 @@ fn main() -> Result<(), RHDLError> {
     // Create the thing to test
     let uut = Chunked::<b4, 2, 4>::default();
     // Create the consumption function.
+    let mut det = DetRng::new(0x1000);
     let consume = move |v: SinkView<_>| {
         // The sink simply compares the `Some` values with
         // the expected output of the iterator
@@ -51,7 +53,7 @@ fn main() -> Result<(), RHDLError> {
         }
         // The output of the closure is the value of `ready` for the
         // next clock cycle.
-        rand::random::<f64>() > 0.3
+        det.chance(70)
     };
     // Create a single stage test fixture
     let uut = single_stage(uut, stalling_source, consume);

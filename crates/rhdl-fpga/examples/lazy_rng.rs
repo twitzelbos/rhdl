@@ -1,9 +1,11 @@
 use rhdl::prelude::*;
+use rhdl_fpga::doc::DetRng;
 use rhdl_fpga::stream::{ready, testing::lazy_random::*};
 
 fn main() -> Result<(), RHDLError> {
+    let mut det = DetRng::new(0x1000);
     let input = (0..)
-        .map(|_| rand::random_bool(0.8))
+        .map(|_| det.chance(80))
         .map(|r| In { ready: ready(r) })
         .with_reset(1)
         .clock_pos_edge(100)

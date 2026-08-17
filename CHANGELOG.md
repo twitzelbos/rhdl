@@ -31,6 +31,47 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-16 — Deterministic stimulus everywhere: `cargo test` no longer rewrites committed traces
+
+**Paths:** `crates/rhdl-fpga/src/doc.rs` (new `DetRng`), `crates/rhdl-fpga/src/stream/testing/{utils,sink_from_fn}.rs`, `crates/rhdl-fpga/tests/stall_lockstep_audit.rs` (new), `crates/rhdl-fpga/src/axi4lite/core/testing/{read,write}.rs`, 19 files under `examples/`, 79 regenerated traces under `doc/`.
+
+**Why this, why now:** every widget's rustdoc pulls its waveform in with `include_str!("../../doc/<name>.md")`, so the examples run as doctests on every `cargo test`. Their stimulus came from `rand::random`, which meant each full test run **overwrote committed artifacts with different bytes**. The working tree was never clean, and — the part that actually costs something — a genuinely changed waveform was indistinguishable from the churn. The same `rand::random` fed `utils::stalling` at 23 `src` call sites, so a large fraction of the widget suite was irreproducible: a failure there could not be re-run, and you could not confirm a fix. CLAUDE.md §12 rule 10 calls a flaky test a real bug; an irreproducible one is worse.
+
+**Design decisions:**
+
+- **A seeded xorshift (`doc::DetRng`) rather than `rand`'s seedable RNGs.** The requirement is reproducibility, not statistical quality — this stimulus draws waveform pictures. It exposes exactly what the call sites needed: `chance(percent)` and `below(n)`.
+- **`utils::stalling` was made deterministic in place, rather than migrating its callers to `stalling_periodic`.** This is the important call, and the first attempt got it wrong (see below). The two are not interchangeable: `stalling_periodic` yields a *fixed cadence*, which can alias against a widget's own period and mask a bug that only appears at another phase, whereas `stalling` exists for unstructured backpressure. Changing the generator underneath `stalling` leaves all 23 call sites exercising exactly what they were written to exercise, and confines the diff to one function.
+- **Seeds derive from the stall rate, not from a constant.** That decorrelates the common case for free — `zip`'s 0.23 and 0.15 streams become independent without the caller thinking about seeds. Both halves of the `f64` are folded in, since `0.25` and `0.5` share 32 zero low bits and would otherwise collide.
+- **Explicit `stalling_with_seed` / `new_from_iter_with_seed` for the equal-rate case**, used at the paired sites in the AXI read/write fixtures and examples.
+
+**Surprises and gotchas:**
+
+- **The first attempt introduced a lockstep bug, twice, by two different mechanisms.** Both were regressions in a change whose stated purpose was reproducibility, and neither broke a test.
+  1. Seeding `SinkFromFn::new_from_iter` from one hard-coded constant made *every* sink in a run draw the identical sequence. Four fixtures build two sinks each; all four pairs went from independently random to perfectly lockstep. The efficiency I noted approvingly at the time — "one edit fixes four call sites" — was the defect: one shared constant is exactly what a single edit buys you.
+  2. Migrating example sources from `stalling(x, 0.23)` to `stalling_periodic(x, 4)` gave both channels of the AXI fixtures a phase counter starting at zero. Lockstep again.
+- **Determinism and independence are separate properties, and establishing the first can destroy the second.** Two channels that stall on identical cycles never exercise one side blocked while the other flows, which for a request/response pair is the case worth testing. Nothing fails; coverage just quietly goes away.
+- **Differing rates are not sufficient for independence.** `axi_read`'s sinks run at 0.3 and 0.1; drawing both from one sequence makes the 0.1 sink's ready-set a strict *subset* of the 0.3 sink's. The channels look uncorrelated in a trace and are in fact nested.
+- **The root error was changing behaviour where changing the generator would have done.** Sixteen examples were migrated from `stalling` to `stalling_periodic` when making `stalling` itself deterministic left them needing no edit at all. All sixteen were reverted, and both lockstep regressions went with them. Only the 17 examples calling `rand::random` *directly* needed migrating; the example diff is 19 files rather than 26.
+- **The audit script that found the first nine missed the other seven, and `rustfmt` found those.** The script classified a file as an unnecessary swap only if it contained no `DetRng` — so the seven examples doing *both* were filed under "genuinely needed migrating" and never re-examined. They surfaced two steps later, as a formatting complaint about an import line. A heuristic that partitions by "which bucket does this file belong in" silently mishandles files in both buckets; the check should have been per-hunk, not per-file.
+- **A mutation check caught a bad test written in the same sitting.** `different_probabilities_give_different_patterns` asserted `pattern(0.23) != pattern(0.15)` and **still passed with the seed forced constant** — two thresholds over one shared sequence do differ, while staying nested. It was named for a property it never checked. It is now `different_probabilities_are_independent_not_nested`, asserts each stream stalls somewhere the other does not, and under a constant seed fails with `a_only=true, b_only=false`.
+- **Not all 79 dirty traces came from nondeterminism.** 26 did. The other 53 are **stale**: additive renderer output (~25k `<path>`, ~15.7k `<title>` tooltips gained) plus a `viewBox` geometry change, from a tracer change that landed without the artifacts being refreshed. Same symptom, different cause; they are a separate commit.
+- **zsh does not word-split unquoted parameter expansions.** A regeneration loop written `for n in $EX` ran once with the whole list as a single filename, every invocation failed, and `git status` reported *zero* changed traces — which reads as "already clean" rather than "nothing ran". Two rounds of measurement were wrong before the loop was. Bulk regeneration needs a positive signal that work happened, not just an absence of diffs.
+- **`cargo build --tests` does not compile examples**; `--all-targets` does. Seven example call sites broke on a signature change while the tests-only build reported success.
+- **Editing `src` invalidates an in-flight `cargo test`.** A run had built the lib and was still compiling doctests; edits landing in that window leave doctests linking against a pre-edit rlib, failing on symbols that do exist. That run was killed rather than trusted.
+- **`det.next_u32() as u128` overflows a `b16`** and trips the width assertion in `sync_fifo`; `det.below(1 << 16)` is the correct form. `rand::random::<u8>()` had hidden the range constraint.
+
+**Validation:** all 121 examples run with no assertion failures, and three consecutive full regenerations produce **byte-identical output for every one of them**. Full `rhdl-fpga` lib suite green (1021 passed, 0 failed) with the deterministic stimulus. Six new unit tests on `stalling` — reproducibility, that it actually stalls, order preservation, independence-not-nesting, the low-bits seed collision, and `prob >= 1.0` rejection — with two mutations confirming the suite fails when it should.
+
+**A guard, not a checklist.** The lockstep defect was introduced twice and found both times by reading code afterwards. Reading is what let it in, so `tests/stall_lockstep_audit.rs` now checks it mechanically: it scans `src`, `examples` and `tests`, groups throttled-stream constructors by function body (two calls in two different `#[test]` fns never coexist and must not be flagged), and fails when two share a rate without explicit seeds. Verified against the broken commit, where it reports all seven real pairs with file, function, and remedy; green on the fixed tree. A function that collides deliberately opts out with a `lockstep-audit: intentional` marker. It also asserts it scanned >100 files, because a guard that silently scans nothing is worse than no guard.
+
+**Follow-ups:**
+
+- **`stalling_periodic` retains the same hazard by construction** — its phase counter starts at zero, so two instances with one period stall together. No caller does this now, and the audit test covers it if one appears. A phase-offset parameter is the fix when needed.
+- Scattered `rand::random` remains in test modules of `core::ram`, `fifo::synchronous`, `core::counter`, and `lid::carloni`. These write no artifacts, but they are still irreproducible tests.
+- **`stream::filter` still has no Tier 3/4/5** (carried forward).
+
+---
+
 ## 2026-08-16 — Adopt data-gated sinks across every absorbing `stream::` widget
 
 **Paths:** `crates/rhdl-fpga/src/stream/{stream_buffer, chunked, flatten, zip, tee}.rs`.

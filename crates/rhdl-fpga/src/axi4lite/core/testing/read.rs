@@ -74,7 +74,7 @@ pub fn kernel(_cr: ClockReset, _i: (), q: Q) -> ((), D) {
 mod tests {
     use std::iter::repeat_n;
 
-    use crate::{rng::xorshift::XorShift128, stream::testing::utils::stalling};
+    use crate::{rng::xorshift::XorShift128, stream::testing::utils::stalling_with_seed};
 
     use super::*;
 
@@ -82,17 +82,23 @@ mod tests {
     fn test_controller_endpoint() -> Result<(), RHDLError> {
         let rng = XorShift128::default().map(|x| bits(x as u128));
         let address_sink = rng.clone();
-        let address = stalling(rng.clone(), 0.23);
+        // Address and reply stall at the same rate, so they need
+        // explicit, distinct seeds: sharing one would stall both channels
+        // on identical cycles and never test a blocked request against a
+        // flowing response.
+        let address = stalling_with_seed(rng.clone(), 0.23, 0x00A1_5E01);
         let reply = rng.clone().map(ReadResult::Ok);
         let reply_sink = reply.clone();
-        let reply = stalling(reply, 0.23);
+        let reply = stalling_with_seed(reply, 0.23, 0x00B2_5E02);
         let uut = TestFixture {
             req_source: SourceFromFn::new(address),
             controller: ReadController::default(),
             endpoint: ReadEndpoint::default(),
-            req_sink: SinkFromFn::new_from_iter(address_sink, 0.1),
+            // Same rate on both sinks — distinct seeds, same reasoning as
+            // the sources above.
+            req_sink: SinkFromFn::new_from_iter_with_seed(address_sink, 0.1, 0x00C3_5E03),
             reply_source: SourceFromFn::new(reply),
-            reply_sink: SinkFromFn::new_from_iter(reply_sink, 0.1),
+            reply_sink: SinkFromFn::new_from_iter_with_seed(reply_sink, 0.1, 0x00D4_5E04),
         };
         let input = repeat_n((), 250);
         let input = input.with_reset(1).clock_pos_edge(100);

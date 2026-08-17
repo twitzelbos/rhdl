@@ -1,6 +1,7 @@
 use std::iter::repeat_n;
 
 use rhdl::prelude::*;
+use rhdl_fpga::doc::DetRng;
 use rhdl_fpga::stream::testing::sink_from_fn::SinkView;
 use rhdl_fpga::{
     rng::xorshift::XorShift128,
@@ -46,19 +47,21 @@ fn main() -> Result<(), RHDLError> {
     let mut c_rng = a_rng.clone();
     let mut d_rng = a_rng.clone();
     let a_rng = stalling(a_rng, 0.23);
+    let mut det0 = DetRng::new(0x1000);
     let consume_s = move |v: SinkView<_>| {
         if let Some(data) = v.accepted {
             let validation = c_rng.next().unwrap();
             assert_eq!(data, validation.0);
         }
-        rand::random::<f64>() > 0.2
+        det0.chance(80)
     };
+    let mut det1 = DetRng::new(0x3711);
     let consume_t = move |v: SinkView<_>| {
         if let Some(data) = v.accepted {
             let validation = d_rng.next().unwrap();
             assert_eq!(data, validation.1);
         }
-        rand::random::<f64>() > 0.2
+        det1.chance(80)
     };
     let uut = TestFixture {
         source: SourceFromFn::new(a_rng),

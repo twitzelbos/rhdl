@@ -1,9 +1,11 @@
 use rhdl::prelude::*;
+use rhdl_fpga::doc::DetRng;
 use rhdl_fpga::{doc::write_svg_as_markdown, reset::negation::ResetNegation};
 
 fn main() -> Result<(), RHDLError> {
+    let mut det = DetRng::new(0x1000);
     let input = (0..15)
-        .map(|_| rand::random::<bool>())
+        .map(|_| det.chance(50))
         .map(|b| signal(reset_n(b)))
         .without_reset()
         .clock_pos_edge(100)

@@ -1,10 +1,12 @@
 use rhdl::prelude::*;
+use rhdl_fpga::doc::DetRng;
 use rhdl_fpga::{
     rng::xorshift::XorShift128,
     stream::fifo_to_stream::{self, FIFOToStream},
 };
 
 fn main() -> Result<(), RHDLError> {
+    let mut det = DetRng::new(0x1000);
     // The buffer will manage items of 4 bits
     let uut = FIFOToStream::<b4>::default();
     // The test harness will include a consumer that
@@ -19,10 +21,10 @@ fn main() -> Result<(), RHDLError> {
                     return Some(rhdl::core::sim::ResetOrData::Reset);
                 }
                 let mut input = fifo_to_stream::In::<b4>::dont_care();
-                let want_to_pause = rand::random::<u8>() > 200;
+                let want_to_pause = det.chance(22);
                 input.ready.raw = !want_to_pause;
                 // Decide if the producer will generate a data item
-                let want_to_send = rand::random::<u8>() < 200;
+                let want_to_send = det.chance(78);
                 input.data = None;
                 if !out.full && want_to_send {
                     input.data = source_rng.next().map(|x| bits((x & 0xF) as u128));

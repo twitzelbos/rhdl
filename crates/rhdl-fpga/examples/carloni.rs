@@ -1,10 +1,12 @@
 use rhdl::prelude::*;
+use rhdl_fpga::doc::DetRng;
 use rhdl_fpga::{
     lid::carloni::{self, Carloni},
     rng::xorshift::XorShift128,
 };
 
 fn main() -> Result<(), RHDLError> {
+    let mut det = DetRng::new(0x1000);
     // The buffer will manage items of 4 bits
     let uut = Carloni::<b4>::default();
     // The test harness will include a consumer that
@@ -21,10 +23,10 @@ fn main() -> Result<(), RHDLError> {
                 }
                 let mut input = carloni::In::<b4>::dont_care();
                 // See if we want to pause the stream as the consumer
-                let want_to_pause = rand::random::<u8>() > 200;
+                let want_to_pause = det.chance(22);
                 input.stop_in = want_to_pause;
                 // Decide if the producer will generate a data item
-                let want_to_send = rand::random::<u8>() < 200;
+                let want_to_send = det.chance(78);
                 input.void_in = true;
                 input.data_in = bits(0);
                 if !out.stop_out && want_to_send {
