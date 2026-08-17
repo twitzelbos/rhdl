@@ -176,53 +176,20 @@ mod tests {
     /// so it is worth pinning down. If `map` ever gains a path that
     /// withholds output while holding an item, this test fails.
     ///
-    /// Driven with `run_fn` rather than `single_stage`, because
-    /// `SinkFromFn` hands its closure an acceptance report rather than
-    /// the offered value and so cannot express a data-gated sink at all
-    /// — see `stream::testing::sinks` for why that matters.
+    /// Driven through [`crate::stream::testing::closed_loop`] rather
+    /// than `single_stage`, because `SinkFromFn` hands its closure an
+    /// acceptance report rather than the offered value and so cannot
+    /// express a data-gated sink at all — see `stream::testing::sinks`
+    /// for why that matters.
     #[test]
     fn map_survives_a_data_gated_sink() -> Result<(), RHDLError> {
-        use crate::stream::{StreamIO, ready};
-        use rhdl::core::sim::ResetOrData;
+        use crate::stream::testing::closed_loop::assert_lossless_mapped;
 
         const COUNT: u128 = 16;
         let uut = Map::<b4, b2>::try_new::<map_item>()?;
-        let mut to_send: u128 = 0;
-        let mut got: Vec<u128> = Vec::new();
-        let mut need_reset = true;
-
-        uut.run_fn(
-            |output| {
-                if need_reset {
-                    need_reset = false;
-                    return Some(ResetOrData::Reset);
-                }
-                // Ready only when something is actually presented.
-                let sink_ready = output.data.is_some();
-                if let Some(d) = output.data {
-                    got.push(d.raw());
-                }
-                let mut input = StreamIO::<b4, b2> {
-                    data: None,
-                    ready: ready::<b2>(sink_ready),
-                };
-                if to_send < COUNT && output.ready.raw {
-                    input.data = Some(b4(to_send % 16));
-                    to_send += 1;
-                }
-                Some(ResetOrData::Data(input))
-            },
-            100,
-        )
-        .take_while(|t| t.time < 200_000)
-        .for_each(drop);
-
-        assert_eq!(to_send, COUNT, "the source must not stall forever");
-        let want: Vec<u128> = (0..COUNT).map(|k| k & 0x3).collect();
-        assert_eq!(
-            got, want,
-            "map must deliver every item to a data-gated sink"
-        );
+        let src: Vec<b4> = (0..COUNT).map(|k| b4(k % 16)).collect();
+        let want: Vec<b2> = (0..COUNT).map(|k| b2(k & 0x3)).collect();
+        assert_lossless_mapped(&uut, &src, &want);
         Ok(())
     }
 

@@ -6,6 +6,7 @@
 //! cannot catch a widget that forgets to consume its own rejects.
 //! [`sinks::data_gated`] can.
 #[doc(hidden)]
+pub mod closed_loop;
 pub mod double;
 pub mod lazy_random;
 #[doc(hidden)]

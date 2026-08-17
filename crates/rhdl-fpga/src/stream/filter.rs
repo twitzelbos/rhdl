@@ -189,42 +189,16 @@ mod tests {
     /// values that *do* arrive rather than that all of them do.
     #[test]
     fn no_deadlock_against_a_data_gated_sink() -> Result<(), RHDLError> {
-        use rhdl::core::sim::ResetOrData;
+        use crate::stream::testing::closed_loop::assert_lossless_mapped;
+
         const COUNT: u128 = 16;
         let uut = Filter::<b4>::try_new::<keep_even>()?;
-        let mut to_send: u128 = 0;
-        let mut got: Vec<u128> = Vec::new();
-        let mut need_reset = true;
-
-        uut.run_fn(
-            |output| {
-                if need_reset {
-                    need_reset = false;
-                    return Some(ResetOrData::Reset);
-                }
-                // The sink only asserts ready when it can see an item.
-                let sink_ready = output.data.is_some();
-                if let Some(d) = output.data {
-                    got.push(d.raw());
-                }
-                let mut input = StreamIO::<b4, b4> {
-                    data: None,
-                    ready: ready::<b4>(sink_ready),
-                };
-                if to_send < COUNT && output.ready.raw {
-                    input.data = Some(b4(to_send % 16));
-                    to_send += 1;
-                }
-                Some(ResetOrData::Data(input))
-            },
-            100,
-        )
-        .take_while(|t| t.time < 200_000)
-        .for_each(drop);
-
-        assert_eq!(to_send, COUNT, "the source must not be stalled forever");
-        let want: Vec<u128> = (0..COUNT).filter(|k| k % 2 == 0).collect();
-        assert_eq!(got, want, "every surviving item must be delivered");
+        let src: Vec<b4> = (0..COUNT).map(|k| b4(k % 16)).collect();
+        // A filter emits a SUBSEQUENCE, so `want` is the survivors —
+        // the fixture compares the whole sequence either way, which is
+        // what makes "delivered nothing" a failure rather than a pass.
+        let want: Vec<b4> = (0..COUNT).filter(|k| k % 2 == 0).map(b4).collect();
+        assert_lossless_mapped(&uut, &src, &want);
         Ok(())
     }
 
