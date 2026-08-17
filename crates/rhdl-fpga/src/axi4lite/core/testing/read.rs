@@ -90,20 +90,30 @@ mod tests {
         let reply = rng.clone().map(ReadResult::Ok);
         let reply_sink = reply.clone();
         let reply = stalling_with_seed(reply, 0.23, 0x00B2_5E02);
+        // Same rate on both sinks — distinct seeds, same reasoning as
+        // the sources above.
+        let (req_sink, reqs_seen) =
+            SinkFromFn::new_from_iter_counted_with_seed(address_sink, 0.1, 0x00C3_5E03);
+        let (reply_sink, replies_seen) =
+            SinkFromFn::new_from_iter_counted_with_seed(reply_sink, 0.1, 0x00D4_5E04);
         let uut = TestFixture {
             req_source: SourceFromFn::new(address),
             controller: ReadController::default(),
             endpoint: ReadEndpoint::default(),
-            // Same rate on both sinks — distinct seeds, same reasoning as
-            // the sources above.
-            req_sink: SinkFromFn::new_from_iter_with_seed(address_sink, 0.1, 0x00C3_5E03),
+            req_sink,
             reply_source: SourceFromFn::new(reply),
-            reply_sink: SinkFromFn::new_from_iter_with_seed(reply_sink, 0.1, 0x00D4_5E04),
+            reply_sink,
         };
         let input = repeat_n((), 250);
         let input = input.with_reset(1).clock_pos_edge(100);
         let vcd = uut.run(input).collect::<VcdFile>();
         vcd.dump_to_file("axi_read.vcd")?;
+        // Until now this test's only assertions were the value checks
+        // inside the two sinks, which fire only on delivery — so a
+        // controller/endpoint pair that moved nothing would have passed
+        // while dumping an empty waveform.
+        reqs_seen.assert_at_least(10);
+        replies_seen.assert_at_least(10);
         Ok(())
     }
 }

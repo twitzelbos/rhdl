@@ -141,6 +141,7 @@ mod tests {
     fn test_bank_works() -> miette::Result<()> {
         let uut = Adder::default();
         let mut need_reset = true;
+        let mut verified = 0usize;
         let mut rng = XorShift128::default();
         let problems = (0..1000).map(|_| (rng.next().unwrap(), rng.next().unwrap()));
         let mut rng2 = XorShift128::default();
@@ -169,12 +170,21 @@ mod tests {
                 if let Some(BlockResponse::Read(Ok(data))) = o.reply {
                     let expected = answers.next().unwrap();
                     assert_eq!(expected, data.raw() as u32);
+                    verified += 1;
                 }
                 Some(rhdl::core::sim::ResetOrData::Data(input))
             },
             100,
         )
         .for_each(drop);
+        // The sum check above is the only assertion in this file and it
+        // sits inside a `Some`-guard, so an adder that never replied
+        // would run it zero times and pass. Count the replies actually
+        // verified.
+        assert!(
+            verified > 10,
+            "expected the adder to produce replies to verify; got {verified}"
+        );
         Ok(())
     }
 }

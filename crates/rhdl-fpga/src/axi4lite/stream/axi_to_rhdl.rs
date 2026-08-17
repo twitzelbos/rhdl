@@ -164,13 +164,17 @@ mod tests {
         let a_rng = XorShift128::default().map(|x| b8((x & 0xFF) as u128));
         let b_rng = a_rng.clone();
         let a_rng = stalling(a_rng, 0.23);
+        let (sink, delivered) = SinkFromFn::new_from_iter_counted(b_rng, 0.2);
         let uut = TestFixture {
             source: SourceFromFn::new(a_rng),
             axi_2_rhdl: Axi2Rhdl::default(),
-            sink: SinkFromFn::new_from_iter(b_rng, 0.2),
+            sink,
         };
         let input = iter::repeat_n((), 10_000).with_reset(1).clock_pos_edge(100);
         uut.run(input).for_each(drop);
+        // The value checks live inside the sink's `Some`-guard, so a
+        // translator that delivered nothing would pass silently.
+        delivered.assert_at_least(100);
         Ok(())
     }
 

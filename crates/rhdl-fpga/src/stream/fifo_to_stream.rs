@@ -560,6 +560,7 @@ mod tests {
         // The test harness will include a consumer that
         // randomly pauses the upstream producer.
         let mut need_reset = true;
+        let mut checked = 0usize;
         let mut source_rng = XorShift128::default().map(|x| bits((x & 0xF) as u128));
         let mut dest_rng = source_rng.clone();
         uut.run_fn(
@@ -579,6 +580,7 @@ mod tests {
                 }
                 if out.data.is_some() && input.ready.raw {
                     assert_eq!(out.data, dest_rng.next());
+                    checked += 1;
                 }
                 Some(rhdl::core::sim::ResetOrData::Data(input))
             },
@@ -586,6 +588,14 @@ mod tests {
         )
         .take_while(|t| t.time < 100_000)
         .for_each(drop);
+        // The comparison above is the only assertion in this file, and it
+        // sits inside a `Some`-guard: a buffer that delivered nothing
+        // would run it zero times and pass. Count the comparisons that
+        // actually happened.
+        assert!(
+            checked > 10,
+            "expected the buffer to deliver items to compare; got {checked}"
+        );
         Ok(())
     }
 }
