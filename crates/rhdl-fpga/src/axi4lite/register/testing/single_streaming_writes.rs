@@ -9,7 +9,7 @@ use crate::{
     core::dff::DFF,
     rng::xorshift::{XorShift, XorShift128},
     stream::testing::{
-        sink_from_fn::{SinkFromFn, SinkView},
+        sink_from_fn::{AcceptCount, SinkFromFn, SinkView},
         source_from_fn::SourceFromFn,
         utils::stalling,
     },
@@ -27,8 +27,28 @@ pub struct Fixture {
     prev_value: DFF<b32>,
 }
 
+impl Fixture {
+    /// Build the fixture together with a live count of write results
+    /// the sink accepted.
+    ///
+    /// The acceptor's `assert_eq!(res, Ok(()))` fires only when a result
+    /// arrives, so a register path that completed no writes would run
+    /// zero assertions and the test would pass. Assert on the count.
+    fn new_counted() -> (Self, AcceptCount) {
+        let count = AcceptCount::default();
+        let sink_count = count.clone();
+        (Self::build(sink_count), count)
+    }
+}
+
 impl Default for Fixture {
     fn default() -> Self {
+        Self::build(AcceptCount::default())
+    }
+}
+
+impl Fixture {
+    fn build(sink_count: AcceptCount) -> Self {
         // get a set of write commands
         let cmd = XorShift128::default().map(|x| WriteCommand {
             addr: bits(0),
@@ -39,9 +59,10 @@ impl Default for Fixture {
         });
         let cmd = stalling(cmd, 0.23);
         // For the write sink, we expect all writes to succeed
-        let acceptor = |v: SinkView<WriteResult>| {
+        let acceptor = move |v: SinkView<WriteResult>| {
             if let Some(res) = v.accepted {
                 assert_eq!(res, Ok(()));
+                sink_count.record();
             }
             rand::random_bool(0.85)
         };
@@ -103,9 +124,14 @@ mod tests {
     #[test]
     fn synth_works() -> miette::Result<()> {
         let input = repeat_n((), 100).with_reset(1).clock_pos_edge(100);
-        let uut = Fixture::default();
+        let (uut, writes_acked) = Fixture::new_counted();
         let vcd = uut.run(input).collect::<VcdFile>();
         vcd.dump_to_file("thing.vcd").unwrap();
+        // This test asserted nothing at all: its only check was the
+        // acceptor's `assert_eq!(res, Ok(()))`, which fires only on
+        // delivery. A register path that completed no writes would have
+        // passed while dumping an empty waveform.
+        writes_acked.assert_at_least(10);
         Ok(())
     }
 }
