@@ -31,6 +31,29 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-17 — `fsm_widget`: restore the stale derive snapshots, and test the flag that broke them
+
+**Paths:** `crates/rhdl-macro-core/src/fsm_widget/tests.rs`, `.../expect/*.expect`.
+
+**Why this, why now:** `cargo test --all` had been failing on `main` for three tests in `rhdl-macro-core`. `d623be99` added `allow_implicit` to `FsmWidgetTag` and never re-blessed the three `expect_file!` snapshots, so the emitted descriptor carried `allow_implicit : false` and the committed snapshots did not. Found while running the full suite before the `dsp::nco` PR; kept out of that PR because it lands in a compiler-adjacent crate and §11.1 wants those isolated.
+
+**Design decisions:**
+
+- **Re-blessing alone would have been the wrong fix.** The three stale snapshots all capture `allow_implicit : false`, and there was **no test anywhere that set the flag** — the `out.allow_implicit = true` branch in the attribute parser was never exercised at the macro level. Accepting the new output would have restored a green suite while leaving the opt-in as untested as it was when it broke these snapshots in the first place. Added `fsm_widget_with_allow_implicit_flag`, which is the test whose absence let this happen.
+- **The new test asserts on the substring before comparing the snapshot.** `expect_file!` alone would report a whole-descriptor diff; `assert!(output.contains("allow_implicit : true"))` fails first and says exactly which thing did not reach the descriptor. A snapshot tells you *that* something changed, not *what mattered*.
+
+**Surprises and gotchas:**
+
+- **This is the failure mode `UPDATE_EXPECT=1` is designed to cause** — the tool makes a red suite green without asking whether the new output is right. Here it happened to be right, and the audit was three one-line diffs each adding `allow_implicit : false`, which is exactly what the new field should produce. CLAUDE.md §12.5 exists for the case where it is not right.
+
+**Validation:** all 9 `fsm_widget` tests pass; `rhdl-macro-core` lib suite green. Mutation-checked: forcing the emitter to write `allow_implicit: false` unconditionally fails the new test with *"the allow_implicit opt-in did not reach the emitted descriptor"*, then restored.
+
+**Follow-ups:**
+
+- Worth asking whether other `expect_file!` snapshots in the tree are similarly stale against fields added later. A grep for descriptor fields absent from their own snapshots would find them mechanically.
+
+---
+
 ## 2026-08-17 — `dsp::nco`: phase accumulator, bit-accurate DDS model, quadrature phase-to-amplitude
 
 **Paths:** `crates/rhdl-fpga/src/dsp/nco/{mod,phase_accumulator,model,sin_cos_linear_interp}.rs` (all new), `examples/{nco_phase,sin_cos_linear_interp}.rs` (new), `doc/{nco_phase,sin_cos_linear_interp}.md` (new), `tests/signed_literal_comparison.rs` (new), `doc/references/dsp/` (new).

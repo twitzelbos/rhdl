@@ -30,6 +30,28 @@ fn fsm_widget_with_strict_flag() {
 }
 
 #[test]
+fn fsm_widget_with_allow_implicit_flag() {
+    // The opt-in path had no test at all: `allow_implicit` was parsed
+    // and emitted, but every snapshot captured it as `false`, so the
+    // branch that sets it to `true` was never exercised.  That is how
+    // the three sibling snapshots went stale unnoticed when the field
+    // was introduced -- nothing asserted the field mattered.
+    let input = quote! {
+        #[fsm(state_field = "state", state_enum = State, allow_implicit)]
+        pub struct Machine {
+            state: dff::DFF<State>,
+        }
+    };
+    let output = derive_fsm_widget(input).unwrap().to_string();
+    assert!(
+        output.contains("allow_implicit : true"),
+        "the allow_implicit opt-in did not reach the emitted descriptor: {output}"
+    );
+    let expected = expect_file!["expect/fsm_widget_with_allow_implicit.expect"];
+    expected.assert_eq(&output);
+}
+
+#[test]
 fn fsm_widget_state_enum_as_string_literal() {
     // Both `state_enum = State` and `state_enum = "State"` should
     // work; the string-literal form is occasionally needed when
