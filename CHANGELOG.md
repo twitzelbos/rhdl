@@ -31,6 +31,38 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-16 — Level the `rcstream` validation and docs contract
+
+**Paths:** `crates/rhdl-fpga/src/rcstream/{relay,credit/sink,credit/source,axi_stream/axi_to_rcstream,axi_stream/rcstream_to_axi}.rs`, five new files under `examples/`, five new traces under `doc/`, five new VCDs under `vcd/`.
+
+**Why this, why now:** an audit of the `rcstream` tree found coverage was not uniform. Nine widgets had the full five-tier stack; five had Tier 1, 2 and 4 but **no HDL snapshot and no VCD digest**, and six had no runnable example or committed waveform at all. That is CLAUDE.md §12 rules 2 and 8, and the gap was invisible because every one of those widgets' tests passed — a missing tier does not fail, it just is not there.
+
+**What was actually wrong, beyond the missing tiers:**
+
+- **Four widgets had a `descriptor_smoke` test standing in for Tier 3.** It called `descriptor()` and discarded the result. That proves the derive composes, which is worth knowing, but it cannot detect a change in emitted Verilog — which is the entire job of Tier 3. Replaced with real `expect_test` snapshots of the top module. Snapshotting the top module only is deliberate: sub-modules carry their own snapshots, and inlining them here would make these tests fail for changes with nothing to do with the widget.
+- **Three round-trips ran RTL but not NTL** (`relay` with framing, `axi_to_rcstream` with `F = bool`, `credit::sink`). The RTL form skips the Stage-3 NTL passes, so an RTL-only round-trip cannot catch a bug in exactly those passes. Both paths now run.
+- **Every one of the new-tier stimuli drove full-throttle handshakes.** `credit::sink`'s round-trip held `downstream_ready` true on every cycle — the precise blind spot that let its credit off-by-one ship, where the surplus token was spent against a full FIFO and the item was silently dropped. Each widget now gets a stimulus that stalls in the way that matters *for that widget*: backpressure for the relay and translators, credit starvation for `CreditSource`, a stalling downstream for `CreditSink`.
+
+**Design decisions:**
+
+- **Stall cadences are coprime where two signals stall independently** (4 and 3 in the AXI translators), so the two drift against each other and the trace covers all four combinations of offer/accept rather than only the aligned ones. Equal cadences would put them in lockstep — the same failure mode the `stall_lockstep_audit` guard was added for one entry ago, here in its fixed-cadence form.
+- **`bus.rs` is deliberately excluded from the example requirement.** It defines `Item`, `RCStream` and `AsyncRCStream` — types, not a `Synchronous` widget. There is nothing to simulate, so a waveform would be a fabrication. Layer C applies to widgets.
+- **Examples are open-loop with deterministic stimulus** rather than `run_fn` closed loops, except where output must gate input. For a documentation waveform an explicit input sequence is easier to read, and it inherits the reproducibility property established in the previous entry.
+
+**Surprises and gotchas:**
+
+- **A stale doc comment had migrated onto the wrong test in three files.** `/// Smoke test: descriptor + HDL emission.` sat immediately above the Tier 2 backpressure test, describing the test *below* it rather than the smoke test it was written for — so the file read as though its backpressure coverage were a smoke test. Removed. A doc comment that survives the deletion of its subject does not error; it silently re-attaches to whatever follows.
+- **`cargo test --doc` runs the examples, so adding five examples adds five doctests that write to `doc/`.** They leave the tree clean, which is the property the previous entry established — worth noting that the property held under a change that added new artifact-writing doctests, not just under the ones it was built against.
+
+**Validation:** all 157 `rcstream` lib tests pass, 15 `rcstream` doctests pass, and a full `cargo test -p rhdl-fpga` is green with the working tree unmodified afterwards. All five new examples produce byte-identical output across repeated runs. Coverage is now uniform across all 15 `rcstream` widgets: every one has at least two iverilog round-trips (RTL + NTL), an HDL snapshot, a VCD digest, and a runnable example with a committed waveform.
+
+**Follow-ups:**
+
+- `rcstream` Phase 4 remains blocked on the combinational-reachability matrix → auto-pipelining Phase 1 chain; nothing here changes that.
+- Carried forward: burst-grant sink policy, a true fan-out widget, an `rcstream::testing` fixture, and `stream::filter`'s missing Tier 3/4/5.
+
+---
+
 ## 2026-08-16 — Deterministic stimulus everywhere: `cargo test` no longer rewrites committed traces
 
 **Paths:** `crates/rhdl-fpga/src/doc.rs` (new `DetRng`), `crates/rhdl-fpga/src/stream/testing/{utils,sink_from_fn}.rs`, `crates/rhdl-fpga/tests/stall_lockstep_audit.rs` (new), `crates/rhdl-fpga/src/axi4lite/core/testing/{read,write}.rs`, 19 files under `examples/`, 79 regenerated traces under `doc/`.
