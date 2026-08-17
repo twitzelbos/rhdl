@@ -277,16 +277,22 @@ mod tests {
             .take(10);
         let b_rng = a_rng.clone();
         let a_rng = stalling(a_rng, 0.23);
+        let (sink, delivered) = SinkFromFn::new_from_iter_counted(b_rng, 0.3);
         let uut = TestFixture {
             source: SourceFromFn::new(a_rng),
             count: DFF::default(),
             xfer: Xfer::default(),
-            sink: SinkFromFn::new_from_iter(b_rng, 0.3),
+            sink,
         };
         let input = repeat_n((), 1000).with_reset(1).clock_pos_edge(100);
         let last_output = uut.run(input).last().unwrap();
         let last_count = last_output.output.raw();
         assert_eq!(last_count, 10);
+        // `last_count` already counts transfers via the widget's own
+        // `run` pulse, so this test was not vacuous. Pinning the sink
+        // side too confirms the counted transfers actually *arrived*
+        // rather than merely being counted.
+        delivered.assert_at_least(10);
         Ok(())
     }
 }

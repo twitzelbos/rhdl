@@ -141,10 +141,42 @@ impl<T: Digital + std::fmt::Debug> SinkFromFn<T> {
     /// one sink's ready-set inside the other's rather than making them
     /// independent.
     pub fn new_from_iter_with_seed<S: Iterator<Item = T> + 'static>(
-        mut iter: S,
+        iter: S,
         stall_probability: f32,
         seed: u32,
     ) -> Self {
+        Self::new_from_iter_counted_with_seed(iter, stall_probability, seed).0
+    }
+
+    /// [`Self::new_from_iter`], plus a live count of accepted items.
+    ///
+    /// **Assert on this count.** The value checks inside `new_from_iter`
+    /// fire only when an item actually arrives, so a widget that
+    /// delivers *nothing* runs zero assertions and the test passes.
+    /// `stream::pipe_wrapper` shipped in exactly that state — it emitted
+    /// zero items for its entire life, standalone and through its own
+    /// fixture, behind a green test.
+    ///
+    /// A property of what arrives cannot detect nothing arriving. This
+    /// is the missing half.
+    pub fn new_from_iter_counted<S: Iterator<Item = T> + 'static>(
+        iter: S,
+        stall_probability: f32,
+    ) -> (Self, AcceptCount) {
+        let seed = super::utils::seed_for(f64::from(stall_probability));
+        Self::new_from_iter_counted_with_seed(iter, stall_probability, seed)
+    }
+
+    /// [`Self::new_from_iter_counted`], with the generator seed given
+    /// explicitly — see [`Self::new_from_iter_with_seed`] for when that
+    /// is needed.
+    pub fn new_from_iter_counted_with_seed<S: Iterator<Item = T> + 'static>(
+        mut iter: S,
+        stall_probability: f32,
+        seed: u32,
+    ) -> (Self, AcceptCount) {
+        let count = AcceptCount::default();
+        let sink_count = count.clone();
         let mut det = crate::doc::DetRng::new(seed);
         let func = move |v: SinkView<T>| {
             // Check against ACCEPTED, never offered: a stalled item is
@@ -153,10 +185,48 @@ impl<T: Digital + std::fmt::Debug> SinkFromFn<T> {
             if let Some(res) = v.accepted {
                 let y = iter.next().unwrap();
                 assert_eq!(res, y);
+                sink_count.record();
             }
             det.chance(((1.0 - stall_probability) * 100.0) as u32)
         };
-        Self::new(func)
+        (Self::new(func), count)
+    }
+}
+
+/// A live count of the items a [`SinkFromFn`] has accepted.
+///
+/// Cloneable and shared with the sink, so it can be read after the run
+/// even though the sink itself was moved into the fixture.
+#[derive(Clone, Default, Debug)]
+pub struct AcceptCount(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+impl AcceptCount {
+    /// Record one accepted item.
+    ///
+    /// Call this from a hand-written [`SinkFromFn::new`] closure, inside
+    /// the same `Some`-guard as the value assertions, so the count and
+    /// the checks stay in step.
+    pub fn record(&self) {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// How many items the sink has accepted so far.
+    pub fn get(&self) -> usize {
+        self.0.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Assert the sink accepted at least `n` items.
+    ///
+    /// Use this in any test whose other assertions live inside a
+    /// `Some`-guard, which is most of them.
+    pub fn assert_at_least(&self, n: usize) {
+        let got = self.get();
+        assert!(
+            got >= n,
+            "sink accepted {got} items, expected at least {n} — \
+             a test whose assertions sit inside a `Some` guard passes \
+             vacuously when the widget delivers nothing"
+        );
     }
 }
 
