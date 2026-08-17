@@ -260,54 +260,25 @@ mod tests {
     /// explicit `next`; pinned down rather than left inferred.
     #[test]
     fn data_gated_sink_does_not_stall_the_expander() -> Result<(), RHDLError> {
-        use crate::stream::StreamIO;
-        use rhdl::core::sim::ResetOrData;
+        use crate::stream::testing::closed_loop::assert_lossless_mapped;
 
         const GROUPS: u128 = 5;
         let uut = Flatten::<b4, 2, 4>::default();
-        let mut sent: u128 = 0;
-        let mut got: Vec<u128> = Vec::new();
-        let mut need_reset = true;
-
-        uut.run_fn(
-            |output| {
-                if need_reset {
-                    need_reset = false;
-                    return Some(ResetOrData::Reset);
-                }
-                let sink_ready = output.data.is_some();
-                if let Some(d) = output.data {
-                    got.push(d.raw());
-                }
-                let mut input = StreamIO::<[b4; 4], b4> {
-                    data: None,
-                    ready: ready::<b4>(sink_ready),
-                };
-                if sent < GROUPS && output.ready.raw {
-                    let b = sent * 4;
-                    input.data = Some([
-                        b4(b % 16),
-                        b4((b + 1) % 16),
-                        b4((b + 2) % 16),
-                        b4((b + 3) % 16),
-                    ]);
-                    sent += 1;
-                }
-                Some(ResetOrData::Data(input))
-            },
-            100,
-        )
-        .take_while(|t| t.time < 300_000)
-        .for_each(drop);
-
-        assert_eq!(sent, GROUPS, "the source must not be stalled forever");
-        let want: Vec<u128> = (0..GROUPS)
-            .flat_map(|g| (0..4u128).map(move |e| (g * 4 + e) % 16))
+        let src: Vec<[b4; 4]> = (0..GROUPS)
+            .map(|g| {
+                let b = g * 4;
+                [
+                    b4(b % 16),
+                    b4((b + 1) % 16),
+                    b4((b + 2) % 16),
+                    b4((b + 3) % 16),
+                ]
+            })
             .collect();
-        assert_eq!(
-            got, want,
-            "every element of every group must arrive, in order"
-        );
+        let want: Vec<b4> = (0..GROUPS)
+            .flat_map(|g| (0..4u128).map(move |e| b4((g * 4 + e) % 16)))
+            .collect();
+        assert_lossless_mapped(&uut, &src, &want);
         Ok(())
     }
 

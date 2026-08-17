@@ -132,45 +132,14 @@ mod tests {
     /// this pins that down instead of leaving it inferred.
     #[test]
     fn data_gated_sink_does_not_stall_the_buffer() -> Result<(), RHDLError> {
-        use crate::stream::{StreamIO, ready};
-        use rhdl::core::sim::ResetOrData;
+        use crate::stream::testing::closed_loop::assert_lossless;
 
-        const COUNT: u128 = 16;
         let uut = StreamBuffer::<b4>::default();
-        let mut to_send: u128 = 0;
-        let mut got: Vec<u128> = Vec::new();
-        let mut need_reset = true;
-
-        uut.run_fn(
-            |output| {
-                if need_reset {
-                    need_reset = false;
-                    return Some(ResetOrData::Reset);
-                }
-                let sink_ready = output.data.is_some();
-                if let Some(d) = output.data {
-                    got.push(d.raw());
-                }
-                let mut input = StreamIO::<b4, b4> {
-                    data: None,
-                    ready: ready::<b4>(sink_ready),
-                };
-                if to_send < COUNT && output.ready.raw {
-                    input.data = Some(b4(to_send % 16));
-                    to_send += 1;
-                }
-                Some(ResetOrData::Data(input))
-            },
-            100,
-        )
-        .take_while(|t| t.time < 200_000)
-        .for_each(drop);
-
-        assert_eq!(to_send, COUNT, "the source must not be stalled forever");
-        let want: Vec<u128> = (0..COUNT).collect();
-        assert_eq!(got, want, "every item must survive a data-gated sink");
+        let want: Vec<b4> = (0..16u128).map(b4).collect();
+        assert_lossless(&uut, &want);
         Ok(())
     }
+
     use rhdl::core::sim::ResetOrData;
 
     use crate::rng::xorshift::XorShift128;

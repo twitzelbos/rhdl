@@ -31,6 +31,34 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-17 — `stream::testing::closed_loop`: retire the hand-rolled Tier-2 loops
+
+**Paths:** `crates/rhdl-fpga/src/stream/testing/closed_loop.rs` (new), `stream/testing/mod.rs`, `stream/{map,filter,filter_map,stream_buffer}.rs`.
+
+**Why this, why now:** the `rcstream` entry above built the same fixture for the `RCStream` bus and noted that `stream::*` still had hand-rolled equivalents. Four widgets each carried their own twenty-line `run_fn` loop — reset flag, ready decision, arrival collection, termination — written out separately every time. That boilerplate is where the interesting decisions get made silently, and this module has now shipped three separate bugs that lived in exactly that blind spot (`CreditSink`'s dropped item, `filter`'s deadlock, `pipe_wrapper`'s total inertness).
+
+**Result: 224 lines deleted, 52 added.** Six widgets, net −172 lines of bookkeeping, with strictly better failure diagnostics.
+
+**Design decisions:**
+
+- **A second fixture rather than a shared one.** `rcstream::testing` does the same job for `RCStream`. The two are deliberately not merged: the bus types differ (`Ready<S>` versus a bare `bool`, `Item<T, F>` versus a plain payload), and `stream` and `rcstream` are documented as independent modules — coupling their test harnesses to share one three-variant enum would undo that. Noted in both files; if a third bus appears, factoring the cadence policy out becomes worthwhile.
+- **`assert_lossless_mapped` takes the expected output explicitly**, so it covers widgets that legitimately emit *fewer* items than they consume. A filter's `want` is simply the surviving subsequence. What the fixture will not tolerate is delivering *nothing*, which is the property that matters.
+- **Scoped to `I = StreamIO<T, S>`, `O = StreamIO<S, T>`.** All six migrated widgets fit it: `map`, `filter`, `filter_map`, `stream_buffer`, and `chunked`/`flatten` — the last two with an array as `S` (`chunked` is `drive::<_, b4, [b4; 4]>`, `flatten` the mirror). Not covered, deliberately: `tee` and `zip` have multiple ports, and `fifo_to_stream`/`stream_to_fifo` speak the FIFO `next`/`full` protocol rather than Ready/Valid. Forcing those through a fixture that does not fit would test the adapter instead of the widget.
+
+**Surprises and gotchas:**
+
+- **The migrated tests got *better*, not merely shorter.** `filter` and `filter_map`'s tests are regressions for a real deadlock, so the migration had to be proved non-weakening. Restoring the original bug (dropping the `|| dropping` term) fails both with *"the run hit its cycle budget with 1 of 8 items delivered — the widget is stalled, not slow"*. The old hand-rolled version reported a plain vector mismatch; the fixture distinguishes a stall from a wrong answer, which is precisely the distinction that matters when diagnosing a deadlock. All six migrations were mutation-checked this way: gating `chunked`'s input consumption on the downstream `ready` fails with *"delivered 16 items, expected 4"*, and muting `flatten`'s output fails with *"delivered 0 items, expected 20"* — the dead-widget case the fixture exists for.
+- **The fixture's own tests are mutation-checked**, because a harness whose sink never accepts would make every widget "lossless" vacuously. Forcing that fails two of its five tests with the same stalled-not-slow message.
+- **The typed comparison is an incidental win.** The old tests unpacked `.raw()` by hand and compared `Vec<u128>` / `Vec<[u128; 4]>`; the fixture returns typed values, so `want` is now `Vec<b4>` / `Vec<[b4; 4]>` — comparing the actual `Digital` values rather than a lossy projection of them.
+
+**Validation:** 252 `stream::` lib tests pass; full `rhdl-fpga` suite green. Five mutation checks — the fixture itself, both migrated deadlock regressions, and `chunked`/`flatten` — each confirmed failing and then restored.
+
+**Follow-ups:**
+
+- `tee`, `zip` and the two FIFO bridges are the only `stream::` widgets left driving `run_fn` by hand, and each needs a different shape. Two or three call sites may not justify a second abstraction — worth deciding deliberately rather than by default.
+
+---
+
 ## 2026-08-17 — Clearing the `rcstream` backlog: burst grants, true fan-out, a testing fixture
 
 **Paths:** `crates/rhdl-fpga/src/rcstream/credit/sink.rs`, `rcstream/fanout.rs` (new), `rcstream/testing.rs` (new), `rcstream/{mod,relay}.rs`, `examples/rcstream_fanout.rs` (new), `doc/rcstream_fanout.md` (new).
