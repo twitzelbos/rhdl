@@ -1,0 +1,1 @@
+TraceInfo({"top.clock":Clock,"top.input":Struct((name:"rhdl_fpga::dsp::nco::frequency_composer::In",fields:[(name:"master",ty:Bits(32)),(name:"scheduled_offset",ty:Bits(32)),(name:"modulation",ty:Bits(32)),(name:"calibration",ty:Bits(32))])),"top.outputs":Bits(32),"top.reset":Reset,"top.sum.dff.input":Bits(32),"top.sum.dff.output":Bits(32)})

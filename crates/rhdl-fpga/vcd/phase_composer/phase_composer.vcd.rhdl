@@ -1,0 +1,1 @@
+TraceInfo({"top.clock":Clock,"top.input":Struct((name:"rhdl_fpga::dsp::nco::phase_composer::In",fields:[(name:"pulse",ty:Bits(32)),(name:"frame",ty:Bits(32)),(name:"calibration",ty:Bits(32)),(name:"fine_time",ty:Bits(32)),(name:"trim",ty:Bits(32))])),"top.outputs":Bits(32),"top.reset":Reset,"top.sum.dff.input":Bits(32),"top.sum.dff.output":Bits(32)})
