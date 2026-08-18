@@ -31,6 +31,47 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-17 — Hygiene: five broken doctests, a missing prelude export, and a pinned style edition
+
+**Paths:** `crates/rhdl/src/prelude.rs`, `crates/rhdl-core/src/{sim/iter/uniform.rs,circuit/fixture.rs}`, `crates/rhdl-vlog/src/lib.rs`, `rustfmt.toml` (new), plus 57 files reformatted.
+
+**Why this, why now:** both of these had been quietly costing time. `cargo test --all` was failing five doctests on `main`, and `cargo fmt --all` was reverting committed formatting in files the author never touched — which happened three times during the NCO work, each needing a manual revert before committing.
+
+### Five broken doctests
+
+**Why nobody noticed:** fail-fast. Every workspace run aborted at an earlier failing target and never reached the doctest phase. They only surfaced once `--no-fail-fast` was used to audit a compiler change's blast radius. Worth remembering: **a green `cargo test --all` that stops early is not a green suite.**
+
+Three were stale references — `parse_quote!` used without importing it from `syn`, and `rhdl_core::sim::uniform` twice where the module is `sim::iter::uniform`.
+
+**One was an API gap, not a stale example.** `rhdl::prelude` exports `Func` and `Fixture` but never exported `AsyncFunc` — so the documented way to build a fixture did not compile, for anyone, ever. Exporting it is the fix.
+
+That same example was also wrong in a way a reader could not have worked around: it called `fixture.io()`, which does not exist. The `path!` macro strips the root identifier but still type-checks the expression, so `input` and `output` must be real bindings — `dont_care()` witnesses for the circuit's types. The doctest now mirrors `crates/rhdl/tests/fixture.rs`, which is the **only working usage of `bind!` in the tree**. That is the deeper finding: `bind!` and `Fixture` are a documented API with exactly one exercised call site, and the docs had drifted from it in three separate ways.
+
+The fifth, in `circuit/fixture.rs`, cannot be fixed in place: it needs `#[kernel]`, `Signal` and `AsyncFunc` together, which means `use rhdl::prelude::*`, and `rhdl-core` cannot depend on the `rhdl` facade. Replaced with a pointer to the copy on `bind!`, rather than maintaining a duplicate that cannot compile.
+
+### Pinned style edition
+
+The crates declare `edition = "2021"` and rustfmt defaults `style_edition` to the crate's edition, but the tree is written in 2024 style. So `cargo fmt --all` reverted committed formatting — most visibly import ordering, where 2021 sorts case-insensitively and 2024 sorts uppercase-first.
+
+**Which edition the repo is actually in is measurable, not a matter of taste.** Checking both directions settles it:
+
+| `style_edition` | diffs |
+|---|---|
+| `"2024"` | 62 across 57 files |
+| `"2021"` | 452 |
+
+So the tree is overwhelmingly 2024 with a minority of stragglers. `rustfmt.toml` now pins it and the 57 are normalized; `cargo fmt --all --check` is clean, so a routine format is idempotent against what is committed.
+
+**Surprises and gotchas:**
+
+- **The initial assumption was that the repo was uniformly 2024 and the config alone would fix it.** It would not have — 62 files needed reformatting, and adding the config without them would have left `cargo fmt --all --check` failing, which is worse than the status quo. Measuring both directions before committing is what turned a guess into a decision.
+- The reformat is mechanical — import reordering, plus a few over-long `assert!` calls and method chains wrapped. No statement added, removed or reordered.
+
+**Validation:** all doctests pass in `rhdl`, `rhdl-core` and `rhdl-vlog`; `cargo fmt --all --check` clean; full workspace suite green.
+
+**Follow-ups:**
+
+- `bind!` / `Fixture` deserve more than one call site. A documented API with a single exercised usage is how these three doc defects survived.
 ## 2026-08-17 — Compiler: signed literals carry their signedness into Verilog
 
 **Paths:** `crates/rhdl-core/src/hdl/builder.rs`, `crates/rhdl/tests/literals.rs`, `crates/rhdl-fpga/tests/signed_literal_comparison.rs`, `crates/rhdl-fpga/src/dsp/nco/sin_cos_linear_interp.rs` (snapshot + doc note).
