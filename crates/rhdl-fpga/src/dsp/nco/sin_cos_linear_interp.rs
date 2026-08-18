@@ -497,10 +497,18 @@ mod tests {
             (th.sin() * scale, th.cos() * scale)
         };
 
-        // The BRAM read and the attribute DFF each cost a cycle, so a
-        // phase presented on cycle n emerges on cycle n+2.  Asserted, not
-        // searched: picking the best of several shifts lets a single
-        // catastrophic sample hide behind a misalignment.
+        // Alignment within *this sample stream*, which is not the
+        // widget's hardware latency.  `with_reset(1)` prepends a cycle,
+        // so stimulus index k lands at output index k+1; the hardware
+        // latency is 1, the registered table read, and the attribute
+        // DFF runs concurrently with it rather than after it.  See
+        // `super::latency::PHASE_TO_AMPLITUDE`, which measures it.
+        //
+        // Reading this 2 as a latency put a wrong constant into the
+        // scheduler's arithmetic once; do not repeat it.
+        //
+        // Asserted, not searched: picking the best of several shifts
+        // lets a single catastrophic sample hide behind a misalignment.
         const LATENCY: usize = 2;
         // Skip the pipeline fill: until the datapath is primed the
         // outputs are the DFF/BRAM initial state.

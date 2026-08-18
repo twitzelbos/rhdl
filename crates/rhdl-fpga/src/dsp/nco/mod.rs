@@ -26,6 +26,18 @@
 //! provable on a widget with one register, rather than buried inside a
 //! block with a dozen control inputs.
 //!
+//! Both composers now exist -- [`phase_composer`] and
+//! [`frequency_composer`] -- and [`latency`] carries the §8.4 control
+//! latencies as compile-time constants, verified against simulation.
+//!
+//! **The two control paths do not share a lead time.** Phase reaches
+//! the output in [`latency::PHASE_CONTROL`] cycles and frequency in
+//! [`latency::FREQUENCY_CONTROL`], because the accumulator adds the
+//! offset to its *output* and the frequency word to its *register*. A
+//! phase change and a frequency change that must land on the same
+//! sample are issued [`latency::FREQUENCY_LEADS_PHASE_BY`] cycles
+//! apart.
+//!
 //! # Sizing the phase-to-amplitude stage
 //!
 //! Phase-to-amplitude conversion is **not built yet, on purpose** — the
@@ -191,6 +203,9 @@
 //! The const assertion above is a **screen** — it catches an obviously
 //! undersized table — not a validation. Treating it as proof would be
 //! the more dangerous mistake, because it looks like rigour.
+pub mod frequency_composer;
+pub mod latency;
 pub mod model;
 pub mod phase_accumulator;
+pub mod phase_composer;
 pub mod sin_cos_linear_interp;

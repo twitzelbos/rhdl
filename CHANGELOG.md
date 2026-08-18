@@ -31,6 +31,35 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-17 — `dsp::nco` §8.2-8.4: phase and frequency composers, and verified control latency
+
+**Paths:** `crates/rhdl-fpga/src/dsp/nco/{phase_composer,frequency_composer,latency}.rs` (all new), `nco/mod.rs`, `nco/sin_cos_linear_interp.rs` (comment), `examples/nco_{phase,frequency}_composer.rs` (new), `doc/nco_{phase,frequency}_composer.md` (new).
+
+**Why this, why now:** the control surface around the phase accumulator — §8.2 layered phase terms, §8.3 composable frequency, §8.4 control latency. The accumulator was deliberately kept to one register so its offset-independence property stayed provable; this is the layer that was factored out of it.
+
+**Design decisions:**
+
+- **The composers carry no invariant of their own,** by construction. They are adder trees. Everything semantic lives in the accumulator, which is why the §8.3 "removing an offset does not erase accumulated phase" property is pinned by `phase_accumulator::tests::removing_a_frequency_offset_keeps_the_accumulated_phase` rather than duplicated here.
+- **Terms are `Bits<W>`, not `SignedBits<W>`.** A retarding phase or downward frequency offset is its two's complement: at a fixed width `x + (-y)` and `x - y` are the same bits, so addition is sign-agnostic. Signed types would buy no safety here while adding conversions at every call site. Note this is *not* true of comparison — which is exactly why `SignedBits` exists, and why the signed-literal codegen defect fixed earlier today mattered.
+- **Both sums are registered**, latency 1. §8.4 asks that latency be *known*, not zero, and a 48-bit five-term adder tree at 125 MHz is worth a register. A stated cycle is cheaper to schedule around than an unstated timing failure.
+- **Latency constants are `usize`,** so the scheduler's arithmetic is evaluated by rustc and costs nothing in emitted RTL — no latency register, no configurable delay, nothing to read back.
+
+**Surprises and gotchas:**
+
+- **The two control paths have different lead times, and it is structural.** Phase reaches the output in 2 cycles, frequency in 3. The accumulator computes `o.phase = q.master + i.phase_offset` (combinational) but `d.master = q.master + i.frequency_word` (through the register). That asymmetry is precisely what makes an offset removable without disturbing the master trajectory, so it must not be normalised away — only scheduled around. **A phase change and a frequency change landing on the same sample are issued one cycle apart** (`FREQUENCY_LEADS_PHASE_BY`). This is §8.4's "simultaneous changes to multiple domains require separate latency compensation", made concrete.
+- **`PHASE_TO_AMPLITUDE` was wrong on the first attempt, and only the tests caught it.** It was declared 2, taken from `sin_cos_linear_interp`'s test constant. Every measurement then came back exactly +1, which turned out to be the harness: `with_reset(1)` prepends a cycle, so stimulus index k lands at output index k+1. The real hardware latency is **1** — the attribute DFF runs *concurrently* with the registered table read, not after it — and that widget's prose ("data latency is one cycle") had been right all along. **A test constant that aligns a sample stream is not a hardware latency**, and conflating them would have handed the scheduler a wrong number for the block the entire transmit chain hangs off. The sin_cos test now says so in place.
+- **Latency constants are therefore measured, not asserted.** Each has a test that steps a stimulus and finds the cycle the output responds. A latency constant that has never been checked against hardware is a comment the scheduler trusts with the experiment's phase coherence.
+- The `Bits<16>` example panicked on `4 * 16384 = 2^16` — the CLAUDE.md §4 rule that a literal must fit the target width even when the result would wrap.
+
+**Validation:** Tiers 1-5 on both composers, including `iverilog` RTL and NTL round-trips; 50 `dsp::nco` tests green. Tier 1 gives each term a distinct power of two, so a dropped or duplicated term shows as a specific missing bit rather than an arithmetic coincidence — summing five equal values would pass even if the kernel added `pulse` five times. Both examples deterministic with committed traces.
+
+**Follow-ups:**
+
+- §8.5 frequency ramps and chirps, §8.6 stream modulation input. Then the phase-aware DDC.
+- Nothing yet composes accumulator + composers + phase-to-amplitude into one NCO widget. The latency constants describe that chain, so the composite is the natural place to assert them end-to-end.
+
+---
+
 ## 2026-08-17 — Hygiene: five broken doctests, a missing prelude export, and a pinned style edition
 
 **Paths:** `crates/rhdl/src/prelude.rs`, `crates/rhdl-core/src/{sim/iter/uniform.rs,circuit/fixture.rs}`, `crates/rhdl-vlog/src/lib.rs`, `rustfmt.toml` (new), plus 57 files reformatted.
