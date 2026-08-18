@@ -81,7 +81,7 @@
 #![doc = include_str!("../../doc/cga_rgbi.md")]
 use rhdl::prelude::*;
 
-use super::video_timing::{video_timing as video_timing_kernel, VideoTimingCore};
+use super::video_timing::{VideoTimingCore, video_timing as video_timing_kernel};
 
 // Re-export the kernel function so it's visible inside the kernel macro
 // expansion (the macro generates code that references super::video_timing

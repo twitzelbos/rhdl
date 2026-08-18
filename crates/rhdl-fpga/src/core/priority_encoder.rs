@@ -65,11 +65,7 @@ where
             found = true;
         }
     }
-    if found {
-        Some(idx)
-    } else {
-        None
-    }
+    if found { Some(idx) } else { None }
 }
 
 #[kernel]
@@ -94,11 +90,7 @@ where
             found = true;
         }
     }
-    if found {
-        Some(idx)
-    } else {
-        None
-    }
+    if found { Some(idx) } else { None }
 }
 
 #[cfg(test)]

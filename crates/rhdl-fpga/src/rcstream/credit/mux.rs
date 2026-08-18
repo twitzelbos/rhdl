@@ -99,13 +99,13 @@ pub struct CreditMux<
 }
 
 impl<
-        T: Digital,
-        F: Digital,
-        const CREDIT_W: usize,
-        const FIFO_N: usize,
-        const M: usize,
-        const N: usize,
-    > Default for CreditMux<T, F, CREDIT_W, FIFO_N, M, N>
+    T: Digital,
+    F: Digital,
+    const CREDIT_W: usize,
+    const FIFO_N: usize,
+    const M: usize,
+    const N: usize,
+> Default for CreditMux<T, F, CREDIT_W, FIFO_N, M, N>
 where
     rhdl::bits::W<CREDIT_W>: BitWidth,
     rhdl::bits::W<FIFO_N>: BitWidth,
@@ -142,13 +142,13 @@ where
 }
 
 impl<
-        T: Digital,
-        F: Digital,
-        const CREDIT_W: usize,
-        const FIFO_N: usize,
-        const M: usize,
-        const N: usize,
-    > SynchronousIO for CreditMux<T, F, CREDIT_W, FIFO_N, M, N>
+    T: Digital,
+    F: Digital,
+    const CREDIT_W: usize,
+    const FIFO_N: usize,
+    const M: usize,
+    const N: usize,
+> SynchronousIO for CreditMux<T, F, CREDIT_W, FIFO_N, M, N>
 where
     rhdl::bits::W<CREDIT_W>: BitWidth,
     rhdl::bits::W<FIFO_N>: BitWidth,

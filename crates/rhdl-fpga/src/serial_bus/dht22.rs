@@ -352,7 +352,7 @@ mod tests {
             start: true,
             data_in: false,
         }); // start cycle, master pulls low (we pretend data_in tracks it)
-            // While master holds low (start_low_cycles cycles), data_in is low.
+        // While master holds low (start_low_cycles cycles), data_in is low.
         for _ in 0..(20 * t_unit) {
             out.push(In {
                 start: false,

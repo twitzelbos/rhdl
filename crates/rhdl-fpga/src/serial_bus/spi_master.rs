@@ -252,11 +252,7 @@ mod tests {
             // slave bits: slave_response[7] first (MSB-first response).
             let bit_idx = if cycle >= 1 && cycle % 2 == 1 {
                 let k = (cycle - 1) / 2;
-                if k < 8 {
-                    Some(7 - k)
-                } else {
-                    None
-                }
+                if k < 8 { Some(7 - k) } else { None }
             } else {
                 None
             };

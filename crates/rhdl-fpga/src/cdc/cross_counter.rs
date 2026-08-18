@@ -87,7 +87,7 @@ use rhdl::prelude::*;
 
 use crate::{
     core::dff,
-    gray::{decode::gray_decode, encode::gray_code, Gray},
+    gray::{Gray, decode::gray_decode, encode::gray_code},
 };
 
 use super::synchronizer;

@@ -1,6 +1,6 @@
 use rhdl::prelude::*;
 use rhdl_fpga::{
-    core::barrel_shifter::{barrel_shifter, ShiftOp},
+    core::barrel_shifter::{ShiftOp, barrel_shifter},
     doc::write_svg_as_markdown,
 };
 

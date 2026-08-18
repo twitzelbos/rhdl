@@ -18,8 +18,8 @@ fn main() -> Result<(), RHDLError> {
     let red = src_pattern.into_iter().with_reset(2).clock_pos_edge(100);
     let blue = std::iter::repeat(false).with_reset(2).clock_pos_edge(79);
     let input = red.merge_map(blue, |r, b| In {
-        src_data: signal(r.1 .0),
-        src_send: signal(r.1 .1),
+        src_data: signal(r.1.0),
+        src_send: signal(r.1.1),
         src_cr: signal(r.0),
         dst_cr: signal(b.0),
     });

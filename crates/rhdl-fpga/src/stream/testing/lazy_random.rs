@@ -62,7 +62,7 @@ use badascii_doc::{badascii, badascii_formal};
 
 use crate::{
     fifo::testing::filler::FIFOFiller,
-    stream::{fifo_to_stream::FIFOToStream, Ready},
+    stream::{Ready, fifo_to_stream::FIFOToStream},
 };
 use rhdl::prelude::*;
 

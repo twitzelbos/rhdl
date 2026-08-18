@@ -19,7 +19,7 @@
 use std::marker::PhantomData;
 
 use badascii_doc::badascii;
-use rhdl::prelude::{kernel, Digital};
+use rhdl::prelude::{Digital, kernel};
 pub mod chunked;
 pub mod fifo_to_stream;
 pub mod filter;

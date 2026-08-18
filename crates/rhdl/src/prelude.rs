@@ -11,6 +11,7 @@ pub use rhdl_core::TraceKey;
 pub use rhdl_core::circuit::adapter::Adapter;
 pub use rhdl_core::circuit::circuit_impl::Circuit;
 pub use rhdl_core::circuit::circuit_impl::CircuitIO;
+pub use rhdl_core::circuit::function::asynchronous::AsyncFunc;
 pub use rhdl_core::circuit::function::synchronous::Func;
 pub use rhdl_core::circuit::hdl_descriptor::HDLDescriptor;
 pub use rhdl_core::circuit::synchronous::Synchronous;
@@ -143,11 +144,16 @@ pub use rhdl_vlog::parse_quote_miette;
 ///
 ///let adder = AsyncFunc::new::<adder>()?;
 ///let mut fixture = Fixture::new("adder_top", adder);
-///let (input, output) = fixture.io();
+///// `path!` strips the root identifier but still type-checks the
+///// expression, so `input` and `output` must exist as bindings. They
+///// are witnesses for the circuit's types, not values that get read.
+///let input = Signal::<(b4, b4), Red>::dont_care();
+///let output = Signal::<b4, Red>::dont_care();
 ///bind!(fixture, a -> input.val().0);
 ///bind!(fixture, b -> input.val().1);
 ///bind!(fixture, sum <- output.val());
-///let vlog = fixture.module()?;  
+///let vlog = fixture.module()?;
+///# Ok::<(), RHDLError>(())
 ///```
 /// When exported as Verilog, the fixture will look like this:
 ///

@@ -1,0 +1,10 @@
+# The workspace is formatted in the 2024 style edition, but the crates
+# declare `edition = "2021"`, and rustfmt defaults `style_edition` to the
+# crate's edition.  Without this, `cargo fmt --all` silently *reverts*
+# committed formatting -- most visibly import ordering, where the 2021
+# style sorts case-insensitively and 2024 sorts uppercase-first.
+#
+# Pinning it here makes `cargo fmt --all` idempotent against what is in
+# the repository, so a routine format no longer produces churn in files
+# the author never touched.
+style_edition = "2024"

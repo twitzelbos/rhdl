@@ -34,8 +34,8 @@
 #![cfg(test)]
 
 use rhdl::core::rhif::property_tests::{
-    check_lowering_correctness, check_semantic_preservation, random_arguments, seeded_rng,
-    structured_synchronous_arguments, LoweringCorrectnessOutcome, SemanticPreservationOutcome,
+    LoweringCorrectnessOutcome, SemanticPreservationOutcome, check_lowering_correctness,
+    check_semantic_preservation, random_arguments, seeded_rng, structured_synchronous_arguments,
 };
 
 const SAMPLES_PER_WIDGET: usize = 4;

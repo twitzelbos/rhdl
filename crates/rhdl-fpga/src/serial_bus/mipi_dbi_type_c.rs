@@ -47,7 +47,7 @@ bool |                           | bool
 #![doc = include_str!("../../doc/mipi_dbi_type_c.md")]
 use rhdl::prelude::*;
 
-use super::spi_master::{spi_master as spi_master_kernel, SpiMaster};
+use super::spi_master::{SpiMaster, spi_master as spi_master_kernel};
 use crate::core::dff;
 
 #[allow(unused_imports)]

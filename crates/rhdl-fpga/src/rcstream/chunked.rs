@@ -160,11 +160,7 @@ where
 
     let last = q.idx == bits::<M>(N as u128 - 1);
     d.idx = if take {
-        if last {
-            bits::<M>(0)
-        } else {
-            q.idx + 1
-        }
+        if last { bits::<M>(0) } else { q.idx + 1 }
     } else {
         q.idx
     };

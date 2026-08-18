@@ -423,9 +423,11 @@ mod tests {
             .filter(|s| !s.input.0.reset.any())
             .collect();
         // Idle: clk_oe and data_oe should be false (released).
-        assert!(outputs
-            .iter()
-            .all(|s| !s.output.clk_oe && !s.output.data_oe));
+        assert!(
+            outputs
+                .iter()
+                .all(|s| !s.output.clk_oe && !s.output.data_oe)
+        );
         assert!(outputs.iter().all(|s| !s.output.tx_busy));
         Ok(())
     }

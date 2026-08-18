@@ -37,7 +37,7 @@
 
 #![cfg(test)]
 
-use expect_test::{expect, Expect};
+use expect_test::{Expect, expect};
 use rhdl::core::fsm::extract_widget_transitions;
 
 /// Drive the extractor against a widget and snapshot the derived

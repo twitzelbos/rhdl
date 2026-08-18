@@ -70,23 +70,15 @@ pin y|Driver+------->|7|<------+
 //! It allows you to specify paths on the input and output of the circuit,
 //! and automatically creates the necessary drivers and mount points.
 //!
-//# Example
-//!```rust
-//!use rhdl::prelude::*;
+//!# Example
 //!
-//!#[kernel]
-//!fn adder(a: Signal<(b4, b4), Red>) -> Signal<b4, Red> {
-//!    let (a, b) = a.val();
-//!    signal(a + b) // Return signal with value
-//!}
+//! A worked example lives on the [`bind!`] macro in `rhdl::prelude`,
+//! where it compiles and is checked as a doctest. It cannot live here:
+//! building a fixture needs `#[kernel]`, `Signal` and `AsyncFunc`
+//! together, which in practice means `use rhdl::prelude::*` — and
+//! `rhdl-core` cannot depend on the `rhdl` facade that re-exports them.
 //!
-//!let adder = AsyncFunc::new::<adder>()?;
-//!let mut fixture = Fixture::new("adder_top", adder);
-//!bind!(fixture, a -> input.val().0);
-//!bind!(fixture, b -> input.val().1);
-//!bind!(fixture, sum -> output.val());
-//!let vlog = fixture.module()?;  
-//!```
+//! [`bind!`]: ../../../rhdl/prelude/macro.bind.html
 //!
 //! This example creates a top level fixture that looks like this:
 //!

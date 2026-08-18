@@ -8,7 +8,7 @@
 
 use rhdl::{core::sim::ResetOrData, prelude::*};
 use rhdl_fpga::rcstream::{
-    bus::Item, chunked::RCStreamChunked, flatten::RCStreamFlatten, RCStream,
+    RCStream, bus::Item, chunked::RCStreamChunked, flatten::RCStreamFlatten,
 };
 
 #[derive(Clone, Synchronous, SynchronousDQ, Default)]

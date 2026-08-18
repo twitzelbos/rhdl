@@ -10,7 +10,7 @@
 use rhdl::{core::sim::ResetOrData, prelude::*};
 use rhdl_fpga::{
     doc::write_svg_as_markdown,
-    rcstream::{bus::Item, filter::RCStreamFilter, RCStream},
+    rcstream::{RCStream, bus::Item, filter::RCStreamFilter},
 };
 
 #[kernel]

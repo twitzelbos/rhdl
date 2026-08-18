@@ -21,7 +21,7 @@
 //! assuming the decomposition is valid.
 
 use rhdl::prelude::*;
-use rhdl_fpga::rcstream::{bus::Item, cdc::RCStreamCdc, relay::RCStreamRelay, RCStream};
+use rhdl_fpga::rcstream::{RCStream, bus::Item, cdc::RCStreamCdc, relay::RCStreamRelay};
 
 /// `W`-domain relays → `RCStreamCdc` → `R`-domain relays.
 ///

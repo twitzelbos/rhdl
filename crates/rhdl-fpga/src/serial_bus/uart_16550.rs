@@ -98,7 +98,7 @@ bool |                         |
 #![doc = include_str!("../../doc/uart_16550.md")]
 use rhdl::prelude::*;
 
-use super::uart::{uart as uart_kernel, Uart};
+use super::uart::{Uart, uart as uart_kernel};
 use crate::core::dff;
 
 #[allow(unused_imports)]
