@@ -31,6 +31,37 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-18 — `dsp::nco`: a numeric contract, and the composite that makes truncation explicit
+
+**Paths:** `crates/rhdl-fpga/src/dsp/nco/{config,composite}.rs` (new), `nco/mod.rs`, `examples/nco.rs` (new), `doc/nco.md` (new).
+
+**Why this, why now:** the control interface was **unitless** — `frequency_word` is a dimensionless phase increment and nothing in the widget layer knew the sample clock, so you could not command Hz. Worse, the numbers that decide the output were scattered: `125e6` and `PHASE_W = 48` lived as `const`s inside *one test*, `TOTAL_W`/`AMP_W` as fixed consts in another module, and the DAC width only in prose. Every headline claim in `dsp::nco` is conditional on them, so a clock change would have invalidated the physics while the build stayed green.
+
+**Design decisions:**
+
+- **The hardware stays unitless; the conversion is `const fn`.** Division does not belong in a datapath. `tuning_word` / `frequency_microhertz` are evaluated by rustc and cost nothing in emitted RTL.
+- **Microhertz, not `f64` or Hz.** `const fn` cannot do floating point on stable, and the resolution is *sub-µHz* at 48 bits — integer Hz would quantise away the very thing the wide accumulator exists to provide.
+- **The claims are `const _: () = assert!` checks**, not prose: resolution against the linewidth budget, `AMP_W > DAC_W`, `TOTAL_W < PHASE_W`. Changing the clock or a width now breaks the build rather than the physics.
+- **The composite exists to make the 48→22 truncation explicit.** Nothing previously performed it, because nothing wired the accumulator to phase-to-amplitude. That truncation *is* the phase truncation the whole spur analysis is about.
+
+**Surprises and gotchas:**
+
+- **A 14-bit DAC costs about 3 dB, not the collapse expected.** −111.9 dBc against −115.3 at 18 bits. Quantisation error spreads over all of Nyquist, so a 1 MHz analysis band sees a fraction of it and the worst *discrete* spur sits far below total noise power. **The DAC is not the bottleneck** — which corrects a claim made earlier in the day that it would dominate.
+- **A wider output buys nothing on its own.** At 24 bits out the worst spur is −115.3 dBc — *identical* to 18 bits. −115 dBc is ≈19.1 effective bits, so everything below bit ~19 is packaging. Raising `AMP_W` alone does nothing.
+- **Accuracy is set by the phase split, not the amplitude width.** Growing coarse/fine from 10/12 to 13/15 moves the floor −115.3 → −152.6 dBc: about **12.4 dB per coarse bit**, i.e. two bits of accuracy per coarse bit — the signature of an interpolation exact to second order. Making 24 output bits *meaningful* needs `TOTAL_W` 22 → 26 and a 4× table, for accuracy the 14-bit DAC would discard.
+- **Taking the low bits instead of the high ones does not merely degrade — it silences.** The mutation test drops the `>> 26` and the output stops oscillating entirely, because `2^48/64` has all-zero low bits. A "does it wiggle" check would have caught this one; a subtler word would have produced a plausible waveform at an unrelated frequency, which is why the test asserts the *period*.
+- **The kernel shift is a literal `26`**, because the kernel language wants one. A `const _: () = assert!` ties it to `config::PHASE_TRUNCATION_BITS` so the two cannot drift.
+
+**Validation:** 61 `dsp::nco` tests green. `end_to_end_latency_matches_the_constants` is the first place the §8.4 constants are checked as a **chain** rather than stage by stage — the only version the scheduler cares about — and both paths match. `a_commanded_frequency_in_hz_comes_out` ties `tuning_word` to an actual waveform, without which it is arithmetic nobody has checked. Tiers 3-5 including `iverilog` RTL and NTL. Mutation-verified truncation direction.
+
+**Follow-ups:**
+
+- §8.5 ramps and chirps — now unblocked, since a ramp is specified in Hz/s and needed this conversion to exist.
+- §8.6 stream modulation input with its full contract (units, saturation, absent-stream behaviour).
+- `NARROWEST_LINEWIDTH_UHZ` is still flagged as an assumption to confirm against the application.
+
+---
+
 ## 2026-08-17 — `dsp::nco` §8.2-8.4: phase and frequency composers, and verified control latency
 
 **Paths:** `crates/rhdl-fpga/src/dsp/nco/{phase_composer,frequency_composer,latency}.rs` (all new), `nco/mod.rs`, `nco/sin_cos_linear_interp.rs` (comment), `examples/nco_{phase,frequency}_composer.rs` (new), `doc/nco_{phase,frequency}_composer.md` (new).
