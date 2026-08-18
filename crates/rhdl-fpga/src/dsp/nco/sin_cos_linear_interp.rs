@@ -144,12 +144,18 @@
 //! interpolation rounds upward.
 //!
 //! Saturation was implemented first and then removed, for a second
-//! reason worth recording: RHDL currently emits signed comparisons
+//! reason worth recording: at the time, RHDL emitted signed comparisons
 //! against literals as **unsigned** Verilog, so the clamp inverted its
-//! own sense in hardware while simulating correctly. See
-//! `tests/scratch_signed_literal_cmp.rs`. Scaling is the better design
-//! on cost alone, so this only settled an already-close call — but if
-//! saturation is ever reinstated, that defect must be fixed first.
+//! own sense in hardware while simulating correctly. That defect has
+//! since been fixed — signed literals now carry Verilog's `s` base
+//! specifier — and `tests/signed_literal_comparison.rs` is the
+//! regression test.
+//!
+//! The scaling decision stands regardless: it was the cheaper option on
+//! its own merits, and the exhaustive range check is a stronger
+//! guarantee than a clamp. The defect only settled an already-close
+//! call. Reinstating saturation is now a live option if a future
+//! retuning makes the headroom insufficient.
 //!
 //! Note the asymmetry with the phase accumulator, where wrapping is not
 //! a bug but *the arithmetic*: phase is modulo 2π. Wrapping is correct
@@ -748,8 +754,8 @@ mod tests {
                      localparam l9 = 2'b01;
                      localparam l10 = 2'b10;
                      localparam l11 = 2'b10;
-                     localparam l12 = 48'b000000000000000000000000000000000000100000000000;
-                     localparam l13 = 48'b000000000000000000000000000000000001100100100010;
+                     localparam l12 = 48'sb000000000000000000000000000000000000100000000000;
+                     localparam l13 = 48'sb000000000000000000000000000000000001100100100010;
                      localparam l14 = 36'b000000000000000000000000000000000000;
                      begin
                         r59 = arg_0;

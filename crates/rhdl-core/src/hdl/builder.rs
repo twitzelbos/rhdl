@@ -25,7 +25,22 @@ struct TranslationContext<'a> {
 
 impl From<&TypedBits> for vlog::LitVerilog {
     fn from(tb: &TypedBits) -> Self {
-        let bits = "b"
+        // Signed values emit the `s` base specifier, so the constant
+        // carries its own signedness the way Verilog intends.
+        //
+        // Without it a `SignedBits<N>` literal becomes an unsigned
+        // constant, and IEEE 1364 5.5.1 makes a relational expression
+        // unsigned if *either* operand is unsigned -- so every negative
+        // value compares greater than a positive bound while the Rust
+        // simulator, which never sees Verilog, reports the right answer.
+        //
+        // The same rule bounds the blast radius of emitting it: mixing a
+        // signed literal with an unsigned register still yields an
+        // unsigned expression, so this can only promote signed-vs-signed
+        // to a signed comparison.  It cannot change one that is unsigned
+        // today and correct.
+        let base = if tb.kind().is_signed() { "sb" } else { "b" };
+        let bits = base
             .chars()
             .chain(tb.iter().rev().map(|b| match b {
                 BitX::Zero => '0',

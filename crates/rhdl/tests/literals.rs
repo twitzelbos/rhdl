@@ -128,3 +128,56 @@ fn test_plain_literals_signed_context() {
 
     test_kernel_vm_and_verilog::<foo, _, _, _>(foo, tuple_pair_sn_red::<6>()).unwrap();
 }
+
+/// Comparing a `SignedBits<N>` against a literal must be a **signed**
+/// comparison in the emitted Verilog as well as in the VM.
+///
+/// `doc/book/src/bits/comparison.md` already states this: "RHDL will
+/// generate hardware descriptions for the comparison operators that
+/// includes the appropriate sign handling if the operands are signed",
+/// and the note below it documents comparing a bitvector against a
+/// literal as supported. The implementation did not deliver it: the
+/// literal was emitted as an unsigned Verilog constant, and IEEE 1364
+/// §5.5.1 makes a relational expression unsigned if *either* operand
+/// is unsigned. Every negative value therefore compared greater than a
+/// positive bound.
+///
+/// `test_kernel_vm_and_verilog` is the right harness precisely because
+/// the defect was invisible to Rust-level simulation -- the kernel run
+/// as a Rust function compares correctly. Only cross-checking the VM
+/// against emitted Verilog catches it. Exhaustive over all 256 values
+/// of `s8`, which spans both signs.
+#[test]
+fn test_signed_comparison_against_literal() -> miette::Result<()> {
+    #[kernel]
+    fn cmp<C: Domain>(a: Signal<s8, C>) -> Signal<(bool, bool, bool, bool), C> {
+        let a = a.val();
+        signal((
+            a > signed::<8>(10),
+            a < signed::<8>(10),
+            a >= signed::<8>(-5),
+            a <= signed::<8>(-5),
+        ))
+    }
+    test_kernel_vm_and_verilog::<cmp<Red>, _, _, _>(cmp::<Red>, s8_red())?;
+    Ok(())
+}
+
+/// The negative case: an **unsigned** comparison against a literal must
+/// stay unsigned.
+///
+/// The fix keys off the literal's kind, so a change that made every
+/// literal signed would pass the test above and silently break every
+/// unsigned comparison in the tree -- of which there are over a hundred
+/// in `rhdl-fpga` alone. Exhaustive over all 256 values of `b8`, where
+/// the top half is exactly where signed and unsigned disagree.
+#[test]
+fn test_unsigned_comparison_against_literal_unaffected() -> miette::Result<()> {
+    #[kernel]
+    fn cmp<C: Domain>(a: Signal<b8, C>) -> Signal<(bool, bool), C> {
+        let a = a.val();
+        signal((a > bits::<8>(200), a < bits::<8>(200)))
+    }
+    test_kernel_vm_and_verilog::<cmp<Red>, _, _, _>(cmp::<Red>, tuple_b8())?;
+    Ok(())
+}

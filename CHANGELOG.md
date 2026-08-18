@@ -31,6 +31,35 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-17 — Compiler: signed literals carry their signedness into Verilog
+
+**Paths:** `crates/rhdl-core/src/hdl/builder.rs`, `crates/rhdl/tests/literals.rs`, `crates/rhdl-fpga/tests/signed_literal_comparison.rs`, `crates/rhdl-fpga/src/dsp/nco/sin_cos_linear_interp.rs` (snapshot + doc note).
+
+**Why this, why now:** a `SignedBits<N>` literal was emitted as an unsigned Verilog constant, so `x > signed::<8>(10)` lowered to an **unsigned** comparison — IEEE 1364 §5.5.1 makes a relational expression unsigned if *either* operand is unsigned. Every negative value therefore compared greater than a positive bound. This is the clamp idiom, so any saturating datapath built in RHDL inverted its own sense in hardware. Found while building `dsp::nco::sin_cos_linear_interp`, whose saturation logic was the first signed-vs-literal comparison in the tree.
+
+**What guarantee changed:** none — this *restores* one. `doc/book/src/bits/comparison.md` already states that "RHDL will generate hardware descriptions for the comparison operators that includes the appropriate sign handling if the operands are signed", and documents comparing a bitvector against a literal as supported. The implementation disagreed with its own normative documentation. The book needed no edit.
+
+**Design decisions:**
+
+- **The fix is one line, in literal emission.** `From<&TypedBits> for vlog::LitVerilog` ignored `tb.kind()`; it now emits the `s` base specifier for signed kinds, so `8'b00001010` becomes `8'sb00001010`.
+- **Rejected: adding a width/signedness field to the `LocalParam` AST.** That would work — mirroring how `reg_decls` computes a `SignedWidth` from the operand's `Kind` — but it needs a new field plus `Parse`, `Pretty` and `ToTokens` changes in `rhdl-vlog`, and it invents a second carrier for something Verilog already expresses natively in the literal. Constants carrying their own signedness is the idiomatic form.
+- **Rejected: wrapping comparison operands in `$signed()` at `translate_binary`.** This contradicts the architecture. `translate_binary` deliberately emits bare operators with no signedness handling — note that `Shr` becomes `>>>` *unconditionally*, which is only correct because operand declarations carry signedness. Moving signedness from declarations into use sites would leave `>>>` relying on one mechanism and `>` on another.
+- **The fix is self-bounding.** The same IEEE rule that caused the bug limits the change: mixing a signed literal with an unsigned register still yields an unsigned expression. So this can only promote signed-vs-signed to a signed comparison; it cannot alter a comparison that is unsigned today and correct.
+
+**Surprises and gotchas:**
+
+- **The blast radius across the whole workspace is two lines.** `sin_cos_linear_interp`'s Tier 3 snapshot, where `48'b` became `48'sb` for `signed::<48>(2048)` and `signed::<48>(DELTA_K)`. Both feed subtraction and multiplication, where same-width results are bit-identical regardless of signedness — which is why that widget's Tier 4 `iverilog` round-trip passed unchanged. The change is semantically inert everywhere except comparisons.
+- **A second, narrower defect surfaced and is *not* fixed here.** When a widget's `q` bundle has exactly one field, the field spans the whole bundle, RHDL elides the extraction, and the comparison is emitted against the bundle — an unsigned struct kind — rather than the signed field. Every realistic shape works; this degenerate one does not. It lives in aggregate field extraction, not literal emission, so per §11.1 it gets its own PR. `single_field_bundle_still_loses_signedness` is `#[ignore]`d as its acceptance test.
+- **An earlier write-up of this defect (PR #71) claimed bundle extraction loses signedness in general. It does not** — that was an artefact of using a single-field bundle in the minimal repro. Corrected in place; `signed_comparison_between_registers_is_correct` now bounds the claim so nobody rewrites working widgets on the strength of it.
+
+**Validation:** Kernel-level, in `crates/rhdl/tests/literals.rs` via `test_kernel_vm_and_verilog` — the right harness precisely because the defect was invisible to Rust-level simulation. `test_signed_comparison_against_literal` is exhaustive over all 256 values of `s8` across four relational operators; `test_unsigned_comparison_against_literal_unaffected` is the negative test, exhaustive over `b8`, and would catch a change that made *every* literal signed. Widget-level, six tests in `signed_literal_comparison.rs` covering three shapes. Full workspace green: 1113 passed, one snapshot re-blessed after a line-by-line audit. Mutation-checked: reverting the one-line fix fails four tests, while the three control tests correctly stay green.
+
+**Follow-ups:**
+
+- The single-field-bundle extraction defect, with its acceptance test already committed.
+
+---
+
 ## 2026-08-17 — `fsm_widget`: restore the stale derive snapshots, and test the flag that broke them
 
 **Paths:** `crates/rhdl-macro-core/src/fsm_widget/tests.rs`, `.../expect/*.expect`.
@@ -72,7 +101,7 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 **Surprises and gotchas:**
 
 - **`SinCosLinearInterp` was never synthesizable, and Tiers 1–2 could not tell.** `descriptor()` failed outright with *"Unparseable integer error"* because the shift literals carried `u128` suffixes: the kernel macro preserves literal text via `stringify!`, so `parse_u128("32u128")` fails. **Simulation never parses literals** — it runs the kernel as a Rust function — so the widget simulated correctly for its entire life. Every other widget in the tree writes bare `>> 8`. *If a widget has no Tier 3/4, it may not be a circuit at all.*
-- **RHDL lowers a signed comparison against a literal to an unsigned Verilog comparison.** Found the moment HDL emission started working, because the saturation clamp inverted its own sense in hardware. `reg signed [19:0] r56` compared against `localparam l14 = 20'b000…` — Verilog makes the whole relational expression unsigned if either operand is, so every negative value compared greater than the positive bound. Two independent losses of signedness contribute (the literal, and fields extracted from the `q` bundle) and either alone is sufficient. Minimal repro committed at `tests/signed_literal_comparison.rs`; **this is the clamp idiom, so it affects any saturating datapath.** Compiler fix deferred to its own PR per CLAUDE.md §11.1.
+- **RHDL lowers a signed comparison against a literal to an unsigned Verilog comparison.** Found the moment HDL emission started working, because the saturation clamp inverted its own sense in hardware. `reg signed [19:0] r56` compared against `localparam l14 = 20'b000…` — Verilog makes the whole relational expression unsigned if either operand is, so every negative value compared greater than the positive bound. The defect is one asymmetry in `hdl/builder.rs`: `reg_decls` computes a `SignedWidth` from the operand's `Kind`, and the `lit_decls` block right below it does not. **Correction to the original entry, which claimed fields extracted from the `q` bundle also lose signedness — they do not.** That was an artefact of the single-field bundle in the minimal repro; with a genuine multi-field bundle the field is declared `reg signed` and iverilog agrees. Signed comparison between two registers is correct today. Minimal repro committed at `tests/signed_literal_comparison.rs`; **this is the clamp idiom, so it affects any saturating datapath.** Compiler fix deferred to its own PR per CLAUDE.md §11.1.
 - **Five separate analysis errors, every one optimistic, before the spur numbers were trustworthy.** In order: a 4-term Blackman-Harris window measured its own −92 dB sidelobes rather than the signal (fixed with 7-term); a 24-word sweep sampled only the benign regime and falsely claimed a 25 dB in-band bonus; the spur period used the remainder instead of `2^(phase_w − v)`; the band filter compared absolute frequency against zero rather than the carrier, so it searched near DC and reported −400 dBc; and a 12 dB normalisation error survived everything else. **The last was caught only by cross-validating the general analyser against the earlier validated one** — which is the argument for keeping both rather than deleting the narrower one once the general version exists.
 - **Phase offsets are not neutral.** They are provably a pure time shift for odd tuning words, but measured up to 7.56 dB of SFDR spread at `v = 11`. Worth knowing before assuming offset is a free parameter.
 - **18-bit arithmetic hits the architecture ceiling exactly.** 16-bit costs 2.3 dB; wider buys nothing. That it lands on the native DSP48 port width is convenient rather than designed.
