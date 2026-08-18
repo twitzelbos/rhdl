@@ -203,6 +203,8 @@
 //! The const assertion above is a **screen** — it catches an obviously
 //! undersized table — not a validation. Treating it as proof would be
 //! the more dangerous mistake, because it looks like rigour.
+pub mod composite;
+pub mod config;
 pub mod frequency_composer;
 pub mod latency;
 pub mod model;
