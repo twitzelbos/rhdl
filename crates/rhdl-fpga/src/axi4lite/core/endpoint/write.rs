@@ -133,11 +133,11 @@ use crate::{
     axi4lite::{
         stream::{axi_to_rhdl::Axi2Rhdl, rhdl_to_axi::Rhdl2Axi},
         types::{
-            response_codes, AXI4Error, AxilAddr, ResponseKind, StrobedData, WriteCommand,
-            WriteMISO, WriteMOSI, WriteResult,
+            AXI4Error, AxilAddr, ResponseKind, StrobedData, WriteCommand, WriteMISO, WriteMOSI,
+            WriteResult, response_codes,
         },
     },
-    stream::{map::Map, zip::Zip, Ready},
+    stream::{Ready, map::Map, zip::Zip},
 };
 
 #[derive(Clone, Synchronous, SynchronousDQ)]

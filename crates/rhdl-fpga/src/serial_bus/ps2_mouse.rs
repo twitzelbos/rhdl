@@ -61,7 +61,7 @@ bool |                          | B<8>
 use rhdl::core::fsm::analysis::Transition;
 use rhdl::prelude::*;
 
-use super::ps2_keyboard::{ps2_keyboard as ps2_keyboard_kernel, Ps2Keyboard};
+use super::ps2_keyboard::{Ps2Keyboard, ps2_keyboard as ps2_keyboard_kernel};
 use crate::core::dff;
 
 #[allow(unused_imports)]

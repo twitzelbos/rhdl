@@ -50,7 +50,7 @@ use crate::{
     axi4lite::{
         core::endpoint::{read::ReadEndpoint, write::WriteEndpoint},
         types::{
-            strobe_to_mask, AXI4Error, AxilAddr, AxilData, ReadMISO, ReadMOSI, WriteMISO, WriteMOSI,
+            AXI4Error, AxilAddr, AxilData, ReadMISO, ReadMOSI, WriteMISO, WriteMOSI, strobe_to_mask,
         },
     },
     core::{constant::Constant, dff::DFF},

@@ -281,11 +281,12 @@ mod tests {
             stream_in.push(idle_in());
         }
         let stream = stream_in.into_iter().with_reset(1).clock_pos_edge(100);
-        assert!(uut
-            .run(stream)
-            .synchronous_sample()
-            .filter(|s| !s.input.0.reset.any())
-            .any(|s| s.output.done));
+        assert!(
+            uut.run(stream)
+                .synchronous_sample()
+                .filter(|s| !s.input.0.reset.any())
+                .any(|s| s.output.done)
+        );
         Ok(())
     }
 

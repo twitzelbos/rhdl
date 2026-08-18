@@ -93,11 +93,7 @@ impl DdsModel {
             self.table[(n - 1 - idx) as usize]
         };
         // Upper half-cycle is negative.
-        if quadrant >= 2 {
-            -mag
-        } else {
-            mag
-        }
+        if quadrant >= 2 { -mag } else { mag }
     }
 
     /// Advance one sample, returning `(sin, cos)`.

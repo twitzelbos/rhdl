@@ -55,7 +55,7 @@ bool |                                 | bool
 use rhdl::core::fsm::analysis::Transition;
 use rhdl::prelude::*;
 
-use super::ti_hdq::{ti_hdq as ti_hdq_kernel, TiHdqMaster, TiHdqOp, TiHdqTimings};
+use super::ti_hdq::{TiHdqMaster, TiHdqOp, TiHdqTimings, ti_hdq as ti_hdq_kernel};
 use crate::core::{constant::Constant, dff};
 
 #[allow(unused_imports)]

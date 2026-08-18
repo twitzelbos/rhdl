@@ -81,7 +81,7 @@ B<2> |                         | B<2>
 #![doc = include_str!("../../doc/ntsc_composite.md")]
 use rhdl::prelude::*;
 
-use super::video_timing::{video_timing as video_timing_kernel, VideoTimingCore};
+use super::video_timing::{VideoTimingCore, video_timing as video_timing_kernel};
 
 #[allow(unused_imports)]
 use video_timing_kernel as _;

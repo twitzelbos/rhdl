@@ -136,11 +136,7 @@ where
     // An element transfers when we are presenting one and the sink takes it.
     let advance = have && i.ready;
     d.idx = if advance {
-        if last {
-            bits::<M>(0)
-        } else {
-            q.idx + 1
-        }
+        if last { bits::<M>(0) } else { q.idx + 1 }
     } else {
         q.idx
     };

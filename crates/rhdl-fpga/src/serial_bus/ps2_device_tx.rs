@@ -318,9 +318,11 @@ mod tests {
             .synchronous_sample()
             .filter(|s| !s.input.0.reset.any())
             .collect();
-        assert!(outputs
-            .iter()
-            .all(|s| !s.output.clk_oe && !s.output.data_oe));
+        assert!(
+            outputs
+                .iter()
+                .all(|s| !s.output.clk_oe && !s.output.data_oe)
+        );
         Ok(())
     }
 

@@ -1,6 +1,6 @@
 use rhdl::prelude::*;
 use rhdl_fpga::{
-    core::comparator::{comparator, Flags},
+    core::comparator::{Flags, comparator},
     doc::write_svg_as_markdown,
 };
 

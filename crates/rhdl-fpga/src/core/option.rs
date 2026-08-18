@@ -20,11 +20,7 @@ pub fn unpack<T: Digital>(opt: Option<T>, fallback: T) -> (bool, T) {
 /// Packs a tag and a data value back into an [Option<T>].  
 /// The data value argument is ignored if the tag is false.
 pub fn pack<T: Digital>(valid: bool, data: T) -> Option<T> {
-    if valid {
-        Some(data)
-    } else {
-        None
-    }
+    if valid { Some(data) } else { None }
 }
 
 #[kernel]

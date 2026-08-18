@@ -88,7 +88,10 @@ where
 {
     fn default() -> Self {
         assert!(N > 1, "Can only chunk streams with N > 1");
-        assert!((1 << M) >= N, "Expect that the bitwidth of the counter is sufficiently large to express values up to N");
+        assert!(
+            (1 << M) >= N,
+            "Expect that the bitwidth of the counter is sufficiently large to express values up to N"
+        );
         Self {
             input: DFF::new(None),
             delay_line: core::array::from_fn(|_| DFF::new(T::dont_care())),

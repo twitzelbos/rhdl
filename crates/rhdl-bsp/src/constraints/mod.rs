@@ -1,4 +1,4 @@
-use quote::{quote, ToTokens};
+use quote::{ToTokens, quote};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Location {

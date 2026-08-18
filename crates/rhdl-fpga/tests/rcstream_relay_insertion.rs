@@ -19,7 +19,7 @@
 
 use rhdl::{core::sim::ResetOrData, prelude::*};
 use rhdl_fpga::rcstream::{
-    bus::Item, filter::RCStreamFilter, map::RCStreamMap, relay::RCStreamRelay, RCStream,
+    RCStream, bus::Item, filter::RCStreamFilter, map::RCStreamMap, relay::RCStreamRelay,
 };
 
 /// A chain of `N` relay stations on one `RCStream` connection.

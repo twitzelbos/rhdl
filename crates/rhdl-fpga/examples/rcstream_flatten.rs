@@ -9,7 +9,7 @@
 use rhdl::{core::sim::ResetOrData, prelude::*};
 use rhdl_fpga::{
     doc::write_svg_as_markdown,
-    rcstream::{bus::Item, flatten::RCStreamFlatten, RCStream},
+    rcstream::{RCStream, bus::Item, flatten::RCStreamFlatten},
 };
 
 fn main() -> Result<(), RHDLError> {

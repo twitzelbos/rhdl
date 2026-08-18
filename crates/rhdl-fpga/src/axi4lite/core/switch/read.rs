@@ -87,8 +87,8 @@ pub struct ReadSwitch<const N: usize> {
 impl<const N: usize> ReadSwitch<N> {
     /// Create a new AXI Read Switch with the
     /// provided routing function.
-    pub fn try_new<F: DigitalFn + DigitalFn2<A0 = ClockReset, A1 = AxilAddr, O = Command>>(
-    ) -> Result<Self, RHDLError> {
+    pub fn try_new<F: DigitalFn + DigitalFn2<A0 = ClockReset, A1 = AxilAddr, O = Command>>()
+    -> Result<Self, RHDLError> {
         Ok(Self {
             endpoint: ReadEndpoint::default(),
             controllers: core::array::from_fn(|_| ReadController::default()),

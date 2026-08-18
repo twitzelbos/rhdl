@@ -1,5 +1,5 @@
 use rhdl::{
-    core::{types::path::sub_kind, CircuitIO, RHDLError},
+    core::{CircuitIO, RHDLError, types::path::sub_kind},
     prelude::*,
 };
 

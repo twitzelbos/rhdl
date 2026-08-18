@@ -125,27 +125,15 @@ where
             };
             let asr_with_extend = lsr | sign_extend;
             // amount == 0: no extension; just return LSR (= data).
-            if is_zero {
-                lsr
-            } else {
-                asr_with_extend
-            }
+            if is_zero { lsr } else { asr_with_extend }
         }
         ShiftOp::RotateLeft => {
             let shifted = (data << amount) | (data >> safe_n_minus);
-            if is_zero {
-                data
-            } else {
-                shifted
-            }
+            if is_zero { data } else { shifted }
         }
         ShiftOp::RotateRight => {
             let shifted = (data >> amount) | (data << safe_n_minus);
-            if is_zero {
-                data
-            } else {
-                shifted
-            }
+            if is_zero { data } else { shifted }
         }
     }
 }
