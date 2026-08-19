@@ -210,4 +210,5 @@ pub mod latency;
 pub mod model;
 pub mod phase_accumulator;
 pub mod phase_composer;
+pub mod ramp;
 pub mod sin_cos_linear_interp;

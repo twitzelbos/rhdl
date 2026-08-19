@@ -31,6 +31,42 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-18 — `dsp::nco::ramp` §8.5: frequency ramps and chirps
+
+**Paths:** `crates/rhdl-fpga/src/dsp/nco/ramp.rs` (new), `nco/mod.rs`, `examples/nco_ramp.rs` (new), `doc/nco_ramp.md` (new).
+
+**Why this, why now:** §8.5 — scheduled frequency segments. A linear chirp *is* a linear frequency ramp, so one widget covers both. Unblocked by the units layer, since a segment is naturally specified in Hz and Hz/s.
+
+**Design decisions:**
+
+- **The accumulator carries 16 fractional bits, and this is the whole design.** Measured at 125 MHz with a 48-bit word:
+
+  | ramp | step per sample | as an integer |
+  |---|---|---|
+  | 1 MHz in 1 ms | 18 014 398.5 LSB | 18 014 398 |
+  | **1 Hz in 1 s** | **0.018 LSB** | **0** |
+  | **0.1 Hz in 1 s** | **0.0018 LSB** | **0** |
+
+  A slow ramp's per-sample step rounds to **zero**, so an integer accumulator emits a flat line and reports success — and that is exactly the regime adiabatic sweeps, shimming and field-drift compensation live in. The failure mode would be an experiment that quietly did not sweep.
+- **The endpoint is snapped, not stepped to.** On the final sample the accumulator is *loaded* with `end_word`. Rounding in `step` would otherwise accumulate over `N` samples and leave the segment ending at an almost-right frequency — and a chirp that ends a few Hz off is one whose next phase-coherent segment starts wrong. Snapping makes the endpoint exact by construction, which is the "numerical behavior remains defined" §8.5 asks for.
+- **Division belongs to the scheduler.** `ramp_step` is a `const fn`, so a segment's step is computed by rustc and arrives as a constant. No hardware divider.
+- **Steps are two's complement**, matching `frequency_composer` — a downward ramp needs no signed type and no direction flag.
+- **`load` preempts a running segment**, so a scheduler can retarget without first waiting for `done`.
+
+**Surprises and gotchas:**
+
+- The sub-LSB problem is not a corner case; it is most of the useful range for an NMR instrument. Anything slower than roughly 55 Hz/s has a step below 1 LSB at these widths.
+- 64-bit accumulator (48 + 16) means a 64-bit adder at 125 MHz. Feasible on the Zynq carry chains, but worth knowing before it appears in a timing report.
+
+**Validation:** 10 tests, Tiers 1-5 including `iverilog` RTL and NTL. `a_ramp_slower_than_one_lsb_per_sample_still_moves` is the load-bearing one and is **mutation-verified**: truncating the step to whole LSBs — an integer accumulator — reports *"a sub-LSB step produced a flat ramp: stayed at 1000000 for the whole run"*. `the_endpoint_is_exact` uses a deliberately wrong step to prove the snap does not depend on the step being right.
+
+**Follow-ups:**
+
+- §8.6 stream modulation input.
+- Piecewise-polynomial and table-driven segments for adiabatic pulses, which §8.5 leaves open. The segment interface takes them without change — a scheduler just loads a new segment per piece.
+
+---
+
 ## 2026-08-18 — `dsp::iq::Iq` + the NCO speaks `RCStream`; correcting the bus architecture doc
 
 **Paths:** `crates/rhdl-fpga/src/dsp/iq.rs` (new), `dsp/nco/composite.rs`, `examples/nco.rs`, `doc/nco.md`, `stream-bus-architecture.md`.
