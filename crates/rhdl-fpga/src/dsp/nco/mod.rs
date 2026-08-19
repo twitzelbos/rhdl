@@ -18,9 +18,16 @@
 //!
 //! Note that [`ramp`] and [`modulation`] are **not** inside
 //! [`composite`]'s `Nco`. A scheduler wires their outputs into the
-//! frequency composer's `master` and `modulation` terms. Whether that is
-//! the right split is an open question — see the audit note at
-//! `notes/dsp-nco-modulator-defects.md`, finding 3.
+//! frequency composer's `master` and `modulation` terms.
+//!
+//! **This split is deliberate**, decided rather than inherited: §8.4
+//! describes a local timing agent that composes these pieces and issues
+//! each control change at its own lead time, so `Nco` is a subassembly
+//! and the scheduler owns the wiring. The cost is that a composed
+//! latency crossing the boundary cannot be measured inside any one
+//! widget — so [`latency`]'s `harness` module builds exactly that wiring
+//! and measures [`latency::MODULATION_CONTROL`] through it. Any future
+//! term added outside `Nco` owes the same treatment.
 //!
 //! # Structure
 //!
