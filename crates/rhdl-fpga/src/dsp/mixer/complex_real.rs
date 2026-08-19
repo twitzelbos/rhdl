@@ -14,11 +14,12 @@
 #![doc = badascii_doc::badascii_formal!(r"
       +-+ComplexRealMixer+---+
       |                      |
-+---->+ carrier              |
-      |               stream +----->
-+---->+ envelope             |
-      |              starved +----->
++---->+ carrier       stream +----->
+      |                      |
++---->+ envelope     starved +----->
+      |                      |
 +---->+ downstream_ready     |
+      |              overrun +----->
       +----------------------+
 ")]
 //!
@@ -48,6 +49,44 @@
 //! Alignment itself is the scheduler's job: it issues each source's
 //! control changes at the right lead time using the per-path latency
 //! constants. What this widget provides is **detectability**.
+//!
+//! # This mixer cannot stall, so `stream.ready` is vacuously true
+//!
+//! `out` is a register that is overwritten on **every** cycle. There is
+//! no stall path and there cannot be one: both inputs are isochronous,
+//! so holding a sample back would desynchronise the datapath from the
+//! timebase rather than delay it.
+//!
+//! The widget is therefore always ready to accept from upstream, and
+//! `stream.ready` says so unconditionally. Forwarding
+//! `downstream_ready` into that field instead — which this widget did
+//! until the audit in `notes/dsp-nco-modulator-defects.md` — answers
+//! "am I ready?" with someone else's readiness, and answers it wrongly:
+//! the mixer consumes its inputs whether or not downstream is ready.
+//!
+//! Note that this differs from [`IqSplit`](crate::rcstream::util::IqSplit)
+//! and [`IqCombine`](crate::rcstream::util::IqCombine), which *do*
+//! forward their consumer's ready. They are combinational rewiring
+//! holding no register, so for them the forwarded value is the truth.
+//! The distinction is the DFF, not the direction the signal came from.
+//!
+//! # A lost sample is reported, not hidden
+//!
+//! Because the register is overwritten unconditionally, a cycle with
+//! `downstream_ready` low loses that sample outright. [`Out::overrun`]
+//! reports it.
+//!
+//! This is a design error being surfaced, not a condition to handle —
+//! exactly as in [`Nco`](crate::dsp::nco::composite::Nco), which sits
+//! one stage upstream and reports the same thing. A silently dropped
+//! sample is the failure this codebase has shipped before, and it would
+//! be perverse for the oscillator to report it and the modulator
+//! immediately downstream to swallow it.
+//!
+//! Carloni relay stations are compatible: a relay downstream of an
+//! always-ready sink never deasserts. An elastic buffer with
+//! data-dependent occupancy is not, and belongs downstream of the
+//! acquisition gate where latency stops mattering.
 
 //!
 //!# Example
@@ -113,9 +152,19 @@ where
     rhdl::bits::W<OUT_W>: BitWidth,
 {
     /// The modulated sample stream.
+    ///
+    /// `stream.ready` is vacuously `true` — see the module docs. This
+    /// mixer consumes on every cycle and has no stall path, so it is
+    /// always ready to accept from upstream.
     pub stream: RCStream<Iq<OUT_W>, ()>,
     /// The inputs did not both present data on some cycle.
     pub starved: bool,
+    /// A sample was presented while `downstream_ready` was low, and is
+    /// gone.
+    ///
+    /// Combinational on `downstream_ready`, which is the correct
+    /// alignment: the sample at risk is the one on `stream` this cycle.
+    pub overrun: bool,
 }
 
 impl<const A_W: usize, const B_W: usize, const OUT_W: usize, const PROD_W: usize, const DROP: usize>
@@ -199,15 +248,22 @@ where
         };
     }
 
-    let o = Out::<OUT_W> {
+    let mut o = Out::<OUT_W> {
         stream: RCStream::<Iq<OUT_W>, ()> {
             data: Some(Item::<Iq<OUT_W>, ()> {
                 data: q.out,
                 frame: (),
             }),
-            ready: i.downstream_ready,
+            // Vacuously true: `out` is overwritten every cycle, so the
+            // mixer is always ready to accept from upstream.  See the
+            // module docs on why forwarding `downstream_ready` here
+            // would be a false claim rather than a conservative one.
+            ready: true,
         },
         starved: q.starved,
+        // The sample on `stream` this cycle is lost if downstream is not
+        // ready to take it, and the mixer will not hold it.
+        overrun: !i.downstream_ready,
     };
 
     if cr.reset.any() {
@@ -216,6 +272,7 @@ where
             im: signed::<OUT_W>(0),
         };
         d.starved = false;
+        o.overrun = false;
     }
     (o, d)
 }
@@ -323,6 +380,29 @@ mod tests {
         assert!(checked >= 4, "only {checked} cases actually compared");
     }
 
+    /// Shared Tier-4/Tier-5 stimulus.
+    ///
+    /// Deliberately exercises **every** output, not just the datapath: a
+    /// starved cycle and a not-ready cycle are included, so `starved` and
+    /// `overrun` are driven high somewhere in the trace. A stimulus that
+    /// left them constant would make the `iverilog` round-trip and the
+    /// VCD digest cover them as tied-off wires, which is how a codegen
+    /// bug in a flag output survives a green Tier 4.
+    fn hdl_stimulus() -> Vec<In<A, B>> {
+        let mut seq: Vec<In<A, B>> = (0..24i128)
+            .map(|k| feed((k - 12) * 8000, (12 - k) * 6000, (k - 12) * 2000))
+            .collect();
+        // Downstream drops ready: the registered sample is lost.
+        seq.push(In::<A, B> {
+            downstream_ready: false,
+            ..feed(60_000, -40_000, 12_000)
+        });
+        // Only the envelope presents data: starvation.
+        seq.push(gap());
+        seq.extend((0..4i128).map(|k| feed(k * 3000, -k * 2000, k * 1000)));
+        seq
+    }
+
     /// **Tier 4 — the emitted Verilog agrees.**
     ///
     /// The load-bearing test for this widget. Both operands are
@@ -333,10 +413,7 @@ mod tests {
     #[test]
     fn test_complex_real_mixer_hdl_works() -> miette::Result<()> {
         let uut = Uut::default();
-        let seq: Vec<In<A, B>> = (0..24i128)
-            .map(|k| feed((k - 12) * 8000, (12 - k) * 6000, (k - 12) * 2000))
-            .collect();
-        let stream = seq.into_iter().with_reset(1).clock_pos_edge(100);
+        let stream = hdl_stimulus().into_iter().with_reset(1).clock_pos_edge(100);
         let tb = uut.run(stream).collect::<SynchronousTestBench<_, _>>();
         tb.rtl(&uut, &Default::default())?.run_iverilog()?;
         tb.ntl(&uut, &Default::default())?.run_iverilog()?;
@@ -383,16 +460,13 @@ mod tests {
     #[test]
     fn test_complex_real_mixer_trace() -> miette::Result<()> {
         let uut = Uut::default();
-        let seq: Vec<In<A, B>> = (0..24i128)
-            .map(|k| feed((k - 12) * 8000, (12 - k) * 6000, (k - 12) * 2000))
-            .collect();
-        let stream = seq.into_iter().with_reset(1).clock_pos_edge(100);
+        let stream = hdl_stimulus().into_iter().with_reset(1).clock_pos_edge(100);
         let vcd = uut.run(stream).collect::<VcdFile>();
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("vcd")
             .join("complex_real_mixer");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["e1aaf89dade4e1c28c710a569e5c13a392bb29e7d6509f7fd2e749756bbb53ef"];
+        let expect = expect!["d1cd0cb3a862a8a35d532b9101b2d97d1938cbac3724691fda8156f5dfbfd89a"];
         let digest = vcd
             .dump_to_file(root.join("complex_real_mixer.vcd"))
             .unwrap();
@@ -424,6 +498,84 @@ mod tests {
             sr.abs() <= tolerance && si.abs() <= tolerance,
             "output mean is not zero: re {sr}, im {si} over {n}, tolerance {tolerance}"
         );
+    }
+
+    /// A sample presented while downstream is not ready is reported.
+    ///
+    /// The mixer cannot stall — `out` is overwritten every cycle — so the
+    /// sample is genuinely gone rather than delayed. `Nco` reports the
+    /// same condition one stage upstream; before the audit in
+    /// `notes/dsp-nco-modulator-defects.md` this widget swallowed it.
+    ///
+    /// Verified able to fail: reverting `overrun` to a constant `false`
+    /// makes the first assertion report it.
+    #[test]
+    fn a_lost_sample_is_reported() {
+        let stalled = |re, im, env| In::<A, B> {
+            downstream_ready: false,
+            ..feed(re, im, env)
+        };
+        let mut seq = vec![feed(1000, 2000, 300); 3];
+        seq.push(stalled(1000, 2000, 300));
+        seq.extend(vec![feed(1000, 2000, 300); 3]);
+        let out = run(seq);
+        assert!(
+            out.iter().any(|o| o.overrun),
+            "a sample was dropped while downstream was not ready, and \
+             nothing said so"
+        );
+        assert!(
+            out.iter().any(|o| !o.overrun),
+            "overrun is stuck high; it must be a per-cycle report"
+        );
+        assert_eq!(
+            out.iter().filter(|o| o.overrun).count(),
+            1,
+            "exactly one cycle had downstream_ready low"
+        );
+    }
+
+    /// `stream.ready` is unconditionally true, because the mixer always
+    /// consumes.
+    ///
+    /// Pins the contract in `rcstream::bus` for widget-`O` role: the
+    /// field answers "am I ready to accept from upstream?", and the
+    /// honest answer here does not depend on downstream. Forwarding
+    /// `downstream_ready` would make this fail on the stalled cycle.
+    #[test]
+    fn ready_does_not_depend_on_downstream() {
+        let stalled = In::<A, B> {
+            downstream_ready: false,
+            ..feed(1000, 2000, 300)
+        };
+        let out = run(vec![stalled; 6]);
+        assert!(
+            out.iter().all(|o| o.stream.ready),
+            "stream.ready went low although the mixer has no stall path"
+        );
+    }
+
+    /// Reset suppresses the overrun report.
+    ///
+    /// Same treatment `Nco` gives it: during reset there is no sample to
+    /// lose, so reporting one would be a spurious fault at every
+    /// power-on.
+    #[test]
+    fn kernel_reset_suppresses_overrun() {
+        let q = Q::<A, B, O, P, DR> {
+            out: Iq::<O> {
+                re: signed::<O>(7),
+                im: signed::<O>(9),
+            },
+            starved: true,
+        };
+        let cr = clock_reset(clock(false), reset(true));
+        let stalled = In::<A, B> {
+            downstream_ready: false,
+            ..feed(1000, 2000, 300)
+        };
+        let (o, _d) = complex_real_mixer_kernel::<A, B, O, P, DR>(cr, stalled, q);
+        assert!(!o.overrun, "reset must not report a lost sample");
     }
 
     /// A cycle where only one input presents data is reported.

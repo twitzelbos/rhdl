@@ -10,6 +10,12 @@
 //     carrier, only scale it, which is exactly why this case needs two
 //     multiplies rather than four.
 //   - Output lags the inputs by one cycle; the product is registered.
+//   - `starved` and `overrun` stay low throughout, which is the correct
+//     operating condition: both inputs present a sample every cycle and
+//     downstream holds `ready`. Both are fault reports rather than flow
+//     control -- this mixer cannot stall, so a low `downstream_ready`
+//     loses the sample instead of delaying it. See
+//     `a_lost_sample_is_reported` in the module's tests for that case.
 //
 // Deterministic (no RNG), so the committed trace regenerates
 // byte-identically.
