@@ -368,14 +368,14 @@ Recorded so a later audit does not repeat the work:
 
 ## Resolution (2026-08-19)
 
-All findings except 3 are fixed. Recorded here so the note reads as a
-closed audit rather than an open list.
+All six findings are fixed. Recorded here so the note reads as a closed
+audit rather than an open list.
 
 | # | Finding | Outcome |
 |---|---|---|
 | 1 | `ComplexMixer` artifacts | **Fixed.** `examples/complex_mixer.rs` + `doc/complex_mixer.md`, written as the companion to `complex_real_mixer`'s so the two show what a real operand changes. |
 | 2 | Mixer ready + overrun | **Fixed.** `ready: true` and an `overrun` output on both, plus Tier-4/5 stimuli that actually drive the flags. |
-| 3 | `MODULATION_CONTROL` unmeasured | **Open**, and deliberately so — it needs a decision on whether `Nco` is the deployment unit or a subassembly. |
+| 3 | `MODULATION_CONTROL` unmeasured | **Fixed.** Decision taken: `Nco` stays a **subassembly**, per §8.4's local timing agent. A test-only `harness` module composes `ModulationInput` into `Nco` as a scheduler would and measures modulation-sample to `(sin, cos)`. Measured 4, and verified able to fail. |
 | 4 | No spectral regression | **Fixed.** `worst_in_band_spur_is_below_the_threshold`, on the widget, verified able to fail at −0.00 dBc. |
 | 5 | `nco/mod.rs` drift | **Fixed.** Superseded recommendation marked at the point it is made; module table replaced. |
 | 6 | Four minor items | **Fixed**, all four. |

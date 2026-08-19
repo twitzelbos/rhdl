@@ -98,7 +98,8 @@ ENOB sits about a bit below `AMP_W` throughout, so all four are **amplitude-quan
 
 **Follow-ups:**
 
-- **`MODULATION_CONTROL` is the only latency constant never measured** — checked as arithmetic, because `ModulationInput` and `FrequencyRamp` sit outside `Nco`. Needs a decision on whether `Nco` is the deployment unit or a subassembly.
+- ~~`MODULATION_CONTROL` is the only latency constant never measured~~ — **resolved in the same session.** Decision: **`Nco` stays a subassembly**, because §8.4 describes a local timing agent that composes these pieces and issues each control change at its own lead time. A test-only `harness` module in `latency.rs` wires `ModulationInput` into `Nco` as a scheduler would and measures modulation-sample to `(sin, cos)`: measured 4, matching the declared constant, and verified able to fail by perturbing it. The alternative — absorbing `ModulationInput` into `Nco` — would have made the measurement trivial but changed `Nco`'s `In` from a raw `Bits<48>` term to a stream, taking a freedom away from callers who compose the frequency terms themselves.
+  **The generalisable point:** a latency that crosses a composition boundary cannot be measured inside any one widget, so choosing a subassembly boundary creates an obligation to build the composition in a test. Any future term added outside `Nco` owes the same.
 - The convergent-rounding measurement that chose the rule lives only in `../ocra2/docs/modulator_design_note.md`; nothing in the tree reproduces it.
 
 ---
