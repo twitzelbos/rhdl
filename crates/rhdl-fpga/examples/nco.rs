@@ -52,6 +52,7 @@ fn main() -> Result<(), RHDLError> {
                 fine_time: bits::<PHASE_W>(0),
                 trim: bits::<PHASE_W>(0),
             },
+            downstream_ready: true,
         })
         .with_reset(1)
         .clock_pos_edge(100);

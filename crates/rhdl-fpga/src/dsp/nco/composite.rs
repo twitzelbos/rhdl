@@ -4,14 +4,16 @@
 //!
 //! Here is the schematic symbol
 #![doc = badascii_doc::badascii_formal!(r"
-      +-+Nco+---------------+
-      |                     | [18]
- freq |                  sin+----->
-+---->+ frequency           | [18]
-phase |                  cos+----->
-+---->+ phase               | [48]
-      |               master+----->
-      +---------------------+
+      +-+Nco+-----------------------+
+      |                             |
++---->+ frequency                   |
+      |          stream: RCStream   |
++---->+ phase       <Iq<18>, ()>    +----->
+      |                             |
++---->+ downstream_ready            |
+      |                      master +----->
+      |                     overrun +----->
+      +-----------------------------+
 ")]
 //!
 //! # The truncation this widget exists to make explicit
@@ -32,6 +34,30 @@ phase |                  cos+----->
 //! the shift is dropped, and the accompanying test shows the low-bit
 //! version producing an unrelated frequency.
 //!
+//! # Why the output is an `RCStream`, and what that does not mean
+//!
+//! The stream type buys **relay insertion**: per Carloni's theorem a
+//! relay station may be placed anywhere on the connection, adding one
+//! cycle of latency without changing throughput or functional
+//! behaviour. On a 125 MHz chain crossing a Zynq that is the mechanism
+//! for timing closure, and the added cycle folds straight into
+//! [`super::latency`] — the scheduler's lead time becomes
+//! `PHASE_CONTROL + relays_on_path`.
+//!
+//! It does **not** mean the NCO tolerates backpressure. Latency
+//! *insensitivity* is about being correct under any fixed pipeline
+//! depth, not about surviving data-dependent stalls. This oscillator
+//! cannot stall: its phase represents absolute elapsed time, so pausing
+//! the accumulator does not delay the waveform, it desynchronises it
+//! from the timebase. `downstream_ready` going low therefore means a
+//! sample was lost, and [`Out::overrun`] says so.
+//!
+//! Relays are compatible with that — a relay downstream of an
+//! always-ready sink never deasserts. An elastic buffer with
+//! data-dependent occupancy is not, and belongs downstream of the
+//! acquisition gate where data becomes timestamped and latency stops
+//! mattering.
+//!
 //! # Latency
 //!
 //! Wiring adds no registers, so the totals are exactly the constants in
@@ -51,6 +77,9 @@ phase |                  cos+----->
 #![doc = include_str!("../../../doc/nco.md")]
 
 use rhdl::prelude::*;
+
+use crate::dsp::iq::Iq;
+use crate::rcstream::bus::{Item, RCStream};
 
 use super::{
     config::{self, PHASE_W},
@@ -74,27 +103,56 @@ pub struct Nco {
     amp: SinCosLinearInterp,
 }
 
-/// Inputs: the two term groups, unchanged from their composers.
+/// Inputs: the two term groups, plus the downstream ready.
 #[derive(PartialEq, Clone, Copy, Debug, Digital)]
 pub struct In {
     /// §8.3 frequency terms.
     pub frequency: frequency_composer::In<PHASE_W>,
     /// §8.2 phase terms.
     pub phase: phase_composer::In<PHASE_W>,
+    /// Downstream's ready, per the `RCStream` contract.
+    ///
+    /// **The NCO does not stall when this is low, and cannot.** Its
+    /// phase represents absolute elapsed time, so pausing the
+    /// accumulator would not delay the waveform, it would desynchronise
+    /// it from the timebase. A low `ready` therefore means a sample was
+    /// lost, which [`Out::overrun`] reports rather than hides.
+    pub downstream_ready: bool,
 }
 
 /// Outputs.
 #[derive(PartialEq, Clone, Copy, Debug, Digital)]
 pub struct Out {
-    /// Sine of the composed phase.
-    pub sin: SignedBits<AMP_W>,
-    /// Cosine of the composed phase.
-    pub cos: SignedBits<AMP_W>,
+    /// The complex sample stream.
+    ///
+    /// `F = ()`: nothing is framed in the timed domain — `sync` is
+    /// inserted downstream at the acquisition gate, and the framing
+    /// type changing there is what stops un-framed samples reaching the
+    /// packetizer by accident. Costs zero bits: `Item<Iq<18>, ()>` is
+    /// 36 bits, exactly the two components.
+    ///
+    /// `stream.ready` is vacuously `true` — the NCO has no upstream to
+    /// backpressure. It is present because the type carries both
+    /// directions, not because it means anything here.
+    pub stream: RCStream<Iq<AMP_W>, ()>,
     /// The undisturbed master trajectory, full width.
     ///
-    /// Exposed so a receive mixer can share one phase reference, and so
-    /// offset independence stays observable from outside.
+    /// Not part of the stream: it is a shared phase *reference*, not a
+    /// sample. A receive mixer consumes it to stay coherent with this
+    /// oscillator, and offset independence stays observable from
+    /// outside.
     pub master: Bits<PHASE_W>,
+    /// A sample was presented while `downstream_ready` was low, and is
+    /// gone.
+    ///
+    /// This is a design error being reported, not a condition to
+    /// handle: the timed domain must hold `ready` true. Relay stations
+    /// are fine — a Carloni relay downstream of an always-ready sink
+    /// never deasserts — but an elastic buffer with data-dependent
+    /// occupancy does not belong on this path. Surfaced because a
+    /// silently dropped sample is exactly the failure this codebase has
+    /// shipped before.
+    pub overrun: bool,
 }
 
 impl SynchronousIO for Nco {
@@ -105,7 +163,7 @@ impl SynchronousIO for Nco {
 
 #[kernel]
 #[doc(hidden)]
-pub fn nco_kernel(_cr: ClockReset, i: In, q: Q) -> (Out, D) {
+pub fn nco_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let mut d = D::dont_care();
 
     d.freq = i.frequency;
@@ -124,11 +182,28 @@ pub fn nco_kernel(_cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let truncated = (q.acc.phase >> 26).resize::<TOTAL_W>();
     d.amp = sin_cos_linear_interp::In { phase: truncated };
 
-    let o = Out {
-        sin: q.amp.sin,
-        cos: q.amp.cos,
-        master: q.acc.master,
+    // re is in-phase (cosine), im is quadrature (sine) -- see
+    // `crate::dsp::iq::Iq`.
+    let sample = Iq::<AMP_W> {
+        re: q.amp.cos,
+        im: q.amp.sin,
     };
+
+    let mut o = Out {
+        stream: RCStream::<Iq<AMP_W>, ()> {
+            data: Some(Item::<Iq<AMP_W>, ()> {
+                data: sample,
+                frame: (),
+            }),
+            ready: true,
+        },
+        master: q.acc.master,
+        overrun: !i.downstream_ready,
+    };
+
+    if cr.reset.any() {
+        o.overrun = false;
+    }
     (o, d)
 }
 
@@ -161,6 +236,16 @@ mod tests {
                 fine_time: bits::<PHASE_W>(0),
                 trim: bits::<PHASE_W>(0),
             },
+            downstream_ready: true,
+        }
+    }
+
+    /// The quadrature component (sine) of a sample, for tests that
+    /// reason about the waveform.
+    fn im_of(o: &Out) -> i128 {
+        match o.stream.data {
+            Some(item) => item.data.im.raw(),
+            None => panic!("the NCO must emit on every cycle -- it is isochronous"),
         }
     }
 
@@ -195,7 +280,7 @@ mod tests {
         let out = run(vec![input(word, 0); PERIOD * CYCLES + 8]);
 
         // Count rising zero crossings of sin, skipping the pipeline fill.
-        let sins: Vec<i128> = out.iter().skip(6).map(|o| o.sin.raw()).collect();
+        let sins: Vec<i128> = out.iter().skip(6).map(im_of).collect();
         let crossings = sins.windows(2).filter(|w| w[0] < 0 && w[1] >= 0).count();
         let expected = CYCLES;
         assert!(
@@ -219,7 +304,7 @@ mod tests {
         let word = config::tuning_word(hz * 1_000_000);
         const CYCLES: usize = 8;
         let out = run(vec![input(word, 0); 64 * CYCLES + 8]);
-        let sins: Vec<i128> = out.iter().skip(6).map(|o| o.sin.raw()).collect();
+        let sins: Vec<i128> = out.iter().skip(6).map(im_of).collect();
         let crossings = sins.windows(2).filter(|w| w[0] < 0 && w[1] >= 0).count();
         assert!(
             crossings.abs_diff(CYCLES) <= 1,
@@ -241,11 +326,11 @@ mod tests {
         let measure = |seq: Vec<In>| -> usize {
             let out = run(seq);
             let step_out = STEP + RESET_CYCLES;
-            let baseline = out[step_out - 1].sin.raw();
+            let baseline = im_of(&out[step_out - 1]);
             out.iter()
                 .enumerate()
                 .skip(step_out)
-                .find(|(_, o)| o.sin.raw() != baseline)
+                .find(|(_, o)| im_of(o) != baseline)
                 .map(|(i, _)| i - step_out)
                 .expect("the stimulus never moved the output")
         };
@@ -267,6 +352,38 @@ mod tests {
             measure(freq_seq),
             latency::FREQUENCY_CONTROL,
             "frequency path latency disagrees with latency::FREQUENCY_CONTROL"
+        );
+    }
+
+    /// A sample presented while downstream is not ready is reported,
+    /// not hidden.
+    ///
+    /// The NCO cannot stall -- its phase is absolute time -- so a low
+    /// `ready` means the sample is gone. This codebase has shipped a
+    /// silently dropped item before (`rcstream::credit::CreditSink`),
+    /// which is why the loss is surfaced rather than assumed away.
+    #[test]
+    fn a_lost_sample_is_reported() {
+        let word = (1u128 << PHASE_W) / 64;
+        let mut seq: Vec<In> = (0..16).map(|_| input(word, 0)).collect();
+        for s in seq.iter_mut().take(12).skip(8) {
+            s.downstream_ready = false;
+        }
+        let out = run(seq);
+        assert!(
+            out.iter().any(|o| o.overrun),
+            "downstream went not-ready for four cycles and nothing reported a loss"
+        );
+        assert!(
+            out.iter().any(|o| !o.overrun),
+            "overrun is stuck high, so it reports nothing"
+        );
+        // And the oscillator keeps running regardless: phase is time.
+        let a = im_of(&out[6]);
+        let b = im_of(&out[14]);
+        assert_ne!(
+            a, b,
+            "the accumulator must not stall when downstream stalls"
         );
     }
 
@@ -340,7 +457,7 @@ mod tests {
             .join("vcd")
             .join("nco");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["42f24a1b8fcbc7fa7ccb4867da8701fae235029d1b5baaace368f53c5c3df3b0"];
+        let expect = expect!["a56007abcf297fbe1e8eca989828049db8d097bf9843bae0e1c86d6fa8101874"];
         let digest = vcd.dump_to_file(root.join("nco.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

@@ -31,6 +31,35 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-18 — `dsp::iq::Iq` + the NCO speaks `RCStream`; correcting the bus architecture doc
+
+**Paths:** `crates/rhdl-fpga/src/dsp/iq.rs` (new), `dsp/nco/composite.rs`, `examples/nco.rs`, `doc/nco.md`, `stream-bus-architecture.md`.
+
+**Why this, why now:** the NCO's output was three loose fields (`sin`, `cos`, `master`), but everything downstream — modulator, DDC, packetizer — treats the first two as one complex sample. And the whole point of the instrument rewrite is `RCStream`-connected DSP blocks rather than AXI4-Stream.
+
+**Design decisions:**
+
+- **`Iq<W>` uses `re`/`im`, not `i`/`q`.** RHDL kernels bind `i` for the input bundle and `q` for state, universally, so `i`/`q` fields give you `i.iq.i` and `q.amp.q` where each letter's meaning depends on position. The I/Q mapping is documented on the fields instead: `re` is in-phase (cosine), `im` is quadrature (sine).
+- **`F = ()`, and it is free.** Measured: `Item<b8, ()>` is 8 bits, the same as `b8`. Nothing is framed in the timed domain — `sync` is inserted downstream at the acquisition gate, and *the framing type changing there* is what stops un-framed samples reaching the packetizer.
+- **`master` stays outside the stream.** It is a shared phase *reference*, not a sample.
+- **A lost sample is reported, not hidden.** The NCO cannot stall — its phase is absolute time — so `downstream_ready` going low means a sample is gone. `Out::overrun` says so. This codebase has shipped a silently dropped item before (`CreditSink`), which is the reason for the flag rather than an assumption.
+
+**Surprises and gotchas:**
+
+- **"Latency-insensitive" does not mean "tolerates backpressure".** It means *correct under any fixed pipeline depth* — Carloni's theorem is about relay stations adding a known cycle without changing throughput or behaviour. An `RCStream` with no relay and a ready sink is one sample per clock that never stalls, identical to a plain struct but typed. Reading it the other way led to an argument that the NCO should **not** use `RCStream`, which would have discarded exactly the property the design needs: pipelining a 125 MHz chain for timing closure, with the added cycle folding into `nco::latency`.
+- **Not everything in RHDL carries a clock domain, and that is deliberate.** `Synchronous` widgets have one implicit `ClockReset`, so nothing inside them is domain-typed — not `Bits<8>`, not `RCStream<T, F>`. Two domains cannot be expressed inside one, so there is nothing for a parameter to catch. The domain attaches at `Adapter<C, D>`, and a Red-adapted source wired to a Blue-adapted sink is a plain `rustc` E0308, verified by experiment.
+- **`Adapter` is a promise, not a check.** Its own docs: "you are promising that the input signals are synchronous with the provided clock and reset … otherwise undefined behavior and/or data corruption". The type system enforces the assertion downstream but does not verify it — the same trust boundary as `Signal::val()`.
+- **`stream-bus-architecture.md` was wrong and caused the confusion.** It describes a single `RCStream<T, F, D>` with "the clock domain `D` is part of the type", written before the two-family split settled. What shipped is `RCStream<T, F>` *plus* `AsyncRCStream<T, F, D>`. Corrected with a new §1.1 rather than rewriting 20 downstream mentions.
+
+**Validation:** 68 `dsp::` tests green. `a_lost_sample_is_reported` covers the overrun path and also asserts the oscillator keeps running while downstream stalls — phase is time. `Iq` has a width test, because naming a type is only free if it stays free. Existing composite tests (truncation direction, end-to-end latency, Hz round-trip) carried over unchanged against the new output shape.
+
+**Follow-ups:**
+
+- §8.5 ramps and chirps; §8.6 stream modulation input.
+- The acquisition gate, which is where `F` changes from `()` to a real framing type and where backpressure starts being meaningful.
+
+---
+
 ## 2026-08-18 — `dsp::nco`: a numeric contract, and the composite that makes truncation explicit
 
 **Paths:** `crates/rhdl-fpga/src/dsp/nco/{config,composite}.rs` (new), `nco/mod.rs`, `examples/nco.rs` (new), `doc/nco.md` (new).
