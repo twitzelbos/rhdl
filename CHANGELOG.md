@@ -31,6 +31,35 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-19 — `rcstream::util`: constant source, and the Iq split/combine pair
+
+**Paths:** `crates/rhdl-fpga/src/rcstream/util/{mod,constant,split,combine}.rs` (new), `rcstream/mod.rs`.
+
+**Why this, why now:** without split and combine the `Iq`/`Real`/`Imag` sample types are decorative. Routing a complex stream into a widget that wants a real one is not expressible at all, so the `Real × Iq` instantiation of a mixer could never be reached from an `Iq` source. The constant source covers a fixed envelope (continuous-wave transmit), an unused input, and test stimulus.
+
+**Design decisions:**
+
+- **`RCStreamConstant` takes no input and reports nothing.** Contrast `dsp::nco::composite::Nco`, which reports `overrun` when downstream stalls: its samples are *specific to a moment*, because phase represents absolute elapsed time, so a sample downstream failed to take is lost. A constant has no such property — the identical value is there next cycle. The widget therefore ignores backpressure and has `type I = ()`. That difference is the distinction between a stream whose samples carry time and one whose samples do not, and is worth stating rather than leaving implied.
+- **Split and combine are pure rewiring**, combinational and zero-latency: an `Iq<W>` is two `SignedBits<W>` laid end to end, so there is no logic, only renaming. They add nothing to the scheduler's arithmetic.
+- **Split's outgoing `ready` requires both consumers.** One item becomes two, and neither can be held back independently without buffering.
+- **Combine reports one-sided cycles rather than buffering**, for the same reason as the mixers: holding one side makes the path's latency data-dependent and breaks the scheduler's arithmetic.
+- **The framing type is carried by `Constant<F>`, not `PhantomData`.** `SynchronousDQ` treats every field as a child circuit and `PhantomData` has no HDL, so a derived widget carrying one fails at `descriptor()` — for itself and any design containing it (CLAUDE.md §4).
+
+**Surprises and gotchas:**
+
+- **An RHDL internal compile error (ICE)**, triggered by hoisting a generic `dont_care` out of the branch that fills it: `let mut frame = F::dont_care();` followed by assignment inside an `if let`. Restructured so the framing is read inside the scope that binds the item, which is clearer anyway. **Filed as a follow-up** — an ICE is a compiler bug regardless of whether the code that provoked it was idiomatic.
+- `Real`/`Imag` name their field `v`, not `data`, and `Constant<F>` has no `Default` — both caught at compile time, both worth knowing before writing the next widget over these types.
+
+**Validation:** 11 tests. `split_then_combine_is_the_identity` is the load-bearing one: it runs data through both widgets and asserts exact equality, so a transposition or dropped component in *either* breaks it, which a test of one widget alone would not catch. Both `iverilog` round-trips pass, plus the constant source's. Component tests use distinct values per half so a swap shows up rather than cancelling.
+
+**Follow-ups:**
+
+- The `dont_care`-hoisting ICE.
+- `Iq` ↔ magnitude/phase conversion, which is CORDIC (vectoring and rotation modes) and substantial enough to want its own PR.
+- The DDC: CIC decimator with runtime `R` and compile-time `N`, then a full P/Q resampler.
+
+---
+
 ## 2026-08-19 — `dsp::mixer`: the modulator, and `Real`/`Imag` sample types
 
 **Paths:** `crates/rhdl-fpga/src/dsp/mixer/{mod,complex,complex_real,rounding}.rs` (new), `dsp/iq.rs`, `dsp/mod.rs`, `examples/complex_real_mixer.rs` (new), `doc/complex_real_mixer.md` (new). Design note at `../ocra2/docs/modulator_design_note.md`.

@@ -51,6 +51,7 @@ pub mod map;
 pub mod relay;
 pub mod tee;
 pub mod testing;
+pub mod util;
 pub mod zip;
 
 // Convenience re-exports so downstream code can `use
