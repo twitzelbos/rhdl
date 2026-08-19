@@ -169,7 +169,6 @@ mod tests {
                     let f = b5(factor);
                     // Compute the "right answer", but use integer arithmetic, not floating point.
                     let expected = lerp_i32(a as i32, b as i32, factor as i32, 5) as u128;
-                    let expected = expected as u128;
                     assert_eq!(lerp_unsigned(x, y, f).raw(), expected, "{a} {b} {factor}");
                 }
             }

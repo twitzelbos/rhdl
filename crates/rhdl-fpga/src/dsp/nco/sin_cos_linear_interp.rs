@@ -583,6 +583,13 @@ where
 
 #[kernel(allow_weak_partial)]
 #[doc(hidden)]
+// Takes `_cr`, not `cr`: this kernel has no `if cr.reset.any()` block,
+// which is the one place in `dsp` that departs from CLAUDE.md rule 12.
+// Deliberate and safe -- the widget's entire state is the `delayed` DFF
+// and the two BRAMs, each of which resets itself, and everything else
+// here is combinational. There is no output that reset must force to a
+// defined value: at phase zero the table already yields sin=0, cos=full
+// scale, which is the correct value rather than a reset artefact.
 pub fn sin_cos_linear_interp_kernel<
     const TBL_W: usize,
     const FINE_W: usize,
@@ -1451,12 +1458,20 @@ mod tests {
     /// guarantees a priori that one LSB still suffices when `FINE_W`
     /// grows and the correction gets finer-grained.
     ///
-    /// Exhaustive for the default (2²² phases). For the wider ones an
-    /// exhaustive scan is 2²⁶ to 2³⁰ phases, so those use a dense sweep
-    /// of all four rails — two full fine-periods either side of each,
-    /// which is where the overshoot occurs — plus a 2²⁰-point coprime
-    /// stride for breadth. `headroom_is_exhaustive_at_every_config`
-    /// carries the full scan and is `#[ignore]`d for runtime.
+    /// **Exhaustive at every configuration** — all `2^TOTAL_W` phases,
+    /// about 1.4 billion in total across the four.
+    ///
+    /// Sampling was considered and rejected. The overshoot is a
+    /// second-order effect concentrated at the four rails, so a sampled
+    /// sweep has to *know* where to look, and this property is precisely
+    /// the one whose violation is catastrophic and silent: a one-LSB
+    /// excess becomes a full-scale sign inversion, recurring at a rate
+    /// locked to the tuning word — a coherent spur, not noise. An earlier
+    /// version of the Tier-2 test that omitted the rails passed with the
+    /// saturation removed entirely.
+    ///
+    /// It is slow. That is the correct trade for the one property with no
+    /// runtime guard behind it.
     #[test]
     fn headroom_holds_at_every_configuration() {
         let cases = [
@@ -1467,17 +1482,17 @@ mod tests {
             ),
             (
                 "10/14/26/24",
-                headroom_scan::<10, 14, 26, 24>(false),
+                headroom_scan::<10, 14, 26, 24>(true),
                 (1i128 << 23) - 1,
             ),
             (
                 "11/15/28/28",
-                headroom_scan::<11, 15, 28, 28>(false),
+                headroom_scan::<11, 15, 28, 28>(true),
                 (1i128 << 27) - 1,
             ),
             (
                 "12/16/30/32",
-                headroom_scan::<12, 16, 30, 32>(false),
+                headroom_scan::<12, 16, 30, 32>(true),
                 (1i128 << 31) - 1,
             ),
         ];
@@ -1495,29 +1510,6 @@ mod tests {
                  {limit}, so the scan never approached the rails and proves \
                  nothing.  Check the sweep covers the peaks."
             );
-        }
-    }
-
-    /// The full exhaustive headroom scan at every configuration.
-    ///
-    /// 2²² + 2²⁶ + 2²⁸ + 2³⁰ phases, about 1.4 billion. Run it after any
-    /// change to `DELTA_K`, `Q_GUARD`, [`table_scale`] or the rotation
-    /// arithmetic; the sampled version in
-    /// `headroom_holds_at_every_configuration` is the routine guard.
-    #[test]
-    #[ignore = "exhaustive: ~1.4e9 phases"]
-    fn headroom_is_exhaustive_at_every_config() {
-        for (name, (checked, over, worst)) in [
-            (
-                "8/12/22/18",
-                headroom_scan::<TBL_W, FINE_W, TOTAL_W, AMP_W>(true),
-            ),
-            ("10/14/26/24", headroom_scan::<10, 14, 26, 24>(true)),
-            ("11/15/28/28", headroom_scan::<11, 15, 28, 28>(true)),
-            ("12/16/30/32", headroom_scan::<12, 16, 30, 32>(true)),
-        ] {
-            eprintln!("{name}: {checked} components checked, worst |value| {worst}");
-            assert_eq!(over, 0, "{name}: {over} components leave the range");
         }
     }
 
