@@ -34,6 +34,21 @@ fn u(imm: u32, rd: u32, opcode: u32) -> u32 {
     (imm & 0xFFFF_F000) | (rd & 0x1F) << 7 | (opcode & 0x7F)
 }
 
+/// Encode an S-type instruction.
+///
+/// The immediate is split across two fields — `imm[11:5]` at bits 31:25
+/// and `imm[4:0]` at bits 11:7 — which is the whole reason stores want an
+/// encoder rather than being written out at the call site.
+fn s(imm: i32, rs2: u32, rs1: u32, funct3: u32, opcode: u32) -> u32 {
+    let imm_u = (imm as u32) & 0xFFF;
+    ((imm_u >> 5) & 0x7F) << 25
+        | (rs2 & 0x1F) << 20
+        | (rs1 & 0x1F) << 15
+        | (funct3 & 0x7) << 12
+        | (imm_u & 0x1F) << 7
+        | (opcode & 0x7F)
+}
+
 // Common instruction helpers (RV32I encoding shortcuts).
 
 fn addi(rd: u32, rs1: u32, imm: i32) -> u32 {
@@ -51,6 +66,11 @@ fn lui(rd: u32, imm: u32) -> u32 {
 
 fn sub(rd: u32, rs1: u32, rs2: u32) -> u32 {
     r(0x20, rs2, rs1, 0, rd, 0x33)
+}
+
+/// `sw rs2, imm(rs1)` — store word.
+fn sw(rs2: u32, rs1: u32, imm: i32) -> u32 {
+    s(imm, rs2, rs1, 2, 0x23)
 }
 
 /// Run a fixed program for `cycles` cycles and return the
@@ -135,12 +155,7 @@ fn cpu_addi_lands_in_register_file_observable_via_subsequent_arithmetic() {
     //
     // To observe the final value, we end with `sw x7, 0(x0)` so
     // the CPU drives `mem_addr = 0`, `mem_wdata = x7`, `mem_write = true`.
-    let sw_x7_at_x0 = ((0u32 >> 5) & 0x7F) << 25  // imm[11:5] = 0
-        | (7u32 & 0x1F) << 20          // rs2 = 7 (x7)
-        | (0u32 & 0x1F) << 15          // rs1 = 0 (x0)
-        | 2u32 << 12                   // funct3 = 010 (SW)
-        | (0u32 & 0x1F) << 7           // imm[4:0] = 0
-        | 0x23; // opcode = STORE
+    let sw_x7_at_x0 = sw(7, 0, 0);
     let program = vec![
         addi(1, 0, 5),   // x1 = 5
         addi(2, 0, 7),   // x2 = 7
@@ -168,12 +183,7 @@ fn cpu_addi_lands_in_register_file_observable_via_subsequent_arithmetic() {
 fn cpu_lui_stores_upper_immediate() {
     // LUI x1, 0xABCDE  ; x1 = 0xABCDE000
     // SW  x1, 0(x0)    ; observe x1 via mem_wdata
-    let sw_x1_at_x0 = ((0u32 >> 5) & 0x7F) << 25
-        | (1u32 & 0x1F) << 20
-        | (0u32 & 0x1F) << 15
-        | 2u32 << 12
-        | (0u32 & 0x1F) << 7
-        | 0x23;
+    let sw_x1_at_x0 = sw(1, 0, 0);
     let trace = run_program(vec![lui(1, 0xABCDE), sw_x1_at_x0], 5);
     let sw_cycle = trace
         .iter()
@@ -188,7 +198,7 @@ fn cpu_iverilog_round_trip() -> Result<(), RHDLError> {
     // shorter for faster simulation.
     let inputs: Vec<In> = (0..8)
         .map(|cycle| In {
-            instr: bits::<32>(addi(1, 0, cycle as i32) as u128),
+            instr: bits::<32>(addi(1, 0, cycle) as u128),
             mem_rdata: bits::<32>(0),
             int_pending: bits::<32>(0),
         })
