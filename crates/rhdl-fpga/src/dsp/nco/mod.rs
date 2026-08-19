@@ -208,6 +208,7 @@ pub mod config;
 pub mod frequency_composer;
 pub mod latency;
 pub mod model;
+pub mod modulation;
 pub mod phase_accumulator;
 pub mod phase_composer;
 pub mod ramp;

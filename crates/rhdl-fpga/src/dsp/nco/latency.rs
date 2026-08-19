@@ -89,6 +89,22 @@ pub const PHASE_CONTROL: usize = PHASE_COMPOSER + ACCUMULATOR_PHASE_OFFSET + PHA
 pub const FREQUENCY_CONTROL: usize =
     FREQUENCY_COMPOSER + ACCUMULATOR_FREQUENCY_WORD + PHASE_TO_AMPLITUDE;
 
+/// [`ModulationInput`](super::modulation::ModulationInput) — registered
+/// contribution.
+pub const MODULATION_INPUT: usize = 1;
+
+/// Cycles from a modulation *sample* to the effect appearing on
+/// `(sin, cos)`.
+///
+/// **One more than [`FREQUENCY_CONTROL`]**, because the modulation
+/// input registers before reaching the composer, where a scheduled
+/// offset is applied directly. A compensation waveform must therefore
+/// be issued one cycle earlier than a frequency offset that has to land
+/// on the same sample — the same class of asymmetry as
+/// [`FREQUENCY_LEADS_PHASE_BY`], and the reason §8.6 requires "latency
+/// from modulation input to output phase effect" to be stated.
+pub const MODULATION_CONTROL: usize = MODULATION_INPUT + FREQUENCY_CONTROL;
+
 /// How much earlier a frequency change must be issued than a phase
 /// change that has to land on the same sample.
 ///
@@ -251,5 +267,29 @@ mod tests {
         assert_eq!(PHASE_CONTROL, 2);
         assert_eq!(FREQUENCY_CONTROL, 3);
         assert_eq!(FREQUENCY_LEADS_PHASE_BY, 1);
+        assert_eq!(MODULATION_CONTROL, 4);
+    }
+
+    /// [`MODULATION_INPUT`] matches the hardware.
+    #[test]
+    fn modulation_input_latency_is_as_declared() {
+        use crate::dsp::nco::modulation::{In as ModIn, MOD_W, ModulationInput};
+        use crate::rcstream::bus::Item;
+        let uut = ModulationInput::default();
+        const STEP: usize = 4;
+        let seq: Vec<ModIn> = (0..12)
+            .map(|k| ModIn {
+                stream: Some(Item::<SignedBits<MOD_W>, ()> {
+                    data: signed::<MOD_W>(if k >= STEP { 1000 } else { 0 }),
+                    frame: (),
+                }),
+            })
+            .collect();
+        let out: Vec<u128> = uut
+            .run(seq.into_iter().with_reset(1).clock_pos_edge(100))
+            .synchronous_sample()
+            .map(|s| s.output.word.raw())
+            .collect();
+        assert_eq!(measured_latency(&out, STEP), MODULATION_INPUT);
     }
 }
