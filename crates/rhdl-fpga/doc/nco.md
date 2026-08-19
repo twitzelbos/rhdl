@@ -1,662 +1,662 @@
 
 
 <p>
-<svg viewBox="0 0 16380 380" xmlns="http://www.w3.org/2000/svg">
+<svg viewBox="0 0 16380 560" xmlns="http://www.w3.org/2000/svg">
 <defs>
 <clipPath id="clip">
-<rect height="380" width="16380" x="0" y="0"/>
+<rect height="560" width="16380" x="0" y="0"/>
 </clipPath>
 </defs>
-<rect fill="#0B151D" height="380" stroke="darkblue" width="16380" x="0" y="0"/>
-<line stroke="#333333" stroke-width="1" x1="230" x2="230" y1="0" y2="380"/>
+<rect fill="#0B151D" height="560" stroke="darkblue" width="16380" x="0" y="0"/>
+<line stroke="#333333" stroke-width="1" x1="230" x2="230" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="230" y="10">
 0
 </text>
-<line stroke="#333333" stroke-width="1" x1="330" x2="330" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="330" x2="330" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="330" y="10">
 100
 </text>
-<line stroke="#333333" stroke-width="1" x1="430" x2="430" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="430" x2="430" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="430" y="10">
 200
 </text>
-<line stroke="#333333" stroke-width="1" x1="530" x2="530" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="530" x2="530" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="530" y="10">
 300
 </text>
-<line stroke="#333333" stroke-width="1" x1="630" x2="630" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="630" x2="630" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="630" y="10">
 400
 </text>
-<line stroke="#333333" stroke-width="1" x1="730" x2="730" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="730" x2="730" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="730" y="10">
 500
 </text>
-<line stroke="#333333" stroke-width="1" x1="830" x2="830" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="830" x2="830" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="830" y="10">
 600
 </text>
-<line stroke="#333333" stroke-width="1" x1="930" x2="930" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="930" x2="930" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="930" y="10">
 700
 </text>
-<line stroke="#333333" stroke-width="1" x1="1030" x2="1030" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="1030" x2="1030" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1030" y="10">
 800
 </text>
-<line stroke="#333333" stroke-width="1" x1="1130" x2="1130" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="1130" x2="1130" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1130" y="10">
 900
 </text>
-<line stroke="#333333" stroke-width="1" x1="1230" x2="1230" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="1230" x2="1230" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1230" y="10">
 1000
 </text>
-<line stroke="#333333" stroke-width="1" x1="1330" x2="1330" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="1330" x2="1330" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1330" y="10">
 1100
 </text>
-<line stroke="#333333" stroke-width="1" x1="1430" x2="1430" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="1430" x2="1430" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1430" y="10">
 1200
 </text>
-<line stroke="#333333" stroke-width="1" x1="1530" x2="1530" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="1530" x2="1530" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1530" y="10">
 1300
 </text>
-<line stroke="#333333" stroke-width="1" x1="1630" x2="1630" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="1630" x2="1630" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1630" y="10">
 1400
 </text>
-<line stroke="#333333" stroke-width="1" x1="1730" x2="1730" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="1730" x2="1730" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1730" y="10">
 1500
 </text>
-<line stroke="#333333" stroke-width="1" x1="1830" x2="1830" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="1830" x2="1830" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1830" y="10">
 1600
 </text>
-<line stroke="#333333" stroke-width="1" x1="1930" x2="1930" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="1930" x2="1930" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1930" y="10">
 1700
 </text>
-<line stroke="#333333" stroke-width="1" x1="2030" x2="2030" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="2030" x2="2030" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2030" y="10">
 1800
 </text>
-<line stroke="#333333" stroke-width="1" x1="2130" x2="2130" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="2130" x2="2130" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2130" y="10">
 1900
 </text>
-<line stroke="#333333" stroke-width="1" x1="2230" x2="2230" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="2230" x2="2230" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2230" y="10">
 2000
 </text>
-<line stroke="#333333" stroke-width="1" x1="2330" x2="2330" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="2330" x2="2330" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2330" y="10">
 2100
 </text>
-<line stroke="#333333" stroke-width="1" x1="2430" x2="2430" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="2430" x2="2430" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2430" y="10">
 2200
 </text>
-<line stroke="#333333" stroke-width="1" x1="2530" x2="2530" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="2530" x2="2530" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2530" y="10">
 2300
 </text>
-<line stroke="#333333" stroke-width="1" x1="2630" x2="2630" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="2630" x2="2630" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2630" y="10">
 2400
 </text>
-<line stroke="#333333" stroke-width="1" x1="2730" x2="2730" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="2730" x2="2730" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2730" y="10">
 2500
 </text>
-<line stroke="#333333" stroke-width="1" x1="2830" x2="2830" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="2830" x2="2830" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2830" y="10">
 2600
 </text>
-<line stroke="#333333" stroke-width="1" x1="2930" x2="2930" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="2930" x2="2930" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2930" y="10">
 2700
 </text>
-<line stroke="#333333" stroke-width="1" x1="3030" x2="3030" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="3030" x2="3030" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3030" y="10">
 2800
 </text>
-<line stroke="#333333" stroke-width="1" x1="3130" x2="3130" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="3130" x2="3130" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3130" y="10">
 2900
 </text>
-<line stroke="#333333" stroke-width="1" x1="3230" x2="3230" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="3230" x2="3230" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3230" y="10">
 3000
 </text>
-<line stroke="#333333" stroke-width="1" x1="3330" x2="3330" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="3330" x2="3330" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3330" y="10">
 3100
 </text>
-<line stroke="#333333" stroke-width="1" x1="3430" x2="3430" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="3430" x2="3430" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3430" y="10">
 3200
 </text>
-<line stroke="#333333" stroke-width="1" x1="3530" x2="3530" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="3530" x2="3530" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3530" y="10">
 3300
 </text>
-<line stroke="#333333" stroke-width="1" x1="3630" x2="3630" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="3630" x2="3630" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3630" y="10">
 3400
 </text>
-<line stroke="#333333" stroke-width="1" x1="3730" x2="3730" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="3730" x2="3730" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3730" y="10">
 3500
 </text>
-<line stroke="#333333" stroke-width="1" x1="3830" x2="3830" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="3830" x2="3830" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3830" y="10">
 3600
 </text>
-<line stroke="#333333" stroke-width="1" x1="3930" x2="3930" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="3930" x2="3930" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3930" y="10">
 3700
 </text>
-<line stroke="#333333" stroke-width="1" x1="4030" x2="4030" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="4030" x2="4030" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4030" y="10">
 3800
 </text>
-<line stroke="#333333" stroke-width="1" x1="4130" x2="4130" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="4130" x2="4130" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4130" y="10">
 3900
 </text>
-<line stroke="#333333" stroke-width="1" x1="4230" x2="4230" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="4230" x2="4230" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4230" y="10">
 4000
 </text>
-<line stroke="#333333" stroke-width="1" x1="4330" x2="4330" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="4330" x2="4330" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4330" y="10">
 4100
 </text>
-<line stroke="#333333" stroke-width="1" x1="4430" x2="4430" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="4430" x2="4430" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4430" y="10">
 4200
 </text>
-<line stroke="#333333" stroke-width="1" x1="4530" x2="4530" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="4530" x2="4530" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4530" y="10">
 4300
 </text>
-<line stroke="#333333" stroke-width="1" x1="4630" x2="4630" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="4630" x2="4630" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4630" y="10">
 4400
 </text>
-<line stroke="#333333" stroke-width="1" x1="4730" x2="4730" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="4730" x2="4730" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4730" y="10">
 4500
 </text>
-<line stroke="#333333" stroke-width="1" x1="4830" x2="4830" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="4830" x2="4830" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4830" y="10">
 4600
 </text>
-<line stroke="#333333" stroke-width="1" x1="4930" x2="4930" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="4930" x2="4930" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4930" y="10">
 4700
 </text>
-<line stroke="#333333" stroke-width="1" x1="5030" x2="5030" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="5030" x2="5030" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5030" y="10">
 4800
 </text>
-<line stroke="#333333" stroke-width="1" x1="5130" x2="5130" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="5130" x2="5130" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5130" y="10">
 4900
 </text>
-<line stroke="#333333" stroke-width="1" x1="5230" x2="5230" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="5230" x2="5230" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5230" y="10">
 5000
 </text>
-<line stroke="#333333" stroke-width="1" x1="5330" x2="5330" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="5330" x2="5330" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5330" y="10">
 5100
 </text>
-<line stroke="#333333" stroke-width="1" x1="5430" x2="5430" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="5430" x2="5430" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5430" y="10">
 5200
 </text>
-<line stroke="#333333" stroke-width="1" x1="5530" x2="5530" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="5530" x2="5530" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5530" y="10">
 5300
 </text>
-<line stroke="#333333" stroke-width="1" x1="5630" x2="5630" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="5630" x2="5630" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5630" y="10">
 5400
 </text>
-<line stroke="#333333" stroke-width="1" x1="5730" x2="5730" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="5730" x2="5730" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5730" y="10">
 5500
 </text>
-<line stroke="#333333" stroke-width="1" x1="5830" x2="5830" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="5830" x2="5830" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5830" y="10">
 5600
 </text>
-<line stroke="#333333" stroke-width="1" x1="5930" x2="5930" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="5930" x2="5930" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5930" y="10">
 5700
 </text>
-<line stroke="#333333" stroke-width="1" x1="6030" x2="6030" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="6030" x2="6030" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6030" y="10">
 5800
 </text>
-<line stroke="#333333" stroke-width="1" x1="6130" x2="6130" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="6130" x2="6130" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6130" y="10">
 5900
 </text>
-<line stroke="#333333" stroke-width="1" x1="6230" x2="6230" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="6230" x2="6230" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6230" y="10">
 6000
 </text>
-<line stroke="#333333" stroke-width="1" x1="6330" x2="6330" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="6330" x2="6330" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6330" y="10">
 6100
 </text>
-<line stroke="#333333" stroke-width="1" x1="6430" x2="6430" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="6430" x2="6430" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6430" y="10">
 6200
 </text>
-<line stroke="#333333" stroke-width="1" x1="6530" x2="6530" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="6530" x2="6530" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6530" y="10">
 6300
 </text>
-<line stroke="#333333" stroke-width="1" x1="6630" x2="6630" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="6630" x2="6630" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6630" y="10">
 6400
 </text>
-<line stroke="#333333" stroke-width="1" x1="6730" x2="6730" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="6730" x2="6730" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6730" y="10">
 6500
 </text>
-<line stroke="#333333" stroke-width="1" x1="6830" x2="6830" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="6830" x2="6830" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6830" y="10">
 6600
 </text>
-<line stroke="#333333" stroke-width="1" x1="6930" x2="6930" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="6930" x2="6930" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6930" y="10">
 6700
 </text>
-<line stroke="#333333" stroke-width="1" x1="7030" x2="7030" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="7030" x2="7030" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7030" y="10">
 6800
 </text>
-<line stroke="#333333" stroke-width="1" x1="7130" x2="7130" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="7130" x2="7130" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7130" y="10">
 6900
 </text>
-<line stroke="#333333" stroke-width="1" x1="7230" x2="7230" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="7230" x2="7230" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7230" y="10">
 7000
 </text>
-<line stroke="#333333" stroke-width="1" x1="7330" x2="7330" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="7330" x2="7330" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7330" y="10">
 7100
 </text>
-<line stroke="#333333" stroke-width="1" x1="7430" x2="7430" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="7430" x2="7430" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7430" y="10">
 7200
 </text>
-<line stroke="#333333" stroke-width="1" x1="7530" x2="7530" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="7530" x2="7530" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7530" y="10">
 7300
 </text>
-<line stroke="#333333" stroke-width="1" x1="7630" x2="7630" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="7630" x2="7630" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7630" y="10">
 7400
 </text>
-<line stroke="#333333" stroke-width="1" x1="7730" x2="7730" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="7730" x2="7730" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7730" y="10">
 7500
 </text>
-<line stroke="#333333" stroke-width="1" x1="7830" x2="7830" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="7830" x2="7830" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7830" y="10">
 7600
 </text>
-<line stroke="#333333" stroke-width="1" x1="7930" x2="7930" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="7930" x2="7930" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7930" y="10">
 7700
 </text>
-<line stroke="#333333" stroke-width="1" x1="8030" x2="8030" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="8030" x2="8030" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8030" y="10">
 7800
 </text>
-<line stroke="#333333" stroke-width="1" x1="8130" x2="8130" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="8130" x2="8130" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8130" y="10">
 7900
 </text>
-<line stroke="#333333" stroke-width="1" x1="8230" x2="8230" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="8230" x2="8230" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8230" y="10">
 8000
 </text>
-<line stroke="#333333" stroke-width="1" x1="8330" x2="8330" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="8330" x2="8330" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8330" y="10">
 8100
 </text>
-<line stroke="#333333" stroke-width="1" x1="8430" x2="8430" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="8430" x2="8430" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8430" y="10">
 8200
 </text>
-<line stroke="#333333" stroke-width="1" x1="8530" x2="8530" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="8530" x2="8530" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8530" y="10">
 8300
 </text>
-<line stroke="#333333" stroke-width="1" x1="8630" x2="8630" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="8630" x2="8630" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8630" y="10">
 8400
 </text>
-<line stroke="#333333" stroke-width="1" x1="8730" x2="8730" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="8730" x2="8730" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8730" y="10">
 8500
 </text>
-<line stroke="#333333" stroke-width="1" x1="8830" x2="8830" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="8830" x2="8830" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8830" y="10">
 8600
 </text>
-<line stroke="#333333" stroke-width="1" x1="8930" x2="8930" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="8930" x2="8930" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8930" y="10">
 8700
 </text>
-<line stroke="#333333" stroke-width="1" x1="9030" x2="9030" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="9030" x2="9030" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9030" y="10">
 8800
 </text>
-<line stroke="#333333" stroke-width="1" x1="9130" x2="9130" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="9130" x2="9130" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9130" y="10">
 8900
 </text>
-<line stroke="#333333" stroke-width="1" x1="9230" x2="9230" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="9230" x2="9230" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9230" y="10">
 9000
 </text>
-<line stroke="#333333" stroke-width="1" x1="9330" x2="9330" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="9330" x2="9330" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9330" y="10">
 9100
 </text>
-<line stroke="#333333" stroke-width="1" x1="9430" x2="9430" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="9430" x2="9430" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9430" y="10">
 9200
 </text>
-<line stroke="#333333" stroke-width="1" x1="9530" x2="9530" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="9530" x2="9530" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9530" y="10">
 9300
 </text>
-<line stroke="#333333" stroke-width="1" x1="9630" x2="9630" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="9630" x2="9630" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9630" y="10">
 9400
 </text>
-<line stroke="#333333" stroke-width="1" x1="9730" x2="9730" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="9730" x2="9730" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9730" y="10">
 9500
 </text>
-<line stroke="#333333" stroke-width="1" x1="9830" x2="9830" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="9830" x2="9830" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9830" y="10">
 9600
 </text>
-<line stroke="#333333" stroke-width="1" x1="9930" x2="9930" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="9930" x2="9930" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9930" y="10">
 9700
 </text>
-<line stroke="#333333" stroke-width="1" x1="10030" x2="10030" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="10030" x2="10030" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10030" y="10">
 9800
 </text>
-<line stroke="#333333" stroke-width="1" x1="10130" x2="10130" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="10130" x2="10130" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10130" y="10">
 9900
 </text>
-<line stroke="#333333" stroke-width="1" x1="10230" x2="10230" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="10230" x2="10230" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10230" y="10">
 10000
 </text>
-<line stroke="#333333" stroke-width="1" x1="10330" x2="10330" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="10330" x2="10330" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10330" y="10">
 10100
 </text>
-<line stroke="#333333" stroke-width="1" x1="10430" x2="10430" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="10430" x2="10430" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10430" y="10">
 10200
 </text>
-<line stroke="#333333" stroke-width="1" x1="10530" x2="10530" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="10530" x2="10530" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10530" y="10">
 10300
 </text>
-<line stroke="#333333" stroke-width="1" x1="10630" x2="10630" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="10630" x2="10630" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10630" y="10">
 10400
 </text>
-<line stroke="#333333" stroke-width="1" x1="10730" x2="10730" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="10730" x2="10730" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10730" y="10">
 10500
 </text>
-<line stroke="#333333" stroke-width="1" x1="10830" x2="10830" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="10830" x2="10830" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10830" y="10">
 10600
 </text>
-<line stroke="#333333" stroke-width="1" x1="10930" x2="10930" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="10930" x2="10930" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10930" y="10">
 10700
 </text>
-<line stroke="#333333" stroke-width="1" x1="11030" x2="11030" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="11030" x2="11030" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11030" y="10">
 10800
 </text>
-<line stroke="#333333" stroke-width="1" x1="11130" x2="11130" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="11130" x2="11130" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11130" y="10">
 10900
 </text>
-<line stroke="#333333" stroke-width="1" x1="11230" x2="11230" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="11230" x2="11230" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11230" y="10">
 11000
 </text>
-<line stroke="#333333" stroke-width="1" x1="11330" x2="11330" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="11330" x2="11330" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11330" y="10">
 11100
 </text>
-<line stroke="#333333" stroke-width="1" x1="11430" x2="11430" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="11430" x2="11430" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11430" y="10">
 11200
 </text>
-<line stroke="#333333" stroke-width="1" x1="11530" x2="11530" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="11530" x2="11530" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11530" y="10">
 11300
 </text>
-<line stroke="#333333" stroke-width="1" x1="11630" x2="11630" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="11630" x2="11630" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11630" y="10">
 11400
 </text>
-<line stroke="#333333" stroke-width="1" x1="11730" x2="11730" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="11730" x2="11730" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11730" y="10">
 11500
 </text>
-<line stroke="#333333" stroke-width="1" x1="11830" x2="11830" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="11830" x2="11830" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11830" y="10">
 11600
 </text>
-<line stroke="#333333" stroke-width="1" x1="11930" x2="11930" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="11930" x2="11930" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11930" y="10">
 11700
 </text>
-<line stroke="#333333" stroke-width="1" x1="12030" x2="12030" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="12030" x2="12030" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12030" y="10">
 11800
 </text>
-<line stroke="#333333" stroke-width="1" x1="12130" x2="12130" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="12130" x2="12130" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12130" y="10">
 11900
 </text>
-<line stroke="#333333" stroke-width="1" x1="12230" x2="12230" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="12230" x2="12230" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12230" y="10">
 12000
 </text>
-<line stroke="#333333" stroke-width="1" x1="12330" x2="12330" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="12330" x2="12330" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12330" y="10">
 12100
 </text>
-<line stroke="#333333" stroke-width="1" x1="12430" x2="12430" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="12430" x2="12430" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12430" y="10">
 12200
 </text>
-<line stroke="#333333" stroke-width="1" x1="12530" x2="12530" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="12530" x2="12530" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12530" y="10">
 12300
 </text>
-<line stroke="#333333" stroke-width="1" x1="12630" x2="12630" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="12630" x2="12630" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12630" y="10">
 12400
 </text>
-<line stroke="#333333" stroke-width="1" x1="12730" x2="12730" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="12730" x2="12730" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12730" y="10">
 12500
 </text>
-<line stroke="#333333" stroke-width="1" x1="12830" x2="12830" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="12830" x2="12830" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12830" y="10">
 12600
 </text>
-<line stroke="#333333" stroke-width="1" x1="12930" x2="12930" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="12930" x2="12930" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12930" y="10">
 12700
 </text>
-<line stroke="#333333" stroke-width="1" x1="13030" x2="13030" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="13030" x2="13030" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13030" y="10">
 12800
 </text>
-<line stroke="#333333" stroke-width="1" x1="13130" x2="13130" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="13130" x2="13130" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13130" y="10">
 12900
 </text>
-<line stroke="#333333" stroke-width="1" x1="13230" x2="13230" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="13230" x2="13230" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13230" y="10">
 13000
 </text>
-<line stroke="#333333" stroke-width="1" x1="13330" x2="13330" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="13330" x2="13330" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13330" y="10">
 13100
 </text>
-<line stroke="#333333" stroke-width="1" x1="13430" x2="13430" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="13430" x2="13430" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13430" y="10">
 13200
 </text>
-<line stroke="#333333" stroke-width="1" x1="13530" x2="13530" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="13530" x2="13530" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13530" y="10">
 13300
 </text>
-<line stroke="#333333" stroke-width="1" x1="13630" x2="13630" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="13630" x2="13630" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13630" y="10">
 13400
 </text>
-<line stroke="#333333" stroke-width="1" x1="13730" x2="13730" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="13730" x2="13730" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13730" y="10">
 13500
 </text>
-<line stroke="#333333" stroke-width="1" x1="13830" x2="13830" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="13830" x2="13830" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13830" y="10">
 13600
 </text>
-<line stroke="#333333" stroke-width="1" x1="13930" x2="13930" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="13930" x2="13930" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13930" y="10">
 13700
 </text>
-<line stroke="#333333" stroke-width="1" x1="14030" x2="14030" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="14030" x2="14030" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14030" y="10">
 13800
 </text>
-<line stroke="#333333" stroke-width="1" x1="14130" x2="14130" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="14130" x2="14130" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14130" y="10">
 13900
 </text>
-<line stroke="#333333" stroke-width="1" x1="14230" x2="14230" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="14230" x2="14230" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14230" y="10">
 14000
 </text>
-<line stroke="#333333" stroke-width="1" x1="14330" x2="14330" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="14330" x2="14330" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14330" y="10">
 14100
 </text>
-<line stroke="#333333" stroke-width="1" x1="14430" x2="14430" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="14430" x2="14430" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14430" y="10">
 14200
 </text>
-<line stroke="#333333" stroke-width="1" x1="14530" x2="14530" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="14530" x2="14530" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14530" y="10">
 14300
 </text>
-<line stroke="#333333" stroke-width="1" x1="14630" x2="14630" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="14630" x2="14630" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14630" y="10">
 14400
 </text>
-<line stroke="#333333" stroke-width="1" x1="14730" x2="14730" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="14730" x2="14730" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14730" y="10">
 14500
 </text>
-<line stroke="#333333" stroke-width="1" x1="14830" x2="14830" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="14830" x2="14830" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14830" y="10">
 14600
 </text>
-<line stroke="#333333" stroke-width="1" x1="14930" x2="14930" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="14930" x2="14930" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14930" y="10">
 14700
 </text>
-<line stroke="#333333" stroke-width="1" x1="15030" x2="15030" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="15030" x2="15030" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15030" y="10">
 14800
 </text>
-<line stroke="#333333" stroke-width="1" x1="15130" x2="15130" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="15130" x2="15130" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15130" y="10">
 14900
 </text>
-<line stroke="#333333" stroke-width="1" x1="15230" x2="15230" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="15230" x2="15230" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15230" y="10">
 15000
 </text>
-<line stroke="#333333" stroke-width="1" x1="15330" x2="15330" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="15330" x2="15330" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15330" y="10">
 15100
 </text>
-<line stroke="#333333" stroke-width="1" x1="15430" x2="15430" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="15430" x2="15430" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15430" y="10">
 15200
 </text>
-<line stroke="#333333" stroke-width="1" x1="15530" x2="15530" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="15530" x2="15530" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15530" y="10">
 15300
 </text>
-<line stroke="#333333" stroke-width="1" x1="15630" x2="15630" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="15630" x2="15630" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15630" y="10">
 15400
 </text>
-<line stroke="#333333" stroke-width="1" x1="15730" x2="15730" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="15730" x2="15730" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15730" y="10">
 15500
 </text>
-<line stroke="#333333" stroke-width="1" x1="15830" x2="15830" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="15830" x2="15830" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15830" y="10">
 15600
 </text>
-<line stroke="#333333" stroke-width="1" x1="15930" x2="15930" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="15930" x2="15930" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15930" y="10">
 15700
 </text>
-<line stroke="#333333" stroke-width="1" x1="16030" x2="16030" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="16030" x2="16030" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16030" y="10">
 15800
 </text>
-<line stroke="#333333" stroke-width="1" x1="16130" x2="16130" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="16130" x2="16130" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16130" y="10">
 15900
 </text>
-<line stroke="#333333" stroke-width="1" x1="16230" x2="16230" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="16230" x2="16230" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16230" y="10">
 16000
 </text>
-<line stroke="#333333" stroke-width="1" x1="16330" x2="16330" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="16330" x2="16330" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16330" y="10">
 16100
 </text>
-<line stroke="#333333" stroke-width="1" x1="16430" x2="16430" y1="0" y2="380"/>
+<line stroke="#333333" stroke-width="1" x1="16430" x2="16430" y1="0" y2="560"/>
 <text clip-path="url(#clip)" dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="end" x="16430" y="10">
 16200
 </text>
@@ -1158,22 +1158,22 @@ Time:
 <path d="M 230 50 L 233 43 L 278 43 L 281 50 L 278 57 L 233 57 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="255" xml:space="preserve" y="50">
 {f...
-<title>{frequency: {master: 000000000000, scheduled_offset: 000000000000, modulation: 000000000000, calibration: 000000000000}, phase: {pulse: 000000000000, frame: 000000000000, calibration: 000000000000, fine_time: 000000000000, trim: 000000000000}}</title>
+<title>{frequency: {master: 000000000000, scheduled_offset: 000000000000, modulation: 000000000000, calibration: 000000000000}, phase: {pulse: 000000000000, frame: 000000000000, calibration: 000000000000, fine_time: 000000000000, trim: 000000000000}, downstream_ready: 0}</title>
 </text>
 <path d="M 281 50 L 284 43 L 6678 43 L 6681 50 L 6678 57 L 284 57 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3481" xml:space="preserve" y="50">
-{frequency: {master: 040000000000, scheduled_offset: 000000000000, modulation: 000000000000, calibration: 000000000000}, phase: {pulse: 000000000000, frame: 000000000000, calibration: 000000000000, fine_time: 000000000000, trim: 000000000000}}
-<title>{frequency: {master: 040000000000, scheduled_offset: 000000000000, modulation: 000000000000, calibration: 000000000000}, phase: {pulse: 000000000000, frame: 000000000000, calibration: 000000000000, fine_time: 000000000000, trim: 000000000000}}</title>
+{frequency: {master: 040000000000, scheduled_offset: 000000000000, modulation: 000000000000, calibration: 000000000000}, phase: {pulse: 000000000000, frame: 000000000000, calibration: 000000000000, fine_time: 000000000000, trim: 000000000000}, downstream_ready: 1}
+<title>{frequency: {master: 040000000000, scheduled_offset: 000000000000, modulation: 000000000000, calibration: 000000000000}, phase: {pulse: 000000000000, frame: 000000000000, calibration: 000000000000, fine_time: 000000000000, trim: 000000000000}, downstream_ready: 1}</title>
 </text>
 <path d="M 6681 50 L 6684 43 L 11478 43 L 11481 50 L 11478 57 L 6684 57 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9081" xml:space="preserve" y="50">
-{frequency: {master: 040000000000, scheduled_offset: 000000000000, modulation: 000000000000, calibration: 000000000000}, phase: {pulse: 800000000000, frame: 000000000000, calibration: 000000000000, fine_time: 000000000000, trim: 000000000000}}
-<title>{frequency: {master: 040000000000, scheduled_offset: 000000000000, modulation: 000000000000, calibration: 000000000000}, phase: {pulse: 800000000000, frame: 000000000000, calibration: 000000000000, fine_time: 000000000000, trim: 000000000000}}</title>
+{frequency: {master: 040000000000, scheduled_offset: 000000000000, modulation: 000000000000, calibration: 000000000000}, phase: {pulse: 800000000000, frame: 000000000000, calibration: 000000000000, fine_time: 000000000000, trim: 000000000000}, downstream_ready: 1}
+<title>{frequency: {master: 040000000000, scheduled_offset: 000000000000, modulation: 000000000000, calibration: 000000000000}, phase: {pulse: 800000000000, frame: 000000000000, calibration: 000000000000, fine_time: 000000000000, trim: 000000000000}, downstream_ready: 1}</title>
 </text>
 <path d="M 11481 50 L 11484 43 L 16377 43 L 16380 50 L 16377 57 L 11484 57 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13930" xml:space="preserve" y="50">
-{frequency: {master: 040000000000, scheduled_offset: 000000000000, modulation: 000000000000, calibration: 000000000000}, phase: {pulse: 000000000000, frame: 000000000000, calibration: 000000000000, fine_time: 000000000000, trim: 000000000000}}
-<title>{frequency: {master: 040000000000, scheduled_offset: 000000000000, modulation: 000000000000, calibration: 000000000000}, phase: {pulse: 000000000000, frame: 000000000000, calibration: 000000000000, fine_time: 000000000000, trim: 000000000000}}</title>
+{frequency: {master: 040000000000, scheduled_offset: 000000000000, modulation: 000000000000, calibration: 000000000000}, phase: {pulse: 000000000000, frame: 000000000000, calibration: 000000000000, fine_time: 000000000000, trim: 000000000000}, downstream_ready: 1}
+<title>{frequency: {master: 040000000000, scheduled_offset: 000000000000, modulation: 000000000000, calibration: 000000000000}, phase: {pulse: 000000000000, frame: 000000000000, calibration: 000000000000, fine_time: 000000000000, trim: 000000000000}, downstream_ready: 1}</title>
 </text>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="start" x="3" xml:space="preserve" y="70">
    .frequency
@@ -1305,3232 +1305,6479 @@ Time:
 <title>000000000000</title>
 </text>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="start" x="3" xml:space="preserve" y="290">
+   .downstream_ready
+<title>top.input.downstream_ready</title>
+</text>
+<path d="M 230 290 L 230 297 L 281 297 L 281 290" fill="none" stroke="#56C126" stroke-width="1"/>
+<rect fill="#1C400C" height="14" stroke="none" width="16097" x="282" y="283"/>
+<path d="M 281 290 L 281 283 L 16380 283 L 16380 290" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="start" x="3" xml:space="preserve" y="310">
 .outputs
 <title>top.outputs</title>
 </text>
-<path d="M 230 290 L 233 283 L 277 283 L 280 290 L 277 297 L 233 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="255" xml:space="preserve" y="290">
-{s...
-<title>{sin: 0, cos: 0, master: 000000000000}</title>
-</text>
-<path d="M 280 290 L 283 283 L 477 283 L 480 290 L 477 297 L 283 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="380" xml:space="preserve" y="290">
-{sin: -1, cos: 13...
-<title>{sin: -1, cos: 131071, master: 000000000000}</title>
-</text>
-<path d="M 480 290 L 483 283 L 577 283 L 580 290 L 577 297 L 483 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="530" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -1, cos: 131071, master: 040000000000}</title>
-</text>
-<path d="M 580 290 L 583 283 L 677 283 L 680 290 L 677 297 L 583 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="630" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 12846, cos: 130440, master: 080000000000}</title>
-</text>
-<path d="M 680 290 L 683 283 L 777 283 L 780 290 L 777 297 L 683 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="730" xml:space="preserve" y="290">
-{sin: 2...
-<title>{sin: 25570, cos: 128552, master: 0c0000000000}</title>
-</text>
-<path d="M 780 290 L 783 283 L 877 283 L 880 290 L 877 297 L 783 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="830" xml:space="preserve" y="290">
-{sin: 3...
-<title>{sin: 38047, cos: 125427, master: 100000000000}</title>
-</text>
-<path d="M 880 290 L 883 283 L 977 283 L 980 290 L 977 297 L 883 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="930" xml:space="preserve" y="290">
-{sin: 5...
-<title>{sin: 50158, cos: 121094, master: 140000000000}</title>
-</text>
-<path d="M 980 290 L 983 283 L 1077 283 L 1080 290 L 1077 297 L 983 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1030" xml:space="preserve" y="290">
-{sin: 6...
-<title>{sin: 61785, cos: 115594, master: 180000000000}</title>
-</text>
-<path d="M 1080 290 L 1083 283 L 1177 283 L 1180 290 L 1177 297 L 1083 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1130" xml:space="preserve" y="290">
-{sin: 7...
-<title>{sin: 72819, cos: 108982, master: 1c0000000000}</title>
-</text>
-<path d="M 1180 290 L 1183 283 L 1277 283 L 1280 290 L 1277 297 L 1183 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1230" xml:space="preserve" y="290">
-{sin: 8...
-<title>{sin: 83149, cos: 101320, master: 200000000000}</title>
-</text>
-<path d="M 1280 290 L 1283 283 L 1377 283 L 1380 290 L 1377 297 L 1283 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1330" xml:space="preserve" y="290">
-{sin: 9...
-<title>{sin: 92680, cos: 92682, master: 240000000000}</title>
-</text>
-<path d="M 1380 290 L 1383 283 L 1477 283 L 1480 290 L 1477 297 L 1383 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1430" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 101318, cos: 83151, master: 280000000000}</title>
-</text>
-<path d="M 1480 290 L 1483 283 L 1577 283 L 1580 290 L 1577 297 L 1483 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1530" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 108981, cos: 72820, master: 2c0000000000}</title>
-</text>
-<path d="M 1580 290 L 1583 283 L 1677 283 L 1680 290 L 1677 297 L 1583 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1630" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 115593, cos: 61787, master: 300000000000}</title>
-</text>
-<path d="M 1680 290 L 1683 283 L 1777 283 L 1780 290 L 1777 297 L 1683 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1730" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 121093, cos: 50159, master: 340000000000}</title>
-</text>
-<path d="M 1780 290 L 1783 283 L 1877 283 L 1880 290 L 1877 297 L 1783 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1830" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 125426, cos: 38049, master: 380000000000}</title>
-</text>
-<path d="M 1880 290 L 1883 283 L 1977 283 L 1980 290 L 1977 297 L 1883 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1930" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 128551, cos: 25571, master: 3c0000000000}</title>
-</text>
-<path d="M 1980 290 L 1983 283 L 2077 283 L 2080 290 L 2077 297 L 1983 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2030" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 130439, cos: 12848, master: 400000000000}</title>
-</text>
-<path d="M 2080 290 L 2083 283 L 2177 283 L 2180 290 L 2177 297 L 2083 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2130" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 131070, cos: 1, master: 440000000000}</title>
-</text>
-<path d="M 2180 290 L 2183 283 L 2277 283 L 2280 290 L 2277 297 L 2183 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2230" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 130439, cos: -12846, master: 480000000000}</title>
-</text>
-<path d="M 2280 290 L 2283 283 L 2377 283 L 2380 290 L 2377 297 L 2283 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2330" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 128551, cos: -25570, master: 4c0000000000}</title>
-</text>
-<path d="M 2380 290 L 2383 283 L 2477 283 L 2480 290 L 2477 297 L 2383 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2430" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 125426, cos: -38047, master: 500000000000}</title>
-</text>
-<path d="M 2480 290 L 2483 283 L 2577 283 L 2580 290 L 2577 297 L 2483 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2530" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 121093, cos: -50158, master: 540000000000}</title>
-</text>
-<path d="M 2580 290 L 2583 283 L 2677 283 L 2680 290 L 2677 297 L 2583 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2630" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 115593, cos: -61785, master: 580000000000}</title>
-</text>
-<path d="M 2680 290 L 2683 283 L 2777 283 L 2780 290 L 2777 297 L 2683 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2730" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 108981, cos: -72819, master: 5c0000000000}</title>
-</text>
-<path d="M 2780 290 L 2783 283 L 2877 283 L 2880 290 L 2877 297 L 2783 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2830" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 101319, cos: -83149, master: 600000000000}</title>
-</text>
-<path d="M 2880 290 L 2883 283 L 2977 283 L 2980 290 L 2977 297 L 2883 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2930" xml:space="preserve" y="290">
-{sin: 9...
-<title>{sin: 92681, cos: -92680, master: 640000000000}</title>
-</text>
-<path d="M 2980 290 L 2983 283 L 3077 283 L 3080 290 L 3077 297 L 2983 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3030" xml:space="preserve" y="290">
-{sin: 8...
-<title>{sin: 83150, cos: -101318, master: 680000000000}</title>
-</text>
-<path d="M 3080 290 L 3083 283 L 3177 283 L 3180 290 L 3177 297 L 3083 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3130" xml:space="preserve" y="290">
-{sin: 7...
-<title>{sin: 72819, cos: -108981, master: 6c0000000000}</title>
-</text>
-<path d="M 3180 290 L 3183 283 L 3277 283 L 3280 290 L 3277 297 L 3183 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3230" xml:space="preserve" y="290">
-{sin: 6...
-<title>{sin: 61786, cos: -115593, master: 700000000000}</title>
-</text>
-<path d="M 3280 290 L 3283 283 L 3377 283 L 3380 290 L 3377 297 L 3283 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3330" xml:space="preserve" y="290">
-{sin: 5...
-<title>{sin: 50158, cos: -121093, master: 740000000000}</title>
-</text>
-<path d="M 3380 290 L 3383 283 L 3477 283 L 3480 290 L 3477 297 L 3383 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3430" xml:space="preserve" y="290">
-{sin: 3...
-<title>{sin: 38048, cos: -125426, master: 780000000000}</title>
-</text>
-<path d="M 3480 290 L 3483 283 L 3577 283 L 3580 290 L 3577 297 L 3483 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3530" xml:space="preserve" y="290">
-{sin: 2...
-<title>{sin: 25570, cos: -128551, master: 7c0000000000}</title>
-</text>
-<path d="M 3580 290 L 3583 283 L 3677 283 L 3680 290 L 3677 297 L 3583 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3630" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 12847, cos: -130439, master: 800000000000}</title>
-</text>
-<path d="M 3680 290 L 3683 283 L 3777 283 L 3780 290 L 3777 297 L 3683 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3730" xml:space="preserve" y="290">
-{sin: 0...
-<title>{sin: 0, cos: -131070, master: 840000000000}</title>
-</text>
-<path d="M 3780 290 L 3783 283 L 3877 283 L 3880 290 L 3877 297 L 3783 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3830" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -12847, cos: -130439, master: 880000000000}</title>
-</text>
-<path d="M 3880 290 L 3883 283 L 3977 283 L 3980 290 L 3977 297 L 3883 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3930" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -25571, cos: -128551, master: 8c0000000000}</title>
-</text>
-<path d="M 3980 290 L 3983 283 L 4077 283 L 4080 290 L 4077 297 L 3983 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4030" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -38048, cos: -125426, master: 900000000000}</title>
-</text>
-<path d="M 4080 290 L 4083 283 L 4177 283 L 4180 290 L 4177 297 L 4083 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4130" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -50159, cos: -121093, master: 940000000000}</title>
-</text>
-<path d="M 4180 290 L 4183 283 L 4277 283 L 4280 290 L 4277 297 L 4183 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4230" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -61786, cos: -115593, master: 980000000000}</title>
-</text>
-<path d="M 4280 290 L 4283 283 L 4377 283 L 4380 290 L 4377 297 L 4283 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4330" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -72820, cos: -108981, master: 9c0000000000}</title>
-</text>
-<path d="M 4380 290 L 4383 283 L 4477 283 L 4480 290 L 4477 297 L 4383 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4430" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -83150, cos: -101319, master: a00000000000}</title>
-</text>
-<path d="M 4480 290 L 4483 283 L 4577 283 L 4580 290 L 4577 297 L 4483 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4530" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -92681, cos: -92681, master: a40000000000}</title>
-</text>
-<path d="M 4580 290 L 4583 283 L 4677 283 L 4680 290 L 4677 297 L 4583 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4630" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -101319, cos: -83150, master: a80000000000}</title>
-</text>
-<path d="M 4680 290 L 4683 283 L 4777 283 L 4780 290 L 4777 297 L 4683 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4730" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -108982, cos: -72819, master: ac0000000000}</title>
-</text>
-<path d="M 4780 290 L 4783 283 L 4877 283 L 4880 290 L 4877 297 L 4783 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4830" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -115594, cos: -61786, master: b00000000000}</title>
-</text>
-<path d="M 4880 290 L 4883 283 L 4977 283 L 4980 290 L 4977 297 L 4883 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4930" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -121094, cos: -50158, master: b40000000000}</title>
-</text>
-<path d="M 4980 290 L 4983 283 L 5077 283 L 5080 290 L 5077 297 L 4983 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5030" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -125427, cos: -38048, master: b80000000000}</title>
-</text>
-<path d="M 5080 290 L 5083 283 L 5177 283 L 5180 290 L 5177 297 L 5083 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5130" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -128552, cos: -25570, master: bc0000000000}</title>
-</text>
-<path d="M 5180 290 L 5183 283 L 5277 283 L 5280 290 L 5277 297 L 5183 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5230" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -130440, cos: -12847, master: c00000000000}</title>
-</text>
-<path d="M 5280 290 L 5283 283 L 5377 283 L 5380 290 L 5377 297 L 5283 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5330" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -131071, cos: 0, master: c40000000000}</title>
-</text>
-<path d="M 5380 290 L 5383 283 L 5477 283 L 5480 290 L 5477 297 L 5383 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5430" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -130440, cos: 12847, master: c80000000000}</title>
-</text>
-<path d="M 5480 290 L 5483 283 L 5577 283 L 5580 290 L 5577 297 L 5483 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5530" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -128552, cos: 25571, master: cc0000000000}</title>
-</text>
-<path d="M 5580 290 L 5583 283 L 5677 283 L 5680 290 L 5677 297 L 5583 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5630" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -125427, cos: 38048, master: d00000000000}</title>
-</text>
-<path d="M 5680 290 L 5683 283 L 5777 283 L 5780 290 L 5777 297 L 5683 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5730" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -121094, cos: 50159, master: d40000000000}</title>
-</text>
-<path d="M 5780 290 L 5783 283 L 5877 283 L 5880 290 L 5877 297 L 5783 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5830" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -115594, cos: 61786, master: d80000000000}</title>
-</text>
-<path d="M 5880 290 L 5883 283 L 5977 283 L 5980 290 L 5977 297 L 5883 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5930" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -108982, cos: 72820, master: dc0000000000}</title>
-</text>
-<path d="M 5980 290 L 5983 283 L 6077 283 L 6080 290 L 6077 297 L 5983 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6030" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -101320, cos: 83150, master: e00000000000}</title>
-</text>
-<path d="M 6080 290 L 6083 283 L 6177 283 L 6180 290 L 6177 297 L 6083 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6130" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -92682, cos: 92681, master: e40000000000}</title>
-</text>
-<path d="M 6180 290 L 6183 283 L 6277 283 L 6280 290 L 6277 297 L 6183 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6230" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -83151, cos: 101319, master: e80000000000}</title>
-</text>
-<path d="M 6280 290 L 6283 283 L 6377 283 L 6380 290 L 6377 297 L 6283 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6330" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -72820, cos: 108982, master: ec0000000000}</title>
-</text>
-<path d="M 6380 290 L 6383 283 L 6477 283 L 6480 290 L 6477 297 L 6383 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6430" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -61787, cos: 115594, master: f00000000000}</title>
-</text>
-<path d="M 6480 290 L 6483 283 L 6577 283 L 6580 290 L 6577 297 L 6483 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6530" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -50159, cos: 121094, master: f40000000000}</title>
-</text>
-<path d="M 6580 290 L 6583 283 L 6677 283 L 6680 290 L 6677 297 L 6583 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6630" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -38049, cos: 125427, master: f80000000000}</title>
-</text>
-<path d="M 6680 290 L 6683 283 L 6777 283 L 6780 290 L 6777 297 L 6683 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6730" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -25571, cos: 128552, master: fc0000000000}</title>
-</text>
-<path d="M 6780 290 L 6783 283 L 6877 283 L 6880 290 L 6877 297 L 6783 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6830" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -12848, cos: 130440, master: 000000000000}</title>
-</text>
-<path d="M 6880 290 L 6883 283 L 6977 283 L 6980 290 L 6977 297 L 6883 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6930" xml:space="preserve" y="290">
-{sin: 0...
-<title>{sin: 0, cos: -131070, master: 040000000000}</title>
-</text>
-<path d="M 6980 290 L 6983 283 L 7077 283 L 7080 290 L 7077 297 L 6983 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7030" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -12847, cos: -130439, master: 080000000000}</title>
-</text>
-<path d="M 7080 290 L 7083 283 L 7177 283 L 7180 290 L 7177 297 L 7083 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7130" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -25571, cos: -128551, master: 0c0000000000}</title>
-</text>
-<path d="M 7180 290 L 7183 283 L 7277 283 L 7280 290 L 7277 297 L 7183 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7230" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -38048, cos: -125426, master: 100000000000}</title>
-</text>
-<path d="M 7280 290 L 7283 283 L 7377 283 L 7380 290 L 7377 297 L 7283 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7330" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -50159, cos: -121093, master: 140000000000}</title>
-</text>
-<path d="M 7380 290 L 7383 283 L 7477 283 L 7480 290 L 7477 297 L 7383 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7430" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -61786, cos: -115593, master: 180000000000}</title>
-</text>
-<path d="M 7480 290 L 7483 283 L 7577 283 L 7580 290 L 7577 297 L 7483 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7530" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -72820, cos: -108981, master: 1c0000000000}</title>
-</text>
-<path d="M 7580 290 L 7583 283 L 7677 283 L 7680 290 L 7677 297 L 7583 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7630" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -83150, cos: -101319, master: 200000000000}</title>
-</text>
-<path d="M 7680 290 L 7683 283 L 7777 283 L 7780 290 L 7777 297 L 7683 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7730" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -92681, cos: -92681, master: 240000000000}</title>
-</text>
-<path d="M 7780 290 L 7783 283 L 7877 283 L 7880 290 L 7877 297 L 7783 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7830" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -101319, cos: -83150, master: 280000000000}</title>
-</text>
-<path d="M 7880 290 L 7883 283 L 7977 283 L 7980 290 L 7977 297 L 7883 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7930" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -108982, cos: -72819, master: 2c0000000000}</title>
-</text>
-<path d="M 7980 290 L 7983 283 L 8077 283 L 8080 290 L 8077 297 L 7983 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8030" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -115594, cos: -61786, master: 300000000000}</title>
-</text>
-<path d="M 8080 290 L 8083 283 L 8177 283 L 8180 290 L 8177 297 L 8083 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8130" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -121094, cos: -50158, master: 340000000000}</title>
-</text>
-<path d="M 8180 290 L 8183 283 L 8277 283 L 8280 290 L 8277 297 L 8183 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8230" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -125427, cos: -38048, master: 380000000000}</title>
-</text>
-<path d="M 8280 290 L 8283 283 L 8377 283 L 8380 290 L 8377 297 L 8283 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8330" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -128552, cos: -25570, master: 3c0000000000}</title>
-</text>
-<path d="M 8380 290 L 8383 283 L 8477 283 L 8480 290 L 8477 297 L 8383 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8430" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -130440, cos: -12847, master: 400000000000}</title>
-</text>
-<path d="M 8480 290 L 8483 283 L 8577 283 L 8580 290 L 8577 297 L 8483 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8530" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -131071, cos: 0, master: 440000000000}</title>
-</text>
-<path d="M 8580 290 L 8583 283 L 8677 283 L 8680 290 L 8677 297 L 8583 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8630" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -130440, cos: 12847, master: 480000000000}</title>
-</text>
-<path d="M 8680 290 L 8683 283 L 8777 283 L 8780 290 L 8777 297 L 8683 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8730" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -128552, cos: 25571, master: 4c0000000000}</title>
-</text>
-<path d="M 8780 290 L 8783 283 L 8877 283 L 8880 290 L 8877 297 L 8783 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8830" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -125427, cos: 38048, master: 500000000000}</title>
-</text>
-<path d="M 8880 290 L 8883 283 L 8977 283 L 8980 290 L 8977 297 L 8883 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8930" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -121094, cos: 50159, master: 540000000000}</title>
-</text>
-<path d="M 8980 290 L 8983 283 L 9077 283 L 9080 290 L 9077 297 L 8983 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9030" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -115594, cos: 61786, master: 580000000000}</title>
-</text>
-<path d="M 9080 290 L 9083 283 L 9177 283 L 9180 290 L 9177 297 L 9083 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9130" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -108982, cos: 72820, master: 5c0000000000}</title>
-</text>
-<path d="M 9180 290 L 9183 283 L 9277 283 L 9280 290 L 9277 297 L 9183 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9230" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -101320, cos: 83150, master: 600000000000}</title>
-</text>
-<path d="M 9280 290 L 9283 283 L 9377 283 L 9380 290 L 9377 297 L 9283 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9330" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -92682, cos: 92681, master: 640000000000}</title>
-</text>
-<path d="M 9380 290 L 9383 283 L 9477 283 L 9480 290 L 9477 297 L 9383 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9430" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -83151, cos: 101319, master: 680000000000}</title>
-</text>
-<path d="M 9480 290 L 9483 283 L 9577 283 L 9580 290 L 9577 297 L 9483 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9530" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -72820, cos: 108982, master: 6c0000000000}</title>
-</text>
-<path d="M 9580 290 L 9583 283 L 9677 283 L 9680 290 L 9677 297 L 9583 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9630" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -61787, cos: 115594, master: 700000000000}</title>
-</text>
-<path d="M 9680 290 L 9683 283 L 9777 283 L 9780 290 L 9777 297 L 9683 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9730" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -50159, cos: 121094, master: 740000000000}</title>
-</text>
-<path d="M 9780 290 L 9783 283 L 9877 283 L 9880 290 L 9877 297 L 9783 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9830" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -38049, cos: 125427, master: 780000000000}</title>
-</text>
-<path d="M 9880 290 L 9883 283 L 9977 283 L 9980 290 L 9977 297 L 9883 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9930" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -25571, cos: 128552, master: 7c0000000000}</title>
-</text>
-<path d="M 9980 290 L 9983 283 L 10077 283 L 10080 290 L 10077 297 L 9983 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10030" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -12848, cos: 130440, master: 800000000000}</title>
-</text>
-<path d="M 10080 290 L 10083 283 L 10177 283 L 10180 290 L 10177 297 L 10083 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10130" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -1, cos: 131071, master: 840000000000}</title>
-</text>
-<path d="M 10180 290 L 10183 283 L 10277 283 L 10280 290 L 10277 297 L 10183 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10230" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 12846, cos: 130440, master: 880000000000}</title>
-</text>
-<path d="M 10280 290 L 10283 283 L 10377 283 L 10380 290 L 10377 297 L 10283 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10330" xml:space="preserve" y="290">
-{sin: 2...
-<title>{sin: 25570, cos: 128552, master: 8c0000000000}</title>
-</text>
-<path d="M 10380 290 L 10383 283 L 10477 283 L 10480 290 L 10477 297 L 10383 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10430" xml:space="preserve" y="290">
-{sin: 3...
-<title>{sin: 38047, cos: 125427, master: 900000000000}</title>
-</text>
-<path d="M 10480 290 L 10483 283 L 10577 283 L 10580 290 L 10577 297 L 10483 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10530" xml:space="preserve" y="290">
-{sin: 5...
-<title>{sin: 50158, cos: 121094, master: 940000000000}</title>
-</text>
-<path d="M 10580 290 L 10583 283 L 10677 283 L 10680 290 L 10677 297 L 10583 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10630" xml:space="preserve" y="290">
-{sin: 6...
-<title>{sin: 61785, cos: 115594, master: 980000000000}</title>
-</text>
-<path d="M 10680 290 L 10683 283 L 10777 283 L 10780 290 L 10777 297 L 10683 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10730" xml:space="preserve" y="290">
-{sin: 7...
-<title>{sin: 72819, cos: 108982, master: 9c0000000000}</title>
-</text>
-<path d="M 10780 290 L 10783 283 L 10877 283 L 10880 290 L 10877 297 L 10783 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10830" xml:space="preserve" y="290">
-{sin: 8...
-<title>{sin: 83149, cos: 101320, master: a00000000000}</title>
-</text>
-<path d="M 10880 290 L 10883 283 L 10977 283 L 10980 290 L 10977 297 L 10883 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10930" xml:space="preserve" y="290">
-{sin: 9...
-<title>{sin: 92680, cos: 92682, master: a40000000000}</title>
-</text>
-<path d="M 10980 290 L 10983 283 L 11077 283 L 11080 290 L 11077 297 L 10983 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11030" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 101318, cos: 83151, master: a80000000000}</title>
-</text>
-<path d="M 11080 290 L 11083 283 L 11177 283 L 11180 290 L 11177 297 L 11083 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11130" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 108981, cos: 72820, master: ac0000000000}</title>
-</text>
-<path d="M 11180 290 L 11183 283 L 11277 283 L 11280 290 L 11277 297 L 11183 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11230" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 115593, cos: 61787, master: b00000000000}</title>
-</text>
-<path d="M 11280 290 L 11283 283 L 11377 283 L 11380 290 L 11377 297 L 11283 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11330" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 121093, cos: 50159, master: b40000000000}</title>
-</text>
-<path d="M 11380 290 L 11383 283 L 11477 283 L 11480 290 L 11477 297 L 11383 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11430" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 125426, cos: 38049, master: b80000000000}</title>
-</text>
-<path d="M 11480 290 L 11483 283 L 11577 283 L 11580 290 L 11577 297 L 11483 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11530" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 128551, cos: 25571, master: bc0000000000}</title>
-</text>
-<path d="M 11580 290 L 11583 283 L 11677 283 L 11680 290 L 11677 297 L 11583 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11630" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 130439, cos: 12848, master: c00000000000}</title>
-</text>
-<path d="M 11680 290 L 11683 283 L 11777 283 L 11780 290 L 11777 297 L 11683 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11730" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -131071, cos: 0, master: c40000000000}</title>
-</text>
-<path d="M 11780 290 L 11783 283 L 11877 283 L 11880 290 L 11877 297 L 11783 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11830" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -130440, cos: 12847, master: c80000000000}</title>
-</text>
-<path d="M 11880 290 L 11883 283 L 11977 283 L 11980 290 L 11977 297 L 11883 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11930" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -128552, cos: 25571, master: cc0000000000}</title>
-</text>
-<path d="M 11980 290 L 11983 283 L 12077 283 L 12080 290 L 12077 297 L 11983 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12030" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -125427, cos: 38048, master: d00000000000}</title>
-</text>
-<path d="M 12080 290 L 12083 283 L 12177 283 L 12180 290 L 12177 297 L 12083 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12130" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -121094, cos: 50159, master: d40000000000}</title>
-</text>
-<path d="M 12180 290 L 12183 283 L 12277 283 L 12280 290 L 12277 297 L 12183 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12230" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -115594, cos: 61786, master: d80000000000}</title>
-</text>
-<path d="M 12280 290 L 12283 283 L 12377 283 L 12380 290 L 12377 297 L 12283 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12330" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -108982, cos: 72820, master: dc0000000000}</title>
-</text>
-<path d="M 12380 290 L 12383 283 L 12477 283 L 12480 290 L 12477 297 L 12383 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12430" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -101320, cos: 83150, master: e00000000000}</title>
-</text>
-<path d="M 12480 290 L 12483 283 L 12577 283 L 12580 290 L 12577 297 L 12483 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12530" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -92682, cos: 92681, master: e40000000000}</title>
-</text>
-<path d="M 12580 290 L 12583 283 L 12677 283 L 12680 290 L 12677 297 L 12583 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12630" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -83151, cos: 101319, master: e80000000000}</title>
-</text>
-<path d="M 12680 290 L 12683 283 L 12777 283 L 12780 290 L 12777 297 L 12683 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12730" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -72820, cos: 108982, master: ec0000000000}</title>
-</text>
-<path d="M 12780 290 L 12783 283 L 12877 283 L 12880 290 L 12877 297 L 12783 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12830" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -61787, cos: 115594, master: f00000000000}</title>
-</text>
-<path d="M 12880 290 L 12883 283 L 12977 283 L 12980 290 L 12977 297 L 12883 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12930" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -50159, cos: 121094, master: f40000000000}</title>
-</text>
-<path d="M 12980 290 L 12983 283 L 13077 283 L 13080 290 L 13077 297 L 12983 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13030" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -38049, cos: 125427, master: f80000000000}</title>
-</text>
-<path d="M 13080 290 L 13083 283 L 13177 283 L 13180 290 L 13177 297 L 13083 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13130" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -25571, cos: 128552, master: fc0000000000}</title>
-</text>
-<path d="M 13180 290 L 13183 283 L 13277 283 L 13280 290 L 13277 297 L 13183 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13230" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -12848, cos: 130440, master: 000000000000}</title>
-</text>
-<path d="M 13280 290 L 13283 283 L 13377 283 L 13380 290 L 13377 297 L 13283 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13330" xml:space="preserve" y="290">
-{sin: -...
-<title>{sin: -1, cos: 131071, master: 040000000000}</title>
-</text>
-<path d="M 13380 290 L 13383 283 L 13477 283 L 13480 290 L 13477 297 L 13383 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13430" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 12846, cos: 130440, master: 080000000000}</title>
-</text>
-<path d="M 13480 290 L 13483 283 L 13577 283 L 13580 290 L 13577 297 L 13483 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13530" xml:space="preserve" y="290">
-{sin: 2...
-<title>{sin: 25570, cos: 128552, master: 0c0000000000}</title>
-</text>
-<path d="M 13580 290 L 13583 283 L 13677 283 L 13680 290 L 13677 297 L 13583 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13630" xml:space="preserve" y="290">
-{sin: 3...
-<title>{sin: 38047, cos: 125427, master: 100000000000}</title>
-</text>
-<path d="M 13680 290 L 13683 283 L 13777 283 L 13780 290 L 13777 297 L 13683 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13730" xml:space="preserve" y="290">
-{sin: 5...
-<title>{sin: 50158, cos: 121094, master: 140000000000}</title>
-</text>
-<path d="M 13780 290 L 13783 283 L 13877 283 L 13880 290 L 13877 297 L 13783 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13830" xml:space="preserve" y="290">
-{sin: 6...
-<title>{sin: 61785, cos: 115594, master: 180000000000}</title>
-</text>
-<path d="M 13880 290 L 13883 283 L 13977 283 L 13980 290 L 13977 297 L 13883 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13930" xml:space="preserve" y="290">
-{sin: 7...
-<title>{sin: 72819, cos: 108982, master: 1c0000000000}</title>
-</text>
-<path d="M 13980 290 L 13983 283 L 14077 283 L 14080 290 L 14077 297 L 13983 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14030" xml:space="preserve" y="290">
-{sin: 8...
-<title>{sin: 83149, cos: 101320, master: 200000000000}</title>
-</text>
-<path d="M 14080 290 L 14083 283 L 14177 283 L 14180 290 L 14177 297 L 14083 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14130" xml:space="preserve" y="290">
-{sin: 9...
-<title>{sin: 92680, cos: 92682, master: 240000000000}</title>
-</text>
-<path d="M 14180 290 L 14183 283 L 14277 283 L 14280 290 L 14277 297 L 14183 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14230" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 101318, cos: 83151, master: 280000000000}</title>
-</text>
-<path d="M 14280 290 L 14283 283 L 14377 283 L 14380 290 L 14377 297 L 14283 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14330" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 108981, cos: 72820, master: 2c0000000000}</title>
-</text>
-<path d="M 14380 290 L 14383 283 L 14477 283 L 14480 290 L 14477 297 L 14383 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14430" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 115593, cos: 61787, master: 300000000000}</title>
-</text>
-<path d="M 14480 290 L 14483 283 L 14577 283 L 14580 290 L 14577 297 L 14483 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14530" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 121093, cos: 50159, master: 340000000000}</title>
-</text>
-<path d="M 14580 290 L 14583 283 L 14677 283 L 14680 290 L 14677 297 L 14583 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14630" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 125426, cos: 38049, master: 380000000000}</title>
-</text>
-<path d="M 14680 290 L 14683 283 L 14777 283 L 14780 290 L 14777 297 L 14683 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14730" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 128551, cos: 25571, master: 3c0000000000}</title>
-</text>
-<path d="M 14780 290 L 14783 283 L 14877 283 L 14880 290 L 14877 297 L 14783 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14830" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 130439, cos: 12848, master: 400000000000}</title>
-</text>
-<path d="M 14880 290 L 14883 283 L 14977 283 L 14980 290 L 14977 297 L 14883 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14930" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 131070, cos: 1, master: 440000000000}</title>
-</text>
-<path d="M 14980 290 L 14983 283 L 15077 283 L 15080 290 L 15077 297 L 14983 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15030" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 130439, cos: -12846, master: 480000000000}</title>
-</text>
-<path d="M 15080 290 L 15083 283 L 15177 283 L 15180 290 L 15177 297 L 15083 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15130" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 128551, cos: -25570, master: 4c0000000000}</title>
-</text>
-<path d="M 15180 290 L 15183 283 L 15277 283 L 15280 290 L 15277 297 L 15183 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15230" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 125426, cos: -38047, master: 500000000000}</title>
-</text>
-<path d="M 15280 290 L 15283 283 L 15377 283 L 15380 290 L 15377 297 L 15283 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15330" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 121093, cos: -50158, master: 540000000000}</title>
-</text>
-<path d="M 15380 290 L 15383 283 L 15477 283 L 15480 290 L 15477 297 L 15383 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15430" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 115593, cos: -61785, master: 580000000000}</title>
-</text>
-<path d="M 15480 290 L 15483 283 L 15577 283 L 15580 290 L 15577 297 L 15483 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15530" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 108981, cos: -72819, master: 5c0000000000}</title>
-</text>
-<path d="M 15580 290 L 15583 283 L 15677 283 L 15680 290 L 15677 297 L 15583 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15630" xml:space="preserve" y="290">
-{sin: 1...
-<title>{sin: 101319, cos: -83149, master: 600000000000}</title>
-</text>
-<path d="M 15680 290 L 15683 283 L 15777 283 L 15780 290 L 15777 297 L 15683 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15730" xml:space="preserve" y="290">
-{sin: 9...
-<title>{sin: 92681, cos: -92680, master: 640000000000}</title>
-</text>
-<path d="M 15780 290 L 15783 283 L 15877 283 L 15880 290 L 15877 297 L 15783 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15830" xml:space="preserve" y="290">
-{sin: 8...
-<title>{sin: 83150, cos: -101318, master: 680000000000}</title>
-</text>
-<path d="M 15880 290 L 15883 283 L 15977 283 L 15980 290 L 15977 297 L 15883 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15930" xml:space="preserve" y="290">
-{sin: 7...
-<title>{sin: 72819, cos: -108981, master: 6c0000000000}</title>
-</text>
-<path d="M 15980 290 L 15983 283 L 16077 283 L 16080 290 L 16077 297 L 15983 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16030" xml:space="preserve" y="290">
-{sin: 6...
-<title>{sin: 61786, cos: -115593, master: 700000000000}</title>
-</text>
-<path d="M 16080 290 L 16083 283 L 16177 283 L 16180 290 L 16177 297 L 16083 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16130" xml:space="preserve" y="290">
-{sin: 5...
-<title>{sin: 50158, cos: -121093, master: 740000000000}</title>
-</text>
-<path d="M 16180 290 L 16183 283 L 16277 283 L 16280 290 L 16277 297 L 16183 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16230" xml:space="preserve" y="290">
-{sin: 3...
-<title>{sin: 38048, cos: -125426, master: 780000000000}</title>
-</text>
-<path d="M 16280 290 L 16283 283 L 16377 283 L 16380 290 L 16377 297 L 16283 297 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16330" xml:space="preserve" y="290">
-{sin: 2...
-<title>{sin: 25570, cos: -128551, master: 7c0000000000}</title>
-</text>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="start" x="3" xml:space="preserve" y="310">
-   .sin
-<title>top.outputs.sin</title>
-</text>
 <path d="M 230 310 L 233 303 L 277 303 L 280 310 L 277 317 L 233 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="255" xml:space="preserve" y="310">
-0
-<title>0</title>
+{s...
+<title>{stream: {data: Some({data: {re: 0, im: 0}}), ready: 1}, master: 000000000000, overrun: 0}</title>
 </text>
-<path d="M 280 310 L 283 303 L 577 303 L 580 310 L 577 317 L 283 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="430" xml:space="preserve" y="310">
--1
-<title>-1</title>
+<path d="M 280 310 L 283 303 L 477 303 L 480 310 L 477 317 L 283 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="380" xml:space="preserve" y="310">
+{stream: {data: S...
+<title>{stream: {data: Some({data: {re: 131071, im: -1}}), ready: 1}, master: 000000000000, overrun: 0}</title>
+</text>
+<path d="M 480 310 L 483 303 L 577 303 L 580 310 L 577 317 L 483 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="530" xml:space="preserve" y="310">
+{stream...
+<title>{stream: {data: Some({data: {re: 131071, im: -1}}), ready: 1}, master: 040000000000, overrun: 0}</title>
 </text>
 <path d="M 580 310 L 583 303 L 677 303 L 680 310 L 677 317 L 583 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="630" xml:space="preserve" y="310">
-12846
-<title>12846</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 130440, im: 12846}}), ready: 1}, master: 080000000000, overrun: 0}</title>
 </text>
 <path d="M 680 310 L 683 303 L 777 303 L 780 310 L 777 317 L 683 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="730" xml:space="preserve" y="310">
-25570
-<title>25570</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 128552, im: 25570}}), ready: 1}, master: 0c0000000000, overrun: 0}</title>
 </text>
 <path d="M 780 310 L 783 303 L 877 303 L 880 310 L 877 317 L 783 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="830" xml:space="preserve" y="310">
-38047
-<title>38047</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 125427, im: 38047}}), ready: 1}, master: 100000000000, overrun: 0}</title>
 </text>
 <path d="M 880 310 L 883 303 L 977 303 L 980 310 L 977 317 L 883 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="930" xml:space="preserve" y="310">
-50158
-<title>50158</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 121094, im: 50158}}), ready: 1}, master: 140000000000, overrun: 0}</title>
 </text>
 <path d="M 980 310 L 983 303 L 1077 303 L 1080 310 L 1077 317 L 983 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1030" xml:space="preserve" y="310">
-61785
-<title>61785</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 115594, im: 61785}}), ready: 1}, master: 180000000000, overrun: 0}</title>
 </text>
 <path d="M 1080 310 L 1083 303 L 1177 303 L 1180 310 L 1177 317 L 1083 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1130" xml:space="preserve" y="310">
-72819
-<title>72819</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 108982, im: 72819}}), ready: 1}, master: 1c0000000000, overrun: 0}</title>
 </text>
 <path d="M 1180 310 L 1183 303 L 1277 303 L 1280 310 L 1277 317 L 1183 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1230" xml:space="preserve" y="310">
-83149
-<title>83149</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 101320, im: 83149}}), ready: 1}, master: 200000000000, overrun: 0}</title>
 </text>
 <path d="M 1280 310 L 1283 303 L 1377 303 L 1380 310 L 1377 317 L 1283 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1330" xml:space="preserve" y="310">
-92680
-<title>92680</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 92682, im: 92680}}), ready: 1}, master: 240000000000, overrun: 0}</title>
 </text>
 <path d="M 1380 310 L 1383 303 L 1477 303 L 1480 310 L 1477 317 L 1383 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1430" xml:space="preserve" y="310">
-101318
-<title>101318</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 83151, im: 101318}}), ready: 1}, master: 280000000000, overrun: 0}</title>
 </text>
 <path d="M 1480 310 L 1483 303 L 1577 303 L 1580 310 L 1577 317 L 1483 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1530" xml:space="preserve" y="310">
-108981
-<title>108981</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 72820, im: 108981}}), ready: 1}, master: 2c0000000000, overrun: 0}</title>
 </text>
 <path d="M 1580 310 L 1583 303 L 1677 303 L 1680 310 L 1677 317 L 1583 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1630" xml:space="preserve" y="310">
-115593
-<title>115593</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 61787, im: 115593}}), ready: 1}, master: 300000000000, overrun: 0}</title>
 </text>
 <path d="M 1680 310 L 1683 303 L 1777 303 L 1780 310 L 1777 317 L 1683 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1730" xml:space="preserve" y="310">
-121093
-<title>121093</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 50159, im: 121093}}), ready: 1}, master: 340000000000, overrun: 0}</title>
 </text>
 <path d="M 1780 310 L 1783 303 L 1877 303 L 1880 310 L 1877 317 L 1783 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1830" xml:space="preserve" y="310">
-125426
-<title>125426</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 38049, im: 125426}}), ready: 1}, master: 380000000000, overrun: 0}</title>
 </text>
 <path d="M 1880 310 L 1883 303 L 1977 303 L 1980 310 L 1977 317 L 1883 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1930" xml:space="preserve" y="310">
-128551
-<title>128551</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 25571, im: 128551}}), ready: 1}, master: 3c0000000000, overrun: 0}</title>
 </text>
 <path d="M 1980 310 L 1983 303 L 2077 303 L 2080 310 L 2077 317 L 1983 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2030" xml:space="preserve" y="310">
-130439
-<title>130439</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 12848, im: 130439}}), ready: 1}, master: 400000000000, overrun: 0}</title>
 </text>
 <path d="M 2080 310 L 2083 303 L 2177 303 L 2180 310 L 2177 317 L 2083 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2130" xml:space="preserve" y="310">
-131070
-<title>131070</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 1, im: 131070}}), ready: 1}, master: 440000000000, overrun: 0}</title>
 </text>
 <path d="M 2180 310 L 2183 303 L 2277 303 L 2280 310 L 2277 317 L 2183 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2230" xml:space="preserve" y="310">
-130439
-<title>130439</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -12846, im: 130439}}), ready: 1}, master: 480000000000, overrun: 0}</title>
 </text>
 <path d="M 2280 310 L 2283 303 L 2377 303 L 2380 310 L 2377 317 L 2283 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2330" xml:space="preserve" y="310">
-128551
-<title>128551</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -25570, im: 128551}}), ready: 1}, master: 4c0000000000, overrun: 0}</title>
 </text>
 <path d="M 2380 310 L 2383 303 L 2477 303 L 2480 310 L 2477 317 L 2383 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2430" xml:space="preserve" y="310">
-125426
-<title>125426</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -38047, im: 125426}}), ready: 1}, master: 500000000000, overrun: 0}</title>
 </text>
 <path d="M 2480 310 L 2483 303 L 2577 303 L 2580 310 L 2577 317 L 2483 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2530" xml:space="preserve" y="310">
-121093
-<title>121093</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -50158, im: 121093}}), ready: 1}, master: 540000000000, overrun: 0}</title>
 </text>
 <path d="M 2580 310 L 2583 303 L 2677 303 L 2680 310 L 2677 317 L 2583 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2630" xml:space="preserve" y="310">
-115593
-<title>115593</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -61785, im: 115593}}), ready: 1}, master: 580000000000, overrun: 0}</title>
 </text>
 <path d="M 2680 310 L 2683 303 L 2777 303 L 2780 310 L 2777 317 L 2683 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2730" xml:space="preserve" y="310">
-108981
-<title>108981</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -72819, im: 108981}}), ready: 1}, master: 5c0000000000, overrun: 0}</title>
 </text>
 <path d="M 2780 310 L 2783 303 L 2877 303 L 2880 310 L 2877 317 L 2783 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2830" xml:space="preserve" y="310">
-101319
-<title>101319</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -83149, im: 101319}}), ready: 1}, master: 600000000000, overrun: 0}</title>
 </text>
 <path d="M 2880 310 L 2883 303 L 2977 303 L 2980 310 L 2977 317 L 2883 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2930" xml:space="preserve" y="310">
-92681
-<title>92681</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -92680, im: 92681}}), ready: 1}, master: 640000000000, overrun: 0}</title>
 </text>
 <path d="M 2980 310 L 2983 303 L 3077 303 L 3080 310 L 3077 317 L 2983 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3030" xml:space="preserve" y="310">
-83150
-<title>83150</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -101318, im: 83150}}), ready: 1}, master: 680000000000, overrun: 0}</title>
 </text>
 <path d="M 3080 310 L 3083 303 L 3177 303 L 3180 310 L 3177 317 L 3083 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3130" xml:space="preserve" y="310">
-72819
-<title>72819</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -108981, im: 72819}}), ready: 1}, master: 6c0000000000, overrun: 0}</title>
 </text>
 <path d="M 3180 310 L 3183 303 L 3277 303 L 3280 310 L 3277 317 L 3183 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3230" xml:space="preserve" y="310">
-61786
-<title>61786</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -115593, im: 61786}}), ready: 1}, master: 700000000000, overrun: 0}</title>
 </text>
 <path d="M 3280 310 L 3283 303 L 3377 303 L 3380 310 L 3377 317 L 3283 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3330" xml:space="preserve" y="310">
-50158
-<title>50158</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -121093, im: 50158}}), ready: 1}, master: 740000000000, overrun: 0}</title>
 </text>
 <path d="M 3380 310 L 3383 303 L 3477 303 L 3480 310 L 3477 317 L 3383 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3430" xml:space="preserve" y="310">
-38048
-<title>38048</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -125426, im: 38048}}), ready: 1}, master: 780000000000, overrun: 0}</title>
 </text>
 <path d="M 3480 310 L 3483 303 L 3577 303 L 3580 310 L 3577 317 L 3483 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3530" xml:space="preserve" y="310">
-25570
-<title>25570</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -128551, im: 25570}}), ready: 1}, master: 7c0000000000, overrun: 0}</title>
 </text>
 <path d="M 3580 310 L 3583 303 L 3677 303 L 3680 310 L 3677 317 L 3583 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3630" xml:space="preserve" y="310">
-12847
-<title>12847</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -130439, im: 12847}}), ready: 1}, master: 800000000000, overrun: 0}</title>
 </text>
 <path d="M 3680 310 L 3683 303 L 3777 303 L 3780 310 L 3777 317 L 3683 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3730" xml:space="preserve" y="310">
-0
-<title>0</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -131070, im: 0}}), ready: 1}, master: 840000000000, overrun: 0}</title>
 </text>
 <path d="M 3780 310 L 3783 303 L 3877 303 L 3880 310 L 3877 317 L 3783 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3830" xml:space="preserve" y="310">
--12847
-<title>-12847</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -130439, im: -12847}}), ready: 1}, master: 880000000000, overrun: 0}</title>
 </text>
 <path d="M 3880 310 L 3883 303 L 3977 303 L 3980 310 L 3977 317 L 3883 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3930" xml:space="preserve" y="310">
--25571
-<title>-25571</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -128551, im: -25571}}), ready: 1}, master: 8c0000000000, overrun: 0}</title>
 </text>
 <path d="M 3980 310 L 3983 303 L 4077 303 L 4080 310 L 4077 317 L 3983 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4030" xml:space="preserve" y="310">
--38048
-<title>-38048</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -125426, im: -38048}}), ready: 1}, master: 900000000000, overrun: 0}</title>
 </text>
 <path d="M 4080 310 L 4083 303 L 4177 303 L 4180 310 L 4177 317 L 4083 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4130" xml:space="preserve" y="310">
--50159
-<title>-50159</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -121093, im: -50159}}), ready: 1}, master: 940000000000, overrun: 0}</title>
 </text>
 <path d="M 4180 310 L 4183 303 L 4277 303 L 4280 310 L 4277 317 L 4183 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4230" xml:space="preserve" y="310">
--61786
-<title>-61786</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -115593, im: -61786}}), ready: 1}, master: 980000000000, overrun: 0}</title>
 </text>
 <path d="M 4280 310 L 4283 303 L 4377 303 L 4380 310 L 4377 317 L 4283 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4330" xml:space="preserve" y="310">
--72820
-<title>-72820</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -108981, im: -72820}}), ready: 1}, master: 9c0000000000, overrun: 0}</title>
 </text>
 <path d="M 4380 310 L 4383 303 L 4477 303 L 4480 310 L 4477 317 L 4383 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4430" xml:space="preserve" y="310">
--83150
-<title>-83150</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -101319, im: -83150}}), ready: 1}, master: a00000000000, overrun: 0}</title>
 </text>
 <path d="M 4480 310 L 4483 303 L 4577 303 L 4580 310 L 4577 317 L 4483 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4530" xml:space="preserve" y="310">
--92681
-<title>-92681</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -92681, im: -92681}}), ready: 1}, master: a40000000000, overrun: 0}</title>
 </text>
 <path d="M 4580 310 L 4583 303 L 4677 303 L 4680 310 L 4677 317 L 4583 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4630" xml:space="preserve" y="310">
--101319
-<title>-101319</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -83150, im: -101319}}), ready: 1}, master: a80000000000, overrun: 0}</title>
 </text>
 <path d="M 4680 310 L 4683 303 L 4777 303 L 4780 310 L 4777 317 L 4683 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4730" xml:space="preserve" y="310">
--108982
-<title>-108982</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -72819, im: -108982}}), ready: 1}, master: ac0000000000, overrun: 0}</title>
 </text>
 <path d="M 4780 310 L 4783 303 L 4877 303 L 4880 310 L 4877 317 L 4783 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4830" xml:space="preserve" y="310">
--115594
-<title>-115594</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -61786, im: -115594}}), ready: 1}, master: b00000000000, overrun: 0}</title>
 </text>
 <path d="M 4880 310 L 4883 303 L 4977 303 L 4980 310 L 4977 317 L 4883 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4930" xml:space="preserve" y="310">
--121094
-<title>-121094</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -50158, im: -121094}}), ready: 1}, master: b40000000000, overrun: 0}</title>
 </text>
 <path d="M 4980 310 L 4983 303 L 5077 303 L 5080 310 L 5077 317 L 4983 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5030" xml:space="preserve" y="310">
--125427
-<title>-125427</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -38048, im: -125427}}), ready: 1}, master: b80000000000, overrun: 0}</title>
 </text>
 <path d="M 5080 310 L 5083 303 L 5177 303 L 5180 310 L 5177 317 L 5083 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5130" xml:space="preserve" y="310">
--128552
-<title>-128552</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -25570, im: -128552}}), ready: 1}, master: bc0000000000, overrun: 0}</title>
 </text>
 <path d="M 5180 310 L 5183 303 L 5277 303 L 5280 310 L 5277 317 L 5183 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5230" xml:space="preserve" y="310">
--130440
-<title>-130440</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -12847, im: -130440}}), ready: 1}, master: c00000000000, overrun: 0}</title>
 </text>
 <path d="M 5280 310 L 5283 303 L 5377 303 L 5380 310 L 5377 317 L 5283 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5330" xml:space="preserve" y="310">
--131071
-<title>-131071</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 0, im: -131071}}), ready: 1}, master: c40000000000, overrun: 0}</title>
 </text>
 <path d="M 5380 310 L 5383 303 L 5477 303 L 5480 310 L 5477 317 L 5383 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5430" xml:space="preserve" y="310">
--130440
-<title>-130440</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 12847, im: -130440}}), ready: 1}, master: c80000000000, overrun: 0}</title>
 </text>
 <path d="M 5480 310 L 5483 303 L 5577 303 L 5580 310 L 5577 317 L 5483 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5530" xml:space="preserve" y="310">
--128552
-<title>-128552</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 25571, im: -128552}}), ready: 1}, master: cc0000000000, overrun: 0}</title>
 </text>
 <path d="M 5580 310 L 5583 303 L 5677 303 L 5680 310 L 5677 317 L 5583 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5630" xml:space="preserve" y="310">
--125427
-<title>-125427</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 38048, im: -125427}}), ready: 1}, master: d00000000000, overrun: 0}</title>
 </text>
 <path d="M 5680 310 L 5683 303 L 5777 303 L 5780 310 L 5777 317 L 5683 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5730" xml:space="preserve" y="310">
--121094
-<title>-121094</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 50159, im: -121094}}), ready: 1}, master: d40000000000, overrun: 0}</title>
 </text>
 <path d="M 5780 310 L 5783 303 L 5877 303 L 5880 310 L 5877 317 L 5783 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5830" xml:space="preserve" y="310">
--115594
-<title>-115594</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 61786, im: -115594}}), ready: 1}, master: d80000000000, overrun: 0}</title>
 </text>
 <path d="M 5880 310 L 5883 303 L 5977 303 L 5980 310 L 5977 317 L 5883 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5930" xml:space="preserve" y="310">
--108982
-<title>-108982</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 72820, im: -108982}}), ready: 1}, master: dc0000000000, overrun: 0}</title>
 </text>
 <path d="M 5980 310 L 5983 303 L 6077 303 L 6080 310 L 6077 317 L 5983 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6030" xml:space="preserve" y="310">
--101320
-<title>-101320</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 83150, im: -101320}}), ready: 1}, master: e00000000000, overrun: 0}</title>
 </text>
 <path d="M 6080 310 L 6083 303 L 6177 303 L 6180 310 L 6177 317 L 6083 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6130" xml:space="preserve" y="310">
--92682
-<title>-92682</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 92681, im: -92682}}), ready: 1}, master: e40000000000, overrun: 0}</title>
 </text>
 <path d="M 6180 310 L 6183 303 L 6277 303 L 6280 310 L 6277 317 L 6183 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6230" xml:space="preserve" y="310">
--83151
-<title>-83151</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 101319, im: -83151}}), ready: 1}, master: e80000000000, overrun: 0}</title>
 </text>
 <path d="M 6280 310 L 6283 303 L 6377 303 L 6380 310 L 6377 317 L 6283 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6330" xml:space="preserve" y="310">
--72820
-<title>-72820</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 108982, im: -72820}}), ready: 1}, master: ec0000000000, overrun: 0}</title>
 </text>
 <path d="M 6380 310 L 6383 303 L 6477 303 L 6480 310 L 6477 317 L 6383 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6430" xml:space="preserve" y="310">
--61787
-<title>-61787</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 115594, im: -61787}}), ready: 1}, master: f00000000000, overrun: 0}</title>
 </text>
 <path d="M 6480 310 L 6483 303 L 6577 303 L 6580 310 L 6577 317 L 6483 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6530" xml:space="preserve" y="310">
--50159
-<title>-50159</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 121094, im: -50159}}), ready: 1}, master: f40000000000, overrun: 0}</title>
 </text>
 <path d="M 6580 310 L 6583 303 L 6677 303 L 6680 310 L 6677 317 L 6583 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6630" xml:space="preserve" y="310">
--38049
-<title>-38049</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 125427, im: -38049}}), ready: 1}, master: f80000000000, overrun: 0}</title>
 </text>
 <path d="M 6680 310 L 6683 303 L 6777 303 L 6780 310 L 6777 317 L 6683 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6730" xml:space="preserve" y="310">
--25571
-<title>-25571</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 128552, im: -25571}}), ready: 1}, master: fc0000000000, overrun: 0}</title>
 </text>
 <path d="M 6780 310 L 6783 303 L 6877 303 L 6880 310 L 6877 317 L 6783 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6830" xml:space="preserve" y="310">
--12848
-<title>-12848</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 130440, im: -12848}}), ready: 1}, master: 000000000000, overrun: 0}</title>
 </text>
 <path d="M 6880 310 L 6883 303 L 6977 303 L 6980 310 L 6977 317 L 6883 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6930" xml:space="preserve" y="310">
-0
-<title>0</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -131070, im: 0}}), ready: 1}, master: 040000000000, overrun: 0}</title>
 </text>
 <path d="M 6980 310 L 6983 303 L 7077 303 L 7080 310 L 7077 317 L 6983 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7030" xml:space="preserve" y="310">
--12847
-<title>-12847</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -130439, im: -12847}}), ready: 1}, master: 080000000000, overrun: 0}</title>
 </text>
 <path d="M 7080 310 L 7083 303 L 7177 303 L 7180 310 L 7177 317 L 7083 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7130" xml:space="preserve" y="310">
--25571
-<title>-25571</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -128551, im: -25571}}), ready: 1}, master: 0c0000000000, overrun: 0}</title>
 </text>
 <path d="M 7180 310 L 7183 303 L 7277 303 L 7280 310 L 7277 317 L 7183 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7230" xml:space="preserve" y="310">
--38048
-<title>-38048</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -125426, im: -38048}}), ready: 1}, master: 100000000000, overrun: 0}</title>
 </text>
 <path d="M 7280 310 L 7283 303 L 7377 303 L 7380 310 L 7377 317 L 7283 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7330" xml:space="preserve" y="310">
--50159
-<title>-50159</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -121093, im: -50159}}), ready: 1}, master: 140000000000, overrun: 0}</title>
 </text>
 <path d="M 7380 310 L 7383 303 L 7477 303 L 7480 310 L 7477 317 L 7383 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7430" xml:space="preserve" y="310">
--61786
-<title>-61786</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -115593, im: -61786}}), ready: 1}, master: 180000000000, overrun: 0}</title>
 </text>
 <path d="M 7480 310 L 7483 303 L 7577 303 L 7580 310 L 7577 317 L 7483 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7530" xml:space="preserve" y="310">
--72820
-<title>-72820</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -108981, im: -72820}}), ready: 1}, master: 1c0000000000, overrun: 0}</title>
 </text>
 <path d="M 7580 310 L 7583 303 L 7677 303 L 7680 310 L 7677 317 L 7583 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7630" xml:space="preserve" y="310">
--83150
-<title>-83150</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -101319, im: -83150}}), ready: 1}, master: 200000000000, overrun: 0}</title>
 </text>
 <path d="M 7680 310 L 7683 303 L 7777 303 L 7780 310 L 7777 317 L 7683 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7730" xml:space="preserve" y="310">
--92681
-<title>-92681</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -92681, im: -92681}}), ready: 1}, master: 240000000000, overrun: 0}</title>
 </text>
 <path d="M 7780 310 L 7783 303 L 7877 303 L 7880 310 L 7877 317 L 7783 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7830" xml:space="preserve" y="310">
--101319
-<title>-101319</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -83150, im: -101319}}), ready: 1}, master: 280000000000, overrun: 0}</title>
 </text>
 <path d="M 7880 310 L 7883 303 L 7977 303 L 7980 310 L 7977 317 L 7883 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7930" xml:space="preserve" y="310">
--108982
-<title>-108982</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -72819, im: -108982}}), ready: 1}, master: 2c0000000000, overrun: 0}</title>
 </text>
 <path d="M 7980 310 L 7983 303 L 8077 303 L 8080 310 L 8077 317 L 7983 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8030" xml:space="preserve" y="310">
--115594
-<title>-115594</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -61786, im: -115594}}), ready: 1}, master: 300000000000, overrun: 0}</title>
 </text>
 <path d="M 8080 310 L 8083 303 L 8177 303 L 8180 310 L 8177 317 L 8083 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8130" xml:space="preserve" y="310">
--121094
-<title>-121094</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -50158, im: -121094}}), ready: 1}, master: 340000000000, overrun: 0}</title>
 </text>
 <path d="M 8180 310 L 8183 303 L 8277 303 L 8280 310 L 8277 317 L 8183 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8230" xml:space="preserve" y="310">
--125427
-<title>-125427</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -38048, im: -125427}}), ready: 1}, master: 380000000000, overrun: 0}</title>
 </text>
 <path d="M 8280 310 L 8283 303 L 8377 303 L 8380 310 L 8377 317 L 8283 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8330" xml:space="preserve" y="310">
--128552
-<title>-128552</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -25570, im: -128552}}), ready: 1}, master: 3c0000000000, overrun: 0}</title>
 </text>
 <path d="M 8380 310 L 8383 303 L 8477 303 L 8480 310 L 8477 317 L 8383 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8430" xml:space="preserve" y="310">
--130440
-<title>-130440</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -12847, im: -130440}}), ready: 1}, master: 400000000000, overrun: 0}</title>
 </text>
 <path d="M 8480 310 L 8483 303 L 8577 303 L 8580 310 L 8577 317 L 8483 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8530" xml:space="preserve" y="310">
--131071
-<title>-131071</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 0, im: -131071}}), ready: 1}, master: 440000000000, overrun: 0}</title>
 </text>
 <path d="M 8580 310 L 8583 303 L 8677 303 L 8680 310 L 8677 317 L 8583 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8630" xml:space="preserve" y="310">
--130440
-<title>-130440</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 12847, im: -130440}}), ready: 1}, master: 480000000000, overrun: 0}</title>
 </text>
 <path d="M 8680 310 L 8683 303 L 8777 303 L 8780 310 L 8777 317 L 8683 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8730" xml:space="preserve" y="310">
--128552
-<title>-128552</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 25571, im: -128552}}), ready: 1}, master: 4c0000000000, overrun: 0}</title>
 </text>
 <path d="M 8780 310 L 8783 303 L 8877 303 L 8880 310 L 8877 317 L 8783 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8830" xml:space="preserve" y="310">
--125427
-<title>-125427</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 38048, im: -125427}}), ready: 1}, master: 500000000000, overrun: 0}</title>
 </text>
 <path d="M 8880 310 L 8883 303 L 8977 303 L 8980 310 L 8977 317 L 8883 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8930" xml:space="preserve" y="310">
--121094
-<title>-121094</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 50159, im: -121094}}), ready: 1}, master: 540000000000, overrun: 0}</title>
 </text>
 <path d="M 8980 310 L 8983 303 L 9077 303 L 9080 310 L 9077 317 L 8983 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9030" xml:space="preserve" y="310">
--115594
-<title>-115594</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 61786, im: -115594}}), ready: 1}, master: 580000000000, overrun: 0}</title>
 </text>
 <path d="M 9080 310 L 9083 303 L 9177 303 L 9180 310 L 9177 317 L 9083 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9130" xml:space="preserve" y="310">
--108982
-<title>-108982</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 72820, im: -108982}}), ready: 1}, master: 5c0000000000, overrun: 0}</title>
 </text>
 <path d="M 9180 310 L 9183 303 L 9277 303 L 9280 310 L 9277 317 L 9183 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9230" xml:space="preserve" y="310">
--101320
-<title>-101320</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 83150, im: -101320}}), ready: 1}, master: 600000000000, overrun: 0}</title>
 </text>
 <path d="M 9280 310 L 9283 303 L 9377 303 L 9380 310 L 9377 317 L 9283 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9330" xml:space="preserve" y="310">
--92682
-<title>-92682</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 92681, im: -92682}}), ready: 1}, master: 640000000000, overrun: 0}</title>
 </text>
 <path d="M 9380 310 L 9383 303 L 9477 303 L 9480 310 L 9477 317 L 9383 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9430" xml:space="preserve" y="310">
--83151
-<title>-83151</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 101319, im: -83151}}), ready: 1}, master: 680000000000, overrun: 0}</title>
 </text>
 <path d="M 9480 310 L 9483 303 L 9577 303 L 9580 310 L 9577 317 L 9483 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9530" xml:space="preserve" y="310">
--72820
-<title>-72820</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 108982, im: -72820}}), ready: 1}, master: 6c0000000000, overrun: 0}</title>
 </text>
 <path d="M 9580 310 L 9583 303 L 9677 303 L 9680 310 L 9677 317 L 9583 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9630" xml:space="preserve" y="310">
--61787
-<title>-61787</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 115594, im: -61787}}), ready: 1}, master: 700000000000, overrun: 0}</title>
 </text>
 <path d="M 9680 310 L 9683 303 L 9777 303 L 9780 310 L 9777 317 L 9683 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9730" xml:space="preserve" y="310">
--50159
-<title>-50159</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 121094, im: -50159}}), ready: 1}, master: 740000000000, overrun: 0}</title>
 </text>
 <path d="M 9780 310 L 9783 303 L 9877 303 L 9880 310 L 9877 317 L 9783 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9830" xml:space="preserve" y="310">
--38049
-<title>-38049</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 125427, im: -38049}}), ready: 1}, master: 780000000000, overrun: 0}</title>
 </text>
 <path d="M 9880 310 L 9883 303 L 9977 303 L 9980 310 L 9977 317 L 9883 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9930" xml:space="preserve" y="310">
--25571
-<title>-25571</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 128552, im: -25571}}), ready: 1}, master: 7c0000000000, overrun: 0}</title>
 </text>
 <path d="M 9980 310 L 9983 303 L 10077 303 L 10080 310 L 10077 317 L 9983 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10030" xml:space="preserve" y="310">
--12848
-<title>-12848</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 130440, im: -12848}}), ready: 1}, master: 800000000000, overrun: 0}</title>
 </text>
 <path d="M 10080 310 L 10083 303 L 10177 303 L 10180 310 L 10177 317 L 10083 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10130" xml:space="preserve" y="310">
--1
-<title>-1</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 131071, im: -1}}), ready: 1}, master: 840000000000, overrun: 0}</title>
 </text>
 <path d="M 10180 310 L 10183 303 L 10277 303 L 10280 310 L 10277 317 L 10183 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10230" xml:space="preserve" y="310">
-12846
-<title>12846</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 130440, im: 12846}}), ready: 1}, master: 880000000000, overrun: 0}</title>
 </text>
 <path d="M 10280 310 L 10283 303 L 10377 303 L 10380 310 L 10377 317 L 10283 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10330" xml:space="preserve" y="310">
-25570
-<title>25570</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 128552, im: 25570}}), ready: 1}, master: 8c0000000000, overrun: 0}</title>
 </text>
 <path d="M 10380 310 L 10383 303 L 10477 303 L 10480 310 L 10477 317 L 10383 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10430" xml:space="preserve" y="310">
-38047
-<title>38047</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 125427, im: 38047}}), ready: 1}, master: 900000000000, overrun: 0}</title>
 </text>
 <path d="M 10480 310 L 10483 303 L 10577 303 L 10580 310 L 10577 317 L 10483 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10530" xml:space="preserve" y="310">
-50158
-<title>50158</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 121094, im: 50158}}), ready: 1}, master: 940000000000, overrun: 0}</title>
 </text>
 <path d="M 10580 310 L 10583 303 L 10677 303 L 10680 310 L 10677 317 L 10583 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10630" xml:space="preserve" y="310">
-61785
-<title>61785</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 115594, im: 61785}}), ready: 1}, master: 980000000000, overrun: 0}</title>
 </text>
 <path d="M 10680 310 L 10683 303 L 10777 303 L 10780 310 L 10777 317 L 10683 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10730" xml:space="preserve" y="310">
-72819
-<title>72819</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 108982, im: 72819}}), ready: 1}, master: 9c0000000000, overrun: 0}</title>
 </text>
 <path d="M 10780 310 L 10783 303 L 10877 303 L 10880 310 L 10877 317 L 10783 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10830" xml:space="preserve" y="310">
-83149
-<title>83149</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 101320, im: 83149}}), ready: 1}, master: a00000000000, overrun: 0}</title>
 </text>
 <path d="M 10880 310 L 10883 303 L 10977 303 L 10980 310 L 10977 317 L 10883 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10930" xml:space="preserve" y="310">
-92680
-<title>92680</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 92682, im: 92680}}), ready: 1}, master: a40000000000, overrun: 0}</title>
 </text>
 <path d="M 10980 310 L 10983 303 L 11077 303 L 11080 310 L 11077 317 L 10983 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11030" xml:space="preserve" y="310">
-101318
-<title>101318</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 83151, im: 101318}}), ready: 1}, master: a80000000000, overrun: 0}</title>
 </text>
 <path d="M 11080 310 L 11083 303 L 11177 303 L 11180 310 L 11177 317 L 11083 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11130" xml:space="preserve" y="310">
-108981
-<title>108981</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 72820, im: 108981}}), ready: 1}, master: ac0000000000, overrun: 0}</title>
 </text>
 <path d="M 11180 310 L 11183 303 L 11277 303 L 11280 310 L 11277 317 L 11183 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11230" xml:space="preserve" y="310">
-115593
-<title>115593</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 61787, im: 115593}}), ready: 1}, master: b00000000000, overrun: 0}</title>
 </text>
 <path d="M 11280 310 L 11283 303 L 11377 303 L 11380 310 L 11377 317 L 11283 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11330" xml:space="preserve" y="310">
-121093
-<title>121093</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 50159, im: 121093}}), ready: 1}, master: b40000000000, overrun: 0}</title>
 </text>
 <path d="M 11380 310 L 11383 303 L 11477 303 L 11480 310 L 11477 317 L 11383 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11430" xml:space="preserve" y="310">
-125426
-<title>125426</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 38049, im: 125426}}), ready: 1}, master: b80000000000, overrun: 0}</title>
 </text>
 <path d="M 11480 310 L 11483 303 L 11577 303 L 11580 310 L 11577 317 L 11483 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11530" xml:space="preserve" y="310">
-128551
-<title>128551</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 25571, im: 128551}}), ready: 1}, master: bc0000000000, overrun: 0}</title>
 </text>
 <path d="M 11580 310 L 11583 303 L 11677 303 L 11680 310 L 11677 317 L 11583 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11630" xml:space="preserve" y="310">
-130439
-<title>130439</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 12848, im: 130439}}), ready: 1}, master: c00000000000, overrun: 0}</title>
 </text>
 <path d="M 11680 310 L 11683 303 L 11777 303 L 11780 310 L 11777 317 L 11683 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11730" xml:space="preserve" y="310">
--131071
-<title>-131071</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 0, im: -131071}}), ready: 1}, master: c40000000000, overrun: 0}</title>
 </text>
 <path d="M 11780 310 L 11783 303 L 11877 303 L 11880 310 L 11877 317 L 11783 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11830" xml:space="preserve" y="310">
--130440
-<title>-130440</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 12847, im: -130440}}), ready: 1}, master: c80000000000, overrun: 0}</title>
 </text>
 <path d="M 11880 310 L 11883 303 L 11977 303 L 11980 310 L 11977 317 L 11883 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11930" xml:space="preserve" y="310">
--128552
-<title>-128552</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 25571, im: -128552}}), ready: 1}, master: cc0000000000, overrun: 0}</title>
 </text>
 <path d="M 11980 310 L 11983 303 L 12077 303 L 12080 310 L 12077 317 L 11983 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12030" xml:space="preserve" y="310">
--125427
-<title>-125427</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 38048, im: -125427}}), ready: 1}, master: d00000000000, overrun: 0}</title>
 </text>
 <path d="M 12080 310 L 12083 303 L 12177 303 L 12180 310 L 12177 317 L 12083 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12130" xml:space="preserve" y="310">
--121094
-<title>-121094</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 50159, im: -121094}}), ready: 1}, master: d40000000000, overrun: 0}</title>
 </text>
 <path d="M 12180 310 L 12183 303 L 12277 303 L 12280 310 L 12277 317 L 12183 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12230" xml:space="preserve" y="310">
--115594
-<title>-115594</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 61786, im: -115594}}), ready: 1}, master: d80000000000, overrun: 0}</title>
 </text>
 <path d="M 12280 310 L 12283 303 L 12377 303 L 12380 310 L 12377 317 L 12283 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12330" xml:space="preserve" y="310">
--108982
-<title>-108982</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 72820, im: -108982}}), ready: 1}, master: dc0000000000, overrun: 0}</title>
 </text>
 <path d="M 12380 310 L 12383 303 L 12477 303 L 12480 310 L 12477 317 L 12383 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12430" xml:space="preserve" y="310">
--101320
-<title>-101320</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 83150, im: -101320}}), ready: 1}, master: e00000000000, overrun: 0}</title>
 </text>
 <path d="M 12480 310 L 12483 303 L 12577 303 L 12580 310 L 12577 317 L 12483 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12530" xml:space="preserve" y="310">
--92682
-<title>-92682</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 92681, im: -92682}}), ready: 1}, master: e40000000000, overrun: 0}</title>
 </text>
 <path d="M 12580 310 L 12583 303 L 12677 303 L 12680 310 L 12677 317 L 12583 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12630" xml:space="preserve" y="310">
--83151
-<title>-83151</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 101319, im: -83151}}), ready: 1}, master: e80000000000, overrun: 0}</title>
 </text>
 <path d="M 12680 310 L 12683 303 L 12777 303 L 12780 310 L 12777 317 L 12683 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12730" xml:space="preserve" y="310">
--72820
-<title>-72820</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 108982, im: -72820}}), ready: 1}, master: ec0000000000, overrun: 0}</title>
 </text>
 <path d="M 12780 310 L 12783 303 L 12877 303 L 12880 310 L 12877 317 L 12783 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12830" xml:space="preserve" y="310">
--61787
-<title>-61787</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 115594, im: -61787}}), ready: 1}, master: f00000000000, overrun: 0}</title>
 </text>
 <path d="M 12880 310 L 12883 303 L 12977 303 L 12980 310 L 12977 317 L 12883 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12930" xml:space="preserve" y="310">
--50159
-<title>-50159</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 121094, im: -50159}}), ready: 1}, master: f40000000000, overrun: 0}</title>
 </text>
 <path d="M 12980 310 L 12983 303 L 13077 303 L 13080 310 L 13077 317 L 12983 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13030" xml:space="preserve" y="310">
--38049
-<title>-38049</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 125427, im: -38049}}), ready: 1}, master: f80000000000, overrun: 0}</title>
 </text>
 <path d="M 13080 310 L 13083 303 L 13177 303 L 13180 310 L 13177 317 L 13083 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13130" xml:space="preserve" y="310">
--25571
-<title>-25571</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 128552, im: -25571}}), ready: 1}, master: fc0000000000, overrun: 0}</title>
 </text>
 <path d="M 13180 310 L 13183 303 L 13277 303 L 13280 310 L 13277 317 L 13183 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13230" xml:space="preserve" y="310">
--12848
-<title>-12848</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 130440, im: -12848}}), ready: 1}, master: 000000000000, overrun: 0}</title>
 </text>
 <path d="M 13280 310 L 13283 303 L 13377 303 L 13380 310 L 13377 317 L 13283 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13330" xml:space="preserve" y="310">
--1
-<title>-1</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 131071, im: -1}}), ready: 1}, master: 040000000000, overrun: 0}</title>
 </text>
 <path d="M 13380 310 L 13383 303 L 13477 303 L 13480 310 L 13477 317 L 13383 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13430" xml:space="preserve" y="310">
-12846
-<title>12846</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 130440, im: 12846}}), ready: 1}, master: 080000000000, overrun: 0}</title>
 </text>
 <path d="M 13480 310 L 13483 303 L 13577 303 L 13580 310 L 13577 317 L 13483 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13530" xml:space="preserve" y="310">
-25570
-<title>25570</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 128552, im: 25570}}), ready: 1}, master: 0c0000000000, overrun: 0}</title>
 </text>
 <path d="M 13580 310 L 13583 303 L 13677 303 L 13680 310 L 13677 317 L 13583 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13630" xml:space="preserve" y="310">
-38047
-<title>38047</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 125427, im: 38047}}), ready: 1}, master: 100000000000, overrun: 0}</title>
 </text>
 <path d="M 13680 310 L 13683 303 L 13777 303 L 13780 310 L 13777 317 L 13683 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13730" xml:space="preserve" y="310">
-50158
-<title>50158</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 121094, im: 50158}}), ready: 1}, master: 140000000000, overrun: 0}</title>
 </text>
 <path d="M 13780 310 L 13783 303 L 13877 303 L 13880 310 L 13877 317 L 13783 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13830" xml:space="preserve" y="310">
-61785
-<title>61785</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 115594, im: 61785}}), ready: 1}, master: 180000000000, overrun: 0}</title>
 </text>
 <path d="M 13880 310 L 13883 303 L 13977 303 L 13980 310 L 13977 317 L 13883 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13930" xml:space="preserve" y="310">
-72819
-<title>72819</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 108982, im: 72819}}), ready: 1}, master: 1c0000000000, overrun: 0}</title>
 </text>
 <path d="M 13980 310 L 13983 303 L 14077 303 L 14080 310 L 14077 317 L 13983 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14030" xml:space="preserve" y="310">
-83149
-<title>83149</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 101320, im: 83149}}), ready: 1}, master: 200000000000, overrun: 0}</title>
 </text>
 <path d="M 14080 310 L 14083 303 L 14177 303 L 14180 310 L 14177 317 L 14083 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14130" xml:space="preserve" y="310">
-92680
-<title>92680</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 92682, im: 92680}}), ready: 1}, master: 240000000000, overrun: 0}</title>
 </text>
 <path d="M 14180 310 L 14183 303 L 14277 303 L 14280 310 L 14277 317 L 14183 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14230" xml:space="preserve" y="310">
-101318
-<title>101318</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 83151, im: 101318}}), ready: 1}, master: 280000000000, overrun: 0}</title>
 </text>
 <path d="M 14280 310 L 14283 303 L 14377 303 L 14380 310 L 14377 317 L 14283 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14330" xml:space="preserve" y="310">
-108981
-<title>108981</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 72820, im: 108981}}), ready: 1}, master: 2c0000000000, overrun: 0}</title>
 </text>
 <path d="M 14380 310 L 14383 303 L 14477 303 L 14480 310 L 14477 317 L 14383 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14430" xml:space="preserve" y="310">
-115593
-<title>115593</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 61787, im: 115593}}), ready: 1}, master: 300000000000, overrun: 0}</title>
 </text>
 <path d="M 14480 310 L 14483 303 L 14577 303 L 14580 310 L 14577 317 L 14483 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14530" xml:space="preserve" y="310">
-121093
-<title>121093</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 50159, im: 121093}}), ready: 1}, master: 340000000000, overrun: 0}</title>
 </text>
 <path d="M 14580 310 L 14583 303 L 14677 303 L 14680 310 L 14677 317 L 14583 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14630" xml:space="preserve" y="310">
-125426
-<title>125426</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 38049, im: 125426}}), ready: 1}, master: 380000000000, overrun: 0}</title>
 </text>
 <path d="M 14680 310 L 14683 303 L 14777 303 L 14780 310 L 14777 317 L 14683 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14730" xml:space="preserve" y="310">
-128551
-<title>128551</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 25571, im: 128551}}), ready: 1}, master: 3c0000000000, overrun: 0}</title>
 </text>
 <path d="M 14780 310 L 14783 303 L 14877 303 L 14880 310 L 14877 317 L 14783 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14830" xml:space="preserve" y="310">
-130439
-<title>130439</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 12848, im: 130439}}), ready: 1}, master: 400000000000, overrun: 0}</title>
 </text>
 <path d="M 14880 310 L 14883 303 L 14977 303 L 14980 310 L 14977 317 L 14883 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14930" xml:space="preserve" y="310">
-131070
-<title>131070</title>
+{stream...
+<title>{stream: {data: Some({data: {re: 1, im: 131070}}), ready: 1}, master: 440000000000, overrun: 0}</title>
 </text>
 <path d="M 14980 310 L 14983 303 L 15077 303 L 15080 310 L 15077 317 L 14983 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15030" xml:space="preserve" y="310">
-130439
-<title>130439</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -12846, im: 130439}}), ready: 1}, master: 480000000000, overrun: 0}</title>
 </text>
 <path d="M 15080 310 L 15083 303 L 15177 303 L 15180 310 L 15177 317 L 15083 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15130" xml:space="preserve" y="310">
-128551
-<title>128551</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -25570, im: 128551}}), ready: 1}, master: 4c0000000000, overrun: 0}</title>
 </text>
 <path d="M 15180 310 L 15183 303 L 15277 303 L 15280 310 L 15277 317 L 15183 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15230" xml:space="preserve" y="310">
-125426
-<title>125426</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -38047, im: 125426}}), ready: 1}, master: 500000000000, overrun: 0}</title>
 </text>
 <path d="M 15280 310 L 15283 303 L 15377 303 L 15380 310 L 15377 317 L 15283 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15330" xml:space="preserve" y="310">
-121093
-<title>121093</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -50158, im: 121093}}), ready: 1}, master: 540000000000, overrun: 0}</title>
 </text>
 <path d="M 15380 310 L 15383 303 L 15477 303 L 15480 310 L 15477 317 L 15383 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15430" xml:space="preserve" y="310">
-115593
-<title>115593</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -61785, im: 115593}}), ready: 1}, master: 580000000000, overrun: 0}</title>
 </text>
 <path d="M 15480 310 L 15483 303 L 15577 303 L 15580 310 L 15577 317 L 15483 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15530" xml:space="preserve" y="310">
-108981
-<title>108981</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -72819, im: 108981}}), ready: 1}, master: 5c0000000000, overrun: 0}</title>
 </text>
 <path d="M 15580 310 L 15583 303 L 15677 303 L 15680 310 L 15677 317 L 15583 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15630" xml:space="preserve" y="310">
-101319
-<title>101319</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -83149, im: 101319}}), ready: 1}, master: 600000000000, overrun: 0}</title>
 </text>
 <path d="M 15680 310 L 15683 303 L 15777 303 L 15780 310 L 15777 317 L 15683 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15730" xml:space="preserve" y="310">
-92681
-<title>92681</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -92680, im: 92681}}), ready: 1}, master: 640000000000, overrun: 0}</title>
 </text>
 <path d="M 15780 310 L 15783 303 L 15877 303 L 15880 310 L 15877 317 L 15783 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15830" xml:space="preserve" y="310">
-83150
-<title>83150</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -101318, im: 83150}}), ready: 1}, master: 680000000000, overrun: 0}</title>
 </text>
 <path d="M 15880 310 L 15883 303 L 15977 303 L 15980 310 L 15977 317 L 15883 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15930" xml:space="preserve" y="310">
-72819
-<title>72819</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -108981, im: 72819}}), ready: 1}, master: 6c0000000000, overrun: 0}</title>
 </text>
 <path d="M 15980 310 L 15983 303 L 16077 303 L 16080 310 L 16077 317 L 15983 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16030" xml:space="preserve" y="310">
-61786
-<title>61786</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -115593, im: 61786}}), ready: 1}, master: 700000000000, overrun: 0}</title>
 </text>
 <path d="M 16080 310 L 16083 303 L 16177 303 L 16180 310 L 16177 317 L 16083 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16130" xml:space="preserve" y="310">
-50158
-<title>50158</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -121093, im: 50158}}), ready: 1}, master: 740000000000, overrun: 0}</title>
 </text>
 <path d="M 16180 310 L 16183 303 L 16277 303 L 16280 310 L 16277 317 L 16183 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16230" xml:space="preserve" y="310">
-38048
-<title>38048</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -125426, im: 38048}}), ready: 1}, master: 780000000000, overrun: 0}</title>
 </text>
 <path d="M 16280 310 L 16283 303 L 16377 303 L 16380 310 L 16377 317 L 16283 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16330" xml:space="preserve" y="310">
-25570
-<title>25570</title>
+{stream...
+<title>{stream: {data: Some({data: {re: -128551, im: 25570}}), ready: 1}, master: 7c0000000000, overrun: 0}</title>
 </text>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="start" x="3" xml:space="preserve" y="330">
-   .cos
-<title>top.outputs.cos</title>
+   .stream
+<title>top.outputs.stream</title>
 </text>
 <path d="M 230 330 L 233 323 L 277 323 L 280 330 L 277 337 L 233 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="255" xml:space="preserve" y="330">
-0
-<title>0</title>
+{d...
+<title>{data: Some({data: {re: 0, im: 0}}), ready: 1}</title>
 </text>
 <path d="M 280 330 L 283 323 L 577 323 L 580 330 L 577 337 L 283 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="430" xml:space="preserve" y="330">
-131071
-<title>131071</title>
+{data: Some({data: {re: 131...
+<title>{data: Some({data: {re: 131071, im: -1}}), ready: 1}</title>
 </text>
 <path d="M 580 330 L 583 323 L 677 323 L 680 330 L 677 337 L 583 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="630" xml:space="preserve" y="330">
-130440
-<title>130440</title>
+{data: ...
+<title>{data: Some({data: {re: 130440, im: 12846}}), ready: 1}</title>
 </text>
 <path d="M 680 330 L 683 323 L 777 323 L 780 330 L 777 337 L 683 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="730" xml:space="preserve" y="330">
-128552
-<title>128552</title>
+{data: ...
+<title>{data: Some({data: {re: 128552, im: 25570}}), ready: 1}</title>
 </text>
 <path d="M 780 330 L 783 323 L 877 323 L 880 330 L 877 337 L 783 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="830" xml:space="preserve" y="330">
-125427
-<title>125427</title>
+{data: ...
+<title>{data: Some({data: {re: 125427, im: 38047}}), ready: 1}</title>
 </text>
 <path d="M 880 330 L 883 323 L 977 323 L 980 330 L 977 337 L 883 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="930" xml:space="preserve" y="330">
-121094
-<title>121094</title>
+{data: ...
+<title>{data: Some({data: {re: 121094, im: 50158}}), ready: 1}</title>
 </text>
 <path d="M 980 330 L 983 323 L 1077 323 L 1080 330 L 1077 337 L 983 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1030" xml:space="preserve" y="330">
-115594
-<title>115594</title>
+{data: ...
+<title>{data: Some({data: {re: 115594, im: 61785}}), ready: 1}</title>
 </text>
 <path d="M 1080 330 L 1083 323 L 1177 323 L 1180 330 L 1177 337 L 1083 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1130" xml:space="preserve" y="330">
-108982
-<title>108982</title>
+{data: ...
+<title>{data: Some({data: {re: 108982, im: 72819}}), ready: 1}</title>
 </text>
 <path d="M 1180 330 L 1183 323 L 1277 323 L 1280 330 L 1277 337 L 1183 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1230" xml:space="preserve" y="330">
-101320
-<title>101320</title>
+{data: ...
+<title>{data: Some({data: {re: 101320, im: 83149}}), ready: 1}</title>
 </text>
 <path d="M 1280 330 L 1283 323 L 1377 323 L 1380 330 L 1377 337 L 1283 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1330" xml:space="preserve" y="330">
-92682
-<title>92682</title>
+{data: ...
+<title>{data: Some({data: {re: 92682, im: 92680}}), ready: 1}</title>
 </text>
 <path d="M 1380 330 L 1383 323 L 1477 323 L 1480 330 L 1477 337 L 1383 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1430" xml:space="preserve" y="330">
-83151
-<title>83151</title>
+{data: ...
+<title>{data: Some({data: {re: 83151, im: 101318}}), ready: 1}</title>
 </text>
 <path d="M 1480 330 L 1483 323 L 1577 323 L 1580 330 L 1577 337 L 1483 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1530" xml:space="preserve" y="330">
-72820
-<title>72820</title>
+{data: ...
+<title>{data: Some({data: {re: 72820, im: 108981}}), ready: 1}</title>
 </text>
 <path d="M 1580 330 L 1583 323 L 1677 323 L 1680 330 L 1677 337 L 1583 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1630" xml:space="preserve" y="330">
-61787
-<title>61787</title>
+{data: ...
+<title>{data: Some({data: {re: 61787, im: 115593}}), ready: 1}</title>
 </text>
 <path d="M 1680 330 L 1683 323 L 1777 323 L 1780 330 L 1777 337 L 1683 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1730" xml:space="preserve" y="330">
-50159
-<title>50159</title>
+{data: ...
+<title>{data: Some({data: {re: 50159, im: 121093}}), ready: 1}</title>
 </text>
 <path d="M 1780 330 L 1783 323 L 1877 323 L 1880 330 L 1877 337 L 1783 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1830" xml:space="preserve" y="330">
-38049
-<title>38049</title>
+{data: ...
+<title>{data: Some({data: {re: 38049, im: 125426}}), ready: 1}</title>
 </text>
 <path d="M 1880 330 L 1883 323 L 1977 323 L 1980 330 L 1977 337 L 1883 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1930" xml:space="preserve" y="330">
-25571
-<title>25571</title>
+{data: ...
+<title>{data: Some({data: {re: 25571, im: 128551}}), ready: 1}</title>
 </text>
 <path d="M 1980 330 L 1983 323 L 2077 323 L 2080 330 L 2077 337 L 1983 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2030" xml:space="preserve" y="330">
-12848
-<title>12848</title>
+{data: ...
+<title>{data: Some({data: {re: 12848, im: 130439}}), ready: 1}</title>
 </text>
 <path d="M 2080 330 L 2083 323 L 2177 323 L 2180 330 L 2177 337 L 2083 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2130" xml:space="preserve" y="330">
-1
-<title>1</title>
+{data: ...
+<title>{data: Some({data: {re: 1, im: 131070}}), ready: 1}</title>
 </text>
 <path d="M 2180 330 L 2183 323 L 2277 323 L 2280 330 L 2277 337 L 2183 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2230" xml:space="preserve" y="330">
--12846
-<title>-12846</title>
+{data: ...
+<title>{data: Some({data: {re: -12846, im: 130439}}), ready: 1}</title>
 </text>
 <path d="M 2280 330 L 2283 323 L 2377 323 L 2380 330 L 2377 337 L 2283 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2330" xml:space="preserve" y="330">
--25570
-<title>-25570</title>
+{data: ...
+<title>{data: Some({data: {re: -25570, im: 128551}}), ready: 1}</title>
 </text>
 <path d="M 2380 330 L 2383 323 L 2477 323 L 2480 330 L 2477 337 L 2383 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2430" xml:space="preserve" y="330">
--38047
-<title>-38047</title>
+{data: ...
+<title>{data: Some({data: {re: -38047, im: 125426}}), ready: 1}</title>
 </text>
 <path d="M 2480 330 L 2483 323 L 2577 323 L 2580 330 L 2577 337 L 2483 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2530" xml:space="preserve" y="330">
--50158
-<title>-50158</title>
+{data: ...
+<title>{data: Some({data: {re: -50158, im: 121093}}), ready: 1}</title>
 </text>
 <path d="M 2580 330 L 2583 323 L 2677 323 L 2680 330 L 2677 337 L 2583 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2630" xml:space="preserve" y="330">
--61785
-<title>-61785</title>
+{data: ...
+<title>{data: Some({data: {re: -61785, im: 115593}}), ready: 1}</title>
 </text>
 <path d="M 2680 330 L 2683 323 L 2777 323 L 2780 330 L 2777 337 L 2683 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2730" xml:space="preserve" y="330">
--72819
-<title>-72819</title>
+{data: ...
+<title>{data: Some({data: {re: -72819, im: 108981}}), ready: 1}</title>
 </text>
 <path d="M 2780 330 L 2783 323 L 2877 323 L 2880 330 L 2877 337 L 2783 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2830" xml:space="preserve" y="330">
--83149
-<title>-83149</title>
+{data: ...
+<title>{data: Some({data: {re: -83149, im: 101319}}), ready: 1}</title>
 </text>
 <path d="M 2880 330 L 2883 323 L 2977 323 L 2980 330 L 2977 337 L 2883 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2930" xml:space="preserve" y="330">
--92680
-<title>-92680</title>
+{data: ...
+<title>{data: Some({data: {re: -92680, im: 92681}}), ready: 1}</title>
 </text>
 <path d="M 2980 330 L 2983 323 L 3077 323 L 3080 330 L 3077 337 L 2983 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3030" xml:space="preserve" y="330">
--101318
-<title>-101318</title>
+{data: ...
+<title>{data: Some({data: {re: -101318, im: 83150}}), ready: 1}</title>
 </text>
 <path d="M 3080 330 L 3083 323 L 3177 323 L 3180 330 L 3177 337 L 3083 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3130" xml:space="preserve" y="330">
--108981
-<title>-108981</title>
+{data: ...
+<title>{data: Some({data: {re: -108981, im: 72819}}), ready: 1}</title>
 </text>
 <path d="M 3180 330 L 3183 323 L 3277 323 L 3280 330 L 3277 337 L 3183 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3230" xml:space="preserve" y="330">
--115593
-<title>-115593</title>
+{data: ...
+<title>{data: Some({data: {re: -115593, im: 61786}}), ready: 1}</title>
 </text>
 <path d="M 3280 330 L 3283 323 L 3377 323 L 3380 330 L 3377 337 L 3283 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3330" xml:space="preserve" y="330">
--121093
-<title>-121093</title>
+{data: ...
+<title>{data: Some({data: {re: -121093, im: 50158}}), ready: 1}</title>
 </text>
 <path d="M 3380 330 L 3383 323 L 3477 323 L 3480 330 L 3477 337 L 3383 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3430" xml:space="preserve" y="330">
--125426
-<title>-125426</title>
+{data: ...
+<title>{data: Some({data: {re: -125426, im: 38048}}), ready: 1}</title>
 </text>
 <path d="M 3480 330 L 3483 323 L 3577 323 L 3580 330 L 3577 337 L 3483 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3530" xml:space="preserve" y="330">
--128551
-<title>-128551</title>
+{data: ...
+<title>{data: Some({data: {re: -128551, im: 25570}}), ready: 1}</title>
 </text>
 <path d="M 3580 330 L 3583 323 L 3677 323 L 3680 330 L 3677 337 L 3583 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3630" xml:space="preserve" y="330">
--130439
-<title>-130439</title>
+{data: ...
+<title>{data: Some({data: {re: -130439, im: 12847}}), ready: 1}</title>
 </text>
 <path d="M 3680 330 L 3683 323 L 3777 323 L 3780 330 L 3777 337 L 3683 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3730" xml:space="preserve" y="330">
--131070
-<title>-131070</title>
+{data: ...
+<title>{data: Some({data: {re: -131070, im: 0}}), ready: 1}</title>
 </text>
 <path d="M 3780 330 L 3783 323 L 3877 323 L 3880 330 L 3877 337 L 3783 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3830" xml:space="preserve" y="330">
--130439
-<title>-130439</title>
+{data: ...
+<title>{data: Some({data: {re: -130439, im: -12847}}), ready: 1}</title>
 </text>
 <path d="M 3880 330 L 3883 323 L 3977 323 L 3980 330 L 3977 337 L 3883 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3930" xml:space="preserve" y="330">
--128551
-<title>-128551</title>
+{data: ...
+<title>{data: Some({data: {re: -128551, im: -25571}}), ready: 1}</title>
 </text>
 <path d="M 3980 330 L 3983 323 L 4077 323 L 4080 330 L 4077 337 L 3983 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4030" xml:space="preserve" y="330">
--125426
-<title>-125426</title>
+{data: ...
+<title>{data: Some({data: {re: -125426, im: -38048}}), ready: 1}</title>
 </text>
 <path d="M 4080 330 L 4083 323 L 4177 323 L 4180 330 L 4177 337 L 4083 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4130" xml:space="preserve" y="330">
--121093
-<title>-121093</title>
+{data: ...
+<title>{data: Some({data: {re: -121093, im: -50159}}), ready: 1}</title>
 </text>
 <path d="M 4180 330 L 4183 323 L 4277 323 L 4280 330 L 4277 337 L 4183 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4230" xml:space="preserve" y="330">
--115593
-<title>-115593</title>
+{data: ...
+<title>{data: Some({data: {re: -115593, im: -61786}}), ready: 1}</title>
 </text>
 <path d="M 4280 330 L 4283 323 L 4377 323 L 4380 330 L 4377 337 L 4283 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4330" xml:space="preserve" y="330">
--108981
-<title>-108981</title>
+{data: ...
+<title>{data: Some({data: {re: -108981, im: -72820}}), ready: 1}</title>
 </text>
 <path d="M 4380 330 L 4383 323 L 4477 323 L 4480 330 L 4477 337 L 4383 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4430" xml:space="preserve" y="330">
--101319
-<title>-101319</title>
+{data: ...
+<title>{data: Some({data: {re: -101319, im: -83150}}), ready: 1}</title>
 </text>
 <path d="M 4480 330 L 4483 323 L 4577 323 L 4580 330 L 4577 337 L 4483 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4530" xml:space="preserve" y="330">
--92681
-<title>-92681</title>
+{data: ...
+<title>{data: Some({data: {re: -92681, im: -92681}}), ready: 1}</title>
 </text>
 <path d="M 4580 330 L 4583 323 L 4677 323 L 4680 330 L 4677 337 L 4583 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4630" xml:space="preserve" y="330">
--83150
-<title>-83150</title>
+{data: ...
+<title>{data: Some({data: {re: -83150, im: -101319}}), ready: 1}</title>
 </text>
 <path d="M 4680 330 L 4683 323 L 4777 323 L 4780 330 L 4777 337 L 4683 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4730" xml:space="preserve" y="330">
--72819
-<title>-72819</title>
+{data: ...
+<title>{data: Some({data: {re: -72819, im: -108982}}), ready: 1}</title>
 </text>
 <path d="M 4780 330 L 4783 323 L 4877 323 L 4880 330 L 4877 337 L 4783 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4830" xml:space="preserve" y="330">
--61786
-<title>-61786</title>
+{data: ...
+<title>{data: Some({data: {re: -61786, im: -115594}}), ready: 1}</title>
 </text>
 <path d="M 4880 330 L 4883 323 L 4977 323 L 4980 330 L 4977 337 L 4883 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4930" xml:space="preserve" y="330">
--50158
-<title>-50158</title>
+{data: ...
+<title>{data: Some({data: {re: -50158, im: -121094}}), ready: 1}</title>
 </text>
 <path d="M 4980 330 L 4983 323 L 5077 323 L 5080 330 L 5077 337 L 4983 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5030" xml:space="preserve" y="330">
--38048
-<title>-38048</title>
+{data: ...
+<title>{data: Some({data: {re: -38048, im: -125427}}), ready: 1}</title>
 </text>
 <path d="M 5080 330 L 5083 323 L 5177 323 L 5180 330 L 5177 337 L 5083 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5130" xml:space="preserve" y="330">
--25570
-<title>-25570</title>
+{data: ...
+<title>{data: Some({data: {re: -25570, im: -128552}}), ready: 1}</title>
 </text>
 <path d="M 5180 330 L 5183 323 L 5277 323 L 5280 330 L 5277 337 L 5183 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5230" xml:space="preserve" y="330">
--12847
-<title>-12847</title>
+{data: ...
+<title>{data: Some({data: {re: -12847, im: -130440}}), ready: 1}</title>
 </text>
 <path d="M 5280 330 L 5283 323 L 5377 323 L 5380 330 L 5377 337 L 5283 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5330" xml:space="preserve" y="330">
-0
-<title>0</title>
+{data: ...
+<title>{data: Some({data: {re: 0, im: -131071}}), ready: 1}</title>
 </text>
 <path d="M 5380 330 L 5383 323 L 5477 323 L 5480 330 L 5477 337 L 5383 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5430" xml:space="preserve" y="330">
-12847
-<title>12847</title>
+{data: ...
+<title>{data: Some({data: {re: 12847, im: -130440}}), ready: 1}</title>
 </text>
 <path d="M 5480 330 L 5483 323 L 5577 323 L 5580 330 L 5577 337 L 5483 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5530" xml:space="preserve" y="330">
-25571
-<title>25571</title>
+{data: ...
+<title>{data: Some({data: {re: 25571, im: -128552}}), ready: 1}</title>
 </text>
 <path d="M 5580 330 L 5583 323 L 5677 323 L 5680 330 L 5677 337 L 5583 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5630" xml:space="preserve" y="330">
-38048
-<title>38048</title>
+{data: ...
+<title>{data: Some({data: {re: 38048, im: -125427}}), ready: 1}</title>
 </text>
 <path d="M 5680 330 L 5683 323 L 5777 323 L 5780 330 L 5777 337 L 5683 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5730" xml:space="preserve" y="330">
-50159
-<title>50159</title>
+{data: ...
+<title>{data: Some({data: {re: 50159, im: -121094}}), ready: 1}</title>
 </text>
 <path d="M 5780 330 L 5783 323 L 5877 323 L 5880 330 L 5877 337 L 5783 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5830" xml:space="preserve" y="330">
-61786
-<title>61786</title>
+{data: ...
+<title>{data: Some({data: {re: 61786, im: -115594}}), ready: 1}</title>
 </text>
 <path d="M 5880 330 L 5883 323 L 5977 323 L 5980 330 L 5977 337 L 5883 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5930" xml:space="preserve" y="330">
-72820
-<title>72820</title>
+{data: ...
+<title>{data: Some({data: {re: 72820, im: -108982}}), ready: 1}</title>
 </text>
 <path d="M 5980 330 L 5983 323 L 6077 323 L 6080 330 L 6077 337 L 5983 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6030" xml:space="preserve" y="330">
-83150
-<title>83150</title>
+{data: ...
+<title>{data: Some({data: {re: 83150, im: -101320}}), ready: 1}</title>
 </text>
 <path d="M 6080 330 L 6083 323 L 6177 323 L 6180 330 L 6177 337 L 6083 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6130" xml:space="preserve" y="330">
-92681
-<title>92681</title>
+{data: ...
+<title>{data: Some({data: {re: 92681, im: -92682}}), ready: 1}</title>
 </text>
 <path d="M 6180 330 L 6183 323 L 6277 323 L 6280 330 L 6277 337 L 6183 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6230" xml:space="preserve" y="330">
-101319
-<title>101319</title>
+{data: ...
+<title>{data: Some({data: {re: 101319, im: -83151}}), ready: 1}</title>
 </text>
 <path d="M 6280 330 L 6283 323 L 6377 323 L 6380 330 L 6377 337 L 6283 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6330" xml:space="preserve" y="330">
-108982
-<title>108982</title>
+{data: ...
+<title>{data: Some({data: {re: 108982, im: -72820}}), ready: 1}</title>
 </text>
 <path d="M 6380 330 L 6383 323 L 6477 323 L 6480 330 L 6477 337 L 6383 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6430" xml:space="preserve" y="330">
-115594
-<title>115594</title>
+{data: ...
+<title>{data: Some({data: {re: 115594, im: -61787}}), ready: 1}</title>
 </text>
 <path d="M 6480 330 L 6483 323 L 6577 323 L 6580 330 L 6577 337 L 6483 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6530" xml:space="preserve" y="330">
-121094
-<title>121094</title>
+{data: ...
+<title>{data: Some({data: {re: 121094, im: -50159}}), ready: 1}</title>
 </text>
 <path d="M 6580 330 L 6583 323 L 6677 323 L 6680 330 L 6677 337 L 6583 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6630" xml:space="preserve" y="330">
-125427
-<title>125427</title>
+{data: ...
+<title>{data: Some({data: {re: 125427, im: -38049}}), ready: 1}</title>
 </text>
 <path d="M 6680 330 L 6683 323 L 6777 323 L 6780 330 L 6777 337 L 6683 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6730" xml:space="preserve" y="330">
-128552
-<title>128552</title>
+{data: ...
+<title>{data: Some({data: {re: 128552, im: -25571}}), ready: 1}</title>
 </text>
 <path d="M 6780 330 L 6783 323 L 6877 323 L 6880 330 L 6877 337 L 6783 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6830" xml:space="preserve" y="330">
-130440
-<title>130440</title>
+{data: ...
+<title>{data: Some({data: {re: 130440, im: -12848}}), ready: 1}</title>
 </text>
 <path d="M 6880 330 L 6883 323 L 6977 323 L 6980 330 L 6977 337 L 6883 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6930" xml:space="preserve" y="330">
--131070
-<title>-131070</title>
+{data: ...
+<title>{data: Some({data: {re: -131070, im: 0}}), ready: 1}</title>
 </text>
 <path d="M 6980 330 L 6983 323 L 7077 323 L 7080 330 L 7077 337 L 6983 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7030" xml:space="preserve" y="330">
--130439
-<title>-130439</title>
+{data: ...
+<title>{data: Some({data: {re: -130439, im: -12847}}), ready: 1}</title>
 </text>
 <path d="M 7080 330 L 7083 323 L 7177 323 L 7180 330 L 7177 337 L 7083 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7130" xml:space="preserve" y="330">
--128551
-<title>-128551</title>
+{data: ...
+<title>{data: Some({data: {re: -128551, im: -25571}}), ready: 1}</title>
 </text>
 <path d="M 7180 330 L 7183 323 L 7277 323 L 7280 330 L 7277 337 L 7183 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7230" xml:space="preserve" y="330">
--125426
-<title>-125426</title>
+{data: ...
+<title>{data: Some({data: {re: -125426, im: -38048}}), ready: 1}</title>
 </text>
 <path d="M 7280 330 L 7283 323 L 7377 323 L 7380 330 L 7377 337 L 7283 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7330" xml:space="preserve" y="330">
--121093
-<title>-121093</title>
+{data: ...
+<title>{data: Some({data: {re: -121093, im: -50159}}), ready: 1}</title>
 </text>
 <path d="M 7380 330 L 7383 323 L 7477 323 L 7480 330 L 7477 337 L 7383 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7430" xml:space="preserve" y="330">
--115593
-<title>-115593</title>
+{data: ...
+<title>{data: Some({data: {re: -115593, im: -61786}}), ready: 1}</title>
 </text>
 <path d="M 7480 330 L 7483 323 L 7577 323 L 7580 330 L 7577 337 L 7483 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7530" xml:space="preserve" y="330">
--108981
-<title>-108981</title>
+{data: ...
+<title>{data: Some({data: {re: -108981, im: -72820}}), ready: 1}</title>
 </text>
 <path d="M 7580 330 L 7583 323 L 7677 323 L 7680 330 L 7677 337 L 7583 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7630" xml:space="preserve" y="330">
--101319
-<title>-101319</title>
+{data: ...
+<title>{data: Some({data: {re: -101319, im: -83150}}), ready: 1}</title>
 </text>
 <path d="M 7680 330 L 7683 323 L 7777 323 L 7780 330 L 7777 337 L 7683 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7730" xml:space="preserve" y="330">
--92681
-<title>-92681</title>
+{data: ...
+<title>{data: Some({data: {re: -92681, im: -92681}}), ready: 1}</title>
 </text>
 <path d="M 7780 330 L 7783 323 L 7877 323 L 7880 330 L 7877 337 L 7783 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7830" xml:space="preserve" y="330">
--83150
-<title>-83150</title>
+{data: ...
+<title>{data: Some({data: {re: -83150, im: -101319}}), ready: 1}</title>
 </text>
 <path d="M 7880 330 L 7883 323 L 7977 323 L 7980 330 L 7977 337 L 7883 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7930" xml:space="preserve" y="330">
--72819
-<title>-72819</title>
+{data: ...
+<title>{data: Some({data: {re: -72819, im: -108982}}), ready: 1}</title>
 </text>
 <path d="M 7980 330 L 7983 323 L 8077 323 L 8080 330 L 8077 337 L 7983 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8030" xml:space="preserve" y="330">
--61786
-<title>-61786</title>
+{data: ...
+<title>{data: Some({data: {re: -61786, im: -115594}}), ready: 1}</title>
 </text>
 <path d="M 8080 330 L 8083 323 L 8177 323 L 8180 330 L 8177 337 L 8083 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8130" xml:space="preserve" y="330">
--50158
-<title>-50158</title>
+{data: ...
+<title>{data: Some({data: {re: -50158, im: -121094}}), ready: 1}</title>
 </text>
 <path d="M 8180 330 L 8183 323 L 8277 323 L 8280 330 L 8277 337 L 8183 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8230" xml:space="preserve" y="330">
--38048
-<title>-38048</title>
+{data: ...
+<title>{data: Some({data: {re: -38048, im: -125427}}), ready: 1}</title>
 </text>
 <path d="M 8280 330 L 8283 323 L 8377 323 L 8380 330 L 8377 337 L 8283 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8330" xml:space="preserve" y="330">
--25570
-<title>-25570</title>
+{data: ...
+<title>{data: Some({data: {re: -25570, im: -128552}}), ready: 1}</title>
 </text>
 <path d="M 8380 330 L 8383 323 L 8477 323 L 8480 330 L 8477 337 L 8383 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8430" xml:space="preserve" y="330">
--12847
-<title>-12847</title>
+{data: ...
+<title>{data: Some({data: {re: -12847, im: -130440}}), ready: 1}</title>
 </text>
 <path d="M 8480 330 L 8483 323 L 8577 323 L 8580 330 L 8577 337 L 8483 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8530" xml:space="preserve" y="330">
-0
-<title>0</title>
+{data: ...
+<title>{data: Some({data: {re: 0, im: -131071}}), ready: 1}</title>
 </text>
 <path d="M 8580 330 L 8583 323 L 8677 323 L 8680 330 L 8677 337 L 8583 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8630" xml:space="preserve" y="330">
-12847
-<title>12847</title>
+{data: ...
+<title>{data: Some({data: {re: 12847, im: -130440}}), ready: 1}</title>
 </text>
 <path d="M 8680 330 L 8683 323 L 8777 323 L 8780 330 L 8777 337 L 8683 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8730" xml:space="preserve" y="330">
-25571
-<title>25571</title>
+{data: ...
+<title>{data: Some({data: {re: 25571, im: -128552}}), ready: 1}</title>
 </text>
 <path d="M 8780 330 L 8783 323 L 8877 323 L 8880 330 L 8877 337 L 8783 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8830" xml:space="preserve" y="330">
-38048
-<title>38048</title>
+{data: ...
+<title>{data: Some({data: {re: 38048, im: -125427}}), ready: 1}</title>
 </text>
 <path d="M 8880 330 L 8883 323 L 8977 323 L 8980 330 L 8977 337 L 8883 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8930" xml:space="preserve" y="330">
-50159
-<title>50159</title>
+{data: ...
+<title>{data: Some({data: {re: 50159, im: -121094}}), ready: 1}</title>
 </text>
 <path d="M 8980 330 L 8983 323 L 9077 323 L 9080 330 L 9077 337 L 8983 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9030" xml:space="preserve" y="330">
-61786
-<title>61786</title>
+{data: ...
+<title>{data: Some({data: {re: 61786, im: -115594}}), ready: 1}</title>
 </text>
 <path d="M 9080 330 L 9083 323 L 9177 323 L 9180 330 L 9177 337 L 9083 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9130" xml:space="preserve" y="330">
-72820
-<title>72820</title>
+{data: ...
+<title>{data: Some({data: {re: 72820, im: -108982}}), ready: 1}</title>
 </text>
 <path d="M 9180 330 L 9183 323 L 9277 323 L 9280 330 L 9277 337 L 9183 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9230" xml:space="preserve" y="330">
-83150
-<title>83150</title>
+{data: ...
+<title>{data: Some({data: {re: 83150, im: -101320}}), ready: 1}</title>
 </text>
 <path d="M 9280 330 L 9283 323 L 9377 323 L 9380 330 L 9377 337 L 9283 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9330" xml:space="preserve" y="330">
-92681
-<title>92681</title>
+{data: ...
+<title>{data: Some({data: {re: 92681, im: -92682}}), ready: 1}</title>
 </text>
 <path d="M 9380 330 L 9383 323 L 9477 323 L 9480 330 L 9477 337 L 9383 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9430" xml:space="preserve" y="330">
-101319
-<title>101319</title>
+{data: ...
+<title>{data: Some({data: {re: 101319, im: -83151}}), ready: 1}</title>
 </text>
 <path d="M 9480 330 L 9483 323 L 9577 323 L 9580 330 L 9577 337 L 9483 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9530" xml:space="preserve" y="330">
-108982
-<title>108982</title>
+{data: ...
+<title>{data: Some({data: {re: 108982, im: -72820}}), ready: 1}</title>
 </text>
 <path d="M 9580 330 L 9583 323 L 9677 323 L 9680 330 L 9677 337 L 9583 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9630" xml:space="preserve" y="330">
-115594
-<title>115594</title>
+{data: ...
+<title>{data: Some({data: {re: 115594, im: -61787}}), ready: 1}</title>
 </text>
 <path d="M 9680 330 L 9683 323 L 9777 323 L 9780 330 L 9777 337 L 9683 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9730" xml:space="preserve" y="330">
-121094
-<title>121094</title>
+{data: ...
+<title>{data: Some({data: {re: 121094, im: -50159}}), ready: 1}</title>
 </text>
 <path d="M 9780 330 L 9783 323 L 9877 323 L 9880 330 L 9877 337 L 9783 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9830" xml:space="preserve" y="330">
-125427
-<title>125427</title>
+{data: ...
+<title>{data: Some({data: {re: 125427, im: -38049}}), ready: 1}</title>
 </text>
 <path d="M 9880 330 L 9883 323 L 9977 323 L 9980 330 L 9977 337 L 9883 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9930" xml:space="preserve" y="330">
-128552
-<title>128552</title>
+{data: ...
+<title>{data: Some({data: {re: 128552, im: -25571}}), ready: 1}</title>
 </text>
 <path d="M 9980 330 L 9983 323 L 10077 323 L 10080 330 L 10077 337 L 9983 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10030" xml:space="preserve" y="330">
-130440
-<title>130440</title>
+{data: ...
+<title>{data: Some({data: {re: 130440, im: -12848}}), ready: 1}</title>
 </text>
 <path d="M 10080 330 L 10083 323 L 10177 323 L 10180 330 L 10177 337 L 10083 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10130" xml:space="preserve" y="330">
-131071
-<title>131071</title>
+{data: ...
+<title>{data: Some({data: {re: 131071, im: -1}}), ready: 1}</title>
 </text>
 <path d="M 10180 330 L 10183 323 L 10277 323 L 10280 330 L 10277 337 L 10183 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10230" xml:space="preserve" y="330">
-130440
-<title>130440</title>
+{data: ...
+<title>{data: Some({data: {re: 130440, im: 12846}}), ready: 1}</title>
 </text>
 <path d="M 10280 330 L 10283 323 L 10377 323 L 10380 330 L 10377 337 L 10283 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10330" xml:space="preserve" y="330">
-128552
-<title>128552</title>
+{data: ...
+<title>{data: Some({data: {re: 128552, im: 25570}}), ready: 1}</title>
 </text>
 <path d="M 10380 330 L 10383 323 L 10477 323 L 10480 330 L 10477 337 L 10383 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10430" xml:space="preserve" y="330">
-125427
-<title>125427</title>
+{data: ...
+<title>{data: Some({data: {re: 125427, im: 38047}}), ready: 1}</title>
 </text>
 <path d="M 10480 330 L 10483 323 L 10577 323 L 10580 330 L 10577 337 L 10483 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10530" xml:space="preserve" y="330">
-121094
-<title>121094</title>
+{data: ...
+<title>{data: Some({data: {re: 121094, im: 50158}}), ready: 1}</title>
 </text>
 <path d="M 10580 330 L 10583 323 L 10677 323 L 10680 330 L 10677 337 L 10583 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10630" xml:space="preserve" y="330">
-115594
-<title>115594</title>
+{data: ...
+<title>{data: Some({data: {re: 115594, im: 61785}}), ready: 1}</title>
 </text>
 <path d="M 10680 330 L 10683 323 L 10777 323 L 10780 330 L 10777 337 L 10683 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10730" xml:space="preserve" y="330">
-108982
-<title>108982</title>
+{data: ...
+<title>{data: Some({data: {re: 108982, im: 72819}}), ready: 1}</title>
 </text>
 <path d="M 10780 330 L 10783 323 L 10877 323 L 10880 330 L 10877 337 L 10783 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10830" xml:space="preserve" y="330">
-101320
-<title>101320</title>
+{data: ...
+<title>{data: Some({data: {re: 101320, im: 83149}}), ready: 1}</title>
 </text>
 <path d="M 10880 330 L 10883 323 L 10977 323 L 10980 330 L 10977 337 L 10883 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10930" xml:space="preserve" y="330">
-92682
-<title>92682</title>
+{data: ...
+<title>{data: Some({data: {re: 92682, im: 92680}}), ready: 1}</title>
 </text>
 <path d="M 10980 330 L 10983 323 L 11077 323 L 11080 330 L 11077 337 L 10983 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11030" xml:space="preserve" y="330">
-83151
-<title>83151</title>
+{data: ...
+<title>{data: Some({data: {re: 83151, im: 101318}}), ready: 1}</title>
 </text>
 <path d="M 11080 330 L 11083 323 L 11177 323 L 11180 330 L 11177 337 L 11083 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11130" xml:space="preserve" y="330">
-72820
-<title>72820</title>
+{data: ...
+<title>{data: Some({data: {re: 72820, im: 108981}}), ready: 1}</title>
 </text>
 <path d="M 11180 330 L 11183 323 L 11277 323 L 11280 330 L 11277 337 L 11183 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11230" xml:space="preserve" y="330">
-61787
-<title>61787</title>
+{data: ...
+<title>{data: Some({data: {re: 61787, im: 115593}}), ready: 1}</title>
 </text>
 <path d="M 11280 330 L 11283 323 L 11377 323 L 11380 330 L 11377 337 L 11283 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11330" xml:space="preserve" y="330">
-50159
-<title>50159</title>
+{data: ...
+<title>{data: Some({data: {re: 50159, im: 121093}}), ready: 1}</title>
 </text>
 <path d="M 11380 330 L 11383 323 L 11477 323 L 11480 330 L 11477 337 L 11383 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11430" xml:space="preserve" y="330">
-38049
-<title>38049</title>
+{data: ...
+<title>{data: Some({data: {re: 38049, im: 125426}}), ready: 1}</title>
 </text>
 <path d="M 11480 330 L 11483 323 L 11577 323 L 11580 330 L 11577 337 L 11483 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11530" xml:space="preserve" y="330">
-25571
-<title>25571</title>
+{data: ...
+<title>{data: Some({data: {re: 25571, im: 128551}}), ready: 1}</title>
 </text>
 <path d="M 11580 330 L 11583 323 L 11677 323 L 11680 330 L 11677 337 L 11583 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11630" xml:space="preserve" y="330">
-12848
-<title>12848</title>
+{data: ...
+<title>{data: Some({data: {re: 12848, im: 130439}}), ready: 1}</title>
 </text>
 <path d="M 11680 330 L 11683 323 L 11777 323 L 11780 330 L 11777 337 L 11683 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11730" xml:space="preserve" y="330">
-0
-<title>0</title>
+{data: ...
+<title>{data: Some({data: {re: 0, im: -131071}}), ready: 1}</title>
 </text>
 <path d="M 11780 330 L 11783 323 L 11877 323 L 11880 330 L 11877 337 L 11783 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11830" xml:space="preserve" y="330">
-12847
-<title>12847</title>
+{data: ...
+<title>{data: Some({data: {re: 12847, im: -130440}}), ready: 1}</title>
 </text>
 <path d="M 11880 330 L 11883 323 L 11977 323 L 11980 330 L 11977 337 L 11883 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11930" xml:space="preserve" y="330">
-25571
-<title>25571</title>
+{data: ...
+<title>{data: Some({data: {re: 25571, im: -128552}}), ready: 1}</title>
 </text>
 <path d="M 11980 330 L 11983 323 L 12077 323 L 12080 330 L 12077 337 L 11983 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12030" xml:space="preserve" y="330">
-38048
-<title>38048</title>
+{data: ...
+<title>{data: Some({data: {re: 38048, im: -125427}}), ready: 1}</title>
 </text>
 <path d="M 12080 330 L 12083 323 L 12177 323 L 12180 330 L 12177 337 L 12083 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12130" xml:space="preserve" y="330">
-50159
-<title>50159</title>
+{data: ...
+<title>{data: Some({data: {re: 50159, im: -121094}}), ready: 1}</title>
 </text>
 <path d="M 12180 330 L 12183 323 L 12277 323 L 12280 330 L 12277 337 L 12183 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12230" xml:space="preserve" y="330">
-61786
-<title>61786</title>
+{data: ...
+<title>{data: Some({data: {re: 61786, im: -115594}}), ready: 1}</title>
 </text>
 <path d="M 12280 330 L 12283 323 L 12377 323 L 12380 330 L 12377 337 L 12283 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12330" xml:space="preserve" y="330">
-72820
-<title>72820</title>
+{data: ...
+<title>{data: Some({data: {re: 72820, im: -108982}}), ready: 1}</title>
 </text>
 <path d="M 12380 330 L 12383 323 L 12477 323 L 12480 330 L 12477 337 L 12383 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12430" xml:space="preserve" y="330">
-83150
-<title>83150</title>
+{data: ...
+<title>{data: Some({data: {re: 83150, im: -101320}}), ready: 1}</title>
 </text>
 <path d="M 12480 330 L 12483 323 L 12577 323 L 12580 330 L 12577 337 L 12483 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12530" xml:space="preserve" y="330">
-92681
-<title>92681</title>
+{data: ...
+<title>{data: Some({data: {re: 92681, im: -92682}}), ready: 1}</title>
 </text>
 <path d="M 12580 330 L 12583 323 L 12677 323 L 12680 330 L 12677 337 L 12583 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12630" xml:space="preserve" y="330">
-101319
-<title>101319</title>
+{data: ...
+<title>{data: Some({data: {re: 101319, im: -83151}}), ready: 1}</title>
 </text>
 <path d="M 12680 330 L 12683 323 L 12777 323 L 12780 330 L 12777 337 L 12683 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12730" xml:space="preserve" y="330">
-108982
-<title>108982</title>
+{data: ...
+<title>{data: Some({data: {re: 108982, im: -72820}}), ready: 1}</title>
 </text>
 <path d="M 12780 330 L 12783 323 L 12877 323 L 12880 330 L 12877 337 L 12783 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12830" xml:space="preserve" y="330">
-115594
-<title>115594</title>
+{data: ...
+<title>{data: Some({data: {re: 115594, im: -61787}}), ready: 1}</title>
 </text>
 <path d="M 12880 330 L 12883 323 L 12977 323 L 12980 330 L 12977 337 L 12883 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12930" xml:space="preserve" y="330">
-121094
-<title>121094</title>
+{data: ...
+<title>{data: Some({data: {re: 121094, im: -50159}}), ready: 1}</title>
 </text>
 <path d="M 12980 330 L 12983 323 L 13077 323 L 13080 330 L 13077 337 L 12983 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13030" xml:space="preserve" y="330">
-125427
-<title>125427</title>
+{data: ...
+<title>{data: Some({data: {re: 125427, im: -38049}}), ready: 1}</title>
 </text>
 <path d="M 13080 330 L 13083 323 L 13177 323 L 13180 330 L 13177 337 L 13083 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13130" xml:space="preserve" y="330">
-128552
-<title>128552</title>
+{data: ...
+<title>{data: Some({data: {re: 128552, im: -25571}}), ready: 1}</title>
 </text>
 <path d="M 13180 330 L 13183 323 L 13277 323 L 13280 330 L 13277 337 L 13183 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13230" xml:space="preserve" y="330">
-130440
-<title>130440</title>
+{data: ...
+<title>{data: Some({data: {re: 130440, im: -12848}}), ready: 1}</title>
 </text>
 <path d="M 13280 330 L 13283 323 L 13377 323 L 13380 330 L 13377 337 L 13283 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13330" xml:space="preserve" y="330">
-131071
-<title>131071</title>
+{data: ...
+<title>{data: Some({data: {re: 131071, im: -1}}), ready: 1}</title>
 </text>
 <path d="M 13380 330 L 13383 323 L 13477 323 L 13480 330 L 13477 337 L 13383 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13430" xml:space="preserve" y="330">
-130440
-<title>130440</title>
+{data: ...
+<title>{data: Some({data: {re: 130440, im: 12846}}), ready: 1}</title>
 </text>
 <path d="M 13480 330 L 13483 323 L 13577 323 L 13580 330 L 13577 337 L 13483 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13530" xml:space="preserve" y="330">
-128552
-<title>128552</title>
+{data: ...
+<title>{data: Some({data: {re: 128552, im: 25570}}), ready: 1}</title>
 </text>
 <path d="M 13580 330 L 13583 323 L 13677 323 L 13680 330 L 13677 337 L 13583 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13630" xml:space="preserve" y="330">
-125427
-<title>125427</title>
+{data: ...
+<title>{data: Some({data: {re: 125427, im: 38047}}), ready: 1}</title>
 </text>
 <path d="M 13680 330 L 13683 323 L 13777 323 L 13780 330 L 13777 337 L 13683 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13730" xml:space="preserve" y="330">
-121094
-<title>121094</title>
+{data: ...
+<title>{data: Some({data: {re: 121094, im: 50158}}), ready: 1}</title>
 </text>
 <path d="M 13780 330 L 13783 323 L 13877 323 L 13880 330 L 13877 337 L 13783 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13830" xml:space="preserve" y="330">
-115594
-<title>115594</title>
+{data: ...
+<title>{data: Some({data: {re: 115594, im: 61785}}), ready: 1}</title>
 </text>
 <path d="M 13880 330 L 13883 323 L 13977 323 L 13980 330 L 13977 337 L 13883 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13930" xml:space="preserve" y="330">
-108982
-<title>108982</title>
+{data: ...
+<title>{data: Some({data: {re: 108982, im: 72819}}), ready: 1}</title>
 </text>
 <path d="M 13980 330 L 13983 323 L 14077 323 L 14080 330 L 14077 337 L 13983 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14030" xml:space="preserve" y="330">
-101320
-<title>101320</title>
+{data: ...
+<title>{data: Some({data: {re: 101320, im: 83149}}), ready: 1}</title>
 </text>
 <path d="M 14080 330 L 14083 323 L 14177 323 L 14180 330 L 14177 337 L 14083 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14130" xml:space="preserve" y="330">
-92682
-<title>92682</title>
+{data: ...
+<title>{data: Some({data: {re: 92682, im: 92680}}), ready: 1}</title>
 </text>
 <path d="M 14180 330 L 14183 323 L 14277 323 L 14280 330 L 14277 337 L 14183 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14230" xml:space="preserve" y="330">
-83151
-<title>83151</title>
+{data: ...
+<title>{data: Some({data: {re: 83151, im: 101318}}), ready: 1}</title>
 </text>
 <path d="M 14280 330 L 14283 323 L 14377 323 L 14380 330 L 14377 337 L 14283 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14330" xml:space="preserve" y="330">
-72820
-<title>72820</title>
+{data: ...
+<title>{data: Some({data: {re: 72820, im: 108981}}), ready: 1}</title>
 </text>
 <path d="M 14380 330 L 14383 323 L 14477 323 L 14480 330 L 14477 337 L 14383 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14430" xml:space="preserve" y="330">
-61787
-<title>61787</title>
+{data: ...
+<title>{data: Some({data: {re: 61787, im: 115593}}), ready: 1}</title>
 </text>
 <path d="M 14480 330 L 14483 323 L 14577 323 L 14580 330 L 14577 337 L 14483 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14530" xml:space="preserve" y="330">
-50159
-<title>50159</title>
+{data: ...
+<title>{data: Some({data: {re: 50159, im: 121093}}), ready: 1}</title>
 </text>
 <path d="M 14580 330 L 14583 323 L 14677 323 L 14680 330 L 14677 337 L 14583 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14630" xml:space="preserve" y="330">
-38049
-<title>38049</title>
+{data: ...
+<title>{data: Some({data: {re: 38049, im: 125426}}), ready: 1}</title>
 </text>
 <path d="M 14680 330 L 14683 323 L 14777 323 L 14780 330 L 14777 337 L 14683 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14730" xml:space="preserve" y="330">
-25571
-<title>25571</title>
+{data: ...
+<title>{data: Some({data: {re: 25571, im: 128551}}), ready: 1}</title>
 </text>
 <path d="M 14780 330 L 14783 323 L 14877 323 L 14880 330 L 14877 337 L 14783 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14830" xml:space="preserve" y="330">
-12848
-<title>12848</title>
+{data: ...
+<title>{data: Some({data: {re: 12848, im: 130439}}), ready: 1}</title>
 </text>
 <path d="M 14880 330 L 14883 323 L 14977 323 L 14980 330 L 14977 337 L 14883 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14930" xml:space="preserve" y="330">
-1
-<title>1</title>
+{data: ...
+<title>{data: Some({data: {re: 1, im: 131070}}), ready: 1}</title>
 </text>
 <path d="M 14980 330 L 14983 323 L 15077 323 L 15080 330 L 15077 337 L 14983 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15030" xml:space="preserve" y="330">
--12846
-<title>-12846</title>
+{data: ...
+<title>{data: Some({data: {re: -12846, im: 130439}}), ready: 1}</title>
 </text>
 <path d="M 15080 330 L 15083 323 L 15177 323 L 15180 330 L 15177 337 L 15083 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15130" xml:space="preserve" y="330">
--25570
-<title>-25570</title>
+{data: ...
+<title>{data: Some({data: {re: -25570, im: 128551}}), ready: 1}</title>
 </text>
 <path d="M 15180 330 L 15183 323 L 15277 323 L 15280 330 L 15277 337 L 15183 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15230" xml:space="preserve" y="330">
--38047
-<title>-38047</title>
+{data: ...
+<title>{data: Some({data: {re: -38047, im: 125426}}), ready: 1}</title>
 </text>
 <path d="M 15280 330 L 15283 323 L 15377 323 L 15380 330 L 15377 337 L 15283 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15330" xml:space="preserve" y="330">
--50158
-<title>-50158</title>
+{data: ...
+<title>{data: Some({data: {re: -50158, im: 121093}}), ready: 1}</title>
 </text>
 <path d="M 15380 330 L 15383 323 L 15477 323 L 15480 330 L 15477 337 L 15383 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15430" xml:space="preserve" y="330">
--61785
-<title>-61785</title>
+{data: ...
+<title>{data: Some({data: {re: -61785, im: 115593}}), ready: 1}</title>
 </text>
 <path d="M 15480 330 L 15483 323 L 15577 323 L 15580 330 L 15577 337 L 15483 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15530" xml:space="preserve" y="330">
--72819
-<title>-72819</title>
+{data: ...
+<title>{data: Some({data: {re: -72819, im: 108981}}), ready: 1}</title>
 </text>
 <path d="M 15580 330 L 15583 323 L 15677 323 L 15680 330 L 15677 337 L 15583 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15630" xml:space="preserve" y="330">
--83149
-<title>-83149</title>
+{data: ...
+<title>{data: Some({data: {re: -83149, im: 101319}}), ready: 1}</title>
 </text>
 <path d="M 15680 330 L 15683 323 L 15777 323 L 15780 330 L 15777 337 L 15683 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15730" xml:space="preserve" y="330">
--92680
-<title>-92680</title>
+{data: ...
+<title>{data: Some({data: {re: -92680, im: 92681}}), ready: 1}</title>
 </text>
 <path d="M 15780 330 L 15783 323 L 15877 323 L 15880 330 L 15877 337 L 15783 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15830" xml:space="preserve" y="330">
--101318
-<title>-101318</title>
+{data: ...
+<title>{data: Some({data: {re: -101318, im: 83150}}), ready: 1}</title>
 </text>
 <path d="M 15880 330 L 15883 323 L 15977 323 L 15980 330 L 15977 337 L 15883 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15930" xml:space="preserve" y="330">
--108981
-<title>-108981</title>
+{data: ...
+<title>{data: Some({data: {re: -108981, im: 72819}}), ready: 1}</title>
 </text>
 <path d="M 15980 330 L 15983 323 L 16077 323 L 16080 330 L 16077 337 L 15983 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16030" xml:space="preserve" y="330">
--115593
-<title>-115593</title>
+{data: ...
+<title>{data: Some({data: {re: -115593, im: 61786}}), ready: 1}</title>
 </text>
 <path d="M 16080 330 L 16083 323 L 16177 323 L 16180 330 L 16177 337 L 16083 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16130" xml:space="preserve" y="330">
--121093
-<title>-121093</title>
+{data: ...
+<title>{data: Some({data: {re: -121093, im: 50158}}), ready: 1}</title>
 </text>
 <path d="M 16180 330 L 16183 323 L 16277 323 L 16280 330 L 16277 337 L 16183 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16230" xml:space="preserve" y="330">
--125426
-<title>-125426</title>
+{data: ...
+<title>{data: Some({data: {re: -125426, im: 38048}}), ready: 1}</title>
 </text>
 <path d="M 16280 330 L 16283 323 L 16377 323 L 16380 330 L 16377 337 L 16283 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16330" xml:space="preserve" y="330">
--128551
-<title>-128551</title>
+{data: ...
+<title>{data: Some({data: {re: -128551, im: 25570}}), ready: 1}</title>
 </text>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="start" x="3" xml:space="preserve" y="350">
-   .master
-<title>top.outputs.master</title>
+      .data
+<title>top.outputs.stream.data</title>
 </text>
-<path d="M 230 350 L 233 343 L 477 343 L 480 350 L 477 357 L 233 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="355" xml:space="preserve" y="350">
-000000000000
-<title>000000000000</title>
+<path d="M 230 350 L 233 343 L 277 343 L 280 350 L 277 357 L 233 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="255" xml:space="preserve" y="350">
+So...
+<title>Some({data: {re: 0, im: 0}})</title>
 </text>
-<path d="M 480 350 L 483 343 L 577 343 L 580 350 L 577 357 L 483 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="530" xml:space="preserve" y="350">
-0400000...
-<title>040000000000</title>
+<path d="M 280 350 L 283 343 L 577 343 L 580 350 L 577 357 L 283 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="430" xml:space="preserve" y="350">
+Some({data: {re: 131071, im...
+<title>Some({data: {re: 131071, im: -1}})</title>
 </text>
 <path d="M 580 350 L 583 343 L 677 343 L 680 350 L 677 357 L 583 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="630" xml:space="preserve" y="350">
-0800000...
-<title>080000000000</title>
+Some({d...
+<title>Some({data: {re: 130440, im: 12846}})</title>
 </text>
 <path d="M 680 350 L 683 343 L 777 343 L 780 350 L 777 357 L 683 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="730" xml:space="preserve" y="350">
-0c00000...
-<title>0c0000000000</title>
+Some({d...
+<title>Some({data: {re: 128552, im: 25570}})</title>
 </text>
 <path d="M 780 350 L 783 343 L 877 343 L 880 350 L 877 357 L 783 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="830" xml:space="preserve" y="350">
-1000000...
-<title>100000000000</title>
+Some({d...
+<title>Some({data: {re: 125427, im: 38047}})</title>
 </text>
 <path d="M 880 350 L 883 343 L 977 343 L 980 350 L 977 357 L 883 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="930" xml:space="preserve" y="350">
-1400000...
-<title>140000000000</title>
+Some({d...
+<title>Some({data: {re: 121094, im: 50158}})</title>
 </text>
 <path d="M 980 350 L 983 343 L 1077 343 L 1080 350 L 1077 357 L 983 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1030" xml:space="preserve" y="350">
-1800000...
-<title>180000000000</title>
+Some({d...
+<title>Some({data: {re: 115594, im: 61785}})</title>
 </text>
 <path d="M 1080 350 L 1083 343 L 1177 343 L 1180 350 L 1177 357 L 1083 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1130" xml:space="preserve" y="350">
-1c00000...
-<title>1c0000000000</title>
+Some({d...
+<title>Some({data: {re: 108982, im: 72819}})</title>
 </text>
 <path d="M 1180 350 L 1183 343 L 1277 343 L 1280 350 L 1277 357 L 1183 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1230" xml:space="preserve" y="350">
-2000000...
-<title>200000000000</title>
+Some({d...
+<title>Some({data: {re: 101320, im: 83149}})</title>
 </text>
 <path d="M 1280 350 L 1283 343 L 1377 343 L 1380 350 L 1377 357 L 1283 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1330" xml:space="preserve" y="350">
-2400000...
-<title>240000000000</title>
+Some({d...
+<title>Some({data: {re: 92682, im: 92680}})</title>
 </text>
 <path d="M 1380 350 L 1383 343 L 1477 343 L 1480 350 L 1477 357 L 1383 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1430" xml:space="preserve" y="350">
-2800000...
-<title>280000000000</title>
+Some({d...
+<title>Some({data: {re: 83151, im: 101318}})</title>
 </text>
 <path d="M 1480 350 L 1483 343 L 1577 343 L 1580 350 L 1577 357 L 1483 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1530" xml:space="preserve" y="350">
-2c00000...
-<title>2c0000000000</title>
+Some({d...
+<title>Some({data: {re: 72820, im: 108981}})</title>
 </text>
 <path d="M 1580 350 L 1583 343 L 1677 343 L 1680 350 L 1677 357 L 1583 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1630" xml:space="preserve" y="350">
-3000000...
-<title>300000000000</title>
+Some({d...
+<title>Some({data: {re: 61787, im: 115593}})</title>
 </text>
 <path d="M 1680 350 L 1683 343 L 1777 343 L 1780 350 L 1777 357 L 1683 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1730" xml:space="preserve" y="350">
-3400000...
-<title>340000000000</title>
+Some({d...
+<title>Some({data: {re: 50159, im: 121093}})</title>
 </text>
 <path d="M 1780 350 L 1783 343 L 1877 343 L 1880 350 L 1877 357 L 1783 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1830" xml:space="preserve" y="350">
-3800000...
-<title>380000000000</title>
+Some({d...
+<title>Some({data: {re: 38049, im: 125426}})</title>
 </text>
 <path d="M 1880 350 L 1883 343 L 1977 343 L 1980 350 L 1977 357 L 1883 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1930" xml:space="preserve" y="350">
-3c00000...
-<title>3c0000000000</title>
+Some({d...
+<title>Some({data: {re: 25571, im: 128551}})</title>
 </text>
 <path d="M 1980 350 L 1983 343 L 2077 343 L 2080 350 L 2077 357 L 1983 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2030" xml:space="preserve" y="350">
-4000000...
-<title>400000000000</title>
+Some({d...
+<title>Some({data: {re: 12848, im: 130439}})</title>
 </text>
 <path d="M 2080 350 L 2083 343 L 2177 343 L 2180 350 L 2177 357 L 2083 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2130" xml:space="preserve" y="350">
-4400000...
-<title>440000000000</title>
+Some({d...
+<title>Some({data: {re: 1, im: 131070}})</title>
 </text>
 <path d="M 2180 350 L 2183 343 L 2277 343 L 2280 350 L 2277 357 L 2183 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2230" xml:space="preserve" y="350">
-4800000...
-<title>480000000000</title>
+Some({d...
+<title>Some({data: {re: -12846, im: 130439}})</title>
 </text>
 <path d="M 2280 350 L 2283 343 L 2377 343 L 2380 350 L 2377 357 L 2283 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2330" xml:space="preserve" y="350">
-4c00000...
-<title>4c0000000000</title>
+Some({d...
+<title>Some({data: {re: -25570, im: 128551}})</title>
 </text>
 <path d="M 2380 350 L 2383 343 L 2477 343 L 2480 350 L 2477 357 L 2383 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2430" xml:space="preserve" y="350">
-5000000...
-<title>500000000000</title>
+Some({d...
+<title>Some({data: {re: -38047, im: 125426}})</title>
 </text>
 <path d="M 2480 350 L 2483 343 L 2577 343 L 2580 350 L 2577 357 L 2483 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2530" xml:space="preserve" y="350">
-5400000...
-<title>540000000000</title>
+Some({d...
+<title>Some({data: {re: -50158, im: 121093}})</title>
 </text>
 <path d="M 2580 350 L 2583 343 L 2677 343 L 2680 350 L 2677 357 L 2583 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2630" xml:space="preserve" y="350">
-5800000...
-<title>580000000000</title>
+Some({d...
+<title>Some({data: {re: -61785, im: 115593}})</title>
 </text>
 <path d="M 2680 350 L 2683 343 L 2777 343 L 2780 350 L 2777 357 L 2683 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2730" xml:space="preserve" y="350">
-5c00000...
-<title>5c0000000000</title>
+Some({d...
+<title>Some({data: {re: -72819, im: 108981}})</title>
 </text>
 <path d="M 2780 350 L 2783 343 L 2877 343 L 2880 350 L 2877 357 L 2783 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2830" xml:space="preserve" y="350">
-6000000...
-<title>600000000000</title>
+Some({d...
+<title>Some({data: {re: -83149, im: 101319}})</title>
 </text>
 <path d="M 2880 350 L 2883 343 L 2977 343 L 2980 350 L 2977 357 L 2883 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2930" xml:space="preserve" y="350">
-6400000...
-<title>640000000000</title>
+Some({d...
+<title>Some({data: {re: -92680, im: 92681}})</title>
 </text>
 <path d="M 2980 350 L 2983 343 L 3077 343 L 3080 350 L 3077 357 L 2983 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3030" xml:space="preserve" y="350">
-6800000...
-<title>680000000000</title>
+Some({d...
+<title>Some({data: {re: -101318, im: 83150}})</title>
 </text>
 <path d="M 3080 350 L 3083 343 L 3177 343 L 3180 350 L 3177 357 L 3083 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3130" xml:space="preserve" y="350">
-6c00000...
-<title>6c0000000000</title>
+Some({d...
+<title>Some({data: {re: -108981, im: 72819}})</title>
 </text>
 <path d="M 3180 350 L 3183 343 L 3277 343 L 3280 350 L 3277 357 L 3183 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3230" xml:space="preserve" y="350">
-7000000...
-<title>700000000000</title>
+Some({d...
+<title>Some({data: {re: -115593, im: 61786}})</title>
 </text>
 <path d="M 3280 350 L 3283 343 L 3377 343 L 3380 350 L 3377 357 L 3283 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3330" xml:space="preserve" y="350">
-7400000...
-<title>740000000000</title>
+Some({d...
+<title>Some({data: {re: -121093, im: 50158}})</title>
 </text>
 <path d="M 3380 350 L 3383 343 L 3477 343 L 3480 350 L 3477 357 L 3383 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3430" xml:space="preserve" y="350">
-7800000...
-<title>780000000000</title>
+Some({d...
+<title>Some({data: {re: -125426, im: 38048}})</title>
 </text>
 <path d="M 3480 350 L 3483 343 L 3577 343 L 3580 350 L 3577 357 L 3483 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3530" xml:space="preserve" y="350">
-7c00000...
-<title>7c0000000000</title>
+Some({d...
+<title>Some({data: {re: -128551, im: 25570}})</title>
 </text>
 <path d="M 3580 350 L 3583 343 L 3677 343 L 3680 350 L 3677 357 L 3583 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3630" xml:space="preserve" y="350">
-8000000...
-<title>800000000000</title>
+Some({d...
+<title>Some({data: {re: -130439, im: 12847}})</title>
 </text>
 <path d="M 3680 350 L 3683 343 L 3777 343 L 3780 350 L 3777 357 L 3683 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3730" xml:space="preserve" y="350">
-8400000...
-<title>840000000000</title>
+Some({d...
+<title>Some({data: {re: -131070, im: 0}})</title>
 </text>
 <path d="M 3780 350 L 3783 343 L 3877 343 L 3880 350 L 3877 357 L 3783 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3830" xml:space="preserve" y="350">
-8800000...
-<title>880000000000</title>
+Some({d...
+<title>Some({data: {re: -130439, im: -12847}})</title>
 </text>
 <path d="M 3880 350 L 3883 343 L 3977 343 L 3980 350 L 3977 357 L 3883 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3930" xml:space="preserve" y="350">
-8c00000...
-<title>8c0000000000</title>
+Some({d...
+<title>Some({data: {re: -128551, im: -25571}})</title>
 </text>
 <path d="M 3980 350 L 3983 343 L 4077 343 L 4080 350 L 4077 357 L 3983 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4030" xml:space="preserve" y="350">
-9000000...
-<title>900000000000</title>
+Some({d...
+<title>Some({data: {re: -125426, im: -38048}})</title>
 </text>
 <path d="M 4080 350 L 4083 343 L 4177 343 L 4180 350 L 4177 357 L 4083 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4130" xml:space="preserve" y="350">
-9400000...
-<title>940000000000</title>
+Some({d...
+<title>Some({data: {re: -121093, im: -50159}})</title>
 </text>
 <path d="M 4180 350 L 4183 343 L 4277 343 L 4280 350 L 4277 357 L 4183 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4230" xml:space="preserve" y="350">
-9800000...
-<title>980000000000</title>
+Some({d...
+<title>Some({data: {re: -115593, im: -61786}})</title>
 </text>
 <path d="M 4280 350 L 4283 343 L 4377 343 L 4380 350 L 4377 357 L 4283 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4330" xml:space="preserve" y="350">
-9c00000...
-<title>9c0000000000</title>
+Some({d...
+<title>Some({data: {re: -108981, im: -72820}})</title>
 </text>
 <path d="M 4380 350 L 4383 343 L 4477 343 L 4480 350 L 4477 357 L 4383 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4430" xml:space="preserve" y="350">
-a000000...
-<title>a00000000000</title>
+Some({d...
+<title>Some({data: {re: -101319, im: -83150}})</title>
 </text>
 <path d="M 4480 350 L 4483 343 L 4577 343 L 4580 350 L 4577 357 L 4483 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4530" xml:space="preserve" y="350">
-a400000...
-<title>a40000000000</title>
+Some({d...
+<title>Some({data: {re: -92681, im: -92681}})</title>
 </text>
 <path d="M 4580 350 L 4583 343 L 4677 343 L 4680 350 L 4677 357 L 4583 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4630" xml:space="preserve" y="350">
-a800000...
-<title>a80000000000</title>
+Some({d...
+<title>Some({data: {re: -83150, im: -101319}})</title>
 </text>
 <path d="M 4680 350 L 4683 343 L 4777 343 L 4780 350 L 4777 357 L 4683 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4730" xml:space="preserve" y="350">
-ac00000...
-<title>ac0000000000</title>
+Some({d...
+<title>Some({data: {re: -72819, im: -108982}})</title>
 </text>
 <path d="M 4780 350 L 4783 343 L 4877 343 L 4880 350 L 4877 357 L 4783 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4830" xml:space="preserve" y="350">
-b000000...
-<title>b00000000000</title>
+Some({d...
+<title>Some({data: {re: -61786, im: -115594}})</title>
 </text>
 <path d="M 4880 350 L 4883 343 L 4977 343 L 4980 350 L 4977 357 L 4883 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4930" xml:space="preserve" y="350">
-b400000...
-<title>b40000000000</title>
+Some({d...
+<title>Some({data: {re: -50158, im: -121094}})</title>
 </text>
 <path d="M 4980 350 L 4983 343 L 5077 343 L 5080 350 L 5077 357 L 4983 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5030" xml:space="preserve" y="350">
-b800000...
-<title>b80000000000</title>
+Some({d...
+<title>Some({data: {re: -38048, im: -125427}})</title>
 </text>
 <path d="M 5080 350 L 5083 343 L 5177 343 L 5180 350 L 5177 357 L 5083 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5130" xml:space="preserve" y="350">
-bc00000...
-<title>bc0000000000</title>
+Some({d...
+<title>Some({data: {re: -25570, im: -128552}})</title>
 </text>
 <path d="M 5180 350 L 5183 343 L 5277 343 L 5280 350 L 5277 357 L 5183 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5230" xml:space="preserve" y="350">
-c000000...
-<title>c00000000000</title>
+Some({d...
+<title>Some({data: {re: -12847, im: -130440}})</title>
 </text>
 <path d="M 5280 350 L 5283 343 L 5377 343 L 5380 350 L 5377 357 L 5283 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5330" xml:space="preserve" y="350">
-c400000...
-<title>c40000000000</title>
+Some({d...
+<title>Some({data: {re: 0, im: -131071}})</title>
 </text>
 <path d="M 5380 350 L 5383 343 L 5477 343 L 5480 350 L 5477 357 L 5383 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5430" xml:space="preserve" y="350">
-c800000...
-<title>c80000000000</title>
+Some({d...
+<title>Some({data: {re: 12847, im: -130440}})</title>
 </text>
 <path d="M 5480 350 L 5483 343 L 5577 343 L 5580 350 L 5577 357 L 5483 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5530" xml:space="preserve" y="350">
-cc00000...
-<title>cc0000000000</title>
+Some({d...
+<title>Some({data: {re: 25571, im: -128552}})</title>
 </text>
 <path d="M 5580 350 L 5583 343 L 5677 343 L 5680 350 L 5677 357 L 5583 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5630" xml:space="preserve" y="350">
-d000000...
-<title>d00000000000</title>
+Some({d...
+<title>Some({data: {re: 38048, im: -125427}})</title>
 </text>
 <path d="M 5680 350 L 5683 343 L 5777 343 L 5780 350 L 5777 357 L 5683 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5730" xml:space="preserve" y="350">
-d400000...
-<title>d40000000000</title>
+Some({d...
+<title>Some({data: {re: 50159, im: -121094}})</title>
 </text>
 <path d="M 5780 350 L 5783 343 L 5877 343 L 5880 350 L 5877 357 L 5783 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5830" xml:space="preserve" y="350">
-d800000...
-<title>d80000000000</title>
+Some({d...
+<title>Some({data: {re: 61786, im: -115594}})</title>
 </text>
 <path d="M 5880 350 L 5883 343 L 5977 343 L 5980 350 L 5977 357 L 5883 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5930" xml:space="preserve" y="350">
-dc00000...
-<title>dc0000000000</title>
+Some({d...
+<title>Some({data: {re: 72820, im: -108982}})</title>
 </text>
 <path d="M 5980 350 L 5983 343 L 6077 343 L 6080 350 L 6077 357 L 5983 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6030" xml:space="preserve" y="350">
-e000000...
-<title>e00000000000</title>
+Some({d...
+<title>Some({data: {re: 83150, im: -101320}})</title>
 </text>
 <path d="M 6080 350 L 6083 343 L 6177 343 L 6180 350 L 6177 357 L 6083 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6130" xml:space="preserve" y="350">
-e400000...
-<title>e40000000000</title>
+Some({d...
+<title>Some({data: {re: 92681, im: -92682}})</title>
 </text>
 <path d="M 6180 350 L 6183 343 L 6277 343 L 6280 350 L 6277 357 L 6183 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6230" xml:space="preserve" y="350">
-e800000...
-<title>e80000000000</title>
+Some({d...
+<title>Some({data: {re: 101319, im: -83151}})</title>
 </text>
 <path d="M 6280 350 L 6283 343 L 6377 343 L 6380 350 L 6377 357 L 6283 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6330" xml:space="preserve" y="350">
-ec00000...
-<title>ec0000000000</title>
+Some({d...
+<title>Some({data: {re: 108982, im: -72820}})</title>
 </text>
 <path d="M 6380 350 L 6383 343 L 6477 343 L 6480 350 L 6477 357 L 6383 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6430" xml:space="preserve" y="350">
-f000000...
-<title>f00000000000</title>
+Some({d...
+<title>Some({data: {re: 115594, im: -61787}})</title>
 </text>
 <path d="M 6480 350 L 6483 343 L 6577 343 L 6580 350 L 6577 357 L 6483 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6530" xml:space="preserve" y="350">
-f400000...
-<title>f40000000000</title>
+Some({d...
+<title>Some({data: {re: 121094, im: -50159}})</title>
 </text>
 <path d="M 6580 350 L 6583 343 L 6677 343 L 6680 350 L 6677 357 L 6583 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6630" xml:space="preserve" y="350">
-f800000...
-<title>f80000000000</title>
+Some({d...
+<title>Some({data: {re: 125427, im: -38049}})</title>
 </text>
 <path d="M 6680 350 L 6683 343 L 6777 343 L 6780 350 L 6777 357 L 6683 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6730" xml:space="preserve" y="350">
-fc00000...
-<title>fc0000000000</title>
+Some({d...
+<title>Some({data: {re: 128552, im: -25571}})</title>
 </text>
 <path d="M 6780 350 L 6783 343 L 6877 343 L 6880 350 L 6877 357 L 6783 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6830" xml:space="preserve" y="350">
-0000000...
-<title>000000000000</title>
+Some({d...
+<title>Some({data: {re: 130440, im: -12848}})</title>
 </text>
 <path d="M 6880 350 L 6883 343 L 6977 343 L 6980 350 L 6977 357 L 6883 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6930" xml:space="preserve" y="350">
-0400000...
-<title>040000000000</title>
+Some({d...
+<title>Some({data: {re: -131070, im: 0}})</title>
 </text>
 <path d="M 6980 350 L 6983 343 L 7077 343 L 7080 350 L 7077 357 L 6983 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7030" xml:space="preserve" y="350">
-0800000...
-<title>080000000000</title>
+Some({d...
+<title>Some({data: {re: -130439, im: -12847}})</title>
 </text>
 <path d="M 7080 350 L 7083 343 L 7177 343 L 7180 350 L 7177 357 L 7083 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7130" xml:space="preserve" y="350">
-0c00000...
-<title>0c0000000000</title>
+Some({d...
+<title>Some({data: {re: -128551, im: -25571}})</title>
 </text>
 <path d="M 7180 350 L 7183 343 L 7277 343 L 7280 350 L 7277 357 L 7183 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7230" xml:space="preserve" y="350">
-1000000...
-<title>100000000000</title>
+Some({d...
+<title>Some({data: {re: -125426, im: -38048}})</title>
 </text>
 <path d="M 7280 350 L 7283 343 L 7377 343 L 7380 350 L 7377 357 L 7283 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7330" xml:space="preserve" y="350">
-1400000...
-<title>140000000000</title>
+Some({d...
+<title>Some({data: {re: -121093, im: -50159}})</title>
 </text>
 <path d="M 7380 350 L 7383 343 L 7477 343 L 7480 350 L 7477 357 L 7383 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7430" xml:space="preserve" y="350">
-1800000...
-<title>180000000000</title>
+Some({d...
+<title>Some({data: {re: -115593, im: -61786}})</title>
 </text>
 <path d="M 7480 350 L 7483 343 L 7577 343 L 7580 350 L 7577 357 L 7483 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7530" xml:space="preserve" y="350">
-1c00000...
-<title>1c0000000000</title>
+Some({d...
+<title>Some({data: {re: -108981, im: -72820}})</title>
 </text>
 <path d="M 7580 350 L 7583 343 L 7677 343 L 7680 350 L 7677 357 L 7583 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7630" xml:space="preserve" y="350">
-2000000...
-<title>200000000000</title>
+Some({d...
+<title>Some({data: {re: -101319, im: -83150}})</title>
 </text>
 <path d="M 7680 350 L 7683 343 L 7777 343 L 7780 350 L 7777 357 L 7683 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7730" xml:space="preserve" y="350">
-2400000...
-<title>240000000000</title>
+Some({d...
+<title>Some({data: {re: -92681, im: -92681}})</title>
 </text>
 <path d="M 7780 350 L 7783 343 L 7877 343 L 7880 350 L 7877 357 L 7783 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7830" xml:space="preserve" y="350">
-2800000...
-<title>280000000000</title>
+Some({d...
+<title>Some({data: {re: -83150, im: -101319}})</title>
 </text>
 <path d="M 7880 350 L 7883 343 L 7977 343 L 7980 350 L 7977 357 L 7883 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7930" xml:space="preserve" y="350">
-2c00000...
-<title>2c0000000000</title>
+Some({d...
+<title>Some({data: {re: -72819, im: -108982}})</title>
 </text>
 <path d="M 7980 350 L 7983 343 L 8077 343 L 8080 350 L 8077 357 L 7983 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8030" xml:space="preserve" y="350">
-3000000...
-<title>300000000000</title>
+Some({d...
+<title>Some({data: {re: -61786, im: -115594}})</title>
 </text>
 <path d="M 8080 350 L 8083 343 L 8177 343 L 8180 350 L 8177 357 L 8083 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8130" xml:space="preserve" y="350">
-3400000...
-<title>340000000000</title>
+Some({d...
+<title>Some({data: {re: -50158, im: -121094}})</title>
 </text>
 <path d="M 8180 350 L 8183 343 L 8277 343 L 8280 350 L 8277 357 L 8183 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8230" xml:space="preserve" y="350">
-3800000...
-<title>380000000000</title>
+Some({d...
+<title>Some({data: {re: -38048, im: -125427}})</title>
 </text>
 <path d="M 8280 350 L 8283 343 L 8377 343 L 8380 350 L 8377 357 L 8283 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8330" xml:space="preserve" y="350">
-3c00000...
-<title>3c0000000000</title>
+Some({d...
+<title>Some({data: {re: -25570, im: -128552}})</title>
 </text>
 <path d="M 8380 350 L 8383 343 L 8477 343 L 8480 350 L 8477 357 L 8383 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8430" xml:space="preserve" y="350">
-4000000...
-<title>400000000000</title>
+Some({d...
+<title>Some({data: {re: -12847, im: -130440}})</title>
 </text>
 <path d="M 8480 350 L 8483 343 L 8577 343 L 8580 350 L 8577 357 L 8483 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8530" xml:space="preserve" y="350">
-4400000...
-<title>440000000000</title>
+Some({d...
+<title>Some({data: {re: 0, im: -131071}})</title>
 </text>
 <path d="M 8580 350 L 8583 343 L 8677 343 L 8680 350 L 8677 357 L 8583 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8630" xml:space="preserve" y="350">
-4800000...
-<title>480000000000</title>
+Some({d...
+<title>Some({data: {re: 12847, im: -130440}})</title>
 </text>
 <path d="M 8680 350 L 8683 343 L 8777 343 L 8780 350 L 8777 357 L 8683 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8730" xml:space="preserve" y="350">
-4c00000...
-<title>4c0000000000</title>
+Some({d...
+<title>Some({data: {re: 25571, im: -128552}})</title>
 </text>
 <path d="M 8780 350 L 8783 343 L 8877 343 L 8880 350 L 8877 357 L 8783 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8830" xml:space="preserve" y="350">
-5000000...
-<title>500000000000</title>
+Some({d...
+<title>Some({data: {re: 38048, im: -125427}})</title>
 </text>
 <path d="M 8880 350 L 8883 343 L 8977 343 L 8980 350 L 8977 357 L 8883 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8930" xml:space="preserve" y="350">
-5400000...
-<title>540000000000</title>
+Some({d...
+<title>Some({data: {re: 50159, im: -121094}})</title>
 </text>
 <path d="M 8980 350 L 8983 343 L 9077 343 L 9080 350 L 9077 357 L 8983 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9030" xml:space="preserve" y="350">
-5800000...
-<title>580000000000</title>
+Some({d...
+<title>Some({data: {re: 61786, im: -115594}})</title>
 </text>
 <path d="M 9080 350 L 9083 343 L 9177 343 L 9180 350 L 9177 357 L 9083 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9130" xml:space="preserve" y="350">
-5c00000...
-<title>5c0000000000</title>
+Some({d...
+<title>Some({data: {re: 72820, im: -108982}})</title>
 </text>
 <path d="M 9180 350 L 9183 343 L 9277 343 L 9280 350 L 9277 357 L 9183 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9230" xml:space="preserve" y="350">
-6000000...
-<title>600000000000</title>
+Some({d...
+<title>Some({data: {re: 83150, im: -101320}})</title>
 </text>
 <path d="M 9280 350 L 9283 343 L 9377 343 L 9380 350 L 9377 357 L 9283 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9330" xml:space="preserve" y="350">
-6400000...
-<title>640000000000</title>
+Some({d...
+<title>Some({data: {re: 92681, im: -92682}})</title>
 </text>
 <path d="M 9380 350 L 9383 343 L 9477 343 L 9480 350 L 9477 357 L 9383 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9430" xml:space="preserve" y="350">
-6800000...
-<title>680000000000</title>
+Some({d...
+<title>Some({data: {re: 101319, im: -83151}})</title>
 </text>
 <path d="M 9480 350 L 9483 343 L 9577 343 L 9580 350 L 9577 357 L 9483 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9530" xml:space="preserve" y="350">
-6c00000...
-<title>6c0000000000</title>
+Some({d...
+<title>Some({data: {re: 108982, im: -72820}})</title>
 </text>
 <path d="M 9580 350 L 9583 343 L 9677 343 L 9680 350 L 9677 357 L 9583 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9630" xml:space="preserve" y="350">
-7000000...
-<title>700000000000</title>
+Some({d...
+<title>Some({data: {re: 115594, im: -61787}})</title>
 </text>
 <path d="M 9680 350 L 9683 343 L 9777 343 L 9780 350 L 9777 357 L 9683 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9730" xml:space="preserve" y="350">
-7400000...
-<title>740000000000</title>
+Some({d...
+<title>Some({data: {re: 121094, im: -50159}})</title>
 </text>
 <path d="M 9780 350 L 9783 343 L 9877 343 L 9880 350 L 9877 357 L 9783 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9830" xml:space="preserve" y="350">
-7800000...
-<title>780000000000</title>
+Some({d...
+<title>Some({data: {re: 125427, im: -38049}})</title>
 </text>
 <path d="M 9880 350 L 9883 343 L 9977 343 L 9980 350 L 9977 357 L 9883 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9930" xml:space="preserve" y="350">
-7c00000...
-<title>7c0000000000</title>
+Some({d...
+<title>Some({data: {re: 128552, im: -25571}})</title>
 </text>
 <path d="M 9980 350 L 9983 343 L 10077 343 L 10080 350 L 10077 357 L 9983 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10030" xml:space="preserve" y="350">
-8000000...
-<title>800000000000</title>
+Some({d...
+<title>Some({data: {re: 130440, im: -12848}})</title>
 </text>
 <path d="M 10080 350 L 10083 343 L 10177 343 L 10180 350 L 10177 357 L 10083 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10130" xml:space="preserve" y="350">
-8400000...
-<title>840000000000</title>
+Some({d...
+<title>Some({data: {re: 131071, im: -1}})</title>
 </text>
 <path d="M 10180 350 L 10183 343 L 10277 343 L 10280 350 L 10277 357 L 10183 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10230" xml:space="preserve" y="350">
-8800000...
-<title>880000000000</title>
+Some({d...
+<title>Some({data: {re: 130440, im: 12846}})</title>
 </text>
 <path d="M 10280 350 L 10283 343 L 10377 343 L 10380 350 L 10377 357 L 10283 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10330" xml:space="preserve" y="350">
-8c00000...
-<title>8c0000000000</title>
+Some({d...
+<title>Some({data: {re: 128552, im: 25570}})</title>
 </text>
 <path d="M 10380 350 L 10383 343 L 10477 343 L 10480 350 L 10477 357 L 10383 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10430" xml:space="preserve" y="350">
-9000000...
-<title>900000000000</title>
+Some({d...
+<title>Some({data: {re: 125427, im: 38047}})</title>
 </text>
 <path d="M 10480 350 L 10483 343 L 10577 343 L 10580 350 L 10577 357 L 10483 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10530" xml:space="preserve" y="350">
-9400000...
-<title>940000000000</title>
+Some({d...
+<title>Some({data: {re: 121094, im: 50158}})</title>
 </text>
 <path d="M 10580 350 L 10583 343 L 10677 343 L 10680 350 L 10677 357 L 10583 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10630" xml:space="preserve" y="350">
-9800000...
-<title>980000000000</title>
+Some({d...
+<title>Some({data: {re: 115594, im: 61785}})</title>
 </text>
 <path d="M 10680 350 L 10683 343 L 10777 343 L 10780 350 L 10777 357 L 10683 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10730" xml:space="preserve" y="350">
-9c00000...
-<title>9c0000000000</title>
+Some({d...
+<title>Some({data: {re: 108982, im: 72819}})</title>
 </text>
 <path d="M 10780 350 L 10783 343 L 10877 343 L 10880 350 L 10877 357 L 10783 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10830" xml:space="preserve" y="350">
-a000000...
-<title>a00000000000</title>
+Some({d...
+<title>Some({data: {re: 101320, im: 83149}})</title>
 </text>
 <path d="M 10880 350 L 10883 343 L 10977 343 L 10980 350 L 10977 357 L 10883 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10930" xml:space="preserve" y="350">
-a400000...
-<title>a40000000000</title>
+Some({d...
+<title>Some({data: {re: 92682, im: 92680}})</title>
 </text>
 <path d="M 10980 350 L 10983 343 L 11077 343 L 11080 350 L 11077 357 L 10983 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11030" xml:space="preserve" y="350">
-a800000...
-<title>a80000000000</title>
+Some({d...
+<title>Some({data: {re: 83151, im: 101318}})</title>
 </text>
 <path d="M 11080 350 L 11083 343 L 11177 343 L 11180 350 L 11177 357 L 11083 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11130" xml:space="preserve" y="350">
-ac00000...
-<title>ac0000000000</title>
+Some({d...
+<title>Some({data: {re: 72820, im: 108981}})</title>
 </text>
 <path d="M 11180 350 L 11183 343 L 11277 343 L 11280 350 L 11277 357 L 11183 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11230" xml:space="preserve" y="350">
-b000000...
-<title>b00000000000</title>
+Some({d...
+<title>Some({data: {re: 61787, im: 115593}})</title>
 </text>
 <path d="M 11280 350 L 11283 343 L 11377 343 L 11380 350 L 11377 357 L 11283 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11330" xml:space="preserve" y="350">
-b400000...
-<title>b40000000000</title>
+Some({d...
+<title>Some({data: {re: 50159, im: 121093}})</title>
 </text>
 <path d="M 11380 350 L 11383 343 L 11477 343 L 11480 350 L 11477 357 L 11383 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11430" xml:space="preserve" y="350">
-b800000...
-<title>b80000000000</title>
+Some({d...
+<title>Some({data: {re: 38049, im: 125426}})</title>
 </text>
 <path d="M 11480 350 L 11483 343 L 11577 343 L 11580 350 L 11577 357 L 11483 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11530" xml:space="preserve" y="350">
-bc00000...
-<title>bc0000000000</title>
+Some({d...
+<title>Some({data: {re: 25571, im: 128551}})</title>
 </text>
 <path d="M 11580 350 L 11583 343 L 11677 343 L 11680 350 L 11677 357 L 11583 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11630" xml:space="preserve" y="350">
-c000000...
-<title>c00000000000</title>
+Some({d...
+<title>Some({data: {re: 12848, im: 130439}})</title>
 </text>
 <path d="M 11680 350 L 11683 343 L 11777 343 L 11780 350 L 11777 357 L 11683 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11730" xml:space="preserve" y="350">
-c400000...
-<title>c40000000000</title>
+Some({d...
+<title>Some({data: {re: 0, im: -131071}})</title>
 </text>
 <path d="M 11780 350 L 11783 343 L 11877 343 L 11880 350 L 11877 357 L 11783 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11830" xml:space="preserve" y="350">
-c800000...
-<title>c80000000000</title>
+Some({d...
+<title>Some({data: {re: 12847, im: -130440}})</title>
 </text>
 <path d="M 11880 350 L 11883 343 L 11977 343 L 11980 350 L 11977 357 L 11883 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11930" xml:space="preserve" y="350">
-cc00000...
-<title>cc0000000000</title>
+Some({d...
+<title>Some({data: {re: 25571, im: -128552}})</title>
 </text>
 <path d="M 11980 350 L 11983 343 L 12077 343 L 12080 350 L 12077 357 L 11983 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12030" xml:space="preserve" y="350">
-d000000...
-<title>d00000000000</title>
+Some({d...
+<title>Some({data: {re: 38048, im: -125427}})</title>
 </text>
 <path d="M 12080 350 L 12083 343 L 12177 343 L 12180 350 L 12177 357 L 12083 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12130" xml:space="preserve" y="350">
-d400000...
-<title>d40000000000</title>
+Some({d...
+<title>Some({data: {re: 50159, im: -121094}})</title>
 </text>
 <path d="M 12180 350 L 12183 343 L 12277 343 L 12280 350 L 12277 357 L 12183 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12230" xml:space="preserve" y="350">
-d800000...
-<title>d80000000000</title>
+Some({d...
+<title>Some({data: {re: 61786, im: -115594}})</title>
 </text>
 <path d="M 12280 350 L 12283 343 L 12377 343 L 12380 350 L 12377 357 L 12283 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12330" xml:space="preserve" y="350">
-dc00000...
-<title>dc0000000000</title>
+Some({d...
+<title>Some({data: {re: 72820, im: -108982}})</title>
 </text>
 <path d="M 12380 350 L 12383 343 L 12477 343 L 12480 350 L 12477 357 L 12383 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12430" xml:space="preserve" y="350">
-e000000...
-<title>e00000000000</title>
+Some({d...
+<title>Some({data: {re: 83150, im: -101320}})</title>
 </text>
 <path d="M 12480 350 L 12483 343 L 12577 343 L 12580 350 L 12577 357 L 12483 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12530" xml:space="preserve" y="350">
-e400000...
-<title>e40000000000</title>
+Some({d...
+<title>Some({data: {re: 92681, im: -92682}})</title>
 </text>
 <path d="M 12580 350 L 12583 343 L 12677 343 L 12680 350 L 12677 357 L 12583 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12630" xml:space="preserve" y="350">
-e800000...
-<title>e80000000000</title>
+Some({d...
+<title>Some({data: {re: 101319, im: -83151}})</title>
 </text>
 <path d="M 12680 350 L 12683 343 L 12777 343 L 12780 350 L 12777 357 L 12683 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12730" xml:space="preserve" y="350">
-ec00000...
-<title>ec0000000000</title>
+Some({d...
+<title>Some({data: {re: 108982, im: -72820}})</title>
 </text>
 <path d="M 12780 350 L 12783 343 L 12877 343 L 12880 350 L 12877 357 L 12783 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12830" xml:space="preserve" y="350">
-f000000...
-<title>f00000000000</title>
+Some({d...
+<title>Some({data: {re: 115594, im: -61787}})</title>
 </text>
 <path d="M 12880 350 L 12883 343 L 12977 343 L 12980 350 L 12977 357 L 12883 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12930" xml:space="preserve" y="350">
-f400000...
-<title>f40000000000</title>
+Some({d...
+<title>Some({data: {re: 121094, im: -50159}})</title>
 </text>
 <path d="M 12980 350 L 12983 343 L 13077 343 L 13080 350 L 13077 357 L 12983 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13030" xml:space="preserve" y="350">
-f800000...
-<title>f80000000000</title>
+Some({d...
+<title>Some({data: {re: 125427, im: -38049}})</title>
 </text>
 <path d="M 13080 350 L 13083 343 L 13177 343 L 13180 350 L 13177 357 L 13083 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13130" xml:space="preserve" y="350">
-fc00000...
-<title>fc0000000000</title>
+Some({d...
+<title>Some({data: {re: 128552, im: -25571}})</title>
 </text>
 <path d="M 13180 350 L 13183 343 L 13277 343 L 13280 350 L 13277 357 L 13183 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13230" xml:space="preserve" y="350">
-0000000...
-<title>000000000000</title>
+Some({d...
+<title>Some({data: {re: 130440, im: -12848}})</title>
 </text>
 <path d="M 13280 350 L 13283 343 L 13377 343 L 13380 350 L 13377 357 L 13283 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13330" xml:space="preserve" y="350">
-0400000...
-<title>040000000000</title>
+Some({d...
+<title>Some({data: {re: 131071, im: -1}})</title>
 </text>
 <path d="M 13380 350 L 13383 343 L 13477 343 L 13480 350 L 13477 357 L 13383 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13430" xml:space="preserve" y="350">
-0800000...
-<title>080000000000</title>
+Some({d...
+<title>Some({data: {re: 130440, im: 12846}})</title>
 </text>
 <path d="M 13480 350 L 13483 343 L 13577 343 L 13580 350 L 13577 357 L 13483 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13530" xml:space="preserve" y="350">
-0c00000...
-<title>0c0000000000</title>
+Some({d...
+<title>Some({data: {re: 128552, im: 25570}})</title>
 </text>
 <path d="M 13580 350 L 13583 343 L 13677 343 L 13680 350 L 13677 357 L 13583 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13630" xml:space="preserve" y="350">
-1000000...
-<title>100000000000</title>
+Some({d...
+<title>Some({data: {re: 125427, im: 38047}})</title>
 </text>
 <path d="M 13680 350 L 13683 343 L 13777 343 L 13780 350 L 13777 357 L 13683 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13730" xml:space="preserve" y="350">
-1400000...
-<title>140000000000</title>
+Some({d...
+<title>Some({data: {re: 121094, im: 50158}})</title>
 </text>
 <path d="M 13780 350 L 13783 343 L 13877 343 L 13880 350 L 13877 357 L 13783 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13830" xml:space="preserve" y="350">
-1800000...
-<title>180000000000</title>
+Some({d...
+<title>Some({data: {re: 115594, im: 61785}})</title>
 </text>
 <path d="M 13880 350 L 13883 343 L 13977 343 L 13980 350 L 13977 357 L 13883 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13930" xml:space="preserve" y="350">
-1c00000...
-<title>1c0000000000</title>
+Some({d...
+<title>Some({data: {re: 108982, im: 72819}})</title>
 </text>
 <path d="M 13980 350 L 13983 343 L 14077 343 L 14080 350 L 14077 357 L 13983 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14030" xml:space="preserve" y="350">
-2000000...
-<title>200000000000</title>
+Some({d...
+<title>Some({data: {re: 101320, im: 83149}})</title>
 </text>
 <path d="M 14080 350 L 14083 343 L 14177 343 L 14180 350 L 14177 357 L 14083 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14130" xml:space="preserve" y="350">
-2400000...
-<title>240000000000</title>
+Some({d...
+<title>Some({data: {re: 92682, im: 92680}})</title>
 </text>
 <path d="M 14180 350 L 14183 343 L 14277 343 L 14280 350 L 14277 357 L 14183 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14230" xml:space="preserve" y="350">
-2800000...
-<title>280000000000</title>
+Some({d...
+<title>Some({data: {re: 83151, im: 101318}})</title>
 </text>
 <path d="M 14280 350 L 14283 343 L 14377 343 L 14380 350 L 14377 357 L 14283 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14330" xml:space="preserve" y="350">
-2c00000...
-<title>2c0000000000</title>
+Some({d...
+<title>Some({data: {re: 72820, im: 108981}})</title>
 </text>
 <path d="M 14380 350 L 14383 343 L 14477 343 L 14480 350 L 14477 357 L 14383 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14430" xml:space="preserve" y="350">
-3000000...
-<title>300000000000</title>
+Some({d...
+<title>Some({data: {re: 61787, im: 115593}})</title>
 </text>
 <path d="M 14480 350 L 14483 343 L 14577 343 L 14580 350 L 14577 357 L 14483 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14530" xml:space="preserve" y="350">
-3400000...
-<title>340000000000</title>
+Some({d...
+<title>Some({data: {re: 50159, im: 121093}})</title>
 </text>
 <path d="M 14580 350 L 14583 343 L 14677 343 L 14680 350 L 14677 357 L 14583 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14630" xml:space="preserve" y="350">
-3800000...
-<title>380000000000</title>
+Some({d...
+<title>Some({data: {re: 38049, im: 125426}})</title>
 </text>
 <path d="M 14680 350 L 14683 343 L 14777 343 L 14780 350 L 14777 357 L 14683 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14730" xml:space="preserve" y="350">
-3c00000...
-<title>3c0000000000</title>
+Some({d...
+<title>Some({data: {re: 25571, im: 128551}})</title>
 </text>
 <path d="M 14780 350 L 14783 343 L 14877 343 L 14880 350 L 14877 357 L 14783 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14830" xml:space="preserve" y="350">
-4000000...
-<title>400000000000</title>
+Some({d...
+<title>Some({data: {re: 12848, im: 130439}})</title>
 </text>
 <path d="M 14880 350 L 14883 343 L 14977 343 L 14980 350 L 14977 357 L 14883 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14930" xml:space="preserve" y="350">
-4400000...
-<title>440000000000</title>
+Some({d...
+<title>Some({data: {re: 1, im: 131070}})</title>
 </text>
 <path d="M 14980 350 L 14983 343 L 15077 343 L 15080 350 L 15077 357 L 14983 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15030" xml:space="preserve" y="350">
-4800000...
-<title>480000000000</title>
+Some({d...
+<title>Some({data: {re: -12846, im: 130439}})</title>
 </text>
 <path d="M 15080 350 L 15083 343 L 15177 343 L 15180 350 L 15177 357 L 15083 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15130" xml:space="preserve" y="350">
-4c00000...
-<title>4c0000000000</title>
+Some({d...
+<title>Some({data: {re: -25570, im: 128551}})</title>
 </text>
 <path d="M 15180 350 L 15183 343 L 15277 343 L 15280 350 L 15277 357 L 15183 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15230" xml:space="preserve" y="350">
-5000000...
-<title>500000000000</title>
+Some({d...
+<title>Some({data: {re: -38047, im: 125426}})</title>
 </text>
 <path d="M 15280 350 L 15283 343 L 15377 343 L 15380 350 L 15377 357 L 15283 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15330" xml:space="preserve" y="350">
-5400000...
-<title>540000000000</title>
+Some({d...
+<title>Some({data: {re: -50158, im: 121093}})</title>
 </text>
 <path d="M 15380 350 L 15383 343 L 15477 343 L 15480 350 L 15477 357 L 15383 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15430" xml:space="preserve" y="350">
-5800000...
-<title>580000000000</title>
+Some({d...
+<title>Some({data: {re: -61785, im: 115593}})</title>
 </text>
 <path d="M 15480 350 L 15483 343 L 15577 343 L 15580 350 L 15577 357 L 15483 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15530" xml:space="preserve" y="350">
-5c00000...
-<title>5c0000000000</title>
+Some({d...
+<title>Some({data: {re: -72819, im: 108981}})</title>
 </text>
 <path d="M 15580 350 L 15583 343 L 15677 343 L 15680 350 L 15677 357 L 15583 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15630" xml:space="preserve" y="350">
-6000000...
-<title>600000000000</title>
+Some({d...
+<title>Some({data: {re: -83149, im: 101319}})</title>
 </text>
 <path d="M 15680 350 L 15683 343 L 15777 343 L 15780 350 L 15777 357 L 15683 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15730" xml:space="preserve" y="350">
-6400000...
-<title>640000000000</title>
+Some({d...
+<title>Some({data: {re: -92680, im: 92681}})</title>
 </text>
 <path d="M 15780 350 L 15783 343 L 15877 343 L 15880 350 L 15877 357 L 15783 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15830" xml:space="preserve" y="350">
-6800000...
-<title>680000000000</title>
+Some({d...
+<title>Some({data: {re: -101318, im: 83150}})</title>
 </text>
 <path d="M 15880 350 L 15883 343 L 15977 343 L 15980 350 L 15977 357 L 15883 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15930" xml:space="preserve" y="350">
-6c00000...
-<title>6c0000000000</title>
+Some({d...
+<title>Some({data: {re: -108981, im: 72819}})</title>
 </text>
 <path d="M 15980 350 L 15983 343 L 16077 343 L 16080 350 L 16077 357 L 15983 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16030" xml:space="preserve" y="350">
-7000000...
-<title>700000000000</title>
+Some({d...
+<title>Some({data: {re: -115593, im: 61786}})</title>
 </text>
 <path d="M 16080 350 L 16083 343 L 16177 343 L 16180 350 L 16177 357 L 16083 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16130" xml:space="preserve" y="350">
-7400000...
-<title>740000000000</title>
+Some({d...
+<title>Some({data: {re: -121093, im: 50158}})</title>
 </text>
 <path d="M 16180 350 L 16183 343 L 16277 343 L 16280 350 L 16277 357 L 16183 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16230" xml:space="preserve" y="350">
-7800000...
-<title>780000000000</title>
+Some({d...
+<title>Some({data: {re: -125426, im: 38048}})</title>
 </text>
 <path d="M 16280 350 L 16283 343 L 16377 343 L 16380 350 L 16377 357 L 16283 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16330" xml:space="preserve" y="350">
+Some({d...
+<title>Some({data: {re: -128551, im: 25570}})</title>
+</text>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="start" x="3" xml:space="preserve" y="370">
+         #None
+<title>top.outputs.stream.data#None</title>
+</text>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="start" x="3" xml:space="preserve" y="390">
+         #Some.0
+<title>top.outputs.stream.data#Some.0</title>
+</text>
+<path d="M 230 390 L 233 383 L 277 383 L 280 390 L 277 397 L 233 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="255" xml:space="preserve" y="390">
+{d...
+<title>{data: {re: 0, im: 0}}</title>
+</text>
+<path d="M 280 390 L 283 383 L 577 383 L 580 390 L 577 397 L 283 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="430" xml:space="preserve" y="390">
+{data: {re: 131071, im: -1}}
+<title>{data: {re: 131071, im: -1}}</title>
+</text>
+<path d="M 580 390 L 583 383 L 677 383 L 680 390 L 677 397 L 583 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="630" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 130440, im: 12846}}</title>
+</text>
+<path d="M 680 390 L 683 383 L 777 383 L 780 390 L 777 397 L 683 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="730" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 128552, im: 25570}}</title>
+</text>
+<path d="M 780 390 L 783 383 L 877 383 L 880 390 L 877 397 L 783 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="830" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 125427, im: 38047}}</title>
+</text>
+<path d="M 880 390 L 883 383 L 977 383 L 980 390 L 977 397 L 883 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="930" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 121094, im: 50158}}</title>
+</text>
+<path d="M 980 390 L 983 383 L 1077 383 L 1080 390 L 1077 397 L 983 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1030" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 115594, im: 61785}}</title>
+</text>
+<path d="M 1080 390 L 1083 383 L 1177 383 L 1180 390 L 1177 397 L 1083 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1130" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 108982, im: 72819}}</title>
+</text>
+<path d="M 1180 390 L 1183 383 L 1277 383 L 1280 390 L 1277 397 L 1183 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1230" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 101320, im: 83149}}</title>
+</text>
+<path d="M 1280 390 L 1283 383 L 1377 383 L 1380 390 L 1377 397 L 1283 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1330" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 92682, im: 92680}}</title>
+</text>
+<path d="M 1380 390 L 1383 383 L 1477 383 L 1480 390 L 1477 397 L 1383 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1430" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 83151, im: 101318}}</title>
+</text>
+<path d="M 1480 390 L 1483 383 L 1577 383 L 1580 390 L 1577 397 L 1483 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1530" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 72820, im: 108981}}</title>
+</text>
+<path d="M 1580 390 L 1583 383 L 1677 383 L 1680 390 L 1677 397 L 1583 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1630" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 61787, im: 115593}}</title>
+</text>
+<path d="M 1680 390 L 1683 383 L 1777 383 L 1780 390 L 1777 397 L 1683 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1730" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 50159, im: 121093}}</title>
+</text>
+<path d="M 1780 390 L 1783 383 L 1877 383 L 1880 390 L 1877 397 L 1783 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1830" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 38049, im: 125426}}</title>
+</text>
+<path d="M 1880 390 L 1883 383 L 1977 383 L 1980 390 L 1977 397 L 1883 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1930" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 25571, im: 128551}}</title>
+</text>
+<path d="M 1980 390 L 1983 383 L 2077 383 L 2080 390 L 2077 397 L 1983 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2030" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 12848, im: 130439}}</title>
+</text>
+<path d="M 2080 390 L 2083 383 L 2177 383 L 2180 390 L 2177 397 L 2083 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2130" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 1, im: 131070}}</title>
+</text>
+<path d="M 2180 390 L 2183 383 L 2277 383 L 2280 390 L 2277 397 L 2183 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2230" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -12846, im: 130439}}</title>
+</text>
+<path d="M 2280 390 L 2283 383 L 2377 383 L 2380 390 L 2377 397 L 2283 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2330" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -25570, im: 128551}}</title>
+</text>
+<path d="M 2380 390 L 2383 383 L 2477 383 L 2480 390 L 2477 397 L 2383 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2430" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -38047, im: 125426}}</title>
+</text>
+<path d="M 2480 390 L 2483 383 L 2577 383 L 2580 390 L 2577 397 L 2483 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2530" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -50158, im: 121093}}</title>
+</text>
+<path d="M 2580 390 L 2583 383 L 2677 383 L 2680 390 L 2677 397 L 2583 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2630" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -61785, im: 115593}}</title>
+</text>
+<path d="M 2680 390 L 2683 383 L 2777 383 L 2780 390 L 2777 397 L 2683 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2730" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -72819, im: 108981}}</title>
+</text>
+<path d="M 2780 390 L 2783 383 L 2877 383 L 2880 390 L 2877 397 L 2783 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2830" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -83149, im: 101319}}</title>
+</text>
+<path d="M 2880 390 L 2883 383 L 2977 383 L 2980 390 L 2977 397 L 2883 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2930" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -92680, im: 92681}}</title>
+</text>
+<path d="M 2980 390 L 2983 383 L 3077 383 L 3080 390 L 3077 397 L 2983 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3030" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -101318, im: 83150}}</title>
+</text>
+<path d="M 3080 390 L 3083 383 L 3177 383 L 3180 390 L 3177 397 L 3083 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3130" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -108981, im: 72819}}</title>
+</text>
+<path d="M 3180 390 L 3183 383 L 3277 383 L 3280 390 L 3277 397 L 3183 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3230" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -115593, im: 61786}}</title>
+</text>
+<path d="M 3280 390 L 3283 383 L 3377 383 L 3380 390 L 3377 397 L 3283 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3330" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -121093, im: 50158}}</title>
+</text>
+<path d="M 3380 390 L 3383 383 L 3477 383 L 3480 390 L 3477 397 L 3383 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3430" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -125426, im: 38048}}</title>
+</text>
+<path d="M 3480 390 L 3483 383 L 3577 383 L 3580 390 L 3577 397 L 3483 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3530" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -128551, im: 25570}}</title>
+</text>
+<path d="M 3580 390 L 3583 383 L 3677 383 L 3680 390 L 3677 397 L 3583 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3630" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -130439, im: 12847}}</title>
+</text>
+<path d="M 3680 390 L 3683 383 L 3777 383 L 3780 390 L 3777 397 L 3683 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3730" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -131070, im: 0}}</title>
+</text>
+<path d="M 3780 390 L 3783 383 L 3877 383 L 3880 390 L 3877 397 L 3783 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3830" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -130439, im: -12847}}</title>
+</text>
+<path d="M 3880 390 L 3883 383 L 3977 383 L 3980 390 L 3977 397 L 3883 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3930" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -128551, im: -25571}}</title>
+</text>
+<path d="M 3980 390 L 3983 383 L 4077 383 L 4080 390 L 4077 397 L 3983 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4030" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -125426, im: -38048}}</title>
+</text>
+<path d="M 4080 390 L 4083 383 L 4177 383 L 4180 390 L 4177 397 L 4083 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4130" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -121093, im: -50159}}</title>
+</text>
+<path d="M 4180 390 L 4183 383 L 4277 383 L 4280 390 L 4277 397 L 4183 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4230" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -115593, im: -61786}}</title>
+</text>
+<path d="M 4280 390 L 4283 383 L 4377 383 L 4380 390 L 4377 397 L 4283 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4330" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -108981, im: -72820}}</title>
+</text>
+<path d="M 4380 390 L 4383 383 L 4477 383 L 4480 390 L 4477 397 L 4383 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4430" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -101319, im: -83150}}</title>
+</text>
+<path d="M 4480 390 L 4483 383 L 4577 383 L 4580 390 L 4577 397 L 4483 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4530" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -92681, im: -92681}}</title>
+</text>
+<path d="M 4580 390 L 4583 383 L 4677 383 L 4680 390 L 4677 397 L 4583 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4630" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -83150, im: -101319}}</title>
+</text>
+<path d="M 4680 390 L 4683 383 L 4777 383 L 4780 390 L 4777 397 L 4683 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4730" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -72819, im: -108982}}</title>
+</text>
+<path d="M 4780 390 L 4783 383 L 4877 383 L 4880 390 L 4877 397 L 4783 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4830" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -61786, im: -115594}}</title>
+</text>
+<path d="M 4880 390 L 4883 383 L 4977 383 L 4980 390 L 4977 397 L 4883 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4930" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -50158, im: -121094}}</title>
+</text>
+<path d="M 4980 390 L 4983 383 L 5077 383 L 5080 390 L 5077 397 L 4983 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5030" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -38048, im: -125427}}</title>
+</text>
+<path d="M 5080 390 L 5083 383 L 5177 383 L 5180 390 L 5177 397 L 5083 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5130" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -25570, im: -128552}}</title>
+</text>
+<path d="M 5180 390 L 5183 383 L 5277 383 L 5280 390 L 5277 397 L 5183 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5230" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -12847, im: -130440}}</title>
+</text>
+<path d="M 5280 390 L 5283 383 L 5377 383 L 5380 390 L 5377 397 L 5283 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5330" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 0, im: -131071}}</title>
+</text>
+<path d="M 5380 390 L 5383 383 L 5477 383 L 5480 390 L 5477 397 L 5383 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5430" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 12847, im: -130440}}</title>
+</text>
+<path d="M 5480 390 L 5483 383 L 5577 383 L 5580 390 L 5577 397 L 5483 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5530" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 25571, im: -128552}}</title>
+</text>
+<path d="M 5580 390 L 5583 383 L 5677 383 L 5680 390 L 5677 397 L 5583 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5630" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 38048, im: -125427}}</title>
+</text>
+<path d="M 5680 390 L 5683 383 L 5777 383 L 5780 390 L 5777 397 L 5683 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5730" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 50159, im: -121094}}</title>
+</text>
+<path d="M 5780 390 L 5783 383 L 5877 383 L 5880 390 L 5877 397 L 5783 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5830" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 61786, im: -115594}}</title>
+</text>
+<path d="M 5880 390 L 5883 383 L 5977 383 L 5980 390 L 5977 397 L 5883 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5930" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 72820, im: -108982}}</title>
+</text>
+<path d="M 5980 390 L 5983 383 L 6077 383 L 6080 390 L 6077 397 L 5983 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6030" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 83150, im: -101320}}</title>
+</text>
+<path d="M 6080 390 L 6083 383 L 6177 383 L 6180 390 L 6177 397 L 6083 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6130" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 92681, im: -92682}}</title>
+</text>
+<path d="M 6180 390 L 6183 383 L 6277 383 L 6280 390 L 6277 397 L 6183 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6230" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 101319, im: -83151}}</title>
+</text>
+<path d="M 6280 390 L 6283 383 L 6377 383 L 6380 390 L 6377 397 L 6283 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6330" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 108982, im: -72820}}</title>
+</text>
+<path d="M 6380 390 L 6383 383 L 6477 383 L 6480 390 L 6477 397 L 6383 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6430" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 115594, im: -61787}}</title>
+</text>
+<path d="M 6480 390 L 6483 383 L 6577 383 L 6580 390 L 6577 397 L 6483 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6530" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 121094, im: -50159}}</title>
+</text>
+<path d="M 6580 390 L 6583 383 L 6677 383 L 6680 390 L 6677 397 L 6583 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6630" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 125427, im: -38049}}</title>
+</text>
+<path d="M 6680 390 L 6683 383 L 6777 383 L 6780 390 L 6777 397 L 6683 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6730" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 128552, im: -25571}}</title>
+</text>
+<path d="M 6780 390 L 6783 383 L 6877 383 L 6880 390 L 6877 397 L 6783 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6830" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 130440, im: -12848}}</title>
+</text>
+<path d="M 6880 390 L 6883 383 L 6977 383 L 6980 390 L 6977 397 L 6883 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6930" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -131070, im: 0}}</title>
+</text>
+<path d="M 6980 390 L 6983 383 L 7077 383 L 7080 390 L 7077 397 L 6983 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7030" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -130439, im: -12847}}</title>
+</text>
+<path d="M 7080 390 L 7083 383 L 7177 383 L 7180 390 L 7177 397 L 7083 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7130" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -128551, im: -25571}}</title>
+</text>
+<path d="M 7180 390 L 7183 383 L 7277 383 L 7280 390 L 7277 397 L 7183 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7230" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -125426, im: -38048}}</title>
+</text>
+<path d="M 7280 390 L 7283 383 L 7377 383 L 7380 390 L 7377 397 L 7283 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7330" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -121093, im: -50159}}</title>
+</text>
+<path d="M 7380 390 L 7383 383 L 7477 383 L 7480 390 L 7477 397 L 7383 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7430" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -115593, im: -61786}}</title>
+</text>
+<path d="M 7480 390 L 7483 383 L 7577 383 L 7580 390 L 7577 397 L 7483 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7530" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -108981, im: -72820}}</title>
+</text>
+<path d="M 7580 390 L 7583 383 L 7677 383 L 7680 390 L 7677 397 L 7583 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7630" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -101319, im: -83150}}</title>
+</text>
+<path d="M 7680 390 L 7683 383 L 7777 383 L 7780 390 L 7777 397 L 7683 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7730" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -92681, im: -92681}}</title>
+</text>
+<path d="M 7780 390 L 7783 383 L 7877 383 L 7880 390 L 7877 397 L 7783 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7830" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -83150, im: -101319}}</title>
+</text>
+<path d="M 7880 390 L 7883 383 L 7977 383 L 7980 390 L 7977 397 L 7883 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7930" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -72819, im: -108982}}</title>
+</text>
+<path d="M 7980 390 L 7983 383 L 8077 383 L 8080 390 L 8077 397 L 7983 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8030" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -61786, im: -115594}}</title>
+</text>
+<path d="M 8080 390 L 8083 383 L 8177 383 L 8180 390 L 8177 397 L 8083 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8130" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -50158, im: -121094}}</title>
+</text>
+<path d="M 8180 390 L 8183 383 L 8277 383 L 8280 390 L 8277 397 L 8183 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8230" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -38048, im: -125427}}</title>
+</text>
+<path d="M 8280 390 L 8283 383 L 8377 383 L 8380 390 L 8377 397 L 8283 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8330" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -25570, im: -128552}}</title>
+</text>
+<path d="M 8380 390 L 8383 383 L 8477 383 L 8480 390 L 8477 397 L 8383 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8430" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -12847, im: -130440}}</title>
+</text>
+<path d="M 8480 390 L 8483 383 L 8577 383 L 8580 390 L 8577 397 L 8483 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8530" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 0, im: -131071}}</title>
+</text>
+<path d="M 8580 390 L 8583 383 L 8677 383 L 8680 390 L 8677 397 L 8583 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8630" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 12847, im: -130440}}</title>
+</text>
+<path d="M 8680 390 L 8683 383 L 8777 383 L 8780 390 L 8777 397 L 8683 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8730" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 25571, im: -128552}}</title>
+</text>
+<path d="M 8780 390 L 8783 383 L 8877 383 L 8880 390 L 8877 397 L 8783 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8830" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 38048, im: -125427}}</title>
+</text>
+<path d="M 8880 390 L 8883 383 L 8977 383 L 8980 390 L 8977 397 L 8883 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8930" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 50159, im: -121094}}</title>
+</text>
+<path d="M 8980 390 L 8983 383 L 9077 383 L 9080 390 L 9077 397 L 8983 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9030" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 61786, im: -115594}}</title>
+</text>
+<path d="M 9080 390 L 9083 383 L 9177 383 L 9180 390 L 9177 397 L 9083 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9130" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 72820, im: -108982}}</title>
+</text>
+<path d="M 9180 390 L 9183 383 L 9277 383 L 9280 390 L 9277 397 L 9183 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9230" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 83150, im: -101320}}</title>
+</text>
+<path d="M 9280 390 L 9283 383 L 9377 383 L 9380 390 L 9377 397 L 9283 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9330" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 92681, im: -92682}}</title>
+</text>
+<path d="M 9380 390 L 9383 383 L 9477 383 L 9480 390 L 9477 397 L 9383 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9430" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 101319, im: -83151}}</title>
+</text>
+<path d="M 9480 390 L 9483 383 L 9577 383 L 9580 390 L 9577 397 L 9483 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9530" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 108982, im: -72820}}</title>
+</text>
+<path d="M 9580 390 L 9583 383 L 9677 383 L 9680 390 L 9677 397 L 9583 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9630" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 115594, im: -61787}}</title>
+</text>
+<path d="M 9680 390 L 9683 383 L 9777 383 L 9780 390 L 9777 397 L 9683 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9730" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 121094, im: -50159}}</title>
+</text>
+<path d="M 9780 390 L 9783 383 L 9877 383 L 9880 390 L 9877 397 L 9783 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9830" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 125427, im: -38049}}</title>
+</text>
+<path d="M 9880 390 L 9883 383 L 9977 383 L 9980 390 L 9977 397 L 9883 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9930" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 128552, im: -25571}}</title>
+</text>
+<path d="M 9980 390 L 9983 383 L 10077 383 L 10080 390 L 10077 397 L 9983 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10030" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 130440, im: -12848}}</title>
+</text>
+<path d="M 10080 390 L 10083 383 L 10177 383 L 10180 390 L 10177 397 L 10083 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10130" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 131071, im: -1}}</title>
+</text>
+<path d="M 10180 390 L 10183 383 L 10277 383 L 10280 390 L 10277 397 L 10183 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10230" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 130440, im: 12846}}</title>
+</text>
+<path d="M 10280 390 L 10283 383 L 10377 383 L 10380 390 L 10377 397 L 10283 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10330" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 128552, im: 25570}}</title>
+</text>
+<path d="M 10380 390 L 10383 383 L 10477 383 L 10480 390 L 10477 397 L 10383 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10430" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 125427, im: 38047}}</title>
+</text>
+<path d="M 10480 390 L 10483 383 L 10577 383 L 10580 390 L 10577 397 L 10483 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10530" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 121094, im: 50158}}</title>
+</text>
+<path d="M 10580 390 L 10583 383 L 10677 383 L 10680 390 L 10677 397 L 10583 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10630" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 115594, im: 61785}}</title>
+</text>
+<path d="M 10680 390 L 10683 383 L 10777 383 L 10780 390 L 10777 397 L 10683 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10730" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 108982, im: 72819}}</title>
+</text>
+<path d="M 10780 390 L 10783 383 L 10877 383 L 10880 390 L 10877 397 L 10783 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10830" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 101320, im: 83149}}</title>
+</text>
+<path d="M 10880 390 L 10883 383 L 10977 383 L 10980 390 L 10977 397 L 10883 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10930" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 92682, im: 92680}}</title>
+</text>
+<path d="M 10980 390 L 10983 383 L 11077 383 L 11080 390 L 11077 397 L 10983 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11030" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 83151, im: 101318}}</title>
+</text>
+<path d="M 11080 390 L 11083 383 L 11177 383 L 11180 390 L 11177 397 L 11083 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11130" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 72820, im: 108981}}</title>
+</text>
+<path d="M 11180 390 L 11183 383 L 11277 383 L 11280 390 L 11277 397 L 11183 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11230" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 61787, im: 115593}}</title>
+</text>
+<path d="M 11280 390 L 11283 383 L 11377 383 L 11380 390 L 11377 397 L 11283 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11330" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 50159, im: 121093}}</title>
+</text>
+<path d="M 11380 390 L 11383 383 L 11477 383 L 11480 390 L 11477 397 L 11383 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11430" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 38049, im: 125426}}</title>
+</text>
+<path d="M 11480 390 L 11483 383 L 11577 383 L 11580 390 L 11577 397 L 11483 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11530" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 25571, im: 128551}}</title>
+</text>
+<path d="M 11580 390 L 11583 383 L 11677 383 L 11680 390 L 11677 397 L 11583 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11630" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 12848, im: 130439}}</title>
+</text>
+<path d="M 11680 390 L 11683 383 L 11777 383 L 11780 390 L 11777 397 L 11683 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11730" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 0, im: -131071}}</title>
+</text>
+<path d="M 11780 390 L 11783 383 L 11877 383 L 11880 390 L 11877 397 L 11783 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11830" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 12847, im: -130440}}</title>
+</text>
+<path d="M 11880 390 L 11883 383 L 11977 383 L 11980 390 L 11977 397 L 11883 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11930" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 25571, im: -128552}}</title>
+</text>
+<path d="M 11980 390 L 11983 383 L 12077 383 L 12080 390 L 12077 397 L 11983 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12030" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 38048, im: -125427}}</title>
+</text>
+<path d="M 12080 390 L 12083 383 L 12177 383 L 12180 390 L 12177 397 L 12083 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12130" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 50159, im: -121094}}</title>
+</text>
+<path d="M 12180 390 L 12183 383 L 12277 383 L 12280 390 L 12277 397 L 12183 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12230" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 61786, im: -115594}}</title>
+</text>
+<path d="M 12280 390 L 12283 383 L 12377 383 L 12380 390 L 12377 397 L 12283 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12330" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 72820, im: -108982}}</title>
+</text>
+<path d="M 12380 390 L 12383 383 L 12477 383 L 12480 390 L 12477 397 L 12383 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12430" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 83150, im: -101320}}</title>
+</text>
+<path d="M 12480 390 L 12483 383 L 12577 383 L 12580 390 L 12577 397 L 12483 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12530" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 92681, im: -92682}}</title>
+</text>
+<path d="M 12580 390 L 12583 383 L 12677 383 L 12680 390 L 12677 397 L 12583 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12630" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 101319, im: -83151}}</title>
+</text>
+<path d="M 12680 390 L 12683 383 L 12777 383 L 12780 390 L 12777 397 L 12683 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12730" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 108982, im: -72820}}</title>
+</text>
+<path d="M 12780 390 L 12783 383 L 12877 383 L 12880 390 L 12877 397 L 12783 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12830" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 115594, im: -61787}}</title>
+</text>
+<path d="M 12880 390 L 12883 383 L 12977 383 L 12980 390 L 12977 397 L 12883 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12930" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 121094, im: -50159}}</title>
+</text>
+<path d="M 12980 390 L 12983 383 L 13077 383 L 13080 390 L 13077 397 L 12983 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13030" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 125427, im: -38049}}</title>
+</text>
+<path d="M 13080 390 L 13083 383 L 13177 383 L 13180 390 L 13177 397 L 13083 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13130" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 128552, im: -25571}}</title>
+</text>
+<path d="M 13180 390 L 13183 383 L 13277 383 L 13280 390 L 13277 397 L 13183 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13230" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 130440, im: -12848}}</title>
+</text>
+<path d="M 13280 390 L 13283 383 L 13377 383 L 13380 390 L 13377 397 L 13283 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13330" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 131071, im: -1}}</title>
+</text>
+<path d="M 13380 390 L 13383 383 L 13477 383 L 13480 390 L 13477 397 L 13383 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13430" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 130440, im: 12846}}</title>
+</text>
+<path d="M 13480 390 L 13483 383 L 13577 383 L 13580 390 L 13577 397 L 13483 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13530" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 128552, im: 25570}}</title>
+</text>
+<path d="M 13580 390 L 13583 383 L 13677 383 L 13680 390 L 13677 397 L 13583 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13630" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 125427, im: 38047}}</title>
+</text>
+<path d="M 13680 390 L 13683 383 L 13777 383 L 13780 390 L 13777 397 L 13683 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13730" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 121094, im: 50158}}</title>
+</text>
+<path d="M 13780 390 L 13783 383 L 13877 383 L 13880 390 L 13877 397 L 13783 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13830" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 115594, im: 61785}}</title>
+</text>
+<path d="M 13880 390 L 13883 383 L 13977 383 L 13980 390 L 13977 397 L 13883 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13930" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 108982, im: 72819}}</title>
+</text>
+<path d="M 13980 390 L 13983 383 L 14077 383 L 14080 390 L 14077 397 L 13983 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14030" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 101320, im: 83149}}</title>
+</text>
+<path d="M 14080 390 L 14083 383 L 14177 383 L 14180 390 L 14177 397 L 14083 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14130" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 92682, im: 92680}}</title>
+</text>
+<path d="M 14180 390 L 14183 383 L 14277 383 L 14280 390 L 14277 397 L 14183 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14230" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 83151, im: 101318}}</title>
+</text>
+<path d="M 14280 390 L 14283 383 L 14377 383 L 14380 390 L 14377 397 L 14283 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14330" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 72820, im: 108981}}</title>
+</text>
+<path d="M 14380 390 L 14383 383 L 14477 383 L 14480 390 L 14477 397 L 14383 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14430" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 61787, im: 115593}}</title>
+</text>
+<path d="M 14480 390 L 14483 383 L 14577 383 L 14580 390 L 14577 397 L 14483 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14530" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 50159, im: 121093}}</title>
+</text>
+<path d="M 14580 390 L 14583 383 L 14677 383 L 14680 390 L 14677 397 L 14583 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14630" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 38049, im: 125426}}</title>
+</text>
+<path d="M 14680 390 L 14683 383 L 14777 383 L 14780 390 L 14777 397 L 14683 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14730" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 25571, im: 128551}}</title>
+</text>
+<path d="M 14780 390 L 14783 383 L 14877 383 L 14880 390 L 14877 397 L 14783 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14830" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 12848, im: 130439}}</title>
+</text>
+<path d="M 14880 390 L 14883 383 L 14977 383 L 14980 390 L 14977 397 L 14883 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14930" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: 1, im: 131070}}</title>
+</text>
+<path d="M 14980 390 L 14983 383 L 15077 383 L 15080 390 L 15077 397 L 14983 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15030" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -12846, im: 130439}}</title>
+</text>
+<path d="M 15080 390 L 15083 383 L 15177 383 L 15180 390 L 15177 397 L 15083 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15130" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -25570, im: 128551}}</title>
+</text>
+<path d="M 15180 390 L 15183 383 L 15277 383 L 15280 390 L 15277 397 L 15183 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15230" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -38047, im: 125426}}</title>
+</text>
+<path d="M 15280 390 L 15283 383 L 15377 383 L 15380 390 L 15377 397 L 15283 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15330" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -50158, im: 121093}}</title>
+</text>
+<path d="M 15380 390 L 15383 383 L 15477 383 L 15480 390 L 15477 397 L 15383 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15430" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -61785, im: 115593}}</title>
+</text>
+<path d="M 15480 390 L 15483 383 L 15577 383 L 15580 390 L 15577 397 L 15483 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15530" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -72819, im: 108981}}</title>
+</text>
+<path d="M 15580 390 L 15583 383 L 15677 383 L 15680 390 L 15677 397 L 15583 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15630" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -83149, im: 101319}}</title>
+</text>
+<path d="M 15680 390 L 15683 383 L 15777 383 L 15780 390 L 15777 397 L 15683 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15730" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -92680, im: 92681}}</title>
+</text>
+<path d="M 15780 390 L 15783 383 L 15877 383 L 15880 390 L 15877 397 L 15783 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15830" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -101318, im: 83150}}</title>
+</text>
+<path d="M 15880 390 L 15883 383 L 15977 383 L 15980 390 L 15977 397 L 15883 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15930" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -108981, im: 72819}}</title>
+</text>
+<path d="M 15980 390 L 15983 383 L 16077 383 L 16080 390 L 16077 397 L 15983 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16030" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -115593, im: 61786}}</title>
+</text>
+<path d="M 16080 390 L 16083 383 L 16177 383 L 16180 390 L 16177 397 L 16083 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16130" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -121093, im: 50158}}</title>
+</text>
+<path d="M 16180 390 L 16183 383 L 16277 383 L 16280 390 L 16277 397 L 16183 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16230" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -125426, im: 38048}}</title>
+</text>
+<path d="M 16280 390 L 16283 383 L 16377 383 L 16380 390 L 16377 397 L 16283 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16330" xml:space="preserve" y="390">
+{data: ...
+<title>{data: {re: -128551, im: 25570}}</title>
+</text>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="start" x="3" xml:space="preserve" y="410">
+            .data
+<title>top.outputs.stream.data#Some.0.data</title>
+</text>
+<path d="M 230 410 L 233 403 L 277 403 L 280 410 L 277 417 L 233 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="255" xml:space="preserve" y="410">
+{r...
+<title>{re: 0, im: 0}</title>
+</text>
+<path d="M 280 410 L 283 403 L 577 403 L 580 410 L 577 417 L 283 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="430" xml:space="preserve" y="410">
+{re: 131071, im: -1}
+<title>{re: 131071, im: -1}</title>
+</text>
+<path d="M 580 410 L 583 403 L 677 403 L 680 410 L 677 417 L 583 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="630" xml:space="preserve" y="410">
+{re: 13...
+<title>{re: 130440, im: 12846}</title>
+</text>
+<path d="M 680 410 L 683 403 L 777 403 L 780 410 L 777 417 L 683 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="730" xml:space="preserve" y="410">
+{re: 12...
+<title>{re: 128552, im: 25570}</title>
+</text>
+<path d="M 780 410 L 783 403 L 877 403 L 880 410 L 877 417 L 783 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="830" xml:space="preserve" y="410">
+{re: 12...
+<title>{re: 125427, im: 38047}</title>
+</text>
+<path d="M 880 410 L 883 403 L 977 403 L 980 410 L 977 417 L 883 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="930" xml:space="preserve" y="410">
+{re: 12...
+<title>{re: 121094, im: 50158}</title>
+</text>
+<path d="M 980 410 L 983 403 L 1077 403 L 1080 410 L 1077 417 L 983 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1030" xml:space="preserve" y="410">
+{re: 11...
+<title>{re: 115594, im: 61785}</title>
+</text>
+<path d="M 1080 410 L 1083 403 L 1177 403 L 1180 410 L 1177 417 L 1083 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1130" xml:space="preserve" y="410">
+{re: 10...
+<title>{re: 108982, im: 72819}</title>
+</text>
+<path d="M 1180 410 L 1183 403 L 1277 403 L 1280 410 L 1277 417 L 1183 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1230" xml:space="preserve" y="410">
+{re: 10...
+<title>{re: 101320, im: 83149}</title>
+</text>
+<path d="M 1280 410 L 1283 403 L 1377 403 L 1380 410 L 1377 417 L 1283 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1330" xml:space="preserve" y="410">
+{re: 92...
+<title>{re: 92682, im: 92680}</title>
+</text>
+<path d="M 1380 410 L 1383 403 L 1477 403 L 1480 410 L 1477 417 L 1383 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1430" xml:space="preserve" y="410">
+{re: 83...
+<title>{re: 83151, im: 101318}</title>
+</text>
+<path d="M 1480 410 L 1483 403 L 1577 403 L 1580 410 L 1577 417 L 1483 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1530" xml:space="preserve" y="410">
+{re: 72...
+<title>{re: 72820, im: 108981}</title>
+</text>
+<path d="M 1580 410 L 1583 403 L 1677 403 L 1680 410 L 1677 417 L 1583 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1630" xml:space="preserve" y="410">
+{re: 61...
+<title>{re: 61787, im: 115593}</title>
+</text>
+<path d="M 1680 410 L 1683 403 L 1777 403 L 1780 410 L 1777 417 L 1683 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1730" xml:space="preserve" y="410">
+{re: 50...
+<title>{re: 50159, im: 121093}</title>
+</text>
+<path d="M 1780 410 L 1783 403 L 1877 403 L 1880 410 L 1877 417 L 1783 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1830" xml:space="preserve" y="410">
+{re: 38...
+<title>{re: 38049, im: 125426}</title>
+</text>
+<path d="M 1880 410 L 1883 403 L 1977 403 L 1980 410 L 1977 417 L 1883 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1930" xml:space="preserve" y="410">
+{re: 25...
+<title>{re: 25571, im: 128551}</title>
+</text>
+<path d="M 1980 410 L 1983 403 L 2077 403 L 2080 410 L 2077 417 L 1983 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2030" xml:space="preserve" y="410">
+{re: 12...
+<title>{re: 12848, im: 130439}</title>
+</text>
+<path d="M 2080 410 L 2083 403 L 2177 403 L 2180 410 L 2177 417 L 2083 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2130" xml:space="preserve" y="410">
+{re: 1,...
+<title>{re: 1, im: 131070}</title>
+</text>
+<path d="M 2180 410 L 2183 403 L 2277 403 L 2280 410 L 2277 417 L 2183 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2230" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -12846, im: 130439}</title>
+</text>
+<path d="M 2280 410 L 2283 403 L 2377 403 L 2380 410 L 2377 417 L 2283 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2330" xml:space="preserve" y="410">
+{re: -2...
+<title>{re: -25570, im: 128551}</title>
+</text>
+<path d="M 2380 410 L 2383 403 L 2477 403 L 2480 410 L 2477 417 L 2383 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2430" xml:space="preserve" y="410">
+{re: -3...
+<title>{re: -38047, im: 125426}</title>
+</text>
+<path d="M 2480 410 L 2483 403 L 2577 403 L 2580 410 L 2577 417 L 2483 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2530" xml:space="preserve" y="410">
+{re: -5...
+<title>{re: -50158, im: 121093}</title>
+</text>
+<path d="M 2580 410 L 2583 403 L 2677 403 L 2680 410 L 2677 417 L 2583 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2630" xml:space="preserve" y="410">
+{re: -6...
+<title>{re: -61785, im: 115593}</title>
+</text>
+<path d="M 2680 410 L 2683 403 L 2777 403 L 2780 410 L 2777 417 L 2683 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2730" xml:space="preserve" y="410">
+{re: -7...
+<title>{re: -72819, im: 108981}</title>
+</text>
+<path d="M 2780 410 L 2783 403 L 2877 403 L 2880 410 L 2877 417 L 2783 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2830" xml:space="preserve" y="410">
+{re: -8...
+<title>{re: -83149, im: 101319}</title>
+</text>
+<path d="M 2880 410 L 2883 403 L 2977 403 L 2980 410 L 2977 417 L 2883 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2930" xml:space="preserve" y="410">
+{re: -9...
+<title>{re: -92680, im: 92681}</title>
+</text>
+<path d="M 2980 410 L 2983 403 L 3077 403 L 3080 410 L 3077 417 L 2983 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3030" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -101318, im: 83150}</title>
+</text>
+<path d="M 3080 410 L 3083 403 L 3177 403 L 3180 410 L 3177 417 L 3083 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3130" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -108981, im: 72819}</title>
+</text>
+<path d="M 3180 410 L 3183 403 L 3277 403 L 3280 410 L 3277 417 L 3183 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3230" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -115593, im: 61786}</title>
+</text>
+<path d="M 3280 410 L 3283 403 L 3377 403 L 3380 410 L 3377 417 L 3283 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3330" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -121093, im: 50158}</title>
+</text>
+<path d="M 3380 410 L 3383 403 L 3477 403 L 3480 410 L 3477 417 L 3383 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3430" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -125426, im: 38048}</title>
+</text>
+<path d="M 3480 410 L 3483 403 L 3577 403 L 3580 410 L 3577 417 L 3483 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3530" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -128551, im: 25570}</title>
+</text>
+<path d="M 3580 410 L 3583 403 L 3677 403 L 3680 410 L 3677 417 L 3583 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3630" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -130439, im: 12847}</title>
+</text>
+<path d="M 3680 410 L 3683 403 L 3777 403 L 3780 410 L 3777 417 L 3683 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3730" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -131070, im: 0}</title>
+</text>
+<path d="M 3780 410 L 3783 403 L 3877 403 L 3880 410 L 3877 417 L 3783 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3830" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -130439, im: -12847}</title>
+</text>
+<path d="M 3880 410 L 3883 403 L 3977 403 L 3980 410 L 3977 417 L 3883 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3930" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -128551, im: -25571}</title>
+</text>
+<path d="M 3980 410 L 3983 403 L 4077 403 L 4080 410 L 4077 417 L 3983 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4030" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -125426, im: -38048}</title>
+</text>
+<path d="M 4080 410 L 4083 403 L 4177 403 L 4180 410 L 4177 417 L 4083 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4130" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -121093, im: -50159}</title>
+</text>
+<path d="M 4180 410 L 4183 403 L 4277 403 L 4280 410 L 4277 417 L 4183 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4230" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -115593, im: -61786}</title>
+</text>
+<path d="M 4280 410 L 4283 403 L 4377 403 L 4380 410 L 4377 417 L 4283 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4330" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -108981, im: -72820}</title>
+</text>
+<path d="M 4380 410 L 4383 403 L 4477 403 L 4480 410 L 4477 417 L 4383 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4430" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -101319, im: -83150}</title>
+</text>
+<path d="M 4480 410 L 4483 403 L 4577 403 L 4580 410 L 4577 417 L 4483 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4530" xml:space="preserve" y="410">
+{re: -9...
+<title>{re: -92681, im: -92681}</title>
+</text>
+<path d="M 4580 410 L 4583 403 L 4677 403 L 4680 410 L 4677 417 L 4583 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4630" xml:space="preserve" y="410">
+{re: -8...
+<title>{re: -83150, im: -101319}</title>
+</text>
+<path d="M 4680 410 L 4683 403 L 4777 403 L 4780 410 L 4777 417 L 4683 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4730" xml:space="preserve" y="410">
+{re: -7...
+<title>{re: -72819, im: -108982}</title>
+</text>
+<path d="M 4780 410 L 4783 403 L 4877 403 L 4880 410 L 4877 417 L 4783 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4830" xml:space="preserve" y="410">
+{re: -6...
+<title>{re: -61786, im: -115594}</title>
+</text>
+<path d="M 4880 410 L 4883 403 L 4977 403 L 4980 410 L 4977 417 L 4883 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4930" xml:space="preserve" y="410">
+{re: -5...
+<title>{re: -50158, im: -121094}</title>
+</text>
+<path d="M 4980 410 L 4983 403 L 5077 403 L 5080 410 L 5077 417 L 4983 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5030" xml:space="preserve" y="410">
+{re: -3...
+<title>{re: -38048, im: -125427}</title>
+</text>
+<path d="M 5080 410 L 5083 403 L 5177 403 L 5180 410 L 5177 417 L 5083 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5130" xml:space="preserve" y="410">
+{re: -2...
+<title>{re: -25570, im: -128552}</title>
+</text>
+<path d="M 5180 410 L 5183 403 L 5277 403 L 5280 410 L 5277 417 L 5183 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5230" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -12847, im: -130440}</title>
+</text>
+<path d="M 5280 410 L 5283 403 L 5377 403 L 5380 410 L 5377 417 L 5283 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5330" xml:space="preserve" y="410">
+{re: 0,...
+<title>{re: 0, im: -131071}</title>
+</text>
+<path d="M 5380 410 L 5383 403 L 5477 403 L 5480 410 L 5477 417 L 5383 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5430" xml:space="preserve" y="410">
+{re: 12...
+<title>{re: 12847, im: -130440}</title>
+</text>
+<path d="M 5480 410 L 5483 403 L 5577 403 L 5580 410 L 5577 417 L 5483 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5530" xml:space="preserve" y="410">
+{re: 25...
+<title>{re: 25571, im: -128552}</title>
+</text>
+<path d="M 5580 410 L 5583 403 L 5677 403 L 5680 410 L 5677 417 L 5583 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5630" xml:space="preserve" y="410">
+{re: 38...
+<title>{re: 38048, im: -125427}</title>
+</text>
+<path d="M 5680 410 L 5683 403 L 5777 403 L 5780 410 L 5777 417 L 5683 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5730" xml:space="preserve" y="410">
+{re: 50...
+<title>{re: 50159, im: -121094}</title>
+</text>
+<path d="M 5780 410 L 5783 403 L 5877 403 L 5880 410 L 5877 417 L 5783 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5830" xml:space="preserve" y="410">
+{re: 61...
+<title>{re: 61786, im: -115594}</title>
+</text>
+<path d="M 5880 410 L 5883 403 L 5977 403 L 5980 410 L 5977 417 L 5883 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5930" xml:space="preserve" y="410">
+{re: 72...
+<title>{re: 72820, im: -108982}</title>
+</text>
+<path d="M 5980 410 L 5983 403 L 6077 403 L 6080 410 L 6077 417 L 5983 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6030" xml:space="preserve" y="410">
+{re: 83...
+<title>{re: 83150, im: -101320}</title>
+</text>
+<path d="M 6080 410 L 6083 403 L 6177 403 L 6180 410 L 6177 417 L 6083 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6130" xml:space="preserve" y="410">
+{re: 92...
+<title>{re: 92681, im: -92682}</title>
+</text>
+<path d="M 6180 410 L 6183 403 L 6277 403 L 6280 410 L 6277 417 L 6183 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6230" xml:space="preserve" y="410">
+{re: 10...
+<title>{re: 101319, im: -83151}</title>
+</text>
+<path d="M 6280 410 L 6283 403 L 6377 403 L 6380 410 L 6377 417 L 6283 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6330" xml:space="preserve" y="410">
+{re: 10...
+<title>{re: 108982, im: -72820}</title>
+</text>
+<path d="M 6380 410 L 6383 403 L 6477 403 L 6480 410 L 6477 417 L 6383 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6430" xml:space="preserve" y="410">
+{re: 11...
+<title>{re: 115594, im: -61787}</title>
+</text>
+<path d="M 6480 410 L 6483 403 L 6577 403 L 6580 410 L 6577 417 L 6483 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6530" xml:space="preserve" y="410">
+{re: 12...
+<title>{re: 121094, im: -50159}</title>
+</text>
+<path d="M 6580 410 L 6583 403 L 6677 403 L 6680 410 L 6677 417 L 6583 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6630" xml:space="preserve" y="410">
+{re: 12...
+<title>{re: 125427, im: -38049}</title>
+</text>
+<path d="M 6680 410 L 6683 403 L 6777 403 L 6780 410 L 6777 417 L 6683 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6730" xml:space="preserve" y="410">
+{re: 12...
+<title>{re: 128552, im: -25571}</title>
+</text>
+<path d="M 6780 410 L 6783 403 L 6877 403 L 6880 410 L 6877 417 L 6783 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6830" xml:space="preserve" y="410">
+{re: 13...
+<title>{re: 130440, im: -12848}</title>
+</text>
+<path d="M 6880 410 L 6883 403 L 6977 403 L 6980 410 L 6977 417 L 6883 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6930" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -131070, im: 0}</title>
+</text>
+<path d="M 6980 410 L 6983 403 L 7077 403 L 7080 410 L 7077 417 L 6983 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7030" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -130439, im: -12847}</title>
+</text>
+<path d="M 7080 410 L 7083 403 L 7177 403 L 7180 410 L 7177 417 L 7083 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7130" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -128551, im: -25571}</title>
+</text>
+<path d="M 7180 410 L 7183 403 L 7277 403 L 7280 410 L 7277 417 L 7183 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7230" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -125426, im: -38048}</title>
+</text>
+<path d="M 7280 410 L 7283 403 L 7377 403 L 7380 410 L 7377 417 L 7283 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7330" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -121093, im: -50159}</title>
+</text>
+<path d="M 7380 410 L 7383 403 L 7477 403 L 7480 410 L 7477 417 L 7383 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7430" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -115593, im: -61786}</title>
+</text>
+<path d="M 7480 410 L 7483 403 L 7577 403 L 7580 410 L 7577 417 L 7483 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7530" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -108981, im: -72820}</title>
+</text>
+<path d="M 7580 410 L 7583 403 L 7677 403 L 7680 410 L 7677 417 L 7583 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7630" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -101319, im: -83150}</title>
+</text>
+<path d="M 7680 410 L 7683 403 L 7777 403 L 7780 410 L 7777 417 L 7683 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7730" xml:space="preserve" y="410">
+{re: -9...
+<title>{re: -92681, im: -92681}</title>
+</text>
+<path d="M 7780 410 L 7783 403 L 7877 403 L 7880 410 L 7877 417 L 7783 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7830" xml:space="preserve" y="410">
+{re: -8...
+<title>{re: -83150, im: -101319}</title>
+</text>
+<path d="M 7880 410 L 7883 403 L 7977 403 L 7980 410 L 7977 417 L 7883 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7930" xml:space="preserve" y="410">
+{re: -7...
+<title>{re: -72819, im: -108982}</title>
+</text>
+<path d="M 7980 410 L 7983 403 L 8077 403 L 8080 410 L 8077 417 L 7983 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8030" xml:space="preserve" y="410">
+{re: -6...
+<title>{re: -61786, im: -115594}</title>
+</text>
+<path d="M 8080 410 L 8083 403 L 8177 403 L 8180 410 L 8177 417 L 8083 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8130" xml:space="preserve" y="410">
+{re: -5...
+<title>{re: -50158, im: -121094}</title>
+</text>
+<path d="M 8180 410 L 8183 403 L 8277 403 L 8280 410 L 8277 417 L 8183 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8230" xml:space="preserve" y="410">
+{re: -3...
+<title>{re: -38048, im: -125427}</title>
+</text>
+<path d="M 8280 410 L 8283 403 L 8377 403 L 8380 410 L 8377 417 L 8283 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8330" xml:space="preserve" y="410">
+{re: -2...
+<title>{re: -25570, im: -128552}</title>
+</text>
+<path d="M 8380 410 L 8383 403 L 8477 403 L 8480 410 L 8477 417 L 8383 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8430" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -12847, im: -130440}</title>
+</text>
+<path d="M 8480 410 L 8483 403 L 8577 403 L 8580 410 L 8577 417 L 8483 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8530" xml:space="preserve" y="410">
+{re: 0,...
+<title>{re: 0, im: -131071}</title>
+</text>
+<path d="M 8580 410 L 8583 403 L 8677 403 L 8680 410 L 8677 417 L 8583 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8630" xml:space="preserve" y="410">
+{re: 12...
+<title>{re: 12847, im: -130440}</title>
+</text>
+<path d="M 8680 410 L 8683 403 L 8777 403 L 8780 410 L 8777 417 L 8683 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8730" xml:space="preserve" y="410">
+{re: 25...
+<title>{re: 25571, im: -128552}</title>
+</text>
+<path d="M 8780 410 L 8783 403 L 8877 403 L 8880 410 L 8877 417 L 8783 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8830" xml:space="preserve" y="410">
+{re: 38...
+<title>{re: 38048, im: -125427}</title>
+</text>
+<path d="M 8880 410 L 8883 403 L 8977 403 L 8980 410 L 8977 417 L 8883 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8930" xml:space="preserve" y="410">
+{re: 50...
+<title>{re: 50159, im: -121094}</title>
+</text>
+<path d="M 8980 410 L 8983 403 L 9077 403 L 9080 410 L 9077 417 L 8983 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9030" xml:space="preserve" y="410">
+{re: 61...
+<title>{re: 61786, im: -115594}</title>
+</text>
+<path d="M 9080 410 L 9083 403 L 9177 403 L 9180 410 L 9177 417 L 9083 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9130" xml:space="preserve" y="410">
+{re: 72...
+<title>{re: 72820, im: -108982}</title>
+</text>
+<path d="M 9180 410 L 9183 403 L 9277 403 L 9280 410 L 9277 417 L 9183 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9230" xml:space="preserve" y="410">
+{re: 83...
+<title>{re: 83150, im: -101320}</title>
+</text>
+<path d="M 9280 410 L 9283 403 L 9377 403 L 9380 410 L 9377 417 L 9283 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9330" xml:space="preserve" y="410">
+{re: 92...
+<title>{re: 92681, im: -92682}</title>
+</text>
+<path d="M 9380 410 L 9383 403 L 9477 403 L 9480 410 L 9477 417 L 9383 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9430" xml:space="preserve" y="410">
+{re: 10...
+<title>{re: 101319, im: -83151}</title>
+</text>
+<path d="M 9480 410 L 9483 403 L 9577 403 L 9580 410 L 9577 417 L 9483 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9530" xml:space="preserve" y="410">
+{re: 10...
+<title>{re: 108982, im: -72820}</title>
+</text>
+<path d="M 9580 410 L 9583 403 L 9677 403 L 9680 410 L 9677 417 L 9583 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9630" xml:space="preserve" y="410">
+{re: 11...
+<title>{re: 115594, im: -61787}</title>
+</text>
+<path d="M 9680 410 L 9683 403 L 9777 403 L 9780 410 L 9777 417 L 9683 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9730" xml:space="preserve" y="410">
+{re: 12...
+<title>{re: 121094, im: -50159}</title>
+</text>
+<path d="M 9780 410 L 9783 403 L 9877 403 L 9880 410 L 9877 417 L 9783 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9830" xml:space="preserve" y="410">
+{re: 12...
+<title>{re: 125427, im: -38049}</title>
+</text>
+<path d="M 9880 410 L 9883 403 L 9977 403 L 9980 410 L 9977 417 L 9883 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9930" xml:space="preserve" y="410">
+{re: 12...
+<title>{re: 128552, im: -25571}</title>
+</text>
+<path d="M 9980 410 L 9983 403 L 10077 403 L 10080 410 L 10077 417 L 9983 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10030" xml:space="preserve" y="410">
+{re: 13...
+<title>{re: 130440, im: -12848}</title>
+</text>
+<path d="M 10080 410 L 10083 403 L 10177 403 L 10180 410 L 10177 417 L 10083 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10130" xml:space="preserve" y="410">
+{re: 13...
+<title>{re: 131071, im: -1}</title>
+</text>
+<path d="M 10180 410 L 10183 403 L 10277 403 L 10280 410 L 10277 417 L 10183 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10230" xml:space="preserve" y="410">
+{re: 13...
+<title>{re: 130440, im: 12846}</title>
+</text>
+<path d="M 10280 410 L 10283 403 L 10377 403 L 10380 410 L 10377 417 L 10283 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10330" xml:space="preserve" y="410">
+{re: 12...
+<title>{re: 128552, im: 25570}</title>
+</text>
+<path d="M 10380 410 L 10383 403 L 10477 403 L 10480 410 L 10477 417 L 10383 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10430" xml:space="preserve" y="410">
+{re: 12...
+<title>{re: 125427, im: 38047}</title>
+</text>
+<path d="M 10480 410 L 10483 403 L 10577 403 L 10580 410 L 10577 417 L 10483 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10530" xml:space="preserve" y="410">
+{re: 12...
+<title>{re: 121094, im: 50158}</title>
+</text>
+<path d="M 10580 410 L 10583 403 L 10677 403 L 10680 410 L 10677 417 L 10583 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10630" xml:space="preserve" y="410">
+{re: 11...
+<title>{re: 115594, im: 61785}</title>
+</text>
+<path d="M 10680 410 L 10683 403 L 10777 403 L 10780 410 L 10777 417 L 10683 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10730" xml:space="preserve" y="410">
+{re: 10...
+<title>{re: 108982, im: 72819}</title>
+</text>
+<path d="M 10780 410 L 10783 403 L 10877 403 L 10880 410 L 10877 417 L 10783 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10830" xml:space="preserve" y="410">
+{re: 10...
+<title>{re: 101320, im: 83149}</title>
+</text>
+<path d="M 10880 410 L 10883 403 L 10977 403 L 10980 410 L 10977 417 L 10883 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10930" xml:space="preserve" y="410">
+{re: 92...
+<title>{re: 92682, im: 92680}</title>
+</text>
+<path d="M 10980 410 L 10983 403 L 11077 403 L 11080 410 L 11077 417 L 10983 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11030" xml:space="preserve" y="410">
+{re: 83...
+<title>{re: 83151, im: 101318}</title>
+</text>
+<path d="M 11080 410 L 11083 403 L 11177 403 L 11180 410 L 11177 417 L 11083 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11130" xml:space="preserve" y="410">
+{re: 72...
+<title>{re: 72820, im: 108981}</title>
+</text>
+<path d="M 11180 410 L 11183 403 L 11277 403 L 11280 410 L 11277 417 L 11183 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11230" xml:space="preserve" y="410">
+{re: 61...
+<title>{re: 61787, im: 115593}</title>
+</text>
+<path d="M 11280 410 L 11283 403 L 11377 403 L 11380 410 L 11377 417 L 11283 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11330" xml:space="preserve" y="410">
+{re: 50...
+<title>{re: 50159, im: 121093}</title>
+</text>
+<path d="M 11380 410 L 11383 403 L 11477 403 L 11480 410 L 11477 417 L 11383 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11430" xml:space="preserve" y="410">
+{re: 38...
+<title>{re: 38049, im: 125426}</title>
+</text>
+<path d="M 11480 410 L 11483 403 L 11577 403 L 11580 410 L 11577 417 L 11483 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11530" xml:space="preserve" y="410">
+{re: 25...
+<title>{re: 25571, im: 128551}</title>
+</text>
+<path d="M 11580 410 L 11583 403 L 11677 403 L 11680 410 L 11677 417 L 11583 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11630" xml:space="preserve" y="410">
+{re: 12...
+<title>{re: 12848, im: 130439}</title>
+</text>
+<path d="M 11680 410 L 11683 403 L 11777 403 L 11780 410 L 11777 417 L 11683 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11730" xml:space="preserve" y="410">
+{re: 0,...
+<title>{re: 0, im: -131071}</title>
+</text>
+<path d="M 11780 410 L 11783 403 L 11877 403 L 11880 410 L 11877 417 L 11783 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11830" xml:space="preserve" y="410">
+{re: 12...
+<title>{re: 12847, im: -130440}</title>
+</text>
+<path d="M 11880 410 L 11883 403 L 11977 403 L 11980 410 L 11977 417 L 11883 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11930" xml:space="preserve" y="410">
+{re: 25...
+<title>{re: 25571, im: -128552}</title>
+</text>
+<path d="M 11980 410 L 11983 403 L 12077 403 L 12080 410 L 12077 417 L 11983 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12030" xml:space="preserve" y="410">
+{re: 38...
+<title>{re: 38048, im: -125427}</title>
+</text>
+<path d="M 12080 410 L 12083 403 L 12177 403 L 12180 410 L 12177 417 L 12083 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12130" xml:space="preserve" y="410">
+{re: 50...
+<title>{re: 50159, im: -121094}</title>
+</text>
+<path d="M 12180 410 L 12183 403 L 12277 403 L 12280 410 L 12277 417 L 12183 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12230" xml:space="preserve" y="410">
+{re: 61...
+<title>{re: 61786, im: -115594}</title>
+</text>
+<path d="M 12280 410 L 12283 403 L 12377 403 L 12380 410 L 12377 417 L 12283 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12330" xml:space="preserve" y="410">
+{re: 72...
+<title>{re: 72820, im: -108982}</title>
+</text>
+<path d="M 12380 410 L 12383 403 L 12477 403 L 12480 410 L 12477 417 L 12383 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12430" xml:space="preserve" y="410">
+{re: 83...
+<title>{re: 83150, im: -101320}</title>
+</text>
+<path d="M 12480 410 L 12483 403 L 12577 403 L 12580 410 L 12577 417 L 12483 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12530" xml:space="preserve" y="410">
+{re: 92...
+<title>{re: 92681, im: -92682}</title>
+</text>
+<path d="M 12580 410 L 12583 403 L 12677 403 L 12680 410 L 12677 417 L 12583 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12630" xml:space="preserve" y="410">
+{re: 10...
+<title>{re: 101319, im: -83151}</title>
+</text>
+<path d="M 12680 410 L 12683 403 L 12777 403 L 12780 410 L 12777 417 L 12683 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12730" xml:space="preserve" y="410">
+{re: 10...
+<title>{re: 108982, im: -72820}</title>
+</text>
+<path d="M 12780 410 L 12783 403 L 12877 403 L 12880 410 L 12877 417 L 12783 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12830" xml:space="preserve" y="410">
+{re: 11...
+<title>{re: 115594, im: -61787}</title>
+</text>
+<path d="M 12880 410 L 12883 403 L 12977 403 L 12980 410 L 12977 417 L 12883 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12930" xml:space="preserve" y="410">
+{re: 12...
+<title>{re: 121094, im: -50159}</title>
+</text>
+<path d="M 12980 410 L 12983 403 L 13077 403 L 13080 410 L 13077 417 L 12983 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13030" xml:space="preserve" y="410">
+{re: 12...
+<title>{re: 125427, im: -38049}</title>
+</text>
+<path d="M 13080 410 L 13083 403 L 13177 403 L 13180 410 L 13177 417 L 13083 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13130" xml:space="preserve" y="410">
+{re: 12...
+<title>{re: 128552, im: -25571}</title>
+</text>
+<path d="M 13180 410 L 13183 403 L 13277 403 L 13280 410 L 13277 417 L 13183 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13230" xml:space="preserve" y="410">
+{re: 13...
+<title>{re: 130440, im: -12848}</title>
+</text>
+<path d="M 13280 410 L 13283 403 L 13377 403 L 13380 410 L 13377 417 L 13283 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13330" xml:space="preserve" y="410">
+{re: 13...
+<title>{re: 131071, im: -1}</title>
+</text>
+<path d="M 13380 410 L 13383 403 L 13477 403 L 13480 410 L 13477 417 L 13383 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13430" xml:space="preserve" y="410">
+{re: 13...
+<title>{re: 130440, im: 12846}</title>
+</text>
+<path d="M 13480 410 L 13483 403 L 13577 403 L 13580 410 L 13577 417 L 13483 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13530" xml:space="preserve" y="410">
+{re: 12...
+<title>{re: 128552, im: 25570}</title>
+</text>
+<path d="M 13580 410 L 13583 403 L 13677 403 L 13680 410 L 13677 417 L 13583 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13630" xml:space="preserve" y="410">
+{re: 12...
+<title>{re: 125427, im: 38047}</title>
+</text>
+<path d="M 13680 410 L 13683 403 L 13777 403 L 13780 410 L 13777 417 L 13683 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13730" xml:space="preserve" y="410">
+{re: 12...
+<title>{re: 121094, im: 50158}</title>
+</text>
+<path d="M 13780 410 L 13783 403 L 13877 403 L 13880 410 L 13877 417 L 13783 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13830" xml:space="preserve" y="410">
+{re: 11...
+<title>{re: 115594, im: 61785}</title>
+</text>
+<path d="M 13880 410 L 13883 403 L 13977 403 L 13980 410 L 13977 417 L 13883 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13930" xml:space="preserve" y="410">
+{re: 10...
+<title>{re: 108982, im: 72819}</title>
+</text>
+<path d="M 13980 410 L 13983 403 L 14077 403 L 14080 410 L 14077 417 L 13983 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14030" xml:space="preserve" y="410">
+{re: 10...
+<title>{re: 101320, im: 83149}</title>
+</text>
+<path d="M 14080 410 L 14083 403 L 14177 403 L 14180 410 L 14177 417 L 14083 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14130" xml:space="preserve" y="410">
+{re: 92...
+<title>{re: 92682, im: 92680}</title>
+</text>
+<path d="M 14180 410 L 14183 403 L 14277 403 L 14280 410 L 14277 417 L 14183 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14230" xml:space="preserve" y="410">
+{re: 83...
+<title>{re: 83151, im: 101318}</title>
+</text>
+<path d="M 14280 410 L 14283 403 L 14377 403 L 14380 410 L 14377 417 L 14283 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14330" xml:space="preserve" y="410">
+{re: 72...
+<title>{re: 72820, im: 108981}</title>
+</text>
+<path d="M 14380 410 L 14383 403 L 14477 403 L 14480 410 L 14477 417 L 14383 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14430" xml:space="preserve" y="410">
+{re: 61...
+<title>{re: 61787, im: 115593}</title>
+</text>
+<path d="M 14480 410 L 14483 403 L 14577 403 L 14580 410 L 14577 417 L 14483 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14530" xml:space="preserve" y="410">
+{re: 50...
+<title>{re: 50159, im: 121093}</title>
+</text>
+<path d="M 14580 410 L 14583 403 L 14677 403 L 14680 410 L 14677 417 L 14583 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14630" xml:space="preserve" y="410">
+{re: 38...
+<title>{re: 38049, im: 125426}</title>
+</text>
+<path d="M 14680 410 L 14683 403 L 14777 403 L 14780 410 L 14777 417 L 14683 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14730" xml:space="preserve" y="410">
+{re: 25...
+<title>{re: 25571, im: 128551}</title>
+</text>
+<path d="M 14780 410 L 14783 403 L 14877 403 L 14880 410 L 14877 417 L 14783 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14830" xml:space="preserve" y="410">
+{re: 12...
+<title>{re: 12848, im: 130439}</title>
+</text>
+<path d="M 14880 410 L 14883 403 L 14977 403 L 14980 410 L 14977 417 L 14883 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14930" xml:space="preserve" y="410">
+{re: 1,...
+<title>{re: 1, im: 131070}</title>
+</text>
+<path d="M 14980 410 L 14983 403 L 15077 403 L 15080 410 L 15077 417 L 14983 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15030" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -12846, im: 130439}</title>
+</text>
+<path d="M 15080 410 L 15083 403 L 15177 403 L 15180 410 L 15177 417 L 15083 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15130" xml:space="preserve" y="410">
+{re: -2...
+<title>{re: -25570, im: 128551}</title>
+</text>
+<path d="M 15180 410 L 15183 403 L 15277 403 L 15280 410 L 15277 417 L 15183 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15230" xml:space="preserve" y="410">
+{re: -3...
+<title>{re: -38047, im: 125426}</title>
+</text>
+<path d="M 15280 410 L 15283 403 L 15377 403 L 15380 410 L 15377 417 L 15283 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15330" xml:space="preserve" y="410">
+{re: -5...
+<title>{re: -50158, im: 121093}</title>
+</text>
+<path d="M 15380 410 L 15383 403 L 15477 403 L 15480 410 L 15477 417 L 15383 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15430" xml:space="preserve" y="410">
+{re: -6...
+<title>{re: -61785, im: 115593}</title>
+</text>
+<path d="M 15480 410 L 15483 403 L 15577 403 L 15580 410 L 15577 417 L 15483 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15530" xml:space="preserve" y="410">
+{re: -7...
+<title>{re: -72819, im: 108981}</title>
+</text>
+<path d="M 15580 410 L 15583 403 L 15677 403 L 15680 410 L 15677 417 L 15583 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15630" xml:space="preserve" y="410">
+{re: -8...
+<title>{re: -83149, im: 101319}</title>
+</text>
+<path d="M 15680 410 L 15683 403 L 15777 403 L 15780 410 L 15777 417 L 15683 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15730" xml:space="preserve" y="410">
+{re: -9...
+<title>{re: -92680, im: 92681}</title>
+</text>
+<path d="M 15780 410 L 15783 403 L 15877 403 L 15880 410 L 15877 417 L 15783 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15830" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -101318, im: 83150}</title>
+</text>
+<path d="M 15880 410 L 15883 403 L 15977 403 L 15980 410 L 15977 417 L 15883 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15930" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -108981, im: 72819}</title>
+</text>
+<path d="M 15980 410 L 15983 403 L 16077 403 L 16080 410 L 16077 417 L 15983 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16030" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -115593, im: 61786}</title>
+</text>
+<path d="M 16080 410 L 16083 403 L 16177 403 L 16180 410 L 16177 417 L 16083 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16130" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -121093, im: 50158}</title>
+</text>
+<path d="M 16180 410 L 16183 403 L 16277 403 L 16280 410 L 16277 417 L 16183 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16230" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -125426, im: 38048}</title>
+</text>
+<path d="M 16280 410 L 16283 403 L 16377 403 L 16380 410 L 16377 417 L 16283 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16330" xml:space="preserve" y="410">
+{re: -1...
+<title>{re: -128551, im: 25570}</title>
+</text>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="start" x="3" xml:space="preserve" y="430">
+               .re
+<title>top.outputs.stream.data#Some.0.data.re</title>
+</text>
+<path d="M 230 430 L 233 423 L 277 423 L 280 430 L 277 437 L 233 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="255" xml:space="preserve" y="430">
+0
+<title>0</title>
+</text>
+<path d="M 280 430 L 283 423 L 577 423 L 580 430 L 577 437 L 283 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="430" xml:space="preserve" y="430">
+131071
+<title>131071</title>
+</text>
+<path d="M 580 430 L 583 423 L 677 423 L 680 430 L 677 437 L 583 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="630" xml:space="preserve" y="430">
+130440
+<title>130440</title>
+</text>
+<path d="M 680 430 L 683 423 L 777 423 L 780 430 L 777 437 L 683 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="730" xml:space="preserve" y="430">
+128552
+<title>128552</title>
+</text>
+<path d="M 780 430 L 783 423 L 877 423 L 880 430 L 877 437 L 783 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="830" xml:space="preserve" y="430">
+125427
+<title>125427</title>
+</text>
+<path d="M 880 430 L 883 423 L 977 423 L 980 430 L 977 437 L 883 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="930" xml:space="preserve" y="430">
+121094
+<title>121094</title>
+</text>
+<path d="M 980 430 L 983 423 L 1077 423 L 1080 430 L 1077 437 L 983 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1030" xml:space="preserve" y="430">
+115594
+<title>115594</title>
+</text>
+<path d="M 1080 430 L 1083 423 L 1177 423 L 1180 430 L 1177 437 L 1083 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1130" xml:space="preserve" y="430">
+108982
+<title>108982</title>
+</text>
+<path d="M 1180 430 L 1183 423 L 1277 423 L 1280 430 L 1277 437 L 1183 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1230" xml:space="preserve" y="430">
+101320
+<title>101320</title>
+</text>
+<path d="M 1280 430 L 1283 423 L 1377 423 L 1380 430 L 1377 437 L 1283 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1330" xml:space="preserve" y="430">
+92682
+<title>92682</title>
+</text>
+<path d="M 1380 430 L 1383 423 L 1477 423 L 1480 430 L 1477 437 L 1383 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1430" xml:space="preserve" y="430">
+83151
+<title>83151</title>
+</text>
+<path d="M 1480 430 L 1483 423 L 1577 423 L 1580 430 L 1577 437 L 1483 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1530" xml:space="preserve" y="430">
+72820
+<title>72820</title>
+</text>
+<path d="M 1580 430 L 1583 423 L 1677 423 L 1680 430 L 1677 437 L 1583 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1630" xml:space="preserve" y="430">
+61787
+<title>61787</title>
+</text>
+<path d="M 1680 430 L 1683 423 L 1777 423 L 1780 430 L 1777 437 L 1683 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1730" xml:space="preserve" y="430">
+50159
+<title>50159</title>
+</text>
+<path d="M 1780 430 L 1783 423 L 1877 423 L 1880 430 L 1877 437 L 1783 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1830" xml:space="preserve" y="430">
+38049
+<title>38049</title>
+</text>
+<path d="M 1880 430 L 1883 423 L 1977 423 L 1980 430 L 1977 437 L 1883 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1930" xml:space="preserve" y="430">
+25571
+<title>25571</title>
+</text>
+<path d="M 1980 430 L 1983 423 L 2077 423 L 2080 430 L 2077 437 L 1983 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2030" xml:space="preserve" y="430">
+12848
+<title>12848</title>
+</text>
+<path d="M 2080 430 L 2083 423 L 2177 423 L 2180 430 L 2177 437 L 2083 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2130" xml:space="preserve" y="430">
+1
+<title>1</title>
+</text>
+<path d="M 2180 430 L 2183 423 L 2277 423 L 2280 430 L 2277 437 L 2183 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2230" xml:space="preserve" y="430">
+-12846
+<title>-12846</title>
+</text>
+<path d="M 2280 430 L 2283 423 L 2377 423 L 2380 430 L 2377 437 L 2283 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2330" xml:space="preserve" y="430">
+-25570
+<title>-25570</title>
+</text>
+<path d="M 2380 430 L 2383 423 L 2477 423 L 2480 430 L 2477 437 L 2383 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2430" xml:space="preserve" y="430">
+-38047
+<title>-38047</title>
+</text>
+<path d="M 2480 430 L 2483 423 L 2577 423 L 2580 430 L 2577 437 L 2483 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2530" xml:space="preserve" y="430">
+-50158
+<title>-50158</title>
+</text>
+<path d="M 2580 430 L 2583 423 L 2677 423 L 2680 430 L 2677 437 L 2583 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2630" xml:space="preserve" y="430">
+-61785
+<title>-61785</title>
+</text>
+<path d="M 2680 430 L 2683 423 L 2777 423 L 2780 430 L 2777 437 L 2683 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2730" xml:space="preserve" y="430">
+-72819
+<title>-72819</title>
+</text>
+<path d="M 2780 430 L 2783 423 L 2877 423 L 2880 430 L 2877 437 L 2783 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2830" xml:space="preserve" y="430">
+-83149
+<title>-83149</title>
+</text>
+<path d="M 2880 430 L 2883 423 L 2977 423 L 2980 430 L 2977 437 L 2883 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2930" xml:space="preserve" y="430">
+-92680
+<title>-92680</title>
+</text>
+<path d="M 2980 430 L 2983 423 L 3077 423 L 3080 430 L 3077 437 L 2983 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3030" xml:space="preserve" y="430">
+-101318
+<title>-101318</title>
+</text>
+<path d="M 3080 430 L 3083 423 L 3177 423 L 3180 430 L 3177 437 L 3083 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3130" xml:space="preserve" y="430">
+-108981
+<title>-108981</title>
+</text>
+<path d="M 3180 430 L 3183 423 L 3277 423 L 3280 430 L 3277 437 L 3183 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3230" xml:space="preserve" y="430">
+-115593
+<title>-115593</title>
+</text>
+<path d="M 3280 430 L 3283 423 L 3377 423 L 3380 430 L 3377 437 L 3283 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3330" xml:space="preserve" y="430">
+-121093
+<title>-121093</title>
+</text>
+<path d="M 3380 430 L 3383 423 L 3477 423 L 3480 430 L 3477 437 L 3383 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3430" xml:space="preserve" y="430">
+-125426
+<title>-125426</title>
+</text>
+<path d="M 3480 430 L 3483 423 L 3577 423 L 3580 430 L 3577 437 L 3483 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3530" xml:space="preserve" y="430">
+-128551
+<title>-128551</title>
+</text>
+<path d="M 3580 430 L 3583 423 L 3677 423 L 3680 430 L 3677 437 L 3583 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3630" xml:space="preserve" y="430">
+-130439
+<title>-130439</title>
+</text>
+<path d="M 3680 430 L 3683 423 L 3777 423 L 3780 430 L 3777 437 L 3683 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3730" xml:space="preserve" y="430">
+-131070
+<title>-131070</title>
+</text>
+<path d="M 3780 430 L 3783 423 L 3877 423 L 3880 430 L 3877 437 L 3783 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3830" xml:space="preserve" y="430">
+-130439
+<title>-130439</title>
+</text>
+<path d="M 3880 430 L 3883 423 L 3977 423 L 3980 430 L 3977 437 L 3883 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3930" xml:space="preserve" y="430">
+-128551
+<title>-128551</title>
+</text>
+<path d="M 3980 430 L 3983 423 L 4077 423 L 4080 430 L 4077 437 L 3983 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4030" xml:space="preserve" y="430">
+-125426
+<title>-125426</title>
+</text>
+<path d="M 4080 430 L 4083 423 L 4177 423 L 4180 430 L 4177 437 L 4083 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4130" xml:space="preserve" y="430">
+-121093
+<title>-121093</title>
+</text>
+<path d="M 4180 430 L 4183 423 L 4277 423 L 4280 430 L 4277 437 L 4183 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4230" xml:space="preserve" y="430">
+-115593
+<title>-115593</title>
+</text>
+<path d="M 4280 430 L 4283 423 L 4377 423 L 4380 430 L 4377 437 L 4283 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4330" xml:space="preserve" y="430">
+-108981
+<title>-108981</title>
+</text>
+<path d="M 4380 430 L 4383 423 L 4477 423 L 4480 430 L 4477 437 L 4383 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4430" xml:space="preserve" y="430">
+-101319
+<title>-101319</title>
+</text>
+<path d="M 4480 430 L 4483 423 L 4577 423 L 4580 430 L 4577 437 L 4483 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4530" xml:space="preserve" y="430">
+-92681
+<title>-92681</title>
+</text>
+<path d="M 4580 430 L 4583 423 L 4677 423 L 4680 430 L 4677 437 L 4583 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4630" xml:space="preserve" y="430">
+-83150
+<title>-83150</title>
+</text>
+<path d="M 4680 430 L 4683 423 L 4777 423 L 4780 430 L 4777 437 L 4683 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4730" xml:space="preserve" y="430">
+-72819
+<title>-72819</title>
+</text>
+<path d="M 4780 430 L 4783 423 L 4877 423 L 4880 430 L 4877 437 L 4783 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4830" xml:space="preserve" y="430">
+-61786
+<title>-61786</title>
+</text>
+<path d="M 4880 430 L 4883 423 L 4977 423 L 4980 430 L 4977 437 L 4883 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4930" xml:space="preserve" y="430">
+-50158
+<title>-50158</title>
+</text>
+<path d="M 4980 430 L 4983 423 L 5077 423 L 5080 430 L 5077 437 L 4983 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5030" xml:space="preserve" y="430">
+-38048
+<title>-38048</title>
+</text>
+<path d="M 5080 430 L 5083 423 L 5177 423 L 5180 430 L 5177 437 L 5083 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5130" xml:space="preserve" y="430">
+-25570
+<title>-25570</title>
+</text>
+<path d="M 5180 430 L 5183 423 L 5277 423 L 5280 430 L 5277 437 L 5183 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5230" xml:space="preserve" y="430">
+-12847
+<title>-12847</title>
+</text>
+<path d="M 5280 430 L 5283 423 L 5377 423 L 5380 430 L 5377 437 L 5283 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5330" xml:space="preserve" y="430">
+0
+<title>0</title>
+</text>
+<path d="M 5380 430 L 5383 423 L 5477 423 L 5480 430 L 5477 437 L 5383 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5430" xml:space="preserve" y="430">
+12847
+<title>12847</title>
+</text>
+<path d="M 5480 430 L 5483 423 L 5577 423 L 5580 430 L 5577 437 L 5483 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5530" xml:space="preserve" y="430">
+25571
+<title>25571</title>
+</text>
+<path d="M 5580 430 L 5583 423 L 5677 423 L 5680 430 L 5677 437 L 5583 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5630" xml:space="preserve" y="430">
+38048
+<title>38048</title>
+</text>
+<path d="M 5680 430 L 5683 423 L 5777 423 L 5780 430 L 5777 437 L 5683 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5730" xml:space="preserve" y="430">
+50159
+<title>50159</title>
+</text>
+<path d="M 5780 430 L 5783 423 L 5877 423 L 5880 430 L 5877 437 L 5783 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5830" xml:space="preserve" y="430">
+61786
+<title>61786</title>
+</text>
+<path d="M 5880 430 L 5883 423 L 5977 423 L 5980 430 L 5977 437 L 5883 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5930" xml:space="preserve" y="430">
+72820
+<title>72820</title>
+</text>
+<path d="M 5980 430 L 5983 423 L 6077 423 L 6080 430 L 6077 437 L 5983 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6030" xml:space="preserve" y="430">
+83150
+<title>83150</title>
+</text>
+<path d="M 6080 430 L 6083 423 L 6177 423 L 6180 430 L 6177 437 L 6083 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6130" xml:space="preserve" y="430">
+92681
+<title>92681</title>
+</text>
+<path d="M 6180 430 L 6183 423 L 6277 423 L 6280 430 L 6277 437 L 6183 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6230" xml:space="preserve" y="430">
+101319
+<title>101319</title>
+</text>
+<path d="M 6280 430 L 6283 423 L 6377 423 L 6380 430 L 6377 437 L 6283 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6330" xml:space="preserve" y="430">
+108982
+<title>108982</title>
+</text>
+<path d="M 6380 430 L 6383 423 L 6477 423 L 6480 430 L 6477 437 L 6383 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6430" xml:space="preserve" y="430">
+115594
+<title>115594</title>
+</text>
+<path d="M 6480 430 L 6483 423 L 6577 423 L 6580 430 L 6577 437 L 6483 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6530" xml:space="preserve" y="430">
+121094
+<title>121094</title>
+</text>
+<path d="M 6580 430 L 6583 423 L 6677 423 L 6680 430 L 6677 437 L 6583 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6630" xml:space="preserve" y="430">
+125427
+<title>125427</title>
+</text>
+<path d="M 6680 430 L 6683 423 L 6777 423 L 6780 430 L 6777 437 L 6683 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6730" xml:space="preserve" y="430">
+128552
+<title>128552</title>
+</text>
+<path d="M 6780 430 L 6783 423 L 6877 423 L 6880 430 L 6877 437 L 6783 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6830" xml:space="preserve" y="430">
+130440
+<title>130440</title>
+</text>
+<path d="M 6880 430 L 6883 423 L 6977 423 L 6980 430 L 6977 437 L 6883 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6930" xml:space="preserve" y="430">
+-131070
+<title>-131070</title>
+</text>
+<path d="M 6980 430 L 6983 423 L 7077 423 L 7080 430 L 7077 437 L 6983 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7030" xml:space="preserve" y="430">
+-130439
+<title>-130439</title>
+</text>
+<path d="M 7080 430 L 7083 423 L 7177 423 L 7180 430 L 7177 437 L 7083 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7130" xml:space="preserve" y="430">
+-128551
+<title>-128551</title>
+</text>
+<path d="M 7180 430 L 7183 423 L 7277 423 L 7280 430 L 7277 437 L 7183 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7230" xml:space="preserve" y="430">
+-125426
+<title>-125426</title>
+</text>
+<path d="M 7280 430 L 7283 423 L 7377 423 L 7380 430 L 7377 437 L 7283 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7330" xml:space="preserve" y="430">
+-121093
+<title>-121093</title>
+</text>
+<path d="M 7380 430 L 7383 423 L 7477 423 L 7480 430 L 7477 437 L 7383 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7430" xml:space="preserve" y="430">
+-115593
+<title>-115593</title>
+</text>
+<path d="M 7480 430 L 7483 423 L 7577 423 L 7580 430 L 7577 437 L 7483 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7530" xml:space="preserve" y="430">
+-108981
+<title>-108981</title>
+</text>
+<path d="M 7580 430 L 7583 423 L 7677 423 L 7680 430 L 7677 437 L 7583 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7630" xml:space="preserve" y="430">
+-101319
+<title>-101319</title>
+</text>
+<path d="M 7680 430 L 7683 423 L 7777 423 L 7780 430 L 7777 437 L 7683 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7730" xml:space="preserve" y="430">
+-92681
+<title>-92681</title>
+</text>
+<path d="M 7780 430 L 7783 423 L 7877 423 L 7880 430 L 7877 437 L 7783 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7830" xml:space="preserve" y="430">
+-83150
+<title>-83150</title>
+</text>
+<path d="M 7880 430 L 7883 423 L 7977 423 L 7980 430 L 7977 437 L 7883 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7930" xml:space="preserve" y="430">
+-72819
+<title>-72819</title>
+</text>
+<path d="M 7980 430 L 7983 423 L 8077 423 L 8080 430 L 8077 437 L 7983 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8030" xml:space="preserve" y="430">
+-61786
+<title>-61786</title>
+</text>
+<path d="M 8080 430 L 8083 423 L 8177 423 L 8180 430 L 8177 437 L 8083 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8130" xml:space="preserve" y="430">
+-50158
+<title>-50158</title>
+</text>
+<path d="M 8180 430 L 8183 423 L 8277 423 L 8280 430 L 8277 437 L 8183 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8230" xml:space="preserve" y="430">
+-38048
+<title>-38048</title>
+</text>
+<path d="M 8280 430 L 8283 423 L 8377 423 L 8380 430 L 8377 437 L 8283 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8330" xml:space="preserve" y="430">
+-25570
+<title>-25570</title>
+</text>
+<path d="M 8380 430 L 8383 423 L 8477 423 L 8480 430 L 8477 437 L 8383 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8430" xml:space="preserve" y="430">
+-12847
+<title>-12847</title>
+</text>
+<path d="M 8480 430 L 8483 423 L 8577 423 L 8580 430 L 8577 437 L 8483 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8530" xml:space="preserve" y="430">
+0
+<title>0</title>
+</text>
+<path d="M 8580 430 L 8583 423 L 8677 423 L 8680 430 L 8677 437 L 8583 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8630" xml:space="preserve" y="430">
+12847
+<title>12847</title>
+</text>
+<path d="M 8680 430 L 8683 423 L 8777 423 L 8780 430 L 8777 437 L 8683 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8730" xml:space="preserve" y="430">
+25571
+<title>25571</title>
+</text>
+<path d="M 8780 430 L 8783 423 L 8877 423 L 8880 430 L 8877 437 L 8783 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8830" xml:space="preserve" y="430">
+38048
+<title>38048</title>
+</text>
+<path d="M 8880 430 L 8883 423 L 8977 423 L 8980 430 L 8977 437 L 8883 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8930" xml:space="preserve" y="430">
+50159
+<title>50159</title>
+</text>
+<path d="M 8980 430 L 8983 423 L 9077 423 L 9080 430 L 9077 437 L 8983 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9030" xml:space="preserve" y="430">
+61786
+<title>61786</title>
+</text>
+<path d="M 9080 430 L 9083 423 L 9177 423 L 9180 430 L 9177 437 L 9083 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9130" xml:space="preserve" y="430">
+72820
+<title>72820</title>
+</text>
+<path d="M 9180 430 L 9183 423 L 9277 423 L 9280 430 L 9277 437 L 9183 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9230" xml:space="preserve" y="430">
+83150
+<title>83150</title>
+</text>
+<path d="M 9280 430 L 9283 423 L 9377 423 L 9380 430 L 9377 437 L 9283 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9330" xml:space="preserve" y="430">
+92681
+<title>92681</title>
+</text>
+<path d="M 9380 430 L 9383 423 L 9477 423 L 9480 430 L 9477 437 L 9383 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9430" xml:space="preserve" y="430">
+101319
+<title>101319</title>
+</text>
+<path d="M 9480 430 L 9483 423 L 9577 423 L 9580 430 L 9577 437 L 9483 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9530" xml:space="preserve" y="430">
+108982
+<title>108982</title>
+</text>
+<path d="M 9580 430 L 9583 423 L 9677 423 L 9680 430 L 9677 437 L 9583 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9630" xml:space="preserve" y="430">
+115594
+<title>115594</title>
+</text>
+<path d="M 9680 430 L 9683 423 L 9777 423 L 9780 430 L 9777 437 L 9683 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9730" xml:space="preserve" y="430">
+121094
+<title>121094</title>
+</text>
+<path d="M 9780 430 L 9783 423 L 9877 423 L 9880 430 L 9877 437 L 9783 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9830" xml:space="preserve" y="430">
+125427
+<title>125427</title>
+</text>
+<path d="M 9880 430 L 9883 423 L 9977 423 L 9980 430 L 9977 437 L 9883 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9930" xml:space="preserve" y="430">
+128552
+<title>128552</title>
+</text>
+<path d="M 9980 430 L 9983 423 L 10077 423 L 10080 430 L 10077 437 L 9983 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10030" xml:space="preserve" y="430">
+130440
+<title>130440</title>
+</text>
+<path d="M 10080 430 L 10083 423 L 10177 423 L 10180 430 L 10177 437 L 10083 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10130" xml:space="preserve" y="430">
+131071
+<title>131071</title>
+</text>
+<path d="M 10180 430 L 10183 423 L 10277 423 L 10280 430 L 10277 437 L 10183 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10230" xml:space="preserve" y="430">
+130440
+<title>130440</title>
+</text>
+<path d="M 10280 430 L 10283 423 L 10377 423 L 10380 430 L 10377 437 L 10283 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10330" xml:space="preserve" y="430">
+128552
+<title>128552</title>
+</text>
+<path d="M 10380 430 L 10383 423 L 10477 423 L 10480 430 L 10477 437 L 10383 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10430" xml:space="preserve" y="430">
+125427
+<title>125427</title>
+</text>
+<path d="M 10480 430 L 10483 423 L 10577 423 L 10580 430 L 10577 437 L 10483 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10530" xml:space="preserve" y="430">
+121094
+<title>121094</title>
+</text>
+<path d="M 10580 430 L 10583 423 L 10677 423 L 10680 430 L 10677 437 L 10583 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10630" xml:space="preserve" y="430">
+115594
+<title>115594</title>
+</text>
+<path d="M 10680 430 L 10683 423 L 10777 423 L 10780 430 L 10777 437 L 10683 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10730" xml:space="preserve" y="430">
+108982
+<title>108982</title>
+</text>
+<path d="M 10780 430 L 10783 423 L 10877 423 L 10880 430 L 10877 437 L 10783 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10830" xml:space="preserve" y="430">
+101320
+<title>101320</title>
+</text>
+<path d="M 10880 430 L 10883 423 L 10977 423 L 10980 430 L 10977 437 L 10883 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10930" xml:space="preserve" y="430">
+92682
+<title>92682</title>
+</text>
+<path d="M 10980 430 L 10983 423 L 11077 423 L 11080 430 L 11077 437 L 10983 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11030" xml:space="preserve" y="430">
+83151
+<title>83151</title>
+</text>
+<path d="M 11080 430 L 11083 423 L 11177 423 L 11180 430 L 11177 437 L 11083 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11130" xml:space="preserve" y="430">
+72820
+<title>72820</title>
+</text>
+<path d="M 11180 430 L 11183 423 L 11277 423 L 11280 430 L 11277 437 L 11183 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11230" xml:space="preserve" y="430">
+61787
+<title>61787</title>
+</text>
+<path d="M 11280 430 L 11283 423 L 11377 423 L 11380 430 L 11377 437 L 11283 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11330" xml:space="preserve" y="430">
+50159
+<title>50159</title>
+</text>
+<path d="M 11380 430 L 11383 423 L 11477 423 L 11480 430 L 11477 437 L 11383 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11430" xml:space="preserve" y="430">
+38049
+<title>38049</title>
+</text>
+<path d="M 11480 430 L 11483 423 L 11577 423 L 11580 430 L 11577 437 L 11483 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11530" xml:space="preserve" y="430">
+25571
+<title>25571</title>
+</text>
+<path d="M 11580 430 L 11583 423 L 11677 423 L 11680 430 L 11677 437 L 11583 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11630" xml:space="preserve" y="430">
+12848
+<title>12848</title>
+</text>
+<path d="M 11680 430 L 11683 423 L 11777 423 L 11780 430 L 11777 437 L 11683 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11730" xml:space="preserve" y="430">
+0
+<title>0</title>
+</text>
+<path d="M 11780 430 L 11783 423 L 11877 423 L 11880 430 L 11877 437 L 11783 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11830" xml:space="preserve" y="430">
+12847
+<title>12847</title>
+</text>
+<path d="M 11880 430 L 11883 423 L 11977 423 L 11980 430 L 11977 437 L 11883 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11930" xml:space="preserve" y="430">
+25571
+<title>25571</title>
+</text>
+<path d="M 11980 430 L 11983 423 L 12077 423 L 12080 430 L 12077 437 L 11983 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12030" xml:space="preserve" y="430">
+38048
+<title>38048</title>
+</text>
+<path d="M 12080 430 L 12083 423 L 12177 423 L 12180 430 L 12177 437 L 12083 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12130" xml:space="preserve" y="430">
+50159
+<title>50159</title>
+</text>
+<path d="M 12180 430 L 12183 423 L 12277 423 L 12280 430 L 12277 437 L 12183 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12230" xml:space="preserve" y="430">
+61786
+<title>61786</title>
+</text>
+<path d="M 12280 430 L 12283 423 L 12377 423 L 12380 430 L 12377 437 L 12283 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12330" xml:space="preserve" y="430">
+72820
+<title>72820</title>
+</text>
+<path d="M 12380 430 L 12383 423 L 12477 423 L 12480 430 L 12477 437 L 12383 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12430" xml:space="preserve" y="430">
+83150
+<title>83150</title>
+</text>
+<path d="M 12480 430 L 12483 423 L 12577 423 L 12580 430 L 12577 437 L 12483 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12530" xml:space="preserve" y="430">
+92681
+<title>92681</title>
+</text>
+<path d="M 12580 430 L 12583 423 L 12677 423 L 12680 430 L 12677 437 L 12583 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12630" xml:space="preserve" y="430">
+101319
+<title>101319</title>
+</text>
+<path d="M 12680 430 L 12683 423 L 12777 423 L 12780 430 L 12777 437 L 12683 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12730" xml:space="preserve" y="430">
+108982
+<title>108982</title>
+</text>
+<path d="M 12780 430 L 12783 423 L 12877 423 L 12880 430 L 12877 437 L 12783 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12830" xml:space="preserve" y="430">
+115594
+<title>115594</title>
+</text>
+<path d="M 12880 430 L 12883 423 L 12977 423 L 12980 430 L 12977 437 L 12883 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12930" xml:space="preserve" y="430">
+121094
+<title>121094</title>
+</text>
+<path d="M 12980 430 L 12983 423 L 13077 423 L 13080 430 L 13077 437 L 12983 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13030" xml:space="preserve" y="430">
+125427
+<title>125427</title>
+</text>
+<path d="M 13080 430 L 13083 423 L 13177 423 L 13180 430 L 13177 437 L 13083 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13130" xml:space="preserve" y="430">
+128552
+<title>128552</title>
+</text>
+<path d="M 13180 430 L 13183 423 L 13277 423 L 13280 430 L 13277 437 L 13183 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13230" xml:space="preserve" y="430">
+130440
+<title>130440</title>
+</text>
+<path d="M 13280 430 L 13283 423 L 13377 423 L 13380 430 L 13377 437 L 13283 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13330" xml:space="preserve" y="430">
+131071
+<title>131071</title>
+</text>
+<path d="M 13380 430 L 13383 423 L 13477 423 L 13480 430 L 13477 437 L 13383 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13430" xml:space="preserve" y="430">
+130440
+<title>130440</title>
+</text>
+<path d="M 13480 430 L 13483 423 L 13577 423 L 13580 430 L 13577 437 L 13483 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13530" xml:space="preserve" y="430">
+128552
+<title>128552</title>
+</text>
+<path d="M 13580 430 L 13583 423 L 13677 423 L 13680 430 L 13677 437 L 13583 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13630" xml:space="preserve" y="430">
+125427
+<title>125427</title>
+</text>
+<path d="M 13680 430 L 13683 423 L 13777 423 L 13780 430 L 13777 437 L 13683 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13730" xml:space="preserve" y="430">
+121094
+<title>121094</title>
+</text>
+<path d="M 13780 430 L 13783 423 L 13877 423 L 13880 430 L 13877 437 L 13783 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13830" xml:space="preserve" y="430">
+115594
+<title>115594</title>
+</text>
+<path d="M 13880 430 L 13883 423 L 13977 423 L 13980 430 L 13977 437 L 13883 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13930" xml:space="preserve" y="430">
+108982
+<title>108982</title>
+</text>
+<path d="M 13980 430 L 13983 423 L 14077 423 L 14080 430 L 14077 437 L 13983 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14030" xml:space="preserve" y="430">
+101320
+<title>101320</title>
+</text>
+<path d="M 14080 430 L 14083 423 L 14177 423 L 14180 430 L 14177 437 L 14083 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14130" xml:space="preserve" y="430">
+92682
+<title>92682</title>
+</text>
+<path d="M 14180 430 L 14183 423 L 14277 423 L 14280 430 L 14277 437 L 14183 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14230" xml:space="preserve" y="430">
+83151
+<title>83151</title>
+</text>
+<path d="M 14280 430 L 14283 423 L 14377 423 L 14380 430 L 14377 437 L 14283 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14330" xml:space="preserve" y="430">
+72820
+<title>72820</title>
+</text>
+<path d="M 14380 430 L 14383 423 L 14477 423 L 14480 430 L 14477 437 L 14383 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14430" xml:space="preserve" y="430">
+61787
+<title>61787</title>
+</text>
+<path d="M 14480 430 L 14483 423 L 14577 423 L 14580 430 L 14577 437 L 14483 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14530" xml:space="preserve" y="430">
+50159
+<title>50159</title>
+</text>
+<path d="M 14580 430 L 14583 423 L 14677 423 L 14680 430 L 14677 437 L 14583 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14630" xml:space="preserve" y="430">
+38049
+<title>38049</title>
+</text>
+<path d="M 14680 430 L 14683 423 L 14777 423 L 14780 430 L 14777 437 L 14683 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14730" xml:space="preserve" y="430">
+25571
+<title>25571</title>
+</text>
+<path d="M 14780 430 L 14783 423 L 14877 423 L 14880 430 L 14877 437 L 14783 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14830" xml:space="preserve" y="430">
+12848
+<title>12848</title>
+</text>
+<path d="M 14880 430 L 14883 423 L 14977 423 L 14980 430 L 14977 437 L 14883 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14930" xml:space="preserve" y="430">
+1
+<title>1</title>
+</text>
+<path d="M 14980 430 L 14983 423 L 15077 423 L 15080 430 L 15077 437 L 14983 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15030" xml:space="preserve" y="430">
+-12846
+<title>-12846</title>
+</text>
+<path d="M 15080 430 L 15083 423 L 15177 423 L 15180 430 L 15177 437 L 15083 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15130" xml:space="preserve" y="430">
+-25570
+<title>-25570</title>
+</text>
+<path d="M 15180 430 L 15183 423 L 15277 423 L 15280 430 L 15277 437 L 15183 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15230" xml:space="preserve" y="430">
+-38047
+<title>-38047</title>
+</text>
+<path d="M 15280 430 L 15283 423 L 15377 423 L 15380 430 L 15377 437 L 15283 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15330" xml:space="preserve" y="430">
+-50158
+<title>-50158</title>
+</text>
+<path d="M 15380 430 L 15383 423 L 15477 423 L 15480 430 L 15477 437 L 15383 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15430" xml:space="preserve" y="430">
+-61785
+<title>-61785</title>
+</text>
+<path d="M 15480 430 L 15483 423 L 15577 423 L 15580 430 L 15577 437 L 15483 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15530" xml:space="preserve" y="430">
+-72819
+<title>-72819</title>
+</text>
+<path d="M 15580 430 L 15583 423 L 15677 423 L 15680 430 L 15677 437 L 15583 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15630" xml:space="preserve" y="430">
+-83149
+<title>-83149</title>
+</text>
+<path d="M 15680 430 L 15683 423 L 15777 423 L 15780 430 L 15777 437 L 15683 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15730" xml:space="preserve" y="430">
+-92680
+<title>-92680</title>
+</text>
+<path d="M 15780 430 L 15783 423 L 15877 423 L 15880 430 L 15877 437 L 15783 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15830" xml:space="preserve" y="430">
+-101318
+<title>-101318</title>
+</text>
+<path d="M 15880 430 L 15883 423 L 15977 423 L 15980 430 L 15977 437 L 15883 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15930" xml:space="preserve" y="430">
+-108981
+<title>-108981</title>
+</text>
+<path d="M 15980 430 L 15983 423 L 16077 423 L 16080 430 L 16077 437 L 15983 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16030" xml:space="preserve" y="430">
+-115593
+<title>-115593</title>
+</text>
+<path d="M 16080 430 L 16083 423 L 16177 423 L 16180 430 L 16177 437 L 16083 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16130" xml:space="preserve" y="430">
+-121093
+<title>-121093</title>
+</text>
+<path d="M 16180 430 L 16183 423 L 16277 423 L 16280 430 L 16277 437 L 16183 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16230" xml:space="preserve" y="430">
+-125426
+<title>-125426</title>
+</text>
+<path d="M 16280 430 L 16283 423 L 16377 423 L 16380 430 L 16377 437 L 16283 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16330" xml:space="preserve" y="430">
+-128551
+<title>-128551</title>
+</text>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="start" x="3" xml:space="preserve" y="450">
+               .im
+<title>top.outputs.stream.data#Some.0.data.im</title>
+</text>
+<path d="M 230 450 L 233 443 L 277 443 L 280 450 L 277 457 L 233 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="255" xml:space="preserve" y="450">
+0
+<title>0</title>
+</text>
+<path d="M 280 450 L 283 443 L 577 443 L 580 450 L 577 457 L 283 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="430" xml:space="preserve" y="450">
+-1
+<title>-1</title>
+</text>
+<path d="M 580 450 L 583 443 L 677 443 L 680 450 L 677 457 L 583 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="630" xml:space="preserve" y="450">
+12846
+<title>12846</title>
+</text>
+<path d="M 680 450 L 683 443 L 777 443 L 780 450 L 777 457 L 683 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="730" xml:space="preserve" y="450">
+25570
+<title>25570</title>
+</text>
+<path d="M 780 450 L 783 443 L 877 443 L 880 450 L 877 457 L 783 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="830" xml:space="preserve" y="450">
+38047
+<title>38047</title>
+</text>
+<path d="M 880 450 L 883 443 L 977 443 L 980 450 L 977 457 L 883 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="930" xml:space="preserve" y="450">
+50158
+<title>50158</title>
+</text>
+<path d="M 980 450 L 983 443 L 1077 443 L 1080 450 L 1077 457 L 983 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1030" xml:space="preserve" y="450">
+61785
+<title>61785</title>
+</text>
+<path d="M 1080 450 L 1083 443 L 1177 443 L 1180 450 L 1177 457 L 1083 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1130" xml:space="preserve" y="450">
+72819
+<title>72819</title>
+</text>
+<path d="M 1180 450 L 1183 443 L 1277 443 L 1280 450 L 1277 457 L 1183 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1230" xml:space="preserve" y="450">
+83149
+<title>83149</title>
+</text>
+<path d="M 1280 450 L 1283 443 L 1377 443 L 1380 450 L 1377 457 L 1283 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1330" xml:space="preserve" y="450">
+92680
+<title>92680</title>
+</text>
+<path d="M 1380 450 L 1383 443 L 1477 443 L 1480 450 L 1477 457 L 1383 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1430" xml:space="preserve" y="450">
+101318
+<title>101318</title>
+</text>
+<path d="M 1480 450 L 1483 443 L 1577 443 L 1580 450 L 1577 457 L 1483 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1530" xml:space="preserve" y="450">
+108981
+<title>108981</title>
+</text>
+<path d="M 1580 450 L 1583 443 L 1677 443 L 1680 450 L 1677 457 L 1583 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1630" xml:space="preserve" y="450">
+115593
+<title>115593</title>
+</text>
+<path d="M 1680 450 L 1683 443 L 1777 443 L 1780 450 L 1777 457 L 1683 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1730" xml:space="preserve" y="450">
+121093
+<title>121093</title>
+</text>
+<path d="M 1780 450 L 1783 443 L 1877 443 L 1880 450 L 1877 457 L 1783 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1830" xml:space="preserve" y="450">
+125426
+<title>125426</title>
+</text>
+<path d="M 1880 450 L 1883 443 L 1977 443 L 1980 450 L 1977 457 L 1883 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1930" xml:space="preserve" y="450">
+128551
+<title>128551</title>
+</text>
+<path d="M 1980 450 L 1983 443 L 2077 443 L 2080 450 L 2077 457 L 1983 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2030" xml:space="preserve" y="450">
+130439
+<title>130439</title>
+</text>
+<path d="M 2080 450 L 2083 443 L 2177 443 L 2180 450 L 2177 457 L 2083 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2130" xml:space="preserve" y="450">
+131070
+<title>131070</title>
+</text>
+<path d="M 2180 450 L 2183 443 L 2277 443 L 2280 450 L 2277 457 L 2183 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2230" xml:space="preserve" y="450">
+130439
+<title>130439</title>
+</text>
+<path d="M 2280 450 L 2283 443 L 2377 443 L 2380 450 L 2377 457 L 2283 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2330" xml:space="preserve" y="450">
+128551
+<title>128551</title>
+</text>
+<path d="M 2380 450 L 2383 443 L 2477 443 L 2480 450 L 2477 457 L 2383 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2430" xml:space="preserve" y="450">
+125426
+<title>125426</title>
+</text>
+<path d="M 2480 450 L 2483 443 L 2577 443 L 2580 450 L 2577 457 L 2483 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2530" xml:space="preserve" y="450">
+121093
+<title>121093</title>
+</text>
+<path d="M 2580 450 L 2583 443 L 2677 443 L 2680 450 L 2677 457 L 2583 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2630" xml:space="preserve" y="450">
+115593
+<title>115593</title>
+</text>
+<path d="M 2680 450 L 2683 443 L 2777 443 L 2780 450 L 2777 457 L 2683 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2730" xml:space="preserve" y="450">
+108981
+<title>108981</title>
+</text>
+<path d="M 2780 450 L 2783 443 L 2877 443 L 2880 450 L 2877 457 L 2783 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2830" xml:space="preserve" y="450">
+101319
+<title>101319</title>
+</text>
+<path d="M 2880 450 L 2883 443 L 2977 443 L 2980 450 L 2977 457 L 2883 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2930" xml:space="preserve" y="450">
+92681
+<title>92681</title>
+</text>
+<path d="M 2980 450 L 2983 443 L 3077 443 L 3080 450 L 3077 457 L 2983 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3030" xml:space="preserve" y="450">
+83150
+<title>83150</title>
+</text>
+<path d="M 3080 450 L 3083 443 L 3177 443 L 3180 450 L 3177 457 L 3083 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3130" xml:space="preserve" y="450">
+72819
+<title>72819</title>
+</text>
+<path d="M 3180 450 L 3183 443 L 3277 443 L 3280 450 L 3277 457 L 3183 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3230" xml:space="preserve" y="450">
+61786
+<title>61786</title>
+</text>
+<path d="M 3280 450 L 3283 443 L 3377 443 L 3380 450 L 3377 457 L 3283 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3330" xml:space="preserve" y="450">
+50158
+<title>50158</title>
+</text>
+<path d="M 3380 450 L 3383 443 L 3477 443 L 3480 450 L 3477 457 L 3383 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3430" xml:space="preserve" y="450">
+38048
+<title>38048</title>
+</text>
+<path d="M 3480 450 L 3483 443 L 3577 443 L 3580 450 L 3577 457 L 3483 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3530" xml:space="preserve" y="450">
+25570
+<title>25570</title>
+</text>
+<path d="M 3580 450 L 3583 443 L 3677 443 L 3680 450 L 3677 457 L 3583 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3630" xml:space="preserve" y="450">
+12847
+<title>12847</title>
+</text>
+<path d="M 3680 450 L 3683 443 L 3777 443 L 3780 450 L 3777 457 L 3683 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3730" xml:space="preserve" y="450">
+0
+<title>0</title>
+</text>
+<path d="M 3780 450 L 3783 443 L 3877 443 L 3880 450 L 3877 457 L 3783 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3830" xml:space="preserve" y="450">
+-12847
+<title>-12847</title>
+</text>
+<path d="M 3880 450 L 3883 443 L 3977 443 L 3980 450 L 3977 457 L 3883 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3930" xml:space="preserve" y="450">
+-25571
+<title>-25571</title>
+</text>
+<path d="M 3980 450 L 3983 443 L 4077 443 L 4080 450 L 4077 457 L 3983 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4030" xml:space="preserve" y="450">
+-38048
+<title>-38048</title>
+</text>
+<path d="M 4080 450 L 4083 443 L 4177 443 L 4180 450 L 4177 457 L 4083 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4130" xml:space="preserve" y="450">
+-50159
+<title>-50159</title>
+</text>
+<path d="M 4180 450 L 4183 443 L 4277 443 L 4280 450 L 4277 457 L 4183 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4230" xml:space="preserve" y="450">
+-61786
+<title>-61786</title>
+</text>
+<path d="M 4280 450 L 4283 443 L 4377 443 L 4380 450 L 4377 457 L 4283 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4330" xml:space="preserve" y="450">
+-72820
+<title>-72820</title>
+</text>
+<path d="M 4380 450 L 4383 443 L 4477 443 L 4480 450 L 4477 457 L 4383 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4430" xml:space="preserve" y="450">
+-83150
+<title>-83150</title>
+</text>
+<path d="M 4480 450 L 4483 443 L 4577 443 L 4580 450 L 4577 457 L 4483 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4530" xml:space="preserve" y="450">
+-92681
+<title>-92681</title>
+</text>
+<path d="M 4580 450 L 4583 443 L 4677 443 L 4680 450 L 4677 457 L 4583 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4630" xml:space="preserve" y="450">
+-101319
+<title>-101319</title>
+</text>
+<path d="M 4680 450 L 4683 443 L 4777 443 L 4780 450 L 4777 457 L 4683 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4730" xml:space="preserve" y="450">
+-108982
+<title>-108982</title>
+</text>
+<path d="M 4780 450 L 4783 443 L 4877 443 L 4880 450 L 4877 457 L 4783 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4830" xml:space="preserve" y="450">
+-115594
+<title>-115594</title>
+</text>
+<path d="M 4880 450 L 4883 443 L 4977 443 L 4980 450 L 4977 457 L 4883 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4930" xml:space="preserve" y="450">
+-121094
+<title>-121094</title>
+</text>
+<path d="M 4980 450 L 4983 443 L 5077 443 L 5080 450 L 5077 457 L 4983 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5030" xml:space="preserve" y="450">
+-125427
+<title>-125427</title>
+</text>
+<path d="M 5080 450 L 5083 443 L 5177 443 L 5180 450 L 5177 457 L 5083 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5130" xml:space="preserve" y="450">
+-128552
+<title>-128552</title>
+</text>
+<path d="M 5180 450 L 5183 443 L 5277 443 L 5280 450 L 5277 457 L 5183 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5230" xml:space="preserve" y="450">
+-130440
+<title>-130440</title>
+</text>
+<path d="M 5280 450 L 5283 443 L 5377 443 L 5380 450 L 5377 457 L 5283 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5330" xml:space="preserve" y="450">
+-131071
+<title>-131071</title>
+</text>
+<path d="M 5380 450 L 5383 443 L 5477 443 L 5480 450 L 5477 457 L 5383 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5430" xml:space="preserve" y="450">
+-130440
+<title>-130440</title>
+</text>
+<path d="M 5480 450 L 5483 443 L 5577 443 L 5580 450 L 5577 457 L 5483 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5530" xml:space="preserve" y="450">
+-128552
+<title>-128552</title>
+</text>
+<path d="M 5580 450 L 5583 443 L 5677 443 L 5680 450 L 5677 457 L 5583 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5630" xml:space="preserve" y="450">
+-125427
+<title>-125427</title>
+</text>
+<path d="M 5680 450 L 5683 443 L 5777 443 L 5780 450 L 5777 457 L 5683 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5730" xml:space="preserve" y="450">
+-121094
+<title>-121094</title>
+</text>
+<path d="M 5780 450 L 5783 443 L 5877 443 L 5880 450 L 5877 457 L 5783 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5830" xml:space="preserve" y="450">
+-115594
+<title>-115594</title>
+</text>
+<path d="M 5880 450 L 5883 443 L 5977 443 L 5980 450 L 5977 457 L 5883 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5930" xml:space="preserve" y="450">
+-108982
+<title>-108982</title>
+</text>
+<path d="M 5980 450 L 5983 443 L 6077 443 L 6080 450 L 6077 457 L 5983 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6030" xml:space="preserve" y="450">
+-101320
+<title>-101320</title>
+</text>
+<path d="M 6080 450 L 6083 443 L 6177 443 L 6180 450 L 6177 457 L 6083 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6130" xml:space="preserve" y="450">
+-92682
+<title>-92682</title>
+</text>
+<path d="M 6180 450 L 6183 443 L 6277 443 L 6280 450 L 6277 457 L 6183 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6230" xml:space="preserve" y="450">
+-83151
+<title>-83151</title>
+</text>
+<path d="M 6280 450 L 6283 443 L 6377 443 L 6380 450 L 6377 457 L 6283 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6330" xml:space="preserve" y="450">
+-72820
+<title>-72820</title>
+</text>
+<path d="M 6380 450 L 6383 443 L 6477 443 L 6480 450 L 6477 457 L 6383 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6430" xml:space="preserve" y="450">
+-61787
+<title>-61787</title>
+</text>
+<path d="M 6480 450 L 6483 443 L 6577 443 L 6580 450 L 6577 457 L 6483 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6530" xml:space="preserve" y="450">
+-50159
+<title>-50159</title>
+</text>
+<path d="M 6580 450 L 6583 443 L 6677 443 L 6680 450 L 6677 457 L 6583 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6630" xml:space="preserve" y="450">
+-38049
+<title>-38049</title>
+</text>
+<path d="M 6680 450 L 6683 443 L 6777 443 L 6780 450 L 6777 457 L 6683 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6730" xml:space="preserve" y="450">
+-25571
+<title>-25571</title>
+</text>
+<path d="M 6780 450 L 6783 443 L 6877 443 L 6880 450 L 6877 457 L 6783 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6830" xml:space="preserve" y="450">
+-12848
+<title>-12848</title>
+</text>
+<path d="M 6880 450 L 6883 443 L 6977 443 L 6980 450 L 6977 457 L 6883 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6930" xml:space="preserve" y="450">
+0
+<title>0</title>
+</text>
+<path d="M 6980 450 L 6983 443 L 7077 443 L 7080 450 L 7077 457 L 6983 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7030" xml:space="preserve" y="450">
+-12847
+<title>-12847</title>
+</text>
+<path d="M 7080 450 L 7083 443 L 7177 443 L 7180 450 L 7177 457 L 7083 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7130" xml:space="preserve" y="450">
+-25571
+<title>-25571</title>
+</text>
+<path d="M 7180 450 L 7183 443 L 7277 443 L 7280 450 L 7277 457 L 7183 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7230" xml:space="preserve" y="450">
+-38048
+<title>-38048</title>
+</text>
+<path d="M 7280 450 L 7283 443 L 7377 443 L 7380 450 L 7377 457 L 7283 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7330" xml:space="preserve" y="450">
+-50159
+<title>-50159</title>
+</text>
+<path d="M 7380 450 L 7383 443 L 7477 443 L 7480 450 L 7477 457 L 7383 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7430" xml:space="preserve" y="450">
+-61786
+<title>-61786</title>
+</text>
+<path d="M 7480 450 L 7483 443 L 7577 443 L 7580 450 L 7577 457 L 7483 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7530" xml:space="preserve" y="450">
+-72820
+<title>-72820</title>
+</text>
+<path d="M 7580 450 L 7583 443 L 7677 443 L 7680 450 L 7677 457 L 7583 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7630" xml:space="preserve" y="450">
+-83150
+<title>-83150</title>
+</text>
+<path d="M 7680 450 L 7683 443 L 7777 443 L 7780 450 L 7777 457 L 7683 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7730" xml:space="preserve" y="450">
+-92681
+<title>-92681</title>
+</text>
+<path d="M 7780 450 L 7783 443 L 7877 443 L 7880 450 L 7877 457 L 7783 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7830" xml:space="preserve" y="450">
+-101319
+<title>-101319</title>
+</text>
+<path d="M 7880 450 L 7883 443 L 7977 443 L 7980 450 L 7977 457 L 7883 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7930" xml:space="preserve" y="450">
+-108982
+<title>-108982</title>
+</text>
+<path d="M 7980 450 L 7983 443 L 8077 443 L 8080 450 L 8077 457 L 7983 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8030" xml:space="preserve" y="450">
+-115594
+<title>-115594</title>
+</text>
+<path d="M 8080 450 L 8083 443 L 8177 443 L 8180 450 L 8177 457 L 8083 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8130" xml:space="preserve" y="450">
+-121094
+<title>-121094</title>
+</text>
+<path d="M 8180 450 L 8183 443 L 8277 443 L 8280 450 L 8277 457 L 8183 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8230" xml:space="preserve" y="450">
+-125427
+<title>-125427</title>
+</text>
+<path d="M 8280 450 L 8283 443 L 8377 443 L 8380 450 L 8377 457 L 8283 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8330" xml:space="preserve" y="450">
+-128552
+<title>-128552</title>
+</text>
+<path d="M 8380 450 L 8383 443 L 8477 443 L 8480 450 L 8477 457 L 8383 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8430" xml:space="preserve" y="450">
+-130440
+<title>-130440</title>
+</text>
+<path d="M 8480 450 L 8483 443 L 8577 443 L 8580 450 L 8577 457 L 8483 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8530" xml:space="preserve" y="450">
+-131071
+<title>-131071</title>
+</text>
+<path d="M 8580 450 L 8583 443 L 8677 443 L 8680 450 L 8677 457 L 8583 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8630" xml:space="preserve" y="450">
+-130440
+<title>-130440</title>
+</text>
+<path d="M 8680 450 L 8683 443 L 8777 443 L 8780 450 L 8777 457 L 8683 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8730" xml:space="preserve" y="450">
+-128552
+<title>-128552</title>
+</text>
+<path d="M 8780 450 L 8783 443 L 8877 443 L 8880 450 L 8877 457 L 8783 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8830" xml:space="preserve" y="450">
+-125427
+<title>-125427</title>
+</text>
+<path d="M 8880 450 L 8883 443 L 8977 443 L 8980 450 L 8977 457 L 8883 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8930" xml:space="preserve" y="450">
+-121094
+<title>-121094</title>
+</text>
+<path d="M 8980 450 L 8983 443 L 9077 443 L 9080 450 L 9077 457 L 8983 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9030" xml:space="preserve" y="450">
+-115594
+<title>-115594</title>
+</text>
+<path d="M 9080 450 L 9083 443 L 9177 443 L 9180 450 L 9177 457 L 9083 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9130" xml:space="preserve" y="450">
+-108982
+<title>-108982</title>
+</text>
+<path d="M 9180 450 L 9183 443 L 9277 443 L 9280 450 L 9277 457 L 9183 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9230" xml:space="preserve" y="450">
+-101320
+<title>-101320</title>
+</text>
+<path d="M 9280 450 L 9283 443 L 9377 443 L 9380 450 L 9377 457 L 9283 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9330" xml:space="preserve" y="450">
+-92682
+<title>-92682</title>
+</text>
+<path d="M 9380 450 L 9383 443 L 9477 443 L 9480 450 L 9477 457 L 9383 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9430" xml:space="preserve" y="450">
+-83151
+<title>-83151</title>
+</text>
+<path d="M 9480 450 L 9483 443 L 9577 443 L 9580 450 L 9577 457 L 9483 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9530" xml:space="preserve" y="450">
+-72820
+<title>-72820</title>
+</text>
+<path d="M 9580 450 L 9583 443 L 9677 443 L 9680 450 L 9677 457 L 9583 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9630" xml:space="preserve" y="450">
+-61787
+<title>-61787</title>
+</text>
+<path d="M 9680 450 L 9683 443 L 9777 443 L 9780 450 L 9777 457 L 9683 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9730" xml:space="preserve" y="450">
+-50159
+<title>-50159</title>
+</text>
+<path d="M 9780 450 L 9783 443 L 9877 443 L 9880 450 L 9877 457 L 9783 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9830" xml:space="preserve" y="450">
+-38049
+<title>-38049</title>
+</text>
+<path d="M 9880 450 L 9883 443 L 9977 443 L 9980 450 L 9977 457 L 9883 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9930" xml:space="preserve" y="450">
+-25571
+<title>-25571</title>
+</text>
+<path d="M 9980 450 L 9983 443 L 10077 443 L 10080 450 L 10077 457 L 9983 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10030" xml:space="preserve" y="450">
+-12848
+<title>-12848</title>
+</text>
+<path d="M 10080 450 L 10083 443 L 10177 443 L 10180 450 L 10177 457 L 10083 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10130" xml:space="preserve" y="450">
+-1
+<title>-1</title>
+</text>
+<path d="M 10180 450 L 10183 443 L 10277 443 L 10280 450 L 10277 457 L 10183 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10230" xml:space="preserve" y="450">
+12846
+<title>12846</title>
+</text>
+<path d="M 10280 450 L 10283 443 L 10377 443 L 10380 450 L 10377 457 L 10283 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10330" xml:space="preserve" y="450">
+25570
+<title>25570</title>
+</text>
+<path d="M 10380 450 L 10383 443 L 10477 443 L 10480 450 L 10477 457 L 10383 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10430" xml:space="preserve" y="450">
+38047
+<title>38047</title>
+</text>
+<path d="M 10480 450 L 10483 443 L 10577 443 L 10580 450 L 10577 457 L 10483 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10530" xml:space="preserve" y="450">
+50158
+<title>50158</title>
+</text>
+<path d="M 10580 450 L 10583 443 L 10677 443 L 10680 450 L 10677 457 L 10583 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10630" xml:space="preserve" y="450">
+61785
+<title>61785</title>
+</text>
+<path d="M 10680 450 L 10683 443 L 10777 443 L 10780 450 L 10777 457 L 10683 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10730" xml:space="preserve" y="450">
+72819
+<title>72819</title>
+</text>
+<path d="M 10780 450 L 10783 443 L 10877 443 L 10880 450 L 10877 457 L 10783 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10830" xml:space="preserve" y="450">
+83149
+<title>83149</title>
+</text>
+<path d="M 10880 450 L 10883 443 L 10977 443 L 10980 450 L 10977 457 L 10883 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10930" xml:space="preserve" y="450">
+92680
+<title>92680</title>
+</text>
+<path d="M 10980 450 L 10983 443 L 11077 443 L 11080 450 L 11077 457 L 10983 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11030" xml:space="preserve" y="450">
+101318
+<title>101318</title>
+</text>
+<path d="M 11080 450 L 11083 443 L 11177 443 L 11180 450 L 11177 457 L 11083 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11130" xml:space="preserve" y="450">
+108981
+<title>108981</title>
+</text>
+<path d="M 11180 450 L 11183 443 L 11277 443 L 11280 450 L 11277 457 L 11183 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11230" xml:space="preserve" y="450">
+115593
+<title>115593</title>
+</text>
+<path d="M 11280 450 L 11283 443 L 11377 443 L 11380 450 L 11377 457 L 11283 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11330" xml:space="preserve" y="450">
+121093
+<title>121093</title>
+</text>
+<path d="M 11380 450 L 11383 443 L 11477 443 L 11480 450 L 11477 457 L 11383 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11430" xml:space="preserve" y="450">
+125426
+<title>125426</title>
+</text>
+<path d="M 11480 450 L 11483 443 L 11577 443 L 11580 450 L 11577 457 L 11483 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11530" xml:space="preserve" y="450">
+128551
+<title>128551</title>
+</text>
+<path d="M 11580 450 L 11583 443 L 11677 443 L 11680 450 L 11677 457 L 11583 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11630" xml:space="preserve" y="450">
+130439
+<title>130439</title>
+</text>
+<path d="M 11680 450 L 11683 443 L 11777 443 L 11780 450 L 11777 457 L 11683 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11730" xml:space="preserve" y="450">
+-131071
+<title>-131071</title>
+</text>
+<path d="M 11780 450 L 11783 443 L 11877 443 L 11880 450 L 11877 457 L 11783 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11830" xml:space="preserve" y="450">
+-130440
+<title>-130440</title>
+</text>
+<path d="M 11880 450 L 11883 443 L 11977 443 L 11980 450 L 11977 457 L 11883 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11930" xml:space="preserve" y="450">
+-128552
+<title>-128552</title>
+</text>
+<path d="M 11980 450 L 11983 443 L 12077 443 L 12080 450 L 12077 457 L 11983 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12030" xml:space="preserve" y="450">
+-125427
+<title>-125427</title>
+</text>
+<path d="M 12080 450 L 12083 443 L 12177 443 L 12180 450 L 12177 457 L 12083 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12130" xml:space="preserve" y="450">
+-121094
+<title>-121094</title>
+</text>
+<path d="M 12180 450 L 12183 443 L 12277 443 L 12280 450 L 12277 457 L 12183 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12230" xml:space="preserve" y="450">
+-115594
+<title>-115594</title>
+</text>
+<path d="M 12280 450 L 12283 443 L 12377 443 L 12380 450 L 12377 457 L 12283 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12330" xml:space="preserve" y="450">
+-108982
+<title>-108982</title>
+</text>
+<path d="M 12380 450 L 12383 443 L 12477 443 L 12480 450 L 12477 457 L 12383 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12430" xml:space="preserve" y="450">
+-101320
+<title>-101320</title>
+</text>
+<path d="M 12480 450 L 12483 443 L 12577 443 L 12580 450 L 12577 457 L 12483 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12530" xml:space="preserve" y="450">
+-92682
+<title>-92682</title>
+</text>
+<path d="M 12580 450 L 12583 443 L 12677 443 L 12680 450 L 12677 457 L 12583 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12630" xml:space="preserve" y="450">
+-83151
+<title>-83151</title>
+</text>
+<path d="M 12680 450 L 12683 443 L 12777 443 L 12780 450 L 12777 457 L 12683 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12730" xml:space="preserve" y="450">
+-72820
+<title>-72820</title>
+</text>
+<path d="M 12780 450 L 12783 443 L 12877 443 L 12880 450 L 12877 457 L 12783 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12830" xml:space="preserve" y="450">
+-61787
+<title>-61787</title>
+</text>
+<path d="M 12880 450 L 12883 443 L 12977 443 L 12980 450 L 12977 457 L 12883 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12930" xml:space="preserve" y="450">
+-50159
+<title>-50159</title>
+</text>
+<path d="M 12980 450 L 12983 443 L 13077 443 L 13080 450 L 13077 457 L 12983 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13030" xml:space="preserve" y="450">
+-38049
+<title>-38049</title>
+</text>
+<path d="M 13080 450 L 13083 443 L 13177 443 L 13180 450 L 13177 457 L 13083 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13130" xml:space="preserve" y="450">
+-25571
+<title>-25571</title>
+</text>
+<path d="M 13180 450 L 13183 443 L 13277 443 L 13280 450 L 13277 457 L 13183 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13230" xml:space="preserve" y="450">
+-12848
+<title>-12848</title>
+</text>
+<path d="M 13280 450 L 13283 443 L 13377 443 L 13380 450 L 13377 457 L 13283 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13330" xml:space="preserve" y="450">
+-1
+<title>-1</title>
+</text>
+<path d="M 13380 450 L 13383 443 L 13477 443 L 13480 450 L 13477 457 L 13383 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13430" xml:space="preserve" y="450">
+12846
+<title>12846</title>
+</text>
+<path d="M 13480 450 L 13483 443 L 13577 443 L 13580 450 L 13577 457 L 13483 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13530" xml:space="preserve" y="450">
+25570
+<title>25570</title>
+</text>
+<path d="M 13580 450 L 13583 443 L 13677 443 L 13680 450 L 13677 457 L 13583 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13630" xml:space="preserve" y="450">
+38047
+<title>38047</title>
+</text>
+<path d="M 13680 450 L 13683 443 L 13777 443 L 13780 450 L 13777 457 L 13683 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13730" xml:space="preserve" y="450">
+50158
+<title>50158</title>
+</text>
+<path d="M 13780 450 L 13783 443 L 13877 443 L 13880 450 L 13877 457 L 13783 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13830" xml:space="preserve" y="450">
+61785
+<title>61785</title>
+</text>
+<path d="M 13880 450 L 13883 443 L 13977 443 L 13980 450 L 13977 457 L 13883 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13930" xml:space="preserve" y="450">
+72819
+<title>72819</title>
+</text>
+<path d="M 13980 450 L 13983 443 L 14077 443 L 14080 450 L 14077 457 L 13983 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14030" xml:space="preserve" y="450">
+83149
+<title>83149</title>
+</text>
+<path d="M 14080 450 L 14083 443 L 14177 443 L 14180 450 L 14177 457 L 14083 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14130" xml:space="preserve" y="450">
+92680
+<title>92680</title>
+</text>
+<path d="M 14180 450 L 14183 443 L 14277 443 L 14280 450 L 14277 457 L 14183 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14230" xml:space="preserve" y="450">
+101318
+<title>101318</title>
+</text>
+<path d="M 14280 450 L 14283 443 L 14377 443 L 14380 450 L 14377 457 L 14283 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14330" xml:space="preserve" y="450">
+108981
+<title>108981</title>
+</text>
+<path d="M 14380 450 L 14383 443 L 14477 443 L 14480 450 L 14477 457 L 14383 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14430" xml:space="preserve" y="450">
+115593
+<title>115593</title>
+</text>
+<path d="M 14480 450 L 14483 443 L 14577 443 L 14580 450 L 14577 457 L 14483 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14530" xml:space="preserve" y="450">
+121093
+<title>121093</title>
+</text>
+<path d="M 14580 450 L 14583 443 L 14677 443 L 14680 450 L 14677 457 L 14583 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14630" xml:space="preserve" y="450">
+125426
+<title>125426</title>
+</text>
+<path d="M 14680 450 L 14683 443 L 14777 443 L 14780 450 L 14777 457 L 14683 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14730" xml:space="preserve" y="450">
+128551
+<title>128551</title>
+</text>
+<path d="M 14780 450 L 14783 443 L 14877 443 L 14880 450 L 14877 457 L 14783 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14830" xml:space="preserve" y="450">
+130439
+<title>130439</title>
+</text>
+<path d="M 14880 450 L 14883 443 L 14977 443 L 14980 450 L 14977 457 L 14883 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14930" xml:space="preserve" y="450">
+131070
+<title>131070</title>
+</text>
+<path d="M 14980 450 L 14983 443 L 15077 443 L 15080 450 L 15077 457 L 14983 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15030" xml:space="preserve" y="450">
+130439
+<title>130439</title>
+</text>
+<path d="M 15080 450 L 15083 443 L 15177 443 L 15180 450 L 15177 457 L 15083 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15130" xml:space="preserve" y="450">
+128551
+<title>128551</title>
+</text>
+<path d="M 15180 450 L 15183 443 L 15277 443 L 15280 450 L 15277 457 L 15183 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15230" xml:space="preserve" y="450">
+125426
+<title>125426</title>
+</text>
+<path d="M 15280 450 L 15283 443 L 15377 443 L 15380 450 L 15377 457 L 15283 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15330" xml:space="preserve" y="450">
+121093
+<title>121093</title>
+</text>
+<path d="M 15380 450 L 15383 443 L 15477 443 L 15480 450 L 15477 457 L 15383 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15430" xml:space="preserve" y="450">
+115593
+<title>115593</title>
+</text>
+<path d="M 15480 450 L 15483 443 L 15577 443 L 15580 450 L 15577 457 L 15483 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15530" xml:space="preserve" y="450">
+108981
+<title>108981</title>
+</text>
+<path d="M 15580 450 L 15583 443 L 15677 443 L 15680 450 L 15677 457 L 15583 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15630" xml:space="preserve" y="450">
+101319
+<title>101319</title>
+</text>
+<path d="M 15680 450 L 15683 443 L 15777 443 L 15780 450 L 15777 457 L 15683 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15730" xml:space="preserve" y="450">
+92681
+<title>92681</title>
+</text>
+<path d="M 15780 450 L 15783 443 L 15877 443 L 15880 450 L 15877 457 L 15783 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15830" xml:space="preserve" y="450">
+83150
+<title>83150</title>
+</text>
+<path d="M 15880 450 L 15883 443 L 15977 443 L 15980 450 L 15977 457 L 15883 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15930" xml:space="preserve" y="450">
+72819
+<title>72819</title>
+</text>
+<path d="M 15980 450 L 15983 443 L 16077 443 L 16080 450 L 16077 457 L 15983 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16030" xml:space="preserve" y="450">
+61786
+<title>61786</title>
+</text>
+<path d="M 16080 450 L 16083 443 L 16177 443 L 16180 450 L 16177 457 L 16083 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16130" xml:space="preserve" y="450">
+50158
+<title>50158</title>
+</text>
+<path d="M 16180 450 L 16183 443 L 16277 443 L 16280 450 L 16277 457 L 16183 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16230" xml:space="preserve" y="450">
+38048
+<title>38048</title>
+</text>
+<path d="M 16280 450 L 16283 443 L 16377 443 L 16380 450 L 16377 457 L 16283 457 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16330" xml:space="preserve" y="450">
+25570
+<title>25570</title>
+</text>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="start" x="3" xml:space="preserve" y="470">
+            .frame
+<title>top.outputs.stream.data#Some.0.frame</title>
+</text>
+<path d="M 230 470 L 233 463 L 16377 463 L 16380 470 L 16377 477 L 233 477 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8305" xml:space="preserve" y="470">
+
+<title></title>
+</text>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="start" x="3" xml:space="preserve" y="490">
+      .ready
+<title>top.outputs.stream.ready</title>
+</text>
+<rect fill="#1C400C" height="14" stroke="none" width="16148" x="231" y="483"/>
+<path d="M 230 490 L 230 483 L 16380 483 L 16380 490" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="start" x="3" xml:space="preserve" y="510">
+   .master
+<title>top.outputs.master</title>
+</text>
+<path d="M 230 510 L 233 503 L 477 503 L 480 510 L 477 517 L 233 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="355" xml:space="preserve" y="510">
+000000000000
+<title>000000000000</title>
+</text>
+<path d="M 480 510 L 483 503 L 577 503 L 580 510 L 577 517 L 483 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="530" xml:space="preserve" y="510">
+0400000...
+<title>040000000000</title>
+</text>
+<path d="M 580 510 L 583 503 L 677 503 L 680 510 L 677 517 L 583 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="630" xml:space="preserve" y="510">
+0800000...
+<title>080000000000</title>
+</text>
+<path d="M 680 510 L 683 503 L 777 503 L 780 510 L 777 517 L 683 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="730" xml:space="preserve" y="510">
+0c00000...
+<title>0c0000000000</title>
+</text>
+<path d="M 780 510 L 783 503 L 877 503 L 880 510 L 877 517 L 783 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="830" xml:space="preserve" y="510">
+1000000...
+<title>100000000000</title>
+</text>
+<path d="M 880 510 L 883 503 L 977 503 L 980 510 L 977 517 L 883 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="930" xml:space="preserve" y="510">
+1400000...
+<title>140000000000</title>
+</text>
+<path d="M 980 510 L 983 503 L 1077 503 L 1080 510 L 1077 517 L 983 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1030" xml:space="preserve" y="510">
+1800000...
+<title>180000000000</title>
+</text>
+<path d="M 1080 510 L 1083 503 L 1177 503 L 1180 510 L 1177 517 L 1083 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1130" xml:space="preserve" y="510">
+1c00000...
+<title>1c0000000000</title>
+</text>
+<path d="M 1180 510 L 1183 503 L 1277 503 L 1280 510 L 1277 517 L 1183 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1230" xml:space="preserve" y="510">
+2000000...
+<title>200000000000</title>
+</text>
+<path d="M 1280 510 L 1283 503 L 1377 503 L 1380 510 L 1377 517 L 1283 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1330" xml:space="preserve" y="510">
+2400000...
+<title>240000000000</title>
+</text>
+<path d="M 1380 510 L 1383 503 L 1477 503 L 1480 510 L 1477 517 L 1383 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1430" xml:space="preserve" y="510">
+2800000...
+<title>280000000000</title>
+</text>
+<path d="M 1480 510 L 1483 503 L 1577 503 L 1580 510 L 1577 517 L 1483 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1530" xml:space="preserve" y="510">
+2c00000...
+<title>2c0000000000</title>
+</text>
+<path d="M 1580 510 L 1583 503 L 1677 503 L 1680 510 L 1677 517 L 1583 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1630" xml:space="preserve" y="510">
+3000000...
+<title>300000000000</title>
+</text>
+<path d="M 1680 510 L 1683 503 L 1777 503 L 1780 510 L 1777 517 L 1683 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1730" xml:space="preserve" y="510">
+3400000...
+<title>340000000000</title>
+</text>
+<path d="M 1780 510 L 1783 503 L 1877 503 L 1880 510 L 1877 517 L 1783 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1830" xml:space="preserve" y="510">
+3800000...
+<title>380000000000</title>
+</text>
+<path d="M 1880 510 L 1883 503 L 1977 503 L 1980 510 L 1977 517 L 1883 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1930" xml:space="preserve" y="510">
+3c00000...
+<title>3c0000000000</title>
+</text>
+<path d="M 1980 510 L 1983 503 L 2077 503 L 2080 510 L 2077 517 L 1983 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2030" xml:space="preserve" y="510">
+4000000...
+<title>400000000000</title>
+</text>
+<path d="M 2080 510 L 2083 503 L 2177 503 L 2180 510 L 2177 517 L 2083 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2130" xml:space="preserve" y="510">
+4400000...
+<title>440000000000</title>
+</text>
+<path d="M 2180 510 L 2183 503 L 2277 503 L 2280 510 L 2277 517 L 2183 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2230" xml:space="preserve" y="510">
+4800000...
+<title>480000000000</title>
+</text>
+<path d="M 2280 510 L 2283 503 L 2377 503 L 2380 510 L 2377 517 L 2283 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2330" xml:space="preserve" y="510">
+4c00000...
+<title>4c0000000000</title>
+</text>
+<path d="M 2380 510 L 2383 503 L 2477 503 L 2480 510 L 2477 517 L 2383 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2430" xml:space="preserve" y="510">
+5000000...
+<title>500000000000</title>
+</text>
+<path d="M 2480 510 L 2483 503 L 2577 503 L 2580 510 L 2577 517 L 2483 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2530" xml:space="preserve" y="510">
+5400000...
+<title>540000000000</title>
+</text>
+<path d="M 2580 510 L 2583 503 L 2677 503 L 2680 510 L 2677 517 L 2583 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2630" xml:space="preserve" y="510">
+5800000...
+<title>580000000000</title>
+</text>
+<path d="M 2680 510 L 2683 503 L 2777 503 L 2780 510 L 2777 517 L 2683 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2730" xml:space="preserve" y="510">
+5c00000...
+<title>5c0000000000</title>
+</text>
+<path d="M 2780 510 L 2783 503 L 2877 503 L 2880 510 L 2877 517 L 2783 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2830" xml:space="preserve" y="510">
+6000000...
+<title>600000000000</title>
+</text>
+<path d="M 2880 510 L 2883 503 L 2977 503 L 2980 510 L 2977 517 L 2883 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2930" xml:space="preserve" y="510">
+6400000...
+<title>640000000000</title>
+</text>
+<path d="M 2980 510 L 2983 503 L 3077 503 L 3080 510 L 3077 517 L 2983 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3030" xml:space="preserve" y="510">
+6800000...
+<title>680000000000</title>
+</text>
+<path d="M 3080 510 L 3083 503 L 3177 503 L 3180 510 L 3177 517 L 3083 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3130" xml:space="preserve" y="510">
+6c00000...
+<title>6c0000000000</title>
+</text>
+<path d="M 3180 510 L 3183 503 L 3277 503 L 3280 510 L 3277 517 L 3183 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3230" xml:space="preserve" y="510">
+7000000...
+<title>700000000000</title>
+</text>
+<path d="M 3280 510 L 3283 503 L 3377 503 L 3380 510 L 3377 517 L 3283 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3330" xml:space="preserve" y="510">
+7400000...
+<title>740000000000</title>
+</text>
+<path d="M 3380 510 L 3383 503 L 3477 503 L 3480 510 L 3477 517 L 3383 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3430" xml:space="preserve" y="510">
+7800000...
+<title>780000000000</title>
+</text>
+<path d="M 3480 510 L 3483 503 L 3577 503 L 3580 510 L 3577 517 L 3483 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3530" xml:space="preserve" y="510">
 7c00000...
 <title>7c0000000000</title>
 </text>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="start" x="3" xml:space="preserve" y="370">
+<path d="M 3580 510 L 3583 503 L 3677 503 L 3680 510 L 3677 517 L 3583 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3630" xml:space="preserve" y="510">
+8000000...
+<title>800000000000</title>
+</text>
+<path d="M 3680 510 L 3683 503 L 3777 503 L 3780 510 L 3777 517 L 3683 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3730" xml:space="preserve" y="510">
+8400000...
+<title>840000000000</title>
+</text>
+<path d="M 3780 510 L 3783 503 L 3877 503 L 3880 510 L 3877 517 L 3783 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3830" xml:space="preserve" y="510">
+8800000...
+<title>880000000000</title>
+</text>
+<path d="M 3880 510 L 3883 503 L 3977 503 L 3980 510 L 3977 517 L 3883 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3930" xml:space="preserve" y="510">
+8c00000...
+<title>8c0000000000</title>
+</text>
+<path d="M 3980 510 L 3983 503 L 4077 503 L 4080 510 L 4077 517 L 3983 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4030" xml:space="preserve" y="510">
+9000000...
+<title>900000000000</title>
+</text>
+<path d="M 4080 510 L 4083 503 L 4177 503 L 4180 510 L 4177 517 L 4083 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4130" xml:space="preserve" y="510">
+9400000...
+<title>940000000000</title>
+</text>
+<path d="M 4180 510 L 4183 503 L 4277 503 L 4280 510 L 4277 517 L 4183 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4230" xml:space="preserve" y="510">
+9800000...
+<title>980000000000</title>
+</text>
+<path d="M 4280 510 L 4283 503 L 4377 503 L 4380 510 L 4377 517 L 4283 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4330" xml:space="preserve" y="510">
+9c00000...
+<title>9c0000000000</title>
+</text>
+<path d="M 4380 510 L 4383 503 L 4477 503 L 4480 510 L 4477 517 L 4383 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4430" xml:space="preserve" y="510">
+a000000...
+<title>a00000000000</title>
+</text>
+<path d="M 4480 510 L 4483 503 L 4577 503 L 4580 510 L 4577 517 L 4483 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4530" xml:space="preserve" y="510">
+a400000...
+<title>a40000000000</title>
+</text>
+<path d="M 4580 510 L 4583 503 L 4677 503 L 4680 510 L 4677 517 L 4583 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4630" xml:space="preserve" y="510">
+a800000...
+<title>a80000000000</title>
+</text>
+<path d="M 4680 510 L 4683 503 L 4777 503 L 4780 510 L 4777 517 L 4683 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4730" xml:space="preserve" y="510">
+ac00000...
+<title>ac0000000000</title>
+</text>
+<path d="M 4780 510 L 4783 503 L 4877 503 L 4880 510 L 4877 517 L 4783 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4830" xml:space="preserve" y="510">
+b000000...
+<title>b00000000000</title>
+</text>
+<path d="M 4880 510 L 4883 503 L 4977 503 L 4980 510 L 4977 517 L 4883 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4930" xml:space="preserve" y="510">
+b400000...
+<title>b40000000000</title>
+</text>
+<path d="M 4980 510 L 4983 503 L 5077 503 L 5080 510 L 5077 517 L 4983 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5030" xml:space="preserve" y="510">
+b800000...
+<title>b80000000000</title>
+</text>
+<path d="M 5080 510 L 5083 503 L 5177 503 L 5180 510 L 5177 517 L 5083 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5130" xml:space="preserve" y="510">
+bc00000...
+<title>bc0000000000</title>
+</text>
+<path d="M 5180 510 L 5183 503 L 5277 503 L 5280 510 L 5277 517 L 5183 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5230" xml:space="preserve" y="510">
+c000000...
+<title>c00000000000</title>
+</text>
+<path d="M 5280 510 L 5283 503 L 5377 503 L 5380 510 L 5377 517 L 5283 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5330" xml:space="preserve" y="510">
+c400000...
+<title>c40000000000</title>
+</text>
+<path d="M 5380 510 L 5383 503 L 5477 503 L 5480 510 L 5477 517 L 5383 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5430" xml:space="preserve" y="510">
+c800000...
+<title>c80000000000</title>
+</text>
+<path d="M 5480 510 L 5483 503 L 5577 503 L 5580 510 L 5577 517 L 5483 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5530" xml:space="preserve" y="510">
+cc00000...
+<title>cc0000000000</title>
+</text>
+<path d="M 5580 510 L 5583 503 L 5677 503 L 5680 510 L 5677 517 L 5583 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5630" xml:space="preserve" y="510">
+d000000...
+<title>d00000000000</title>
+</text>
+<path d="M 5680 510 L 5683 503 L 5777 503 L 5780 510 L 5777 517 L 5683 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5730" xml:space="preserve" y="510">
+d400000...
+<title>d40000000000</title>
+</text>
+<path d="M 5780 510 L 5783 503 L 5877 503 L 5880 510 L 5877 517 L 5783 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5830" xml:space="preserve" y="510">
+d800000...
+<title>d80000000000</title>
+</text>
+<path d="M 5880 510 L 5883 503 L 5977 503 L 5980 510 L 5977 517 L 5883 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5930" xml:space="preserve" y="510">
+dc00000...
+<title>dc0000000000</title>
+</text>
+<path d="M 5980 510 L 5983 503 L 6077 503 L 6080 510 L 6077 517 L 5983 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6030" xml:space="preserve" y="510">
+e000000...
+<title>e00000000000</title>
+</text>
+<path d="M 6080 510 L 6083 503 L 6177 503 L 6180 510 L 6177 517 L 6083 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6130" xml:space="preserve" y="510">
+e400000...
+<title>e40000000000</title>
+</text>
+<path d="M 6180 510 L 6183 503 L 6277 503 L 6280 510 L 6277 517 L 6183 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6230" xml:space="preserve" y="510">
+e800000...
+<title>e80000000000</title>
+</text>
+<path d="M 6280 510 L 6283 503 L 6377 503 L 6380 510 L 6377 517 L 6283 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6330" xml:space="preserve" y="510">
+ec00000...
+<title>ec0000000000</title>
+</text>
+<path d="M 6380 510 L 6383 503 L 6477 503 L 6480 510 L 6477 517 L 6383 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6430" xml:space="preserve" y="510">
+f000000...
+<title>f00000000000</title>
+</text>
+<path d="M 6480 510 L 6483 503 L 6577 503 L 6580 510 L 6577 517 L 6483 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6530" xml:space="preserve" y="510">
+f400000...
+<title>f40000000000</title>
+</text>
+<path d="M 6580 510 L 6583 503 L 6677 503 L 6680 510 L 6677 517 L 6583 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6630" xml:space="preserve" y="510">
+f800000...
+<title>f80000000000</title>
+</text>
+<path d="M 6680 510 L 6683 503 L 6777 503 L 6780 510 L 6777 517 L 6683 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6730" xml:space="preserve" y="510">
+fc00000...
+<title>fc0000000000</title>
+</text>
+<path d="M 6780 510 L 6783 503 L 6877 503 L 6880 510 L 6877 517 L 6783 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6830" xml:space="preserve" y="510">
+0000000...
+<title>000000000000</title>
+</text>
+<path d="M 6880 510 L 6883 503 L 6977 503 L 6980 510 L 6977 517 L 6883 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6930" xml:space="preserve" y="510">
+0400000...
+<title>040000000000</title>
+</text>
+<path d="M 6980 510 L 6983 503 L 7077 503 L 7080 510 L 7077 517 L 6983 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7030" xml:space="preserve" y="510">
+0800000...
+<title>080000000000</title>
+</text>
+<path d="M 7080 510 L 7083 503 L 7177 503 L 7180 510 L 7177 517 L 7083 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7130" xml:space="preserve" y="510">
+0c00000...
+<title>0c0000000000</title>
+</text>
+<path d="M 7180 510 L 7183 503 L 7277 503 L 7280 510 L 7277 517 L 7183 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7230" xml:space="preserve" y="510">
+1000000...
+<title>100000000000</title>
+</text>
+<path d="M 7280 510 L 7283 503 L 7377 503 L 7380 510 L 7377 517 L 7283 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7330" xml:space="preserve" y="510">
+1400000...
+<title>140000000000</title>
+</text>
+<path d="M 7380 510 L 7383 503 L 7477 503 L 7480 510 L 7477 517 L 7383 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7430" xml:space="preserve" y="510">
+1800000...
+<title>180000000000</title>
+</text>
+<path d="M 7480 510 L 7483 503 L 7577 503 L 7580 510 L 7577 517 L 7483 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7530" xml:space="preserve" y="510">
+1c00000...
+<title>1c0000000000</title>
+</text>
+<path d="M 7580 510 L 7583 503 L 7677 503 L 7680 510 L 7677 517 L 7583 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7630" xml:space="preserve" y="510">
+2000000...
+<title>200000000000</title>
+</text>
+<path d="M 7680 510 L 7683 503 L 7777 503 L 7780 510 L 7777 517 L 7683 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7730" xml:space="preserve" y="510">
+2400000...
+<title>240000000000</title>
+</text>
+<path d="M 7780 510 L 7783 503 L 7877 503 L 7880 510 L 7877 517 L 7783 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7830" xml:space="preserve" y="510">
+2800000...
+<title>280000000000</title>
+</text>
+<path d="M 7880 510 L 7883 503 L 7977 503 L 7980 510 L 7977 517 L 7883 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="7930" xml:space="preserve" y="510">
+2c00000...
+<title>2c0000000000</title>
+</text>
+<path d="M 7980 510 L 7983 503 L 8077 503 L 8080 510 L 8077 517 L 7983 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8030" xml:space="preserve" y="510">
+3000000...
+<title>300000000000</title>
+</text>
+<path d="M 8080 510 L 8083 503 L 8177 503 L 8180 510 L 8177 517 L 8083 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8130" xml:space="preserve" y="510">
+3400000...
+<title>340000000000</title>
+</text>
+<path d="M 8180 510 L 8183 503 L 8277 503 L 8280 510 L 8277 517 L 8183 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8230" xml:space="preserve" y="510">
+3800000...
+<title>380000000000</title>
+</text>
+<path d="M 8280 510 L 8283 503 L 8377 503 L 8380 510 L 8377 517 L 8283 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8330" xml:space="preserve" y="510">
+3c00000...
+<title>3c0000000000</title>
+</text>
+<path d="M 8380 510 L 8383 503 L 8477 503 L 8480 510 L 8477 517 L 8383 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8430" xml:space="preserve" y="510">
+4000000...
+<title>400000000000</title>
+</text>
+<path d="M 8480 510 L 8483 503 L 8577 503 L 8580 510 L 8577 517 L 8483 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8530" xml:space="preserve" y="510">
+4400000...
+<title>440000000000</title>
+</text>
+<path d="M 8580 510 L 8583 503 L 8677 503 L 8680 510 L 8677 517 L 8583 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8630" xml:space="preserve" y="510">
+4800000...
+<title>480000000000</title>
+</text>
+<path d="M 8680 510 L 8683 503 L 8777 503 L 8780 510 L 8777 517 L 8683 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8730" xml:space="preserve" y="510">
+4c00000...
+<title>4c0000000000</title>
+</text>
+<path d="M 8780 510 L 8783 503 L 8877 503 L 8880 510 L 8877 517 L 8783 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8830" xml:space="preserve" y="510">
+5000000...
+<title>500000000000</title>
+</text>
+<path d="M 8880 510 L 8883 503 L 8977 503 L 8980 510 L 8977 517 L 8883 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="8930" xml:space="preserve" y="510">
+5400000...
+<title>540000000000</title>
+</text>
+<path d="M 8980 510 L 8983 503 L 9077 503 L 9080 510 L 9077 517 L 8983 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9030" xml:space="preserve" y="510">
+5800000...
+<title>580000000000</title>
+</text>
+<path d="M 9080 510 L 9083 503 L 9177 503 L 9180 510 L 9177 517 L 9083 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9130" xml:space="preserve" y="510">
+5c00000...
+<title>5c0000000000</title>
+</text>
+<path d="M 9180 510 L 9183 503 L 9277 503 L 9280 510 L 9277 517 L 9183 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9230" xml:space="preserve" y="510">
+6000000...
+<title>600000000000</title>
+</text>
+<path d="M 9280 510 L 9283 503 L 9377 503 L 9380 510 L 9377 517 L 9283 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9330" xml:space="preserve" y="510">
+6400000...
+<title>640000000000</title>
+</text>
+<path d="M 9380 510 L 9383 503 L 9477 503 L 9480 510 L 9477 517 L 9383 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9430" xml:space="preserve" y="510">
+6800000...
+<title>680000000000</title>
+</text>
+<path d="M 9480 510 L 9483 503 L 9577 503 L 9580 510 L 9577 517 L 9483 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9530" xml:space="preserve" y="510">
+6c00000...
+<title>6c0000000000</title>
+</text>
+<path d="M 9580 510 L 9583 503 L 9677 503 L 9680 510 L 9677 517 L 9583 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9630" xml:space="preserve" y="510">
+7000000...
+<title>700000000000</title>
+</text>
+<path d="M 9680 510 L 9683 503 L 9777 503 L 9780 510 L 9777 517 L 9683 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9730" xml:space="preserve" y="510">
+7400000...
+<title>740000000000</title>
+</text>
+<path d="M 9780 510 L 9783 503 L 9877 503 L 9880 510 L 9877 517 L 9783 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9830" xml:space="preserve" y="510">
+7800000...
+<title>780000000000</title>
+</text>
+<path d="M 9880 510 L 9883 503 L 9977 503 L 9980 510 L 9977 517 L 9883 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="9930" xml:space="preserve" y="510">
+7c00000...
+<title>7c0000000000</title>
+</text>
+<path d="M 9980 510 L 9983 503 L 10077 503 L 10080 510 L 10077 517 L 9983 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10030" xml:space="preserve" y="510">
+8000000...
+<title>800000000000</title>
+</text>
+<path d="M 10080 510 L 10083 503 L 10177 503 L 10180 510 L 10177 517 L 10083 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10130" xml:space="preserve" y="510">
+8400000...
+<title>840000000000</title>
+</text>
+<path d="M 10180 510 L 10183 503 L 10277 503 L 10280 510 L 10277 517 L 10183 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10230" xml:space="preserve" y="510">
+8800000...
+<title>880000000000</title>
+</text>
+<path d="M 10280 510 L 10283 503 L 10377 503 L 10380 510 L 10377 517 L 10283 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10330" xml:space="preserve" y="510">
+8c00000...
+<title>8c0000000000</title>
+</text>
+<path d="M 10380 510 L 10383 503 L 10477 503 L 10480 510 L 10477 517 L 10383 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10430" xml:space="preserve" y="510">
+9000000...
+<title>900000000000</title>
+</text>
+<path d="M 10480 510 L 10483 503 L 10577 503 L 10580 510 L 10577 517 L 10483 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10530" xml:space="preserve" y="510">
+9400000...
+<title>940000000000</title>
+</text>
+<path d="M 10580 510 L 10583 503 L 10677 503 L 10680 510 L 10677 517 L 10583 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10630" xml:space="preserve" y="510">
+9800000...
+<title>980000000000</title>
+</text>
+<path d="M 10680 510 L 10683 503 L 10777 503 L 10780 510 L 10777 517 L 10683 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10730" xml:space="preserve" y="510">
+9c00000...
+<title>9c0000000000</title>
+</text>
+<path d="M 10780 510 L 10783 503 L 10877 503 L 10880 510 L 10877 517 L 10783 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10830" xml:space="preserve" y="510">
+a000000...
+<title>a00000000000</title>
+</text>
+<path d="M 10880 510 L 10883 503 L 10977 503 L 10980 510 L 10977 517 L 10883 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="10930" xml:space="preserve" y="510">
+a400000...
+<title>a40000000000</title>
+</text>
+<path d="M 10980 510 L 10983 503 L 11077 503 L 11080 510 L 11077 517 L 10983 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11030" xml:space="preserve" y="510">
+a800000...
+<title>a80000000000</title>
+</text>
+<path d="M 11080 510 L 11083 503 L 11177 503 L 11180 510 L 11177 517 L 11083 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11130" xml:space="preserve" y="510">
+ac00000...
+<title>ac0000000000</title>
+</text>
+<path d="M 11180 510 L 11183 503 L 11277 503 L 11280 510 L 11277 517 L 11183 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11230" xml:space="preserve" y="510">
+b000000...
+<title>b00000000000</title>
+</text>
+<path d="M 11280 510 L 11283 503 L 11377 503 L 11380 510 L 11377 517 L 11283 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11330" xml:space="preserve" y="510">
+b400000...
+<title>b40000000000</title>
+</text>
+<path d="M 11380 510 L 11383 503 L 11477 503 L 11480 510 L 11477 517 L 11383 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11430" xml:space="preserve" y="510">
+b800000...
+<title>b80000000000</title>
+</text>
+<path d="M 11480 510 L 11483 503 L 11577 503 L 11580 510 L 11577 517 L 11483 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11530" xml:space="preserve" y="510">
+bc00000...
+<title>bc0000000000</title>
+</text>
+<path d="M 11580 510 L 11583 503 L 11677 503 L 11680 510 L 11677 517 L 11583 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11630" xml:space="preserve" y="510">
+c000000...
+<title>c00000000000</title>
+</text>
+<path d="M 11680 510 L 11683 503 L 11777 503 L 11780 510 L 11777 517 L 11683 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11730" xml:space="preserve" y="510">
+c400000...
+<title>c40000000000</title>
+</text>
+<path d="M 11780 510 L 11783 503 L 11877 503 L 11880 510 L 11877 517 L 11783 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11830" xml:space="preserve" y="510">
+c800000...
+<title>c80000000000</title>
+</text>
+<path d="M 11880 510 L 11883 503 L 11977 503 L 11980 510 L 11977 517 L 11883 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="11930" xml:space="preserve" y="510">
+cc00000...
+<title>cc0000000000</title>
+</text>
+<path d="M 11980 510 L 11983 503 L 12077 503 L 12080 510 L 12077 517 L 11983 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12030" xml:space="preserve" y="510">
+d000000...
+<title>d00000000000</title>
+</text>
+<path d="M 12080 510 L 12083 503 L 12177 503 L 12180 510 L 12177 517 L 12083 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12130" xml:space="preserve" y="510">
+d400000...
+<title>d40000000000</title>
+</text>
+<path d="M 12180 510 L 12183 503 L 12277 503 L 12280 510 L 12277 517 L 12183 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12230" xml:space="preserve" y="510">
+d800000...
+<title>d80000000000</title>
+</text>
+<path d="M 12280 510 L 12283 503 L 12377 503 L 12380 510 L 12377 517 L 12283 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12330" xml:space="preserve" y="510">
+dc00000...
+<title>dc0000000000</title>
+</text>
+<path d="M 12380 510 L 12383 503 L 12477 503 L 12480 510 L 12477 517 L 12383 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12430" xml:space="preserve" y="510">
+e000000...
+<title>e00000000000</title>
+</text>
+<path d="M 12480 510 L 12483 503 L 12577 503 L 12580 510 L 12577 517 L 12483 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12530" xml:space="preserve" y="510">
+e400000...
+<title>e40000000000</title>
+</text>
+<path d="M 12580 510 L 12583 503 L 12677 503 L 12680 510 L 12677 517 L 12583 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12630" xml:space="preserve" y="510">
+e800000...
+<title>e80000000000</title>
+</text>
+<path d="M 12680 510 L 12683 503 L 12777 503 L 12780 510 L 12777 517 L 12683 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12730" xml:space="preserve" y="510">
+ec00000...
+<title>ec0000000000</title>
+</text>
+<path d="M 12780 510 L 12783 503 L 12877 503 L 12880 510 L 12877 517 L 12783 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12830" xml:space="preserve" y="510">
+f000000...
+<title>f00000000000</title>
+</text>
+<path d="M 12880 510 L 12883 503 L 12977 503 L 12980 510 L 12977 517 L 12883 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="12930" xml:space="preserve" y="510">
+f400000...
+<title>f40000000000</title>
+</text>
+<path d="M 12980 510 L 12983 503 L 13077 503 L 13080 510 L 13077 517 L 12983 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13030" xml:space="preserve" y="510">
+f800000...
+<title>f80000000000</title>
+</text>
+<path d="M 13080 510 L 13083 503 L 13177 503 L 13180 510 L 13177 517 L 13083 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13130" xml:space="preserve" y="510">
+fc00000...
+<title>fc0000000000</title>
+</text>
+<path d="M 13180 510 L 13183 503 L 13277 503 L 13280 510 L 13277 517 L 13183 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13230" xml:space="preserve" y="510">
+0000000...
+<title>000000000000</title>
+</text>
+<path d="M 13280 510 L 13283 503 L 13377 503 L 13380 510 L 13377 517 L 13283 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13330" xml:space="preserve" y="510">
+0400000...
+<title>040000000000</title>
+</text>
+<path d="M 13380 510 L 13383 503 L 13477 503 L 13480 510 L 13477 517 L 13383 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13430" xml:space="preserve" y="510">
+0800000...
+<title>080000000000</title>
+</text>
+<path d="M 13480 510 L 13483 503 L 13577 503 L 13580 510 L 13577 517 L 13483 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13530" xml:space="preserve" y="510">
+0c00000...
+<title>0c0000000000</title>
+</text>
+<path d="M 13580 510 L 13583 503 L 13677 503 L 13680 510 L 13677 517 L 13583 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13630" xml:space="preserve" y="510">
+1000000...
+<title>100000000000</title>
+</text>
+<path d="M 13680 510 L 13683 503 L 13777 503 L 13780 510 L 13777 517 L 13683 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13730" xml:space="preserve" y="510">
+1400000...
+<title>140000000000</title>
+</text>
+<path d="M 13780 510 L 13783 503 L 13877 503 L 13880 510 L 13877 517 L 13783 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13830" xml:space="preserve" y="510">
+1800000...
+<title>180000000000</title>
+</text>
+<path d="M 13880 510 L 13883 503 L 13977 503 L 13980 510 L 13977 517 L 13883 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="13930" xml:space="preserve" y="510">
+1c00000...
+<title>1c0000000000</title>
+</text>
+<path d="M 13980 510 L 13983 503 L 14077 503 L 14080 510 L 14077 517 L 13983 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14030" xml:space="preserve" y="510">
+2000000...
+<title>200000000000</title>
+</text>
+<path d="M 14080 510 L 14083 503 L 14177 503 L 14180 510 L 14177 517 L 14083 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14130" xml:space="preserve" y="510">
+2400000...
+<title>240000000000</title>
+</text>
+<path d="M 14180 510 L 14183 503 L 14277 503 L 14280 510 L 14277 517 L 14183 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14230" xml:space="preserve" y="510">
+2800000...
+<title>280000000000</title>
+</text>
+<path d="M 14280 510 L 14283 503 L 14377 503 L 14380 510 L 14377 517 L 14283 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14330" xml:space="preserve" y="510">
+2c00000...
+<title>2c0000000000</title>
+</text>
+<path d="M 14380 510 L 14383 503 L 14477 503 L 14480 510 L 14477 517 L 14383 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14430" xml:space="preserve" y="510">
+3000000...
+<title>300000000000</title>
+</text>
+<path d="M 14480 510 L 14483 503 L 14577 503 L 14580 510 L 14577 517 L 14483 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14530" xml:space="preserve" y="510">
+3400000...
+<title>340000000000</title>
+</text>
+<path d="M 14580 510 L 14583 503 L 14677 503 L 14680 510 L 14677 517 L 14583 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14630" xml:space="preserve" y="510">
+3800000...
+<title>380000000000</title>
+</text>
+<path d="M 14680 510 L 14683 503 L 14777 503 L 14780 510 L 14777 517 L 14683 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14730" xml:space="preserve" y="510">
+3c00000...
+<title>3c0000000000</title>
+</text>
+<path d="M 14780 510 L 14783 503 L 14877 503 L 14880 510 L 14877 517 L 14783 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14830" xml:space="preserve" y="510">
+4000000...
+<title>400000000000</title>
+</text>
+<path d="M 14880 510 L 14883 503 L 14977 503 L 14980 510 L 14977 517 L 14883 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="14930" xml:space="preserve" y="510">
+4400000...
+<title>440000000000</title>
+</text>
+<path d="M 14980 510 L 14983 503 L 15077 503 L 15080 510 L 15077 517 L 14983 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15030" xml:space="preserve" y="510">
+4800000...
+<title>480000000000</title>
+</text>
+<path d="M 15080 510 L 15083 503 L 15177 503 L 15180 510 L 15177 517 L 15083 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15130" xml:space="preserve" y="510">
+4c00000...
+<title>4c0000000000</title>
+</text>
+<path d="M 15180 510 L 15183 503 L 15277 503 L 15280 510 L 15277 517 L 15183 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15230" xml:space="preserve" y="510">
+5000000...
+<title>500000000000</title>
+</text>
+<path d="M 15280 510 L 15283 503 L 15377 503 L 15380 510 L 15377 517 L 15283 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15330" xml:space="preserve" y="510">
+5400000...
+<title>540000000000</title>
+</text>
+<path d="M 15380 510 L 15383 503 L 15477 503 L 15480 510 L 15477 517 L 15383 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15430" xml:space="preserve" y="510">
+5800000...
+<title>580000000000</title>
+</text>
+<path d="M 15480 510 L 15483 503 L 15577 503 L 15580 510 L 15577 517 L 15483 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15530" xml:space="preserve" y="510">
+5c00000...
+<title>5c0000000000</title>
+</text>
+<path d="M 15580 510 L 15583 503 L 15677 503 L 15680 510 L 15677 517 L 15583 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15630" xml:space="preserve" y="510">
+6000000...
+<title>600000000000</title>
+</text>
+<path d="M 15680 510 L 15683 503 L 15777 503 L 15780 510 L 15777 517 L 15683 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15730" xml:space="preserve" y="510">
+6400000...
+<title>640000000000</title>
+</text>
+<path d="M 15780 510 L 15783 503 L 15877 503 L 15880 510 L 15877 517 L 15783 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15830" xml:space="preserve" y="510">
+6800000...
+<title>680000000000</title>
+</text>
+<path d="M 15880 510 L 15883 503 L 15977 503 L 15980 510 L 15977 517 L 15883 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="15930" xml:space="preserve" y="510">
+6c00000...
+<title>6c0000000000</title>
+</text>
+<path d="M 15980 510 L 15983 503 L 16077 503 L 16080 510 L 16077 517 L 15983 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16030" xml:space="preserve" y="510">
+7000000...
+<title>700000000000</title>
+</text>
+<path d="M 16080 510 L 16083 503 L 16177 503 L 16180 510 L 16177 517 L 16083 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16130" xml:space="preserve" y="510">
+7400000...
+<title>740000000000</title>
+</text>
+<path d="M 16180 510 L 16183 503 L 16277 503 L 16280 510 L 16277 517 L 16183 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16230" xml:space="preserve" y="510">
+7800000...
+<title>780000000000</title>
+</text>
+<path d="M 16280 510 L 16283 503 L 16377 503 L 16380 510 L 16377 517 L 16283 517 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="16330" xml:space="preserve" y="510">
+7c00000...
+<title>7c0000000000</title>
+</text>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="start" x="3" xml:space="preserve" y="530">
+   .overrun
+<title>top.outputs.overrun</title>
+</text>
+<path d="M 230 530 L 230 537 L 16380 537 L 16380 530" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="start" x="3" xml:space="preserve" y="550">
 .reset
 <title>top.reset</title>
 </text>
-<rect fill="#1C400C" height="14" stroke="none" width="49" x="231" y="363"/>
-<path d="M 230 370 L 230 363 L 281 363 L 281 370" fill="none" stroke="#56C126" stroke-width="1"/>
-<path d="M 281 370 L 281 377 L 16380 377 L 16380 370" fill="none" stroke="#56C126" stroke-width="1"/>
+<rect fill="#1C400C" height="14" stroke="none" width="49" x="231" y="543"/>
+<path d="M 230 550 L 230 543 L 281 543 L 281 550" fill="none" stroke="#56C126" stroke-width="1"/>
+<path d="M 281 550 L 281 557 L 16380 557 L 16380 550" fill="none" stroke="#56C126" stroke-width="1"/>
 </svg>
 </p>

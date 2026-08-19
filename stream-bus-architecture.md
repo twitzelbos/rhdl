@@ -8,6 +8,32 @@ The plan rests on three observations. First, half of the existing `rhdl-fpga::st
 
 ---
 
+## 1.1 — Correction: two types shipped, not one
+
+**This document was written before the two-family split was settled, and describes a single `RCStream<T, F, D>`. That type does not exist.** What shipped is:
+
+| type | used in | domain |
+|---|---|---|
+| `RCStream<T, F>` | `Synchronous` widgets | none — see below |
+| `AsyncRCStream<T, F, D: Domain>` | `Circuit` widgets | `Signal<_, D>` on both `data` and `ready` |
+
+with `bus::lift::<D>()` / `bus::lower()` between them, and `rcstream::cdc::RCStreamCdc<T, F, W, R, N>` for the actual crossing.
+
+**Why the synchronous form carries no `D`.** A `Synchronous` widget receives one implicit `ClockReset` that the framework fans out to all children, so everything inside is single-domain *by construction* — `Bits<8>` does not carry a domain there and neither does anything else. Two domains cannot be expressed inside one `Synchronous` widget, so there is nothing for a type parameter to catch. Adding `D` would make every widget domain-monomorphic (`Nco<Red>` and `Nco<Blue>` as distinct types emitting identical RTL) for no gain.
+
+**Where the enforcement actually lives.** A synchronous widget acquires a domain when it is instantiated via `Adapter<C, D>`, which surfaces the implicit clock as `Signal<ClockReset, D>` and stamps the ports as `Signal<C::I, D>` / `Signal<C::O, D>`. Wiring a Red-adapted source into a Blue-adapted sink is then a plain `rustc` type error:
+
+```
+error[E0308]: mismatched types
+   |     d.dst.input = q.src;
+   |     -----------   ^^^^^ expected `Signal<RCStream<Bits<8>, ()>, Blue>`,
+   |                            found `Signal<RCStream<Bits<8>, ()>, Red>`
+```
+
+Note that `Adapter` is a *promise*: by using it you assert the inputs really are synchronous with that clock. The type system then holds you to the assertion everywhere downstream, but does not verify the initial claim — the same trust boundary as `Signal::val()`.
+
+Read the rest of this document with `RCStream<T, F, D>` meaning "the bus, in whichever of the two forms the context calls for".
+
 ## 1 — Motivation
 
 Every non-trivial RHDL design sends data between kernels. Today that data flow is expressed in three different idioms:
@@ -118,7 +144,7 @@ Three deliberate properties:
 
 1. **The validity bit is `Option<Item<T, F>>::is_some()`.** No separate TVALID. The type carries it. The protocol is, literally, an `Option`-encoded signal in one direction and a `bool` in the other.
 2. **The framing parameter `F` is generic.** It replaces TLAST, TUSER, TID, TDEST, TKEEP, and TSTRB combined.
-3. **The clock domain `D` is part of the type.** Crossing domains without explicit retiming is a compile error, exactly like every other signal in RHDL.
+3. **The clock domain is enforced, but not on the synchronous type.** See §1.1 — `RCStream<T, F>` has no `D`, because a `Synchronous` widget has exactly one implicit clock and nothing inside it carries a domain. The domain-typed form is `AsyncRCStream<T, F, D>`, used in `Circuit` contexts, where crossing domains without explicit retiming is a compile error exactly like every other signal in RHDL.
 
 Default for `F` is `()` (no framing). Common idioms:
 
