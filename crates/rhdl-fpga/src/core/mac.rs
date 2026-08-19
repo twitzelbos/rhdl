@@ -259,12 +259,19 @@ mod tests {
     }
 
     // Tier 3 — HDL emission length sanity check
+    //
+    // Shrank by 122 characters when `XMul` stopped pre-widening its
+    // operands to the result width: the two `Cast{Resize}` ops per
+    // multiply are gone, and the emitted multiply is now `8x8` rather than
+    // `16x16`. Operand widths are what decide a multiply's DSP cost, so
+    // this widget benefits from that change even though it is not what the
+    // change was written for.
     #[test]
     fn test_vlog_generation() -> miette::Result<()> {
         let uut = MacUnit::<8, 24>::default();
         let desc = uut.descriptor("top".into())?;
         let hdl = desc.hdl()?.modules.pretty();
-        let expect = expect!["2216"];
+        let expect = expect!["2094"];
         expect.assert_eq(&hdl.len().to_string());
         Ok(())
     }

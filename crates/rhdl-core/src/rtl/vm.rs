@@ -16,7 +16,7 @@ use crate::{
 use super::{
     Object,
     object::LocatedOpCode,
-    runtime_ops::{binary, unary},
+    runtime_ops::{binary_at_result_width, unary},
     spec::{Assign, Binary, OpCode, Operand},
 };
 
@@ -37,16 +37,24 @@ impl VMState<'_> {
             err_span: symbols.span(loc).into(),
         }))
     }
+    /// Evaluate a binary op, honouring operands narrower than the result.
+    ///
+    /// `result_bits` is the declared width of the destination register,
+    /// which is what fixes the operation's width in the emitted Verilog.
+    /// Passing it here is what keeps this interpreter in agreement with
+    /// `iverilog` for a multiply whose operands were not pre-widened --
+    /// see `binary_at_result_width`.
     fn binary(
         &self,
         op: AluBinary,
         arg1: BitString,
         arg2: BitString,
+        result_bits: usize,
         loc: SourceLocation,
     ) -> Result<BitString> {
         let arg1: TypedBits = arg1.into();
         let arg2: TypedBits = arg2.into();
-        match binary(op, arg1, arg2) {
+        match binary_at_result_width(op, arg1, arg2, result_bits) {
             Ok(result) => Ok(result.into()),
             Err(e) => Err(self.raise_ice(ICE::BinaryOperatorError(Box::new(e)), loc)),
         }
@@ -96,7 +104,8 @@ fn execute_block(ops: &[LocatedOpCode], state: &mut VMState) -> Result<()> {
             }) => {
                 let arg1 = state.read(*arg1, loc)?;
                 let arg2 = state.read(*arg2, loc)?;
-                let result = state.binary(*op, arg1, arg2, loc)?;
+                let result_bits = state.obj.kind(*lhs).bits();
+                let result = state.binary(*op, arg1, arg2, result_bits, loc)?;
                 state.write(*lhs, result, loc)?;
             }
             OpCode::Case(Case {

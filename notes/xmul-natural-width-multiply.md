@@ -8,9 +8,9 @@ operands to the product width and emits an equal-width multiply. Emitting
 the multiply at natural operand widths instead would let vendor DSP
 inference see an `18×14` product as `18×14` rather than as `32×32`.
 
-**Status:** proposal, not implemented. Compiler-level, so per CLAUDE.md
-§11.1 it is its own PR with its own Justification section. This brief is
-the design input for that PR.
+**Status: IMPLEMENTED.** Kept as the design record; the sections below are
+the original proposal, and "Outcome" at the end records what shipped and
+how the open questions resolved.
 
 ## How it was found
 
@@ -204,3 +204,95 @@ So all DSP mapping today is vendor inference from behavioural RTL. That is
 a reasonable place to be, and it makes natural-width emission more
 valuable rather than less: while inference is the only mechanism, the
 quality of what is handed to the inferencer is the only lever available.
+
+---
+
+# Outcome (implemented 2026-08-19)
+
+## What shipped
+
+Three changes, all small:
+
+1. **`compiler/lower_rhif_to_rtl.rs`** — `make_xadd_or_xmul` no longer
+   emits the two `Cast{Resize}` ops for `XMul`. `XAdd` keeps them.
+2. **`rtl/runtime_ops.rs`** — new `binary_at_result_width`, which resizes
+   operands to the result width for arithmetic and bitwise ops and leaves
+   shifts and comparisons alone.
+3. **`rtl/vm.rs`** and **`rtl_passes/constant_propagation.rs`** — both now
+   evaluate at the destination width.
+
+Measured on `dsp::nco::sin_cos_linear_interp`, the fine-rotation multiply
+across the whole sequence of changes:
+
+| stage | emitted multiply |
+|---|---|
+| originally | `48 × 48` |
+| after the widget stopped resizing to `INT_W` | `32 × 32` |
+| after this change | **`18 × 14`** |
+
+`18 × 14` is a single DSP48E1 port pair. Both widget and compiler changes
+were needed: the first removed an explicit `resize` in the kernel, the
+second an implicit one in the lowering.
+
+## How the open questions resolved
+
+1. **Where was the extension inserted?** RHIF → RTL, as two explicit
+   `Cast{Resize}` ops to the result width. Not the printer, not RTL → NTL.
+2. **Does NTL bit-blast, making this moot?** No. NTL's `Vector` op carries
+   `arg1`/`arg2` as *wire vectors*, so it already represents unequal widths,
+   and `ntl/hdl.rs` emits `$signed(a) * $signed(b)` from them without
+   caring. **No NTL change was needed at all.**
+3. **Does any pass assume equal-width multiply operands?** Three consumers
+   assumed it *implicitly*, by taking the result width from an operand:
+   `rtl/vm.rs`, `rtl_passes/constant_propagation.rs`, and — via
+   `rhif::runtime_ops::mul`, which returns a result of `a.len()` — anything
+   calling into it. Fixed centrally in `binary_at_result_width` so all
+   consumers inherit it. **`lower_multiply_to_shift` needed no change**, and
+   that is now tested rather than assumed (see below).
+4. **Should `xadd`/`xsub` get the same treatment?** **No**, deliberately.
+   An adder's operand widths are not a slice cost, so the change would be
+   churn without benefit, and one feature per PR (§11.1) argues for
+   leaving it. The asymmetry is documented at the `if` in
+   `make_xadd_or_xmul`.
+
+## What made this much safer than expected
+
+- **Mixed signedness is already impossible.** `xadd_xmul_kind` admits only
+  `(Bits, Bits)` and `(Signed, Signed)`, so there is no case where one
+  operand needs zero-extension and the other sign-extension. This was the
+  main hazard the brief anticipated and it does not exist.
+- **RTL `Binary` never had a blanket equal-width invariant.** Shifts have
+  always carried an 8-bit count against a wide value. So this generalises
+  an existing property rather than introducing a new one — now documented
+  on `rtl::spec::Binary`, which per `architecture.md` is the source of
+  truth for that IR.
+- **The change is a no-op for every pre-existing program.** Before it, the
+  only binaries with operands narrower than their result were shifts, which
+  `binary_at_result_width` excludes; every other binary had all three
+  widths equal, so the resize returns the operand unchanged.
+
+## Validation
+
+- **Mutation-verified load-bearing.** Reverting `rtl/vm.rs` to the
+  width-unaware `binary` fails both exhaustive `xmul` tests immediately.
+- **Honest gap:** the `constant_propagation` change is **defensive and
+  unexercised**. RHIF constant propagation folds any two-literal `Binary`
+  before RTL lowering runs, so an all-literal `XMul` cannot reach the RTL
+  pass from a kernel. Mutating that line breaks no test. It is still the
+  correct call — the pass runs after stage-2 passes that can literalise an
+  operand — but it is not covered, and the code says so.
+- **Loophole closed and tested:** `lower_multiply_to_shift` rewrites a
+  `Mul` by a one-bit literal into a `Shl`, and could previously only see
+  operands as wide as the result. `test_xmul_by_power_of_two_literal` and
+  its unsigned twin exercise it exhaustively.
+- **No VCD digest moved anywhere.** Only two HDL snapshots did:
+  `sin_cos_linear_interp` (module `top` 198 → 181 lines, four `Cast` ops
+  gone, module count/names/structure identical) and nothing else. That is
+  the evidence the semantics are unchanged.
+
+## Still not achieved
+
+RHDL still does not **instantiate** DSP48E1 primitives — this improves what
+vendor inference is handed, it does not replace inference. The `Target` /
+`primitive!` machinery in `vendor-primitive-architecture.md` remains
+unshipped; there is no `trait Target` and no `hdl_for` in `rhdl-core`.
