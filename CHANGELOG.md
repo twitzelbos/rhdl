@@ -31,6 +31,78 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-19 — `dsp::nco` widths become generic; three configurations above 18 effective bits
+
+**Paths:** `crates/rhdl-fpga/src/dsp/nco/{sin_cos_linear_interp,composite,latency}.rs`, `examples/{nco,sin_cos_linear_interp}.rs`, `notes/xmul-natural-width-multiply.md` (new).
+
+**Why this, why now:** the hardcoded `18`/`22`/`12`/`48` in the phase-to-amplitude stage were spotted during the `dsp` audit. `18` was chosen because it is the DSP48E1's native multiplier port width — a good reason — but it was baked in, and the question "can we get true bitwidth above 18?" could not be answered without changing the source.
+
+**Design decisions:**
+
+- **The stated blocker was false, and that mattered.** The module claimed generic widths "would require deriving that constant inside a kernel from const generics, which the kernel language cannot do." `dsp/mixer/rounding.rs` — same tree, written two days later — already does exactly that: `bits::<PROD_W>(1 << (DROP - 1))` is a const-generic-derived constant inside a kernel, and `>> bits::<8>(DROP as u128)` a const-generic shift that const-folds to a slice. The real obstacle was narrower: the scaling constant involves 2π, `const fn` cannot do floats on stable, **and** `#[kernel]` resolves a call expression as a kernel invocation, so a helper `const fn` called from a kernel body fails with "expected type, found function".
+- **Let the Q-point track `TOTAL_W`, and the constant stops depending on the configuration.** `K = 2π·2^(TOTAL_W+10) / 2^TOTAL_W = 2π·2^10 = 6434` at every width. So `DELTA_K` is a plain `const` with no function to write, and the configuration-dependence moves into a const-generic shift that costs nothing. This also fixes a real defect in the obvious formulation: with the Q-point pinned at 32 the factor decays to 402 by `TOTAL_W = 26`, and its relative error grows 2.8e-6 → 3.1e-4, capping SFDR near −120 dBc however wide `AMP_W` gets.
+- **`Nco` is generic too.** Otherwise a wider phase-to-amplitude stage is unreachable from the assembled oscillator and "more bits" stays theoretical at the top level. The kernel's literal `>> 26` becomes a `TRUNC` generic, checked against `PHASE_W - TOTAL_W` in `Default` for *every* instantiation rather than only for the one the old `const _: () = assert!` covered.
+- **Four validated configurations, not one generic and three aliases.** Each gets the headroom property, model-agrees-with-widget, both `iverilog` round trips, and a measured effective-bit figure. A type alias that has never been synthesised is a claim, not a configuration.
+- **The multiply is emitted at natural width.** The kernel resized both operands to `INT_W` before multiplying and emitted a 48×48 signed multiply — six to nine DSP48E1 slices absent pruning. Forming the product with `DynBits::xmul` brings the variable × variable multiply to 32×32 and leaves only the constant scale (which lowers to shift-adds) wider. `emitted_multiply_operands_are_natural_width` asserts it.
+- **Exhaustive headroom, accepting the runtime.** All 2^TOTAL_W phases at all four configurations, ~1.4e9 total. Sampling needs to know where to look, and this is the one property whose violation is catastrophic *and* silent.
+
+**Surprises and gotchas:**
+
+- ***** The fixed 2-LSB table headroom was not scale-invariant, and the wider configurations were broken until it was fixed. ***** This is the finding that justifies validating rather than merely defining them. Linear interpolation overshoots a peak by the second-order term it neglects: `π² · 2^(AMP_W − 2·TBL_W − 6)` LSB, growing with `AMP_W` and falling with the **square** of the coarse resolution. Predicted against measured: 0.62/**1**, 2.47/**3**, 9.87/**10**, 39.48/**40**. The old fixed 2 is correct *only* at 8/18. At 10/14/26/24 the sum overshoots by 3, wraps, and the output collapses to **−29.8 dBc and 4.7 effective bits** — the full-scale sign inversion the module docs warn about, reached simply by widening the type. `table_scale` is now derived from `overshoot_bound`, which at the default evaluates to `2^17 − 2`: exactly the hand-picked value it replaces.
+- **The parameterisation is provably behaviour-preserving.** Every Tier-3 snapshot and Tier-5 digest was byte-identical after the widths became generic — that is the evidence, not an assertion. The multiply narrowing later moved *only* the `sin_cos` HDL snapshot, by 25 lines inside module `top` with the module count, names and structure unchanged, and moved **no** digest.
+- **ENOB must come from SINAD, not SFDR.** The first version divided worst-spur SFDR by 6.02 and reported it as effective bits, which flatters by ignoring every spur but one. Corrected to total non-carrier power. The two happen to agree closely here because the error is concentrated — but the agreement is a property of this datapath, not of the arithmetic.
+- **`#[kernel]` allows turbofish on only `resize`, `xext`, `xshl`, `xshr`.** `as_signed_bits::<INT_W>()` is rejected; a `let` type annotation is the way through.
+- **`xmul` narrows the multiply but not as far as it could.** It sign-extends *both* operands to the product width, so an 18×14 product emits as 32×32. It knows both operand widths — it computes the result width from them — and discards that at emission. See the brief.
+
+**Measured** (on the widget, ENOB from SINAD):
+
+| alias | TBL/FINE/TOTAL/AMP/INT | table | SFDR | **ENOB** |
+|---|---|---|---|---|
+| `SinCosLinearInterpDefault` | 8/12/22/18/48 | 9 Kbit | −104.3 dBc | **17.50** |
+| `SinCosLinearInterp24` | 10/14/26/24/56 | 48 Kbit | −140.4 dBc | **23.05** |
+| `SinCosLinearInterp28` | 11/15/28/28/64 | 112 Kbit | −164.5 dBc | **27.02** |
+| `SinCosLinearInterp32` | 12/16/30/32/72 | 256 Kbit | −188.6 dBc | **31.03** |
+
+ENOB sits about a bit below `AMP_W` throughout, so all four are **amplitude-quantisation limited**: the interpolation residual is not the bottleneck anywhere, and the widths really are the knob. `AMP_W = 18` remains the only configuration whose product fits a single DSP48E1 port pair.
+
+**Validation:** 123 `dsp` tests, ~230 s. Seven new tests, per configuration rather than once. Both `iverilog` round trips at all four widths.
+
+**Follow-ups:**
+
+- `notes/xmul-natural-width-multiply.md` — emit multiplies at declared operand widths. Would make this an 18×14 product, one DSP48E1 slice instead of two. Compiler work, its own PR per §11.1.
+- **No vendor primitive is instantiated anywhere in the tree.** No `DSP48`, no `MULT18X18`, no `primitive!`; no `trait Target` and no `hdl_for` in `rhdl-core`. `vendor-primitive-architecture.md` has not shipped, so all DSP mapping is vendor inference from behavioural RTL.
+- `config::AMP_W`/`TOTAL_W` still re-export the default configuration's widths. Fine while `Nco` has a default, worth revisiting if a second configuration is ever deployed.
+
+---
+
+## 2026-08-19 — `dsp` audit: the mixers' ready contract, `ComplexMixer`'s artifacts, a spectral regression test
+
+**Paths:** `notes/dsp-nco-modulator-defects.md` (new), `crates/rhdl-fpga/src/dsp/mixer/{complex,complex_real,rounding}.rs`, `dsp/nco/{mod,sin_cos_linear_interp}.rs`, `examples/complex_mixer.rs` (new), `doc/complex_mixer.md` (new). Audit published as PR #82.
+
+**Why this, why now:** a read-only audit of `dsp::nco` and `dsp::mixer` covering source, tests, docs, artifacts and CHANGELOG. Everything was green at the time (110 tests); the findings are things green tests do not catch.
+
+**Design decisions:**
+
+- **`ready: true` in both mixers, plus an `overrun` output.** They wrote `ready: i.downstream_ready` into their output `RCStream`, where per `rcstream::bus` that field is the widget's *own* ready flowing out to upstream. The answer given was not merely someone else's, it was **false**: `out` is a DFF overwritten every cycle with no stall path, and there cannot be one because both inputs are isochronous. So `ready` is unconditionally true, and the consequence of always consuming is now reported — `Nco` already did exactly this one stage upstream.
+- **The criterion is the DFF, not the signal's direction.** An earlier draft of the audit also flagged `rcstream/util/combine.rs`. Wrong: `IqCombine` and `IqSplit` hold no register, so their ready toward upstream genuinely *is* their consumer's ready, and `split.rs` documents it as such. Four shapes, recorded in the note: source → `true`; combinational rewire → forward; elastic stage → its buffer's ready; **non-stalling registered stage → `true` plus an overrun report**.
+- **A spectral regression test that runs.** Every spur figure in `dsp::nco` came from `#[ignore]`d sweeps or `scratch_*` diagnostics, so no green test would have failed if a datapath change cost 20 dB of SFDR — the one property the architecture was chosen for.
+
+**Surprises and gotchas:**
+
+- **Both mixers' Tier-4/5 stimuli drove `downstream_ready` true throughout**, so the `iverilog` round trips and VCD digests would have covered `overrun` as a tied-off wire. That is how a codegen bug in a flag output survives a green Tier 4. Both now include a not-ready cycle and a starved cycle.
+- **`ComplexMixer` had all five test tiers but no example and no committed trace**, while its `vcd/` directory existed — half-way through the artifact contract, and the only `dsp` widget missing either.
+- **`nco/mod.rs` still bolded "Recommendation: `P = 13`"**, which sizes a *plain* table and was overturned 70 lines later by the interpolation measurement. It also still said phase-to-amplitude was "not built yet, on purpose", false since 2026-08-17.
+- **A new Tier-4 test needs `TestBenchOptions::default().skip(2)`** for any BRAM-backed widget: the output register is `x` in Verilog until the first read completes while the Rust simulator reports the initial value immediately. Omitting it fails at time 0 with an all-`x` *expected* value, which is the testbench working correctly.
+
+**Validation:** the spectral test is verified able to fail — restoring `TABLE_SCALE` to full scale makes word 524288 report **−0.00 dBc**, the spur exactly equal to the carrier, reproducing the module docs' wrap table.
+
+**Follow-ups:**
+
+- **`MODULATION_CONTROL` is the only latency constant never measured** — checked as arithmetic, because `ModulationInput` and `FrequencyRamp` sit outside `Nco`. Needs a decision on whether `Nco` is the deployment unit or a subassembly.
+- The convergent-rounding measurement that chose the rule lives only in `../ocra2/docs/modulator_design_note.md`; nothing in the tree reproduces it.
+
+---
+
 ## 2026-08-19 — `rcstream::util`: constant source, and the Iq split/combine pair
 
 **Paths:** `crates/rhdl-fpga/src/rcstream/util/{mod,constant,split,combine}.rs` (new), `rcstream/mod.rs`.
