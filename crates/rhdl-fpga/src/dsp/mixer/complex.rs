@@ -141,22 +141,16 @@ where
 
     let mut av = zero_a;
     let mut have_a = false;
-    match i.a {
-        Some(x) => {
-            av = x.data;
-            have_a = true;
-        }
-        None => {}
+    if let Some(x) = i.a {
+        av = x.data;
+        have_a = true;
     }
 
     let mut bv = zero_b;
     let mut have_b = false;
-    match i.b {
-        Some(x) => {
-            bv = x.data;
-            have_b = true;
-        }
-        None => {}
+    if let Some(x) = i.b {
+        bv = x.data;
+        have_b = true;
     }
 
     if have_a && have_b {

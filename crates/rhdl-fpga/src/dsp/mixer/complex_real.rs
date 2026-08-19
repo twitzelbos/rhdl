@@ -154,8 +154,8 @@ where
     d.out = q.out;
     d.starved = false;
 
-    // Tuple patterns are not accepted in kernel match arms, so the two
-    // streams are unpacked separately.
+    // Tuple patterns are not accepted in kernel match arms, so the
+    // two streams are unpacked separately.
     // Zero rather than dont_care: these are read on the merge path, and
     // reading a dont_care is a partial-initialisation error.
     let mut carrier = Iq::<A_W> {
@@ -163,22 +163,16 @@ where
         im: signed::<A_W>(0),
     };
     let mut have_carrier = false;
-    match i.carrier {
-        Some(c) => {
-            carrier = c.data;
-            have_carrier = true;
-        }
-        None => {}
+    if let Some(c) = i.carrier {
+        carrier = c.data;
+        have_carrier = true;
     }
 
     let mut envelope = signed::<B_W>(0);
     let mut have_envelope = false;
-    match i.envelope {
-        Some(e) => {
-            envelope = e.data.v;
-            have_envelope = true;
-        }
-        None => {}
+    if let Some(e) = i.envelope {
+        envelope = e.data.v;
+        have_envelope = true;
     }
 
     if have_carrier && have_envelope {
