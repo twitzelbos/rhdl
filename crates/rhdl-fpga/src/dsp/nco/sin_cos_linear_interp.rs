@@ -588,6 +588,135 @@ mod tests {
         assert!(compared > 2000, "only {compared} samples compared");
     }
 
+    /// Worst in-band spur of the **widget's own output**, per tuning
+    /// word.
+    ///
+    /// 65536-point Blackman-Harris on the cosine, carrier excluded with a
+    /// +/-8 bin guard. Mirrors the measurement in the module docs so the
+    /// numbers are comparable.
+    fn worst_spur_dbc(word: u128) -> f64 {
+        use crate::dsp::nco::model::{blackman_harris, fft};
+        const N: usize = 1 << 16;
+
+        let full = 1u128 << TOTAL_W;
+        let mut phase = 0u128;
+        let phases: Vec<u128> = (0..N + 4)
+            .map(|_| {
+                let p = phase;
+                phase = (phase + word) % full;
+                p
+            })
+            .collect();
+
+        let uut = SinCosLinearInterp::default();
+        let stream = phases
+            .iter()
+            .map(|p| In {
+                phase: bits::<TOTAL_W>(*p),
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .with_reset(1)
+            .clock_pos_edge(100);
+        let cos: Vec<i128> = uut
+            .run(stream)
+            .synchronous_sample()
+            .map(|s| s.output.cos.raw())
+            // Skip the reset cycle plus the pipeline fill, so no sample
+            // is the DFF/BRAM initial state rather than a real value.
+            .skip(4)
+            .take(N)
+            .collect();
+        assert_eq!(cos.len(), N, "not enough samples to transform");
+
+        let win = blackman_harris(N);
+        let mut re: Vec<f64> = cos.iter().zip(&win).map(|(c, w)| *c as f64 * w).collect();
+        let mut im = vec![0.0f64; N];
+        fft(&mut re, &mut im);
+
+        let mag: Vec<f64> = (0..N / 2)
+            .map(|k| (re[k] * re[k] + im[k] * im[k]).sqrt())
+            .collect();
+        let carrier = (1..N / 2)
+            .max_by(|a, b| mag[*a].total_cmp(&mag[*b]))
+            .unwrap();
+        let worst = mag
+            .iter()
+            .enumerate()
+            .take(N / 2)
+            .skip(1)
+            .filter(|(k, _)| (*k as i64 - carrier as i64).abs() > 8)
+            .map(|(_, m)| *m)
+            .fold(0.0f64, f64::max);
+        20.0 * (worst / mag[carrier]).log10()
+    }
+
+    /// **The spectral claim, as a test that actually runs.**
+    ///
+    /// Every spur figure in this module and in [`super::mod`]'s docs came
+    /// from `#[ignore]`d sweeps or `scratch_*` diagnostics, so no green
+    /// test would have failed if a datapath change cost 20 dB of SFDR.
+    /// The spur performance is the entire reason this architecture was
+    /// chosen over a bigger table and over CORDIC, so a regression in it
+    /// would otherwise surface as a bench measurement months later.
+    ///
+    /// Measured on the **widget**, not the model. The words are chosen
+    /// adversarially: `model`'s docs record that every worst-case word
+    /// found has its truncated remainder at a pure power of two or its
+    /// complement, because a short remainder period concentrates the
+    /// error into few strong spurs. Uniform random sampling lands in the
+    /// benign regime and reports 20-30 dB too optimistic.
+    ///
+    /// The module docs' per-word table gives -104.0 to -106.8 dBc for
+    /// this configuration under the same measurement. The threshold sits
+    /// at -95 dBc: tight enough to catch a real regression, loose enough
+    /// that it is not measuring FFT leakage.
+    ///
+    /// **Verified able to fail** (measured, not assumed): setting
+    /// `TABLE_SCALE` to the full-scale `(1 << (AMP_W - 1)) - 1` makes the
+    /// interpolated sum wrap at the peaks, and word 524288 then reports
+    /// **-0.00 dBc** -- the spur exactly equal to the carrier, which is
+    /// the figure the module docs' wrap table predicts.
+    ///
+    /// # Two words, not twenty
+    ///
+    /// Measured across the three words originally tried, the results were
+    /// -104.30, -104.30 and -104.27 dBc: **word-independent to within
+    /// 0.03 dB.** That is itself informative -- at this configuration the
+    /// floor is set by amplitude quantisation and interpolation residual,
+    /// not by phase truncation, which is what one expects when the fine
+    /// rotation is exact to second order and suppresses truncation spurs
+    /// below the quantisation floor.
+    ///
+    /// So more words buy no discrimination here, only runtime (each is a
+    /// 65536-sample simulation). Two are kept rather than one so that a
+    /// future retuning which *does* reintroduce word dependence is
+    /// visible as a divergence between them.
+    #[test]
+    fn worst_in_band_spur_is_below_the_threshold() {
+        const THRESHOLD_DBC: f64 = -95.0;
+        // 1 << 19 is the worst case in the module docs' wrap table.
+        // 1234567 is an innocuous-looking odd word, included because the
+        // wrapping failure was never confined to round numbers.
+        for word in [524_288u128, 1_234_567] {
+            let dbc = worst_spur_dbc(word);
+            assert!(
+                dbc < THRESHOLD_DBC,
+                "tuning word {word}: worst in-band spur {dbc:.1} dBc exceeds \
+                 {THRESHOLD_DBC:.1} dBc.  The module docs claim -104 dBc or \
+                 better for this configuration.  A figure near 0 dBc means \
+                 the interpolated sum is wrapping at the peaks (check \
+                 TABLE_SCALE); a figure in the -60s means the fine rotation \
+                 is degraded (check DELTA_K or the attribute delay)."
+            );
+            assert!(
+                dbc > -200.0,
+                "word {word} reported {dbc:.1} dBc, which is not a real \
+                 measurement -- the carrier search or the windowing is broken"
+            );
+        }
+    }
+
     /// Exhaustive proof that the one-LSB headroom in [`TABLE_SCALE`] is
     /// sufficient: across all 2²² phases neither interpolated sum leaves
     /// the 18-bit signed range, so the output cannot wrap.
