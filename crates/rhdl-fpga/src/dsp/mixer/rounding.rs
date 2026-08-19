@@ -12,6 +12,21 @@ use rhdl::prelude::*;
 /// direction is a systematic error correlated with the signal, which
 /// appears as a spur rather than as noise. See the module docs for the
 /// measured difference.
+///
+/// # Two preconditions on the widths
+///
+/// Neither is reachable at any current instantiation, and both are one
+/// width change away, so they are stated rather than left implicit.
+///
+/// 1. **`DROP >= 1`.** `1 << (DROP - 1)` underflows at `DROP == 0`, i.e.
+///    a no-narrowing instantiation. There is nothing to round in that
+///    case, so the right response is not to instantiate this.
+/// 2. **`v + half` must not overflow `PROD_W`.** The module docs explain
+///    why the *product* cannot overflow its natural width; this adds half
+///    an LSB on top of it, and relies on the product not using the full
+///    width. It holds comfortably at both mixers — `ComplexRealMixer`
+///    carries `A_W + B_W` for a product bounded by `2^(A_W+B_W-2)`, one
+///    spare bit, and `ComplexMixer` carries one more than that.
 #[kernel]
 #[doc(hidden)]
 pub fn convergent<const PROD_W: usize, const OUT_W: usize, const DROP: usize>(

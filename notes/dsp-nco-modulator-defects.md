@@ -32,12 +32,11 @@ code, two validation gaps, and some documentation drift.
 | # | Finding | Severity |
 |---|---|---|
 | 1 | `ComplexMixer` has no example and no committed waveform trace | **contract violation** |
-| 2 | Both mixers put downstream's ready into the outgoing `stream.ready` | **correctness trap** |
-| 3 | Neither mixer reports an overrun, though both take `downstream_ready` | **correctness trap** |
-| 4 | `MODULATION_CONTROL` is the one latency constant never measured | validation gap |
-| 5 | No running regression test for any spectral claim | validation gap |
-| 6 | `nco/mod.rs` leads with a superseded recommendation | doc drift |
-| 7 | Four smaller items | minor |
+| 2 | Both mixers claim a ready they do not honour, and lose the sample silently | **correctness trap** |
+| 3 | `MODULATION_CONTROL` is the one latency constant never measured | validation gap |
+| 4 | No running regression test for any spectral claim | validation gap |
+| 5 | `nco/mod.rs` leads with a superseded recommendation | doc drift |
+| 6 | Four smaller items | minor |
 
 ---
 
@@ -80,10 +79,9 @@ lines to the module rustdoc.
 
 ---
 
-## 2 — Both mixers put downstream's ready into the outgoing `stream.ready`
+## 2 — Both mixers claim a ready they do not honour, and lose the sample silently
 
-**Severity:** correctness trap.  Not an active functional bug; actively
-misleading, and spreading.
+**Severity:** correctness trap.  Two symptoms of one defect.
 
 `rcstream/bus.rs:66-69` states the convention:
 
@@ -92,76 +90,72 @@ misleading, and spreading.
 >   - `ready` is the widget's ready flowing *out* to upstream
 >     (= "am I ready to accept next from upstream?").
 
-Both mixers put the opposite direction's signal in that field:
+Both mixers answer that question with downstream's ready:
 
 - `dsp/mixer/complex_real.rs:208` — `ready: i.downstream_ready`
 - `dsp/mixer/complex.rs:184` — `ready: i.downstream_ready`
 
-Compare the widgets that follow the convention:
+**The answer is false.**  Each mixer's `out` is a DFF that is
+overwritten every cycle whether or not downstream is ready — the
+kernels contain no stall path and cannot contain one, because both
+input streams are isochronous.  So the mixer *is* always ready to
+accept from upstream, and saying "ready only if my downstream is
+ready" misdescribes it.
 
-- `rcstream/map.rs:136` — `ready: q.input.ready` (the skid buffer's own ready)
-- `rcstream/relay.rs:137` — `o.ready = !q.inner.stop_out`
-- `rcstream/util/constant.rs:86` — `ready: true`, with docs explaining
-  it has no upstream to backpressure
-- `dsp/nco/composite.rs:198` — `ready: true`, with the comment *"`stream.ready`
-  is vacuously `true` — the NCO has no upstream to backpressure.  It is
-  present because the type carries both directions, not because it means
-  anything here."*
+The two symptoms:
 
-`Nco` gets this right and says why.  The mixers, written two days later,
-do not.
+1. **The claim is wrong.**  An upstream that believed it would hold its
+   sample while the mixer was not ready.  Nothing does today — the
+   mixers' inputs are bare `Option<Item<T, ()>>` with no ready path —
+   but the field is what a future `RCStreamRelay` insertion would read.
+2. **The consequence is unreported.**  Because the mixer consumes
+   unconditionally, a cycle with `downstream_ready` low loses the
+   registered sample outright.  `Nco` takes the same input and exposes
+   `overrun: !i.downstream_ready` (`nco/composite.rs:201`), documented:
 
-**Why it is not breaking today:** the mixers' inputs are bare
-`Option<Item<T, ()>>`, not `RCStream`, so there is no ready wire back to
-either upstream and nothing consumes the field.  **Why it still
-matters:** the field advertises a combinational ready pass-through that
-does not exist.  A future composition that wires this output's `ready`
-back to an `RCStreamRelay` upstream of the mixer would be feeding the
-relay the ready of a stage *past* the mixer — correct only by the
-accident that the mixer never stalls, and silently wrong the moment that
-stops being true.
+   > A sample was presented while `downstream_ready` was low, and is
+   > gone. [...] Surfaced because a silently dropped sample is exactly
+   > the failure this codebase has shipped before.
 
-**It is propagating.**  `rcstream/util/combine.rs:143`, from the
-2026-08-19 `rcstream::util` commit, copies the same pattern.
+   The mixers surface nothing.  On the transmit chain a lost sample is
+   reported at the oscillator and silent one stage later at the
+   modulator.  `dsp/mixer/mod.rs` and `complex_real.rs` discuss
+   starvation — one *input* missing — at length and say nothing about
+   downstream not being ready.
 
-**Fix:** `ready: true` in both mixers and in `combine`, with the `Nco`
-comment's reasoning.  These widgets are isochronous and never
-backpressure an upstream, so vacuously-ready is the honest value.
-Then `downstream_ready` is left doing nothing, which leads to finding 3.
+### The criterion, since it is easy to get backwards
 
----
+The right value for an outgoing `ready` is not decided by which
+direction the available signal came from.  It is decided by whether the
+widget consumes unconditionally:
 
-## 3 — Neither mixer reports an overrun, though both take `downstream_ready`
+| widget shape | correct outgoing `ready` | in the tree |
+|---|---|---|
+| source, no upstream | `true`, vacuously | `nco/composite.rs:198`, `rcstream/util/constant.rs:86` |
+| combinational rewire, no register | forward the consumer's ready | `rcstream/util/split.rs:140`, `combine.rs:143` |
+| elastic stage with a buffer | that buffer's own ready | `rcstream/map.rs:136`, `relay.rs:137` |
+| **non-stalling registered stage** | **`true`, plus an overrun report** | **the two mixers** |
 
-**Severity:** correctness trap — a dropped sample is silent at the
-modulator and reported at the NCO.
+`IqSplit` ANDs both consumers' readies and forwards them, with a doc
+comment naming it as the ready toward the upstream source; `IqCombine`
+is the mirror image.  Both are **correct** and neither needs changing:
+they hold no register, so their ready toward upstream genuinely *is*
+their consumer's ready.  An earlier draft of this report listed
+`combine.rs:143` as carrying the mixers' defect.  It does not — the
+superficial similarity is `i.downstream_ready` appearing in both, and
+the difference that matters is the DFF.
 
-`Nco` takes `downstream_ready` and exposes `overrun: !i.downstream_ready`
-(`nco/composite.rs:201`), documented at length:
-
-> A sample was presented while `downstream_ready` was low, and is gone.
-> [...] Surfaced because a silently dropped sample is exactly the
-> failure this codebase has shipped before.
-
-Both mixers take the same input, are equally isochronous, equally
-unable to stall — and do nothing with it except echo it into the field
-from finding 2.  `dsp/mixer/mod.rs` and `complex_real.rs` discuss
-starvation (one input missing) at length and say nothing at all about
-downstream not being ready.
-
-So on the transmit chain, a lost sample is reported at the oscillator
-and silent one stage later at the modulator.  That asymmetry is not
-argued for anywhere.
-
-**Fix:** add `overrun: bool` to both mixers' `Out`, mirroring `Nco`
-including the reset suppression at `composite.rs:205`, and a Tier-2
-test on the model of `composite::tests::a_lost_sample_is_reported`.
-This subsumes finding 2's leftover: `downstream_ready` then has a real
-consumer.
+**Fix:** `ready: true` in both mixers, carrying the `Nco` comment's
+reasoning, and `overrun: !i.downstream_ready` added to both `Out`
+structs with the reset suppression `Nco` uses at `composite.rs:205`.
+Plus a Tier-2 test on the model of
+`composite::tests::a_lost_sample_is_reported`.  The two changes are one
+fix: `ready: true` states that the widget always consumes, and `overrun`
+reports the consequence of having done so.
 
 ---
 
-## 4 — `MODULATION_CONTROL` is the one latency constant never measured
+## 3 — `MODULATION_CONTROL` is the one latency constant never measured
 
 **Severity:** validation gap, against the module's own stated standard.
 
@@ -211,7 +205,7 @@ unit or a subassembly.
 
 ---
 
-## 5 — No running regression test for any spectral claim
+## 4 — No running regression test for any spectral claim
 
 **Severity:** validation gap.
 
@@ -253,7 +247,7 @@ the tree reproduces them.
 
 ---
 
-## 6 — `nco/mod.rs` leads with a superseded recommendation
+## 5 — `nco/mod.rs` leads with a superseded recommendation
 
 **Severity:** documentation drift.  Live-looking advice that the built
 widget does not follow.
@@ -290,9 +284,9 @@ made, with a forward reference to the interpolation decision; update the
 
 ---
 
-## 7 — Minor items
+## 6 — Minor items
 
-**7a — `complex_real.rs:47` says "idle" for a cycle that emits a
+**6a — `complex_real.rs:47` says "idle" for a cycle that emits a
 sample.** The docs read:
 
 > So a mismatch sets `starved` and the output is idle for that cycle.
@@ -303,7 +297,7 @@ inline comment in the kernel says so clearly — but "idle" has a specific
 meaning in `rcstream/bus.rs:24` (`None` = idle, TVALID = 0) and this is
 not it.
 
-**7b — `rounding::convergent` has two undocumented preconditions.**
+**6b — `rounding::convergent` has two undocumented preconditions.**
 `dsp/mixer/rounding.rs:28` computes `v + half` at `PROD_W`, relying on
 the product not using its full width.  It holds at both instantiated
 configurations (`ComplexRealMixer` at `PROD_W = A_W + B_W` has one spare
@@ -314,7 +308,7 @@ underflows for `DROP = 0`, i.e. a no-narrowing instantiation, which no
 `const _: () = assert!` rules out.  Neither is reachable today; both are
 one width change away.
 
-**7c — `sin_cos_linear_interp_kernel` has no reset block.**
+**6c — `sin_cos_linear_interp_kernel` has no reset block.**
 `sin_cos_linear_interp.rs:295` takes `_cr: ClockReset` and has no
 `if cr.reset.any()` block, against CLAUDE.md §12 rule 12.  Defensible —
 the widget's state is entirely in the `delayed` DFF and the two BRAMs,
@@ -323,7 +317,7 @@ is the only kernel in `dsp` that does this and it carries no comment
 saying why, so the next reader has to re-derive that it is fine.  A
 one-line comment closes it.
 
-**7d — Five clippy warnings in `dsp` test code.**
+**6d — Five clippy warnings in `dsp` test code.**
 `iter().any()` where `contains()` fits at `frequency_composer.rs:241,245`
 and `phase_composer.rs:249,253`; a redundant `u128` cast at
 `lerp/fixed.rs:172`.  All in test code.  The crate carries ~340 warnings
@@ -372,15 +366,54 @@ Recorded so a later audit does not repeat the work:
   in the emitted Verilog and asserts 2 and 4 — a resource claim made
   checkable, exactly as `mixer/mod.rs` argues it must be.
 
+## Resolution (2026-08-19)
+
+All six findings are fixed. Recorded here so the note reads as a closed
+audit rather than an open list.
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | `ComplexMixer` artifacts | **Fixed.** `examples/complex_mixer.rs` + `doc/complex_mixer.md`, written as the companion to `complex_real_mixer`'s so the two show what a real operand changes. |
+| 2 | Mixer ready + overrun | **Fixed.** `ready: true` and an `overrun` output on both, plus Tier-4/5 stimuli that actually drive the flags. |
+| 3 | `MODULATION_CONTROL` unmeasured | **Fixed.** Decision taken: `Nco` stays a **subassembly**, per §8.4's local timing agent. A test-only `harness` module composes `ModulationInput` into `Nco` as a scheduler would and measures modulation-sample to `(sin, cos)`. Measured 4, and verified able to fail. |
+| 4 | No spectral regression | **Fixed.** `worst_in_band_spur_is_below_the_threshold`, on the widget, verified able to fail at −0.00 dBc. |
+| 5 | `nco/mod.rs` drift | **Fixed.** Superseded recommendation marked at the point it is made; module table replaced. |
+| 6 | Four minor items | **Fixed**, all four. |
+
+### What the audit did not find, and the work did
+
+Recorded because it is the strongest argument for the audit's own method
+being insufficient on its own:
+
+- **The interpolation headroom was not scale-invariant.** Reviewing the
+  source found nothing wrong with `TABLE_SCALE`; the exhaustive test
+  proved it correct *at the default configuration*, and the docs argued
+  convincingly that one LSB was exactly the overshoot. All true, and all
+  specific to 8/18. Parameterising the widths and then **validating** the
+  wider configurations is what surfaced it: at 10/14/26/24 the sum
+  overshoots by 3 LSB, wraps, and the output collapses to −29.8 dBc and
+  4.7 effective bits. Reading cannot find that; running can.
+- **The multiply was emitted at `INT_W`, not at operand width.** A 48×48
+  signed multiply, in a widget that picked `AMP_W = 18` *because* 18 is
+  the DSP48E1's native port width. Reading the kernel does not show this
+  — the resize looks like ordinary width bookkeeping. It took reading the
+  emitted Verilog, prompted by a question about whether vendor primitives
+  are instantiated at all. They are not; see
+  `notes/xmul-natural-width-multiply.md`.
+
+Both were found by asking what the hardware actually does, not by
+comparing the source against the contract. Worth remembering the next
+time an audit comes back with a clean bill on a numeric datapath.
+
 ## Suggested order of work
 
-1. Finding 1 — mechanical, closes the contract violation.
-2. Findings 2 and 3 together — one PR per `mixer` widget, or one PR for
-   both since it is a single coherent change to the same convention.
-   Include `rcstream/util/combine.rs:143` so the pattern stops
-   propagating.
-3. Finding 6 — documentation only.
-4. Finding 5 — one spectral regression test.
-5. Finding 4 — needs the `Nco`-scope decision first, so it should be
+1. Finding 2 — do this first, not second.  It changes both mixers' `Out`,
+   which invalidates their Tier-3 snapshots and Tier-5 digests, so doing
+   it before finding 1 means `complex_mixer`'s artifacts are generated
+   once against final behaviour rather than twice.
+2. Finding 1 — mechanical, closes the contract violation.
+3. Finding 5 — documentation only.
+4. Finding 4 — one non-ignored spectral regression test.
+5. Finding 6 — fold into whichever commit touches each file.
+6. Finding 3 — needs the `Nco`-scope decision first, so it should be
    raised with the user rather than chosen unilaterally.
-6. Finding 7 — fold into whichever PR touches each file.

@@ -237,14 +237,8 @@ mod tests {
             .synchronous_sample()
             .map(|s| s.output.raw())
             .collect();
-        assert!(
-            out.iter().any(|v| *v == 1000),
-            "master-only never appeared: {out:?}"
-        );
-        assert!(
-            out.iter().any(|v| *v == 1250),
-            "offset never appeared: {out:?}"
-        );
+        assert!(out.contains(&1000), "master-only never appeared: {out:?}");
+        assert!(out.contains(&1250), "offset never appeared: {out:?}");
         // And it must come back down -- an offset that latches would
         // pass both assertions above.
         let last = out.last().copied().unwrap();

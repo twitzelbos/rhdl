@@ -3,10 +3,33 @@
 //! Split deliberately: the pieces that carry an *invariant* are
 //! separate widgets, so each invariant is testable on its own.
 //!
-//! - [`phase_accumulator`] — the free-running master phase. Its one
-//!   job is that a phase offset never perturbs the master trajectory.
+//! | module | role | carries an invariant? |
+//! |---|---|---|
+//! | [`phase_accumulator`] | the free-running master phase | **yes** — a phase offset never perturbs the master trajectory |
+//! | [`phase_composer`] | §8.2 phase terms → `phase_offset` | no, an adder tree |
+//! | [`frequency_composer`] | §8.3 frequency terms → `frequency_word` | no, an adder tree |
+//! | [`sin_cos_linear_interp`] | phase → quadrature amplitude | **yes** — the interpolated sum cannot leave the output range |
+//! | [`ramp`] | §8.5 scheduled segments, ramps and chirps | **yes** — a sub-LSB step still moves |
+//! | [`modulation`] | §8.6 sample-synchronous frequency deviation | **yes** — an absent sample contributes zero, never hold-last |
+//! | [`composite`] | all of the above wired into one `Nco` | **yes** — the truncation takes the high bits |
+//! | [`config`] | the coupled numeric constants, as `const fn` | build-time assertions |
+//! | [`latency`] | §8.4 control latencies, measured not asserted | build-time assertions |
+//! | [`model`] | bit-accurate DDS + spur analysis (not a widget) | — |
 //!
-//! # Planned structure
+//! Note that [`ramp`] and [`modulation`] are **not** inside
+//! [`composite`]'s `Nco`. A scheduler wires their outputs into the
+//! frequency composer's `master` and `modulation` terms.
+//!
+//! **This split is deliberate**, decided rather than inherited: §8.4
+//! describes a local timing agent that composes these pieces and issues
+//! each control change at its own lead time, so `Nco` is a subassembly
+//! and the scheduler owns the wiring. The cost is that a composed
+//! latency crossing the boundary cannot be measured inside any one
+//! widget — so [`latency`]'s `harness` module builds exactly that wiring
+//! and measures [`latency::MODULATION_CONTROL`] through it. Any future
+//! term added outside `Nco` owes the same treatment.
+//!
+//! # Structure
 //!
 //! The accumulator is deliberately minimal. The control surface layers
 //! *around* it, and each layer is a plain adder tree or a small FSM
@@ -26,9 +49,8 @@
 //! provable on a widget with one register, rather than buried inside a
 //! block with a dozen control inputs.
 //!
-//! Both composers now exist -- [`phase_composer`] and
-//! [`frequency_composer`] -- and [`latency`] carries the §8.4 control
-//! latencies as compile-time constants, verified against simulation.
+//! [`latency`] carries the §8.4 control latencies as compile-time
+//! constants, each measured against simulation rather than asserted.
 //!
 //! **The two control paths do not share a lead time.** Phase reaches
 //! the output in [`latency::PHASE_CONTROL`] cycles and frequency in
@@ -40,11 +62,20 @@
 //!
 //! # Sizing the phase-to-amplitude stage
 //!
-//! Phase-to-amplitude conversion is **not built yet, on purpose** — the
-//! choice between a lookup table, a CORDIC, and a hybrid is a
-//! spur-performance question, and spur positions move with the tuning
-//! word. What *can* be settled up front is the sizing, because the
-//! target pins it down.
+//! > **This section is the historical record of how the architecture was
+//! > chosen, and its conclusion was superseded.** It sizes a *plain
+//! > lookup table*, and recommends `P = 13`. What was actually built is
+//! > [`sin_cos_linear_interp`] — a 10-bit coarse table plus first-order
+//! > interpolation, reaching −116 dBc from ~9 Kbit rather than 78 dB
+//! > from 32 Kbit. The pivot is recorded under "Linear interpolation vs
+//! > CORDIC" below, and that is the live decision. Read this section for
+//! > *why the sweep was necessary*, not for the sizing answer.
+//!
+//! When this was written, phase-to-amplitude conversion was not yet
+//! built, on purpose — the choice between a lookup table, a CORDIC, and
+//! a hybrid is a spur-performance question, and spur positions move with
+//! the tuning word. What *could* be settled up front was the sizing,
+//! because the target pins it down.
 //!
 //! ## Target: 60–70 dB SFDR, quadrature output
 //!
@@ -131,8 +162,16 @@
 //! | 12 | 68.3 | 71.9 | 104.7 | 1024 | 16 Kbit |
 //! | 13 | 74.3 | **78.1** | 110.1 | 2048 | 32 Kbit |
 //!
-//! **Recommendation: `P = 13`** — 78 dB worst case, 8 dB of margin over
-//! a 70 dB target, one BRAM36, sin and cos from the single table.
+//! **Recommendation (superseded): `P = 13`** — 78 dB worst case, 8 dB of
+//! margin over a 70 dB target, one BRAM36, sin and cos from the single
+//! table.
+//!
+//! This was the right answer *for a plain table*, and it is not what
+//! shipped. Interpolation attacks the truncation error rather than
+//! merely reducing it, so [`sin_cos_linear_interp`] beats this by 38 dB
+//! (−116.1 against −78.1) on 9 Kbit of table against 32 Kbit. See
+//! "Linear interpolation vs CORDIC" below for the measurement that
+//! overturned it.
 //!
 //! ### The band restriction buys nothing at worst case
 //!
