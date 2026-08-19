@@ -547,7 +547,7 @@ If the widget introduces a new concept (a new abstraction, a new IR feature, a n
 |---|---|---|
 | `cargo check --all` | type-check everything | yes, before any commit |
 | `cargo build --all` | full build | yes |
-| `cargo test --all` | run every test | yes |
+| `cargo test --all --no-fail-fast` | run every test | yes — **the flag is not optional, see below** |
 | `cargo clippy --all -- -D warnings` | lints | yes |
 | `cargo fmt --all` | format | yes |
 | `iverilog` | Verilog round-trip in Tier-4 tests | yes for widget work |
@@ -555,7 +555,37 @@ If the widget introduces a new concept (a new abstraction, a new IR feature, a n
 | `UPDATE_EXPECT=1 cargo test` | accept new `expect_test` snapshots | when changing IR/codegen |
 | `cargo run --example <name> --package rhdl-fpga` | regenerate trace `.md` | after behavioral changes |
 
-The `crates/Justfile` exposes `just coverage` for a coverage HTML report.
+The `crates/Justfile` exposes `just coverage` for a coverage HTML report and
+`just tree-clean` for the artifact check described below.
+
+### `cargo test --all` alone is not a full run
+
+**`cargo test` is fail-fast across test *binaries*.** One failing crate
+aborts the run before later crates are reached, and the summary looks like
+an ordinary failure rather than a truncated run. On 2026-08-19 three
+permanently-failing tests in `doc/book/src/code` were hiding the whole of
+`rhdl-fpga` from every workspace run — which is how a flaky test and a test
+that rewrote a committed artifact with random bytes both survived
+unnoticed.
+
+Always pass `--no-fail-fast`. If you report a workspace result, that result
+must come from a run that had the flag.
+
+### A full test run must leave the working tree clean
+
+Committed artifacts — traces under `doc/`, VCD type sidecars under `vcd/`,
+FSM diagrams — are refreshed by `cargo run --example …` and only *checked*
+by tests. A test may write one, but only if the bytes are identical every
+time; deterministic stimulus is what makes that true (`doc::DetRng`, never
+`rand::random`).
+
+The reason is that a dirty `git status` has to mean something. When a test
+rewrites an artifact with different bytes on every run, a genuinely changed
+waveform becomes indistinguishable from the churn, and the artifact stops
+being evidence of anything.
+
+`just tree-clean` checks it: run the suite, then require `git diff` to be
+empty. Do this before claiming a change is artifact-neutral.
 
 `Cargo.lock` is gitignored (see `.gitignore`); this is a library workspace.
 

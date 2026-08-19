@@ -31,6 +31,42 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-19 — Closing four coverage gaps: two artifact-writing tests, a vacuous drift check, and a masked workspace
+
+**Paths:** `crates/rhdl-core/src/rtl/runtime_ops.rs`, `compiler/rtl_passes/constant_propagation.rs`, `crates/rhdl-fpga/src/doc.rs`, `doc/book/src/code/src/{count_ones,timed/tracing}.rs`, `doc/book/src/code/time_tracing_waveform.svg`, `crates/Justfile`, `CLAUDE.md` §8.
+
+**Why this, why now:** #85 shipped with one gap flagged honestly. Investigating it turned up three more, two of which were the same bug class as each other and one of which was hiding the other two.
+
+**Design decisions:**
+
+- **Cover the *logic*, not the unreachable call site.** `binary_at_result_width`'s use in `constant_propagation` genuinely cannot be reached from a kernel — RHIF constant propagation folds two-literal binaries before RTL lowering runs. Rather than contrive reachability, the shared function gets six unit tests including exhaustive signed and unsigned narrow-operand multiplies. What stays uncovered is one line of delegation, not the arithmetic.
+- **The FSM drift check becomes read-only, and the two tests merge.** `refresh_and_check_fsm_diagram` writes the file and then verifies its own write, so it could never fail on staleness. Removing the write both fixes the race and restores the property the test was named for.
+- **`#[ignore]` for the IceStorm tests, matching the crate's own precedent** rather than inventing a tool-availability gate. `xor.rs` and `half_adder.rs` already do exactly this for the same toolchain; the three timing tests had been left out. Reasons are given, where the existing ones carry a bare `#[ignore]`.
+- **`DetRng` in place, not a move to an example.** The 2026-08-16 work's own precedent: making the generator deterministic leaves the call site exercising what it was written to exercise. The write *is* the point for a book figure, and with a fixed seed it is idempotent.
+
+**Surprises and gotchas:**
+
+- ***** The test that looked like the FSM drift guard was the reason there wasn't one. ***** `refresh_and_check_fsm_diagram` refreshes before checking, so a kernel change with a forgotten refresh shipped a stale rustdoc diagram silently. CLAUDE.md rule 14 requires a drift guard for `#[derive(FsmWidget)]` widgets; for the `#[fsm_doc]` path it was present in name only. The flake was the *symptom* that led to it — the writer raced a sibling reader in the same test binary.
+- ***** Three permanently-failing tests were hiding the entire rest of the workspace. ***** `cargo test --all` is fail-fast **across test binaries**, so the `count_ones` failures aborted every run before `rhdl-fpga` was reached. That is how a flaky test and a random-artifact-rewriting test both survived unnoticed, and it means several "workspace clean" statements made while developing #83 and #85 rested on truncated runs. **Use `--no-fail-fast`.**
+- **A mutation check caught a bad test written in the same sitting** — the second time this repo has recorded that. `shifts_are_not_widened` used width 8 throughout, so widening was a no-op and it passed with the exclusion removed: named for a property it never checked. With a 16-bit result, where widening would preserve the shifted-out bits, it catches the mutation.
+- **Two of the four gaps are the same bug class** — a test writing a committed artifact — and both were leftovers from a convention this repo established and documented on 2026-08-16. Neither crate was covered by that sweep: `doc.rs`'s FSM path postdates it, and `doc/book/src/code` was never in scope.
+- **A full test run is not a safe place to `git stash`.** One run during #85 was discarded because a stash landed mid-compile and part of it built against `main`; it reported failures that had already been fixed. Same shape as the merged-branch mistake: check the state you are operating on.
+
+**Validation:** `cargo test --all --no-fail-fast` — **3201 passed, 0 failed** across 143 suites, the first fully green workspace run in this line of work. `time_tracing_waveform.svg` verified byte-identical across three regenerations; the working tree is clean after a full run, which is the property that makes a dirty tree mean something again. Both mutations of `binary_at_result_width`'s widen/skip decision are caught. The FSM check run three consecutive times.
+
+**A guard, and a corrected instruction.** Following the 2026-08-16 precedent — that work added `tests/stall_lockstep_audit.rs` on the grounds that "reading is what let them in, so the check is mechanical now" — the same argument applies here, since both instances were found by noticing a dirty `git status`.
+
+A *syntactic* ban on writes was considered and rejected: every Tier-5 digest test legitimately writes its `.vcd.rhdl` sidecar, so a grep-based audit would flag ~100 correct sites. The invariant that actually matters is not "no writes" but **"a full test run leaves the tree clean"**, which is checkable directly. There are no CI workflows in this repo, so it lands as `just tree-clean` in `crates/Justfile`: refuse to start on a dirty tree, run the suite, then require `git status` to be empty, with a message naming the likely cause.
+
+**CLAUDE.md §8 is corrected too**, because the tooling table was part of the problem: it prescribed `cargo test --all`, which is fail-fast across binaries. It now prescribes `--no-fail-fast`, says the flag is not optional, and states the committed-artifact invariant with the reason — that a dirty `git status` has to mean something.
+
+**Follow-ups:**
+
+- The IceStorm tests remain unrun on any machine without the toolchain. CLAUDE.md calls `#[ignore]` for a missing tool "a temporary measure, not a permanent state"; a real fix detects the binaries and skips with a message, so they run where the tools exist.
+- `just tree-clean` is a command someone has to remember to run. It becomes a real guard only when there is CI to run it, and this repo has no workflows at all — worth deciding separately.
+
+---
+
 ## 2026-08-19 — Compiler: `XMul` emits its operands at their declared widths
 
 **Paths:** `crates/rhdl-core/src/compiler/lower_rhif_to_rtl.rs`, `rtl/runtime_ops.rs`, `rtl/vm.rs`, `rtl/spec.rs`, `compiler/rtl_passes/constant_propagation.rs`, `crates/rhdl/tests/dyn_bits.rs`, `doc/book/src/bits/dyn_bits.md`, `notes/xmul-natural-width-multiply.md`, plus two re-blessed snapshots (`dsp::nco::sin_cos_linear_interp`, `core::mac`).

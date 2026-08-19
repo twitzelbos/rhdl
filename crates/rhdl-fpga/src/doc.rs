@@ -82,30 +82,40 @@ where
     Ok(())
 }
 
-/// Refresh-and-check helper for the `#[fsm_doc]` workflow:
-/// write the current kernel's FSM diagram to the on-disk file
-/// AND verify the result matches.  Designed to be called from a
-/// `#[test]` so that `cargo test` becomes the refresh trigger —
-/// no separate `cargo run --example` step required.
+/// Refresh-and-check helper for the `#[fsm_doc]` workflow: write the
+/// current kernel's FSM diagram to the on-disk file, then verify the
+/// result matches.
 ///
-/// This is the Phase 3d ergonomic improvement on top of the
-/// strict [`assert_fsm_diagram_up_to_date`] check: instead of
-/// "fail loudly when the file is stale, ask the author to run an
-/// example", it just refreshes the file in place.
+/// # Call this from an example, never from a test
 ///
-/// Workflow per widget:
+/// It was originally documented the other way round — as a `#[test]` so
+/// that `cargo test` became the refresh trigger, saving a
+/// `cargo run --example` step. That turned out to be wrong twice over:
+///
+/// - **The check cannot fail on staleness.** Refreshing before verifying
+///   means it validates its own write, so a kernel change with a
+///   forgotten refresh ships a stale rustdoc diagram and nothing
+///   objects. The test that looked like the drift guard was the reason
+///   there wasn't one.
+/// - **It races any test that reads the same file.** Cargo runs tests in
+///   one binary in parallel, so a concurrent reader can observe the file
+///   mid-truncation. That was a real, recorded flake.
+///
+/// It also cuts against the convention set on 2026-08-16
+/// (*"`cargo test` no longer rewrites committed traces"*): committed
+/// artifacts are refreshed by `cargo run --example …` and only *checked*
+/// by tests, so that a dirty working tree means something.
+///
+/// So use this from a widget's example, alongside the waveform it already
+/// writes:
 ///
 /// ```ignore
-/// #[test]
-/// fn refresh_my_widget_diagram() {
-///     rhdl_fpga::doc::refresh_and_check_fsm_diagram::<MyWidget>("MyWidget_fsm.md")
-///         .unwrap();
-/// }
+/// // examples/my_widget.rs
+/// rhdl_fpga::doc::refresh_and_check_fsm_diagram::<MyWidget>("MyWidget_fsm.md")?;
 /// ```
 ///
-/// CI users who want strict "no-refresh, fail on drift" semantics
-/// (catching regressions in the renderer itself, for example)
-/// keep using [`assert_fsm_diagram_up_to_date`] directly.
+/// and check it from the test with [`assert_fsm_diagram_up_to_date`],
+/// which is read-only.
 pub fn refresh_and_check_fsm_diagram<W>(filename: &str) -> anyhow::Result<()>
 where
     W: rhdl::core::fsm::FsmWidget + SynchronousIO,
@@ -118,18 +128,17 @@ where
 /// the on-disk diagram file matches what [`write_fsm_diagram`]
 /// would produce *right now* against the current kernel.
 ///
-/// Call this from a widget test to guarantee that a kernel change
-/// + forgotten refresh step doesn't ship a stale rustdoc diagram.
-/// The check is byte-for-byte: any difference in SVG output
-/// (which includes node placement, labels, and edge geometry)
-/// fails the test with a hint to refresh.
+/// **This is the form tests should use.** It is read-only, so it
+/// catches both a kernel change with a forgotten refresh and a
+/// renderer-level regression (a change to the SVG layout algorithm
+/// fails it even when the FSM itself is unchanged). The check is
+/// byte-for-byte.
 ///
-/// For the typical author workflow (refresh + check from a test),
-/// prefer [`refresh_and_check_fsm_diagram`] — that variant
-/// rewrites the file in place so `cargo test` itself is the
-/// refresh trigger.  Use this strict variant when you want a
-/// no-refresh check that catches *renderer-level* regressions in
-/// CI (e.g., a change to the SVG layout algorithm).
+/// Do **not** call [`refresh_and_check_fsm_diagram`] from a test.
+/// Refreshing before checking means the check cannot fail on
+/// staleness, and writing a committed file from a test races any
+/// other test reading it — both of which happened here; see
+/// `fsm_doc_committed_diagram_matches_the_kernel`.
 ///
 /// Pairs with the `#[fsm_doc]` attribute macro, which removes the
 /// per-widget `#![doc = include_str!(...)]` boilerplate.  See
@@ -394,17 +403,36 @@ mod tests {
         assert!(msg.contains("missing"), "unexpected error: {msg}");
     }
 
-    /// Phase 3d: `cargo test` *itself* is the refresh trigger.  No
-    /// separate `cargo run --example fsm_doc_demo` step needed —
-    /// this test rewrites the on-disk file from the current kernel
-    /// AND verifies the result.  Authors get a single-command dev
-    /// cycle: edit kernel → `cargo test` → diagram is fresh and
-    /// included in the next `cargo doc` build.
+    /// The committed `#[fsm_doc]` diagram matches the current kernel.
+    ///
+    /// **Read-only, deliberately.** This test used to call
+    /// [`refresh_and_check_fsm_diagram`], rewriting the committed file
+    /// from the kernel and then verifying its own write. Two things were
+    /// wrong with that, and they compounded:
+    ///
+    /// 1. **It could not detect drift.** Refreshing before checking means
+    ///    the check always passes, so a kernel change with a forgotten
+    ///    refresh shipped a stale rustdoc diagram silently. The test that
+    ///    looked like the drift guard was the reason there wasn't one.
+    /// 2. **It raced with the reader.** A sibling test read the same file
+    ///    while this one truncated and rewrote it. Same binary, run in
+    ///    parallel by cargo, so the reader intermittently saw a partial
+    ///    file — the flake recorded in the CHANGELOG.
+    ///
+    /// It also violated the convention established on 2026-08-16
+    /// (*"`cargo test` no longer rewrites committed traces"*): every other
+    /// artifact in this crate is refreshed by `cargo run --example …` and
+    /// only *checked* by tests. This one had been left out.
+    ///
+    /// So the two tests are merged into this one, which reads and compares
+    /// and never writes. Refresh with
+    /// `cargo run --example fsm_doc_demo --package rhdl-fpga`.
     #[test]
-    fn fsm_doc_attribute_target_file_auto_refreshes_on_cargo_test() {
+    fn fsm_doc_committed_diagram_matches_the_kernel() {
         use crate::doc::demo::AutoDocMachine;
-        refresh_and_check_fsm_diagram::<AutoDocMachine>("AutoDocMachine_fsm.md").expect(
-            "refresh_and_check should rewrite + verify the file; if this fails, the renderer or extractor regressed",
+        assert_fsm_diagram_up_to_date::<AutoDocMachine>("AutoDocMachine_fsm.md").expect(
+            "the committed FSM diagram is stale or the renderer regressed; \
+             refresh with `cargo run --example fsm_doc_demo --package rhdl-fpga`",
         );
     }
 
@@ -1229,23 +1257,6 @@ mod tests {
                 ]
             );
         }
-    }
-
-    /// Strict variant — verifies the committed file matches what
-    /// the kernel produces *without* rewriting first.  Useful as a
-    /// CI canary that catches renderer regressions (a change to
-    /// the SVG layout would fail this even though the underlying
-    /// FSM didn't change).
-    #[test]
-    fn fsm_doc_strict_drift_check_catches_renderer_regressions() {
-        use crate::doc::demo::AutoDocMachine;
-        // Note: depends on the auto-refresh test above having run
-        // first OR the file being committed in fresh state.  Test
-        // execution order in cargo test isn't guaranteed; this
-        // test serves as a "renderer canary" and is expected to
-        // pass cleanly in CI on a clean checkout.
-        assert_fsm_diagram_up_to_date::<AutoDocMachine>("AutoDocMachine_fsm.md")
-            .expect("strict drift-check failed; renderer regression suspected");
     }
 }
 

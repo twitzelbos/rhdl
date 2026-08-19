@@ -212,6 +212,7 @@ set_io leds[3] E14
 
     // ANCHOR: ones-step-12
     #[test]
+    #[ignore = "needs the IceStorm toolchain (nextpnr-ice40, icetime); run with --ignored"]
     fn test_base_timing() -> miette::Result<()> {
         let uut = OneCounter {};
         let timing = rhdl_toolchains::icestorm::IceStorm::new(
@@ -341,6 +342,7 @@ pub mod step_6 {
 
     // ANCHOR: ones-step-18
     #[test]
+    #[ignore = "needs the IceStorm toolchain (nextpnr-ice40, icetime); run with --ignored"]
     fn test_timing_divided() -> miette::Result<()> {
         let uut = OneCounterDivided {};
         let timing = rhdl_toolchains::icestorm::IceStorm::new(
@@ -409,6 +411,7 @@ pub mod step_7 {
 
     // ANCHOR: ones-step-20
     #[test]
+    #[ignore = "needs the IceStorm toolchain (nextpnr-ice40, icetime); run with --ignored"]
     fn test_timing_divided_four() -> miette::Result<()> {
         let uut = OneCounterDividedFour {};
         let timing = rhdl_toolchains::icestorm::IceStorm::new(
