@@ -26,16 +26,16 @@
 use rhdl::prelude::*;
 use rhdl_fpga::{
     doc::write_svg_as_markdown,
-    dsp::nco::sin_cos_linear_interp::{In, SinCosLinearInterp, TOTAL_W},
+    dsp::nco::sin_cos_linear_interp::{In, SinCosLinearInterpDefault, TOTAL_W},
 };
 
 fn main() -> Result<(), RHDLError> {
-    let uut = SinCosLinearInterp::default();
+    let uut = SinCosLinearInterpDefault::default();
 
     // 64 samples per revolution, two revolutions.
     const STEP: u128 = 65536;
     let stream = (0..128u128)
-        .map(|k| In {
+        .map(|k| In::<TOTAL_W> {
             phase: bits::<TOTAL_W>((k * STEP) % (1 << TOTAL_W)),
         })
         .with_reset(1)

@@ -86,13 +86,37 @@ use super::{
     frequency_composer::{self, FrequencyComposer},
     phase_accumulator::{self, PhaseAccumulator},
     phase_composer::{self, PhaseComposer},
-    sin_cos_linear_interp::{self, AMP_W, SinCosLinearInterp, TOTAL_W},
+    sin_cos_linear_interp::{self, SinCosLinearInterp},
 };
 
 /// The complete phase-coherent NCO.
-#[derive(Clone, Debug, Synchronous, SynchronousDQ, Default)]
+///
+/// Generic over the phase-to-amplitude configuration, which is what makes
+/// a wider oscillator reachable from the top level rather than only
+/// inside the phase-to-amplitude widget. See
+/// [`SinCosLinearInterp`] for what the five widths mean and
+/// [`NcoDefault`] for the validated default.
+///
+/// `TRUNC` is the number of accumulator bits discarded at the
+/// phase-to-amplitude boundary and must equal `PHASE_W - TOTAL_W`; a
+/// runtime assertion in `Default` enforces it, because the kernel needs
+/// the shift as a value.
+#[derive(Clone, Debug, Synchronous, SynchronousDQ)]
 #[rhdl(dq_no_prefix)]
-pub struct Nco {
+pub struct Nco<
+    const TBL_W: usize,
+    const FINE_W: usize,
+    const TOTAL_W: usize,
+    const AMP_W: usize,
+    const INT_W: usize,
+    const TRUNC: usize,
+> where
+    rhdl::bits::W<TBL_W>: BitWidth,
+    rhdl::bits::W<FINE_W>: BitWidth,
+    rhdl::bits::W<TOTAL_W>: BitWidth,
+    rhdl::bits::W<AMP_W>: BitWidth,
+    rhdl::bits::W<INT_W>: BitWidth,
+{
     /// §8.3 frequency terms → `frequency_word`.
     freq: FrequencyComposer<PHASE_W>,
     /// §8.2 phase terms → `phase_offset`.
@@ -100,7 +124,54 @@ pub struct Nco {
     /// The free-running master phase.
     acc: PhaseAccumulator<PHASE_W>,
     /// Quadrature phase-to-amplitude.
-    amp: SinCosLinearInterp,
+    amp: SinCosLinearInterp<TBL_W, FINE_W, TOTAL_W, AMP_W, INT_W>,
+}
+
+/// The validated default NCO: phase-to-amplitude at 8/12/22/18/48.
+///
+/// `AMP_W = 18` is the DSP48's native multiplier port width, so this is
+/// the configuration whose fine rotation fits one slice per multiply.
+/// Wider configurations trade slices and block RAM for effective bits —
+/// see [`SinCosLinearInterp`]'s validated-configuration table.
+pub type NcoDefault = Nco<
+    { sin_cos_linear_interp::TBL_W },
+    { sin_cos_linear_interp::FINE_W },
+    { sin_cos_linear_interp::TOTAL_W },
+    { sin_cos_linear_interp::AMP_W },
+    { sin_cos_linear_interp::INT_W },
+    { config::PHASE_TRUNCATION_BITS },
+>;
+
+impl<
+    const TBL_W: usize,
+    const FINE_W: usize,
+    const TOTAL_W: usize,
+    const AMP_W: usize,
+    const INT_W: usize,
+    const TRUNC: usize,
+> Default for Nco<TBL_W, FINE_W, TOTAL_W, AMP_W, INT_W, TRUNC>
+where
+    rhdl::bits::W<TBL_W>: BitWidth,
+    rhdl::bits::W<FINE_W>: BitWidth,
+    rhdl::bits::W<TOTAL_W>: BitWidth,
+    rhdl::bits::W<AMP_W>: BitWidth,
+    rhdl::bits::W<INT_W>: BitWidth,
+{
+    fn default() -> Self {
+        assert_eq!(
+            TRUNC,
+            PHASE_W - TOTAL_W,
+            "TRUNC is the phase truncation and must be PHASE_W - TOTAL_W; \
+             the kernel uses it as the shift amount, and a wrong value \
+             takes the wrong end of the accumulator"
+        );
+        Self {
+            freq: FrequencyComposer::default(),
+            phase: PhaseComposer::default(),
+            acc: PhaseAccumulator::default(),
+            amp: SinCosLinearInterp::default(),
+        }
+    }
 }
 
 /// Inputs: the two term groups, plus the downstream ready.
@@ -122,7 +193,10 @@ pub struct In {
 
 /// Outputs.
 #[derive(PartialEq, Clone, Copy, Debug, Digital)]
-pub struct Out {
+pub struct Out<const AMP_W: usize>
+where
+    rhdl::bits::W<AMP_W>: BitWidth,
+{
     /// The complex sample stream.
     ///
     /// `F = ()`: nothing is framed in the timed domain — `sync` is
@@ -155,16 +229,48 @@ pub struct Out {
     pub overrun: bool,
 }
 
-impl SynchronousIO for Nco {
+impl<
+    const TBL_W: usize,
+    const FINE_W: usize,
+    const TOTAL_W: usize,
+    const AMP_W: usize,
+    const INT_W: usize,
+    const TRUNC: usize,
+> SynchronousIO for Nco<TBL_W, FINE_W, TOTAL_W, AMP_W, INT_W, TRUNC>
+where
+    rhdl::bits::W<TBL_W>: BitWidth,
+    rhdl::bits::W<FINE_W>: BitWidth,
+    rhdl::bits::W<TOTAL_W>: BitWidth,
+    rhdl::bits::W<AMP_W>: BitWidth,
+    rhdl::bits::W<INT_W>: BitWidth,
+{
     type I = In;
-    type O = Out;
-    type Kernel = nco_kernel;
+    type O = Out<AMP_W>;
+    type Kernel = nco_kernel<TBL_W, FINE_W, TOTAL_W, AMP_W, INT_W, TRUNC>;
 }
 
 #[kernel]
 #[doc(hidden)]
-pub fn nco_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
-    let mut d = D::dont_care();
+pub fn nco_kernel<
+    const TBL_W: usize,
+    const FINE_W: usize,
+    const TOTAL_W: usize,
+    const AMP_W: usize,
+    const INT_W: usize,
+    const TRUNC: usize,
+>(
+    cr: ClockReset,
+    i: In,
+    q: Q<TBL_W, FINE_W, TOTAL_W, AMP_W, INT_W, TRUNC>,
+) -> (Out<AMP_W>, D<TBL_W, FINE_W, TOTAL_W, AMP_W, INT_W, TRUNC>)
+where
+    rhdl::bits::W<TBL_W>: BitWidth,
+    rhdl::bits::W<FINE_W>: BitWidth,
+    rhdl::bits::W<TOTAL_W>: BitWidth,
+    rhdl::bits::W<AMP_W>: BitWidth,
+    rhdl::bits::W<INT_W>: BitWidth,
+{
+    let mut d = D::<TBL_W, FINE_W, TOTAL_W, AMP_W, INT_W, TRUNC>::dont_care();
 
     d.freq = i.frequency;
     d.phase = i.phase;
@@ -179,8 +285,8 @@ pub fn nco_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     // *** The phase truncation. Top TOTAL_W bits, low 26 discarded. ***
     // See the module docs: taking the low bits instead yields a
     // plausible-looking waveform at an unrelated frequency.
-    let truncated = (q.acc.phase >> 26).resize::<TOTAL_W>();
-    d.amp = sin_cos_linear_interp::In { phase: truncated };
+    let truncated = (q.acc.phase >> bits::<8>(TRUNC as u128)).resize::<TOTAL_W>();
+    d.amp = sin_cos_linear_interp::In::<TOTAL_W> { phase: truncated };
 
     // re is in-phase (cosine), im is quadrature (sine) -- see
     // `crate::dsp::iq::Iq`.
@@ -189,7 +295,7 @@ pub fn nco_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         im: q.amp.sin,
     };
 
-    let mut o = Out {
+    let mut o = Out::<AMP_W> {
         stream: RCStream::<Iq<AMP_W>, ()> {
             data: Some(Item::<Iq<AMP_W>, ()> {
                 data: sample,
@@ -207,12 +313,17 @@ pub fn nco_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     (o, d)
 }
 
-/// The shift above is a literal because the kernel language wants one;
-/// this keeps it honest against [`config::PHASE_TRUNCATION_BITS`].
+/// The default configuration's truncation, kept as a build-time check on
+/// [`config::PHASE_TRUNCATION_BITS`] itself.
+///
+/// The kernel no longer contains a literal shift — it uses the `TRUNC`
+/// generic, which `Default` checks equals `PHASE_W - TOTAL_W` for *every*
+/// instantiation rather than only for this one. This assertion remains
+/// because `config` states the figure independently and the two should
+/// not drift.
 const _: () = assert!(
-    config::PHASE_TRUNCATION_BITS == 26,
-    "the kernel's phase shift is written as the literal 26; if \
-     PHASE_W or TOTAL_W changed, that literal must change with them"
+    config::PHASE_TRUNCATION_BITS == PHASE_W - sin_cos_linear_interp::TOTAL_W,
+    "config::PHASE_TRUNCATION_BITS disagrees with PHASE_W - TOTAL_W"
 );
 
 #[cfg(test)]
@@ -220,6 +331,13 @@ mod tests {
     use super::super::latency;
     use super::*;
     use expect_test::expect;
+    use sin_cos_linear_interp::AMP_W;
+
+    /// The default configuration, so these tests read as before the
+    /// widths became generic and the committed snapshots stay valid.
+    type Uut = NcoDefault;
+    /// [`Out`] at the default amplitude width.
+    type UutOut = Out<AMP_W>;
 
     fn input(freq_word: u128, phase_off: u128) -> In {
         In {
@@ -242,15 +360,15 @@ mod tests {
 
     /// The quadrature component (sine) of a sample, for tests that
     /// reason about the waveform.
-    fn im_of(o: &Out) -> i128 {
+    fn im_of(o: &UutOut) -> i128 {
         match o.stream.data {
             Some(item) => item.data.im.raw(),
             None => panic!("the NCO must emit on every cycle -- it is isochronous"),
         }
     }
 
-    fn run(seq: Vec<In>) -> Vec<Out> {
-        let uut = Nco::default();
+    fn run(seq: Vec<In>) -> Vec<UutOut> {
+        let uut = Uut::default();
         uut.run(seq.into_iter().with_reset(1).clock_pos_edge(100))
             .synchronous_sample()
             .map(|s| s.output)
@@ -259,7 +377,7 @@ mod tests {
 
     #[test]
     fn default_construction() {
-        let _uut = Nco::default();
+        let _uut = Uut::default();
     }
 
     /// The commanded frequency is the frequency that comes out.
@@ -395,7 +513,7 @@ mod tests {
     /// change; the behaviour is covered by Tier 4 below.
     #[test]
     fn test_vlog_generation() -> miette::Result<()> {
-        let uut = Nco::default();
+        let uut = Uut::default();
         let hdl = uut.descriptor("top".into())?.hdl()?.modules.pretty();
         let shape = hdl
             .lines()
@@ -438,7 +556,7 @@ mod tests {
     /// Tier 4 — emitted Verilog agrees with the Rust simulation.
     #[test]
     fn test_nco_hdl_works() -> miette::Result<()> {
-        let uut = Nco::default();
+        let uut = Uut::default();
         let stream = hdl_stimulus().into_iter().with_reset(1).clock_pos_edge(100);
         let tb = uut.run(stream).collect::<SynchronousTestBench<_, _>>();
         let opts = TestBenchOptions::default().skip(4);
@@ -450,7 +568,7 @@ mod tests {
     /// Tier 5 — VCD digest.
     #[test]
     fn test_nco_trace() -> miette::Result<()> {
-        let uut = Nco::default();
+        let uut = Uut::default();
         let stream = hdl_stimulus().into_iter().with_reset(1).clock_pos_edge(100);
         let vcd = uut.run(stream).collect::<VcdFile>();
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
