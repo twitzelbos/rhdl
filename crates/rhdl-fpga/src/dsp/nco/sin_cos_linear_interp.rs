@@ -1293,14 +1293,23 @@ mod tests {
     /// spirit of [`crate::dsp::mixer`]'s `multiplier_count_is_as_claimed`:
     /// a resource claim that cannot be tested is not a resource claim.
     ///
-    /// # What this still does not achieve
+    /// # The emitted operand widths are now exact
     ///
-    /// A DSP48E1 is **18×25**. The operands here are genuinely 18 and 14
-    /// bits, so the product would fit one slice — but `xmul` sign-extends
-    /// both operands to the product width before emitting, so the Verilog
-    /// says 32×32. RHDL cannot currently express a mixed-width multiply;
-    /// see `notes/xmul-natural-width-multiply.md`. Until that lands, one
-    /// slice versus two rests on Vivado's bit-range pruning.
+    /// A DSP48E1 is **18×25**, and the operands here are genuinely
+    /// `AMP_W` = 18 and `FINE_W + 2` = 14 bits — so the product fits one
+    /// slice, and it is now *emitted* that way: `18 × 14`.
+    ///
+    /// Two changes were needed and neither suffices alone. This widget
+    /// stopped resizing its operands to `INT_W` before multiplying, taking
+    /// 48×48 down to 32×32 — that removed an explicit `resize` in the
+    /// kernel. Then the compiler stopped having `XMul` pre-widen its
+    /// operands to the result width in `lower_rhif_to_rtl`, taking 32×32
+    /// down to 18×14 — that removed an implicit one in the lowering.
+    ///
+    /// So this asserts the **exact** widths rather than an upper bound,
+    /// which is the strongest form of the claim available without
+    /// instantiating a DSP48E1 directly — something RHDL still cannot do;
+    /// see the note on DSP inference in the module docs.
     #[test]
     fn emitted_multiply_operands_are_natural_width() -> miette::Result<()> {
         let uut = SinCosLinearInterpDefault::default();
@@ -1319,8 +1328,6 @@ mod tests {
             }
         }
 
-        // The variable x variable product: AMP_W x (FINE_W + 2).
-        let natural = AMP_W + FINE_W + 2;
         let mut var_mults = Vec::new();
         for line in hdl.lines() {
             let t = line.trim().trim_end_matches(';');
@@ -1339,30 +1346,31 @@ mod tests {
         );
         // Two multiplies per component, and they are not equivalent:
         //
-        //   1. `c0 * delta` -- variable x variable, at AMP_W + FINE_W + 2.
+        //   1. `c0 * delta` -- variable x variable, at AMP_W x (FINE_W+2).
         //      This is the one that costs DSP slices.
-        //   2. `* DELTA_K` -- variable x CONSTANT, at that product's width
-        //      plus 14.  A constant operand lowers to shift-adds, so its
-        //      width is not a slice cost.
+        //   2. `* DELTA_K` -- variable x CONSTANT. A constant operand
+        //      lowers to shift-adds rather than a slice, and its second
+        //      operand is a localparam rather than a register, so it does
+        //      not appear in `var_mults` at all.
         //
-        // So the narrowest multiply is the DSP-relevant one, and that is
-        // what must sit at natural width.
-        let sizes: Vec<usize> = var_mults.iter().map(|(a, b)| *a.max(b)).collect();
-        let narrowest = *sizes.iter().min().unwrap();
-        let widest = *sizes.iter().max().unwrap();
-
-        assert_eq!(
-            narrowest,
-            natural,
-            "the variable x variable multiply is {narrowest} bits wide; the \
-             natural product width for this configuration is {natural}.  \
-             Resizing operands to INT_W ({INT_W}) before multiplying is what \
-             this test exists to prevent -- it turns an {AMP_W}x{} product \
-             into an {INT_W}x{INT_W} multiply.  Operand widths found: \
-             {var_mults:?}",
-            FINE_W + 2
+        // The DSP-relevant multiply must sit at exactly the operand widths.
+        let want = (AMP_W, FINE_W + 2);
+        assert!(
+            var_mults.contains(&want),
+            "expected a {}x{} multiply -- the natural operand widths, and a \
+             single DSP48E1 port pair -- but the register-by-register \
+             multiplies emitted were {var_mults:?}.\n\nTwo regressions look \
+             like this.  {INT_W}x{INT_W} means this widget is resizing its \
+             operands to INT_W before multiplying again.  {}x{} means the \
+             compiler has gone back to pre-widening XMul's operands to the \
+             result width in lower_rhif_to_rtl.",
+            want.0,
+            want.1,
+            AMP_W + FINE_W + 2,
+            AMP_W + FINE_W + 2
         );
         // Nothing is left at the old full intermediate width.
+        let widest = var_mults.iter().map(|(a, b)| *a.max(b)).max().unwrap();
         assert!(
             widest < INT_W,
             "a multiply is still at INT_W ({INT_W}) or wider ({widest}), so \
@@ -1773,13 +1781,13 @@ mod tests {
             .join("\n");
         let expect_shape = expect![[r#"
             1: module top
-            198: endmodule
-            199: module top_sin_tbl
-            477: endmodule
-            478: module top_cos_tbl
-            756: endmodule
-            757: module top_delayed
-            772: endmodule"#]];
+            181: endmodule
+            182: module top_sin_tbl
+            460: endmodule
+            461: module top_cos_tbl
+            739: endmodule
+            740: module top_delayed
+            755: endmodule"#]];
         expect_shape.assert_eq(&shape);
 
         let top = hdl
@@ -1852,32 +1860,24 @@ mod tests {
                      reg signed [13:0] r47;
                      reg signed [31:0] r48;
                      reg signed [31:0] r49;
-                     reg signed [31:0] r50;
-                     reg signed [31:0] r51;
-                     reg signed [31:0] r52;
-                     reg signed [31:0] r53;
-                     reg signed [45:0] r54;
-                     reg signed [45:0] r55;
-                     reg signed [45:0] r56;
-                     reg signed [47:0] r57;
-                     reg signed [45:0] r58;
-                     reg signed [45:0] r59;
-                     reg signed [45:0] r60;
-                     reg signed [47:0] r61;
-                     reg signed [47:0] r62;
-                     reg signed [17:0] r63;
-                     reg signed [47:0] r64;
-                     reg signed [17:0] r65;
-                     reg signed [17:0] r66;
-                     reg signed [17:0] r67;
-                     reg [35:0] r68;
-                     reg [35:0] r69;
-                     reg [119:0] r70;
-                     reg [1:0] r71;
-                     reg [33:0] r72;
-                     reg [41:0] r73;
-                     reg signed [79:0] r74;
-                     reg signed [79:0] r75;
+                     reg signed [45:0] r50;
+                     reg signed [47:0] r51;
+                     reg signed [45:0] r52;
+                     reg signed [47:0] r53;
+                     reg signed [47:0] r54;
+                     reg signed [17:0] r55;
+                     reg signed [47:0] r56;
+                     reg signed [17:0] r57;
+                     reg signed [17:0] r58;
+                     reg signed [17:0] r59;
+                     reg [35:0] r60;
+                     reg [35:0] r61;
+                     reg [119:0] r62;
+                     reg [1:0] r63;
+                     reg [33:0] r64;
+                     reg [41:0] r65;
+                     reg signed [79:0] r66;
+                     reg signed [79:0] r67;
                      localparam l0 = 8'b11111111;
                      localparam l1 = 2'b01;
                      localparam l2 = 2'b01;
@@ -1890,19 +1890,18 @@ mod tests {
                      localparam l9 = 2'b01;
                      localparam l10 = 2'b10;
                      localparam l11 = 2'b10;
-                     localparam l12 = 36'b000000000000000000000000000000000000;
-                     localparam l13 = 14'sb00100000000000;
-                     localparam l14 = 46'sb0000000000000000000000000000000001100100100010;
-                     localparam l15 = 46'sb0000000000000000000000000000000001100100100010;
+                     localparam l12 = 14'sb01100100100010;
+                     localparam l13 = 36'b000000000000000000000000000000000000;
+                     localparam l14 = 14'sb00100000000000;
                      begin
-                        r71 = arg_0;
+                        r63 = arg_0;
                         r0 = arg_1;
                         r24 = arg_2;
-                        r72 = {{12{1'b0}}, r0};
-                        r1 = r72[33:12];
+                        r64 = {{12{1'b0}}, r0};
+                        r1 = r64[33:12];
                         r2 = r1[7:0];
-                        r73 = {{20{1'b0}}, r0};
-                        r3 = r73[41:20];
+                        r65 = {{20{1'b0}}, r0};
+                        r3 = r65[41:20];
                         r4 = r3[1:0];
                         r5 = r0[11:0];
                         r6 = l0 - r2;
@@ -1951,38 +1950,30 @@ mod tests {
                         r42 = {{1{1'b0}}, r40};
                         r41[12:0] = $signed(r42);
                         r44 = $signed({{1{r41[12]}}, r41});
-                        r45 = l13;
+                        r45 = l14;
                         r46[13:0] = $signed(r44);
                         r47[13:0] = $signed(r45);
                         r43 = r46 - r47;
-                        r49 = $signed({{14{r38[17]}}, r38});
-                        r50 = $signed({{18{r43[13]}}, r43});
-                        r48 = r49 * r50;
-                        r52 = $signed({{14{r34[17]}}, r34});
-                        r53 = $signed({{18{r43[13]}}, r43});
-                        r51 = r52 * r53;
-                        r55 = $signed({{14{r48[31]}}, r48});
-                        r56 = l14;
-                        r54 = r55 * r56;
-                        r57 = $signed({{2{r54[45]}}, r54});
-                        r59 = $signed({{14{r51[31]}}, r51});
-                        r60 = l15;
-                        r58 = r59 * r60;
-                        r61 = $signed({{2{r58[45]}}, r58});
-                        r74 = $signed({{32{r57[47]}}, r57});
-                        r62 = r74[79:32];
-                        r63 = $signed(r62[17:0]);
-                        r75 = $signed({{32{r61[47]}}, r61});
-                        r64 = r75[79:32];
-                        r65 = $signed(r64[17:0]);
-                        r66 = r34 + r63;
-                        r67 = r38 - r65;
-                        r68 = l12;
-                        r68[17:0] = r66;
-                        r69 = r68;
-                        r69[35:18] = r67;
-                        r70 = {r22, r69};
-                        kernel_sin_cos_linear_interp_kernel = r70;
+                        r48 = r38 * r43;
+                        r49 = r34 * r43;
+                        r50 = r48 * l12;
+                        r51 = $signed({{2{r50[45]}}, r50});
+                        r52 = r49 * l12;
+                        r53 = $signed({{2{r52[45]}}, r52});
+                        r66 = $signed({{32{r51[47]}}, r51});
+                        r54 = r66[79:32];
+                        r55 = $signed(r54[17:0]);
+                        r67 = $signed({{32{r53[47]}}, r53});
+                        r56 = r67[79:32];
+                        r57 = $signed(r56[17:0]);
+                        r58 = r34 + r55;
+                        r59 = r38 - r57;
+                        r60 = l13;
+                        r60[17:0] = r58;
+                        r61 = r60;
+                        r61[35:18] = r59;
+                        r62 = {r22, r61};
+                        kernel_sin_cos_linear_interp_kernel = r62;
                      end
                endfunction
             endmodule"#]];

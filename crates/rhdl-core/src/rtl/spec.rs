@@ -76,6 +76,32 @@ impl From<AluBinary> for crate::rhif::spec::AluBinary {
     }
 }
 
+/// A binary operation.
+///
+/// # Operand widths need not match the result
+///
+/// `arg1` and `arg2` may be **narrower than `lhs`**, and the operation is
+/// then performed at the result width — both operands extended according
+/// to their own signedness. This is Verilog's context-determined width
+/// rule, which is what the emitted `*`, `+` and `-` already obey, so the
+/// IR and the hardware agree by construction rather than by convention.
+///
+/// Two constructs rely on it:
+///
+/// - **Shifts** always have, and always did: an 8-bit shift count against
+///   a 48-bit value. A shift count is not extended (Verilog does not
+///   context-extend it either).
+/// - **`XMul`** since it stopped pre-widening its operands. Operand widths
+///   are what decide a multiply's DSP-slice cost — a DSP48E1 is 18×25 — so
+///   an 18×14 product is emitted as `18 × 14` rather than as
+///   `32 × 32`.
+///
+/// Interpreters of this IR must therefore evaluate at the result width:
+/// see [`crate::rtl::runtime_ops::binary_at_result_width`], which
+/// [`crate::rtl::vm`] and `rtl_passes::constant_propagation` both use.
+/// Evaluating at an operand's width instead silently truncates a product,
+/// because `rhif::runtime_ops::mul` takes its result width from its first
+/// argument.
 #[derive(Debug, Clone, PartialEq, Hash)]
 pub struct Binary {
     pub op: AluBinary,

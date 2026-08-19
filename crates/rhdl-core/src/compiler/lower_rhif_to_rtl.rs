@@ -400,6 +400,39 @@ impl<'a> RTLCompiler<'a> {
             return Err(self.raise_ice(ICE::XopsResultMustBeRegister, loc));
         };
         let lhs_reg_kind = self.symtab[&lhs_id];
+        // `XMul` keeps its operands at their declared widths; `XAdd`
+        // widens them to the result.
+        //
+        // The difference is silicon. A multiply's operand widths decide how
+        // many DSP slices it costs -- a DSP48E1 is 18x25 -- so pre-widening
+        // an 18x14 product to 32x32 asks the synthesiser to recover the
+        // operand widths by bit-range analysis before it can map to one
+        // slice. Emitting them narrow states the intent directly. An
+        // adder's operands are not a slice cost, so `XAdd` is left alone
+        // rather than changed for symmetry's sake.
+        //
+        // Correctness is unaffected: the emitted Verilog's `*` is
+        // context-determined, so both operands are extended per their own
+        // signedness to the destination width and the operation happens
+        // there -- exactly what the explicit casts used to do. The
+        // interpreters follow via
+        // `rtl::runtime_ops::binary_at_result_width`.
+        //
+        // Signedness cannot be mixed here: `xadd_xmul_kind` admits only
+        // `(Bits, Bits)` and `(Signed, Signed)`, so there is no case where
+        // one operand needs zero-extension and the other sign-extension.
+        if matches!(op, tl::AluBinary::Mul) {
+            self.lop(
+                tl::OpCode::Binary(tl::Binary {
+                    lhs,
+                    op,
+                    arg1,
+                    arg2,
+                }),
+                loc,
+            );
+            return Ok(());
+        }
         let arg1_cast = self.reg(lhs_reg_kind, loc);
         let arg2_cast = self.reg(lhs_reg_kind, loc);
         self.lop(

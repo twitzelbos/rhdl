@@ -279,3 +279,159 @@ fn test_xsgn_is_trapped_as_signed() -> miette::Result<()> {
     expect_test::expect_file!["expect/xsgn_is_trapped_as_signed.expect"].assert_eq(&report);
     Ok(())
 }
+
+// ---------------------------------------------------------------------
+// `xmul` keeps its operands at their declared widths.
+//
+// `XMul` used to lower with two explicit `Cast{Resize}` ops widening both
+// operands to the result width, so an 18x14 product emitted as a 32x32
+// Verilog multiply. Operand widths are what decide a multiply's DSP cost
+// -- a DSP48E1 is 18x25 -- so the pre-widening asked the synthesiser to
+// recover the operand widths by bit-range analysis before it could map to
+// a single slice.
+//
+// These tests pin the semantics rather than the emitted text.
+// `test_kernel_vm_and_verilog` runs the RHIF VM, the RTL VM *and*
+// `iverilog`, and requires all three to agree -- which is exactly the set
+// of consumers that had to learn about narrow operands. The RTL VM in
+// particular would compute the product at the *first* operand's width
+// without `rtl::runtime_ops::binary_at_result_width`, so a regression
+// there shows up here rather than as a silently wrong instrument.
+// ---------------------------------------------------------------------
+
+/// Unsigned `xmul` across mismatched operand widths, exhaustively.
+///
+/// `b4 x b3` has a 7-bit result, so the operands are narrower than the
+/// destination in both positions and neither is a power-of-two special
+/// case throughout.
+#[test]
+fn test_xmul_unsigned_mixed_widths() -> miette::Result<()> {
+    #[kernel]
+    fn do_stuff(a1: Signal<b4, Red>, a2: Signal<b3, Red>) -> Signal<b7, Red> {
+        let p = a1.val().dyn_bits().xmul(a2.val().dyn_bits());
+        signal(p.resize::<7>().as_bits())
+    }
+    let args = exhaustive::<4>().into_iter().flat_map(|a1| {
+        exhaustive::<3>()
+            .into_iter()
+            .map(move |a2| (red(a1), red(a2)))
+    });
+    test_kernel_vm_and_verilog::<do_stuff, _, _, _>(do_stuff, args)?;
+    Ok(())
+}
+
+/// Signed `xmul` across mismatched operand widths, exhaustively.
+///
+/// The signed case is the one that would break first if the operand
+/// extension were dropped without the emitted `*` being
+/// context-determined: a narrow negative operand read at the destination
+/// width without sign extension is a large positive number. Sweeping both
+/// operands over their full signed range covers every sign combination
+/// including the maximum-negative values.
+#[test]
+fn test_xmul_signed_mixed_widths() -> miette::Result<()> {
+    #[kernel]
+    fn do_stuff(a1: Signal<s4, Red>, a2: Signal<s3, Red>) -> Signal<s7, Red> {
+        let p = a1.val().dyn_bits().xmul(a2.val().dyn_bits());
+        signal(p.resize::<7>().as_signed_bits())
+    }
+    let args = exhaustive_signed::<4>().into_iter().flat_map(|a1| {
+        exhaustive_signed::<3>()
+            .into_iter()
+            .map(move |a2| (red(a1), red(a2)))
+    });
+    test_kernel_vm_and_verilog::<do_stuff, _, _, _>(do_stuff, args)?;
+    Ok(())
+}
+
+/// The emitted Verilog really does carry the *declared* operand widths.
+///
+/// The tests above would still pass if the operands were pre-widened --
+/// they check semantics, and the pre-widened form was also correct. This
+/// one checks the thing the change exists for, in the spirit of
+/// `dsp::mixer`'s `multiplier_count_is_as_claimed`: a resource claim that
+/// cannot be tested is not a resource claim.
+/// Operands for [`test_xmul_emits_narrow_operands`].
+#[derive(PartialEq, Clone, Copy, Debug, Digital)]
+pub struct MulIn {
+    pub a: SignedBits<18>,
+    pub b: SignedBits<14>,
+}
+
+#[kernel]
+fn mul_18x14(_cr: ClockReset, i: MulIn) -> SignedBits<32> {
+    let p = i.a.dyn_bits().xmul(i.b.dyn_bits());
+    p.resize::<32>().as_signed_bits()
+}
+
+#[test]
+fn test_xmul_emits_narrow_operands() -> miette::Result<()> {
+    let uut: Func<MulIn, SignedBits<32>> = Func::try_new::<mul_18x14>()?;
+    let hdl = uut.descriptor("top".into())?.hdl()?.modules.pretty();
+
+    // Width of every declared signed register, so the multiply's operands
+    // can be looked up by name.
+    let mut width = std::collections::HashMap::new();
+    for line in hdl.lines() {
+        let t = line.trim();
+        if let Some(rest) = t.strip_prefix("reg signed [") {
+            if let Some((range, name)) = rest.split_once("] ") {
+                if let Ok(hi) = range.split(':').next().unwrap_or("").parse::<usize>() {
+                    width.insert(name.trim_end_matches(';').to_string(), hi + 1);
+                }
+            }
+        }
+    }
+    let mut mults = Vec::new();
+    for line in hdl.lines() {
+        let t = line.trim().trim_end_matches(';');
+        if let Some((lhs, rhs)) = t.split_once(" * ") {
+            let a = lhs.split('=').nth(1).map(str::trim).unwrap_or("");
+            if let (Some(wa), Some(wb)) = (width.get(a), width.get(rhs.trim())) {
+                mults.push((*wa, *wb));
+            }
+        }
+    }
+    assert!(
+        mults.contains(&(18, 14)),
+        "expected an 18x14 multiply -- the declared operand widths, and a \
+         single DSP48E1 port pair -- but found {mults:?}.  32x32 means XMul \
+         is pre-widening its operands to the result width again.\n\n{hdl}"
+    );
+    Ok(())
+}
+
+/// **Loophole check:** `xmul` by a power-of-two literal.
+///
+/// `rtl_passes::lower_multiply_to_shift` rewrites a `Mul` whose second
+/// operand is a one-bit literal into a `Shl`. Before `XMul` stopped
+/// pre-widening, that pass only ever saw operands as wide as the result;
+/// now it can see a narrow one. Shifts are deliberately excluded from
+/// `binary_at_result_width` -- Verilog does not context-extend a shift
+/// count -- so this exercises the interaction rather than assuming it is
+/// benign.
+#[test]
+fn test_xmul_by_power_of_two_literal() -> miette::Result<()> {
+    #[kernel]
+    fn do_stuff(a1: Signal<s6, Red>) -> Signal<s10, Red> {
+        // 4 is a single-bit literal, so the multiply is a shift candidate.
+        let p = a1.val().dyn_bits().xmul(s4(4).dyn_bits());
+        signal(p.resize::<10>().as_signed_bits())
+    }
+    let args = exhaustive_signed::<6>().into_iter().map(|a| (red(a),));
+    test_kernel_vm_and_verilog::<do_stuff, _, _, _>(do_stuff, args)?;
+    Ok(())
+}
+
+/// The same, unsigned.
+#[test]
+fn test_xmul_unsigned_by_power_of_two_literal() -> miette::Result<()> {
+    #[kernel]
+    fn do_stuff(a1: Signal<b6, Red>) -> Signal<b10, Red> {
+        let p = a1.val().dyn_bits().xmul(b4(8).dyn_bits());
+        signal(p.resize::<10>().as_bits())
+    }
+    let args = exhaustive::<6>().into_iter().map(|a| (red(a),));
+    test_kernel_vm_and_verilog::<do_stuff, _, _, _>(do_stuff, args)?;
+    Ok(())
+}

@@ -31,6 +31,53 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-19 — Compiler: `XMul` emits its operands at their declared widths
+
+**Paths:** `crates/rhdl-core/src/compiler/lower_rhif_to_rtl.rs`, `rtl/runtime_ops.rs`, `rtl/vm.rs`, `rtl/spec.rs`, `compiler/rtl_passes/constant_propagation.rs`, `crates/rhdl/tests/dyn_bits.rs`, `doc/book/src/bits/dyn_bits.md`, `notes/xmul-natural-width-multiply.md`, plus two re-blessed snapshots (`dsp::nco::sin_cos_linear_interp`, `core::mac`).
+
+**What guarantee changed:** none weakened; one made explicit. RTL `Binary` may have operands narrower than its result, and the operation happens at the result width with each operand extended per its own signedness — Verilog's context-determined width rule. That was already true of shifts and merely undocumented; it is now stated on `rtl::spec::Binary`, which per `architecture.md` is the source of truth for that IR.
+
+**Why this, why now:** `XMul` lowered with two explicit `Cast{Resize}` ops widening both operands to the result width, so an 18×14 product emitted as a **48×48** Verilog multiply. Operand widths are what decide a multiply's DSP cost — a DSP48E1 is 18×25 — so this asked the synthesiser to recover the operand widths by bit-range analysis before it could map to a single slice. `dsp::nco::sin_cos_linear_interp` chose `AMP_W = 18` *because* 18 is the native port width, and that reason was not expressed in the RTL at all.
+
+**Design decisions:**
+
+- **`XMul` only; `XAdd` and `XSub` keep pre-widening.** An adder's operand widths are not a slice cost, so changing them is churn without benefit. The asymmetry is documented at the branch in `make_xadd_or_xmul` rather than left to be discovered.
+- **Fix the width rule centrally, in `rtl::runtime_ops::binary_at_result_width`.** Three consumers assumed operands were as wide as the result — implicitly, by taking the result width from an operand, since `rhif::runtime_ops::mul` returns a result of `a.len()`. Fixing it in one place means `rtl::vm` and `rtl_passes::constant_propagation` both inherit it, rather than each carrying its own resize.
+- **Shifts and comparisons excluded.** Verilog does not context-extend either: a shift's right operand is a count, and a comparison's operands size to each other rather than to its one-bit result (`max(a, b, 1)` is already `max(a, b)`).
+- **No NTL change at all.** NTL's `Vector` op already carries `arg1`/`arg2` as *wire vectors*, so it represents unequal widths natively, and `ntl/hdl.rs` emits `$signed(a) * $signed(b)` from them without caring. This was the brief's biggest open question and the answer was "nothing to do".
+
+**What loophole this does not introduce:**
+
+- **Mixed signedness is unreachable.** `xadd_xmul_kind` admits only `(Bits, Bits)` and `(Signed, Signed)`, so there is no case where one operand needs zero-extension and the other sign-extension. This was the hazard the brief most feared and it does not exist.
+- **`lower_multiply_to_shift`** rewrites a `Mul` by a one-bit literal into a `Shl`, and could previously only see operands as wide as the result. Exercised exhaustively now by `test_xmul_by_power_of_two_literal` and its unsigned twin, rather than assumed benign.
+- **The change is a no-op for every pre-existing program.** Before it, the only binaries with operands narrower than their result were shifts, which are excluded; every other binary had all three widths equal, so the resize returns the operand unchanged. **Zero VCD digests moved anywhere in the workspace** — that is the evidence, not a claim.
+
+**Measured:**
+
+| widget | before | after |
+|---|---|---|
+| `sin_cos_linear_interp` fine rotation | 32×32 | **18×14** |
+| `core::mac` product | 16×16 | **8×8** |
+
+18×14 is a single DSP48E1 port pair. Reaching it took the widget change earlier the same day (which removed an explicit `resize` in the kernel, 48×48 → 32×32) *and* this one (which removed an implicit one in the lowering, 32×32 → 18×14). Neither suffices alone.
+
+**Surprises and gotchas:**
+
+- ***** `cargo test --all` is fail-fast across test binaries. ***** The three pre-existing `count_ones` failures in `doc/book/src/code` were aborting the run before `rhdl-fpga` was reached, so several earlier "workspace clean" claims in this session rested on truncated runs. **Use `--no-fail-fast`.** Running it properly immediately surfaced `core::mac`'s snapshot, which no fail-fast run had reached.
+- **A pre-existing order-dependent flake:** `rhdl_fpga::doc::tests::fsm_doc_strict_drift_check_catches_renderer_regressions` passes alone and fails when the `doc::` module runs together. Verified pre-existing by stashing and reproducing on `main`. Untouched here — CLAUDE.md rule 10 says a flaky test is a real bug, so it wants its own investigation rather than a shrug in an unrelated PR.
+- **`#[kernel]` allows turbofish on only `resize`, `xext`, `xshl`, `xshr`**, so `as_signed_bits::<N>()` is rejected inside a kernel; a `let` type annotation is the way through.
+- **Honest coverage gap:** the `constant_propagation` change is **defensive and unexercised.** RHIF constant propagation folds any two-literal `Binary` before RTL lowering runs, so an all-literal `XMul` cannot reach the RTL pass from a kernel — mutating that line breaks no test, whereas mutating `rtl::vm` breaks the exhaustive tests instantly. It is still the correct call, since the pass runs after stage-2 passes that can literalise an operand, and the code comment says all of this.
+
+**Validation:** exhaustive signed and unsigned mixed-width `xmul` through `test_kernel_vm_and_verilog`, which requires the RHIF VM, the RTL VM **and** `iverilog` to agree — precisely the consumers that had to learn about narrow operands. Mutation-verified load-bearing: reverting `rtl/vm.rs` to the width-unaware `binary` fails both immediately. Plus `test_xmul_emits_narrow_operands`, which asserts the emitted operand widths are exactly 18 and 14, and the tightened `emitted_multiply_operands_are_natural_width` in `sin_cos_linear_interp`.
+
+**Follow-ups:**
+
+- **RHDL still does not instantiate DSP48E1 primitives.** This improves what vendor inference is handed; it does not replace inference. No `trait Target`, no `hdl_for`, no `primitive!` — `vendor-primitive-architecture.md` remains unshipped.
+- `XAdd`/`XSub` natural-width emission, if adder fabric ever matters.
+- The `doc::` flake above.
+
+---
+
 ## 2026-08-19 — `dsp::nco` widths become generic; three configurations above 18 effective bits
 
 **Paths:** `crates/rhdl-fpga/src/dsp/nco/{sin_cos_linear_interp,composite,latency}.rs`, `examples/{nco,sin_cos_linear_interp}.rs`, `notes/xmul-natural-width-multiply.md` (new).

@@ -33,3 +33,46 @@ The process for `SignedBits` is entirely analogous.  A `SignedBits<N>` typed val
 ```admonish note
 The goal of `DynBits` is not to have RHDL do a bunch of magic extra bit manipulation for you.  Instead it is to enable you to have precise control over how the bits are manipulated and where they are dropped or preserved.
 ```
+
+## `xmul` and DSP inference
+
+`xmul` matters for more than bit bookkeeping: **the operands it emits decide
+what a vendor synthesiser can map the multiply onto.**
+
+A Xilinx DSP48E1 multiplier is `18 x 25`. So an `18 x 14` product fits one
+slice, while a `32 x 32` multiply needs several. RHDL emits `xmul` with its
+operands at their *declared* widths and lets the destination width size the
+operation, which is how Verilog's `*` already behaves — the operands are
+extended, per their own signedness, to the width of the assignment target:
+
+```verilog
+reg signed [17:0] a;
+reg signed [13:0] b;
+reg signed [31:0] p;
+p = $signed(a) * $signed(b);      // an 18x14 multiply
+```
+
+This used to widen both operands to the result width before multiplying, so
+the same expression emitted as `32 x 32` and one-slice-versus-several rested
+on the synthesiser recovering the operand widths by bit-range analysis.
+
+The practical consequence for your kernels: **form each product at its
+natural width instead of resizing operands up front.** These compute the
+same value, and the second is the one that maps cleanly:
+
+```rust,ignore
+// Emits a wide multiply -- the operands are resized before multiplying.
+let p = (a.resize::<48>() * b.resize::<48>()) >> shift;
+
+// Emits a narrow multiply -- the product width comes from `xmul`.
+let p = a.dyn_bits().xmul(b.dyn_bits());
+```
+
+```admonish note
+RHDL does not instantiate DSP48E1 primitives — it emits behavioural
+Verilog and relies on vendor inference. Emitting narrow operands is
+therefore the whole of the lever available: it does not force a mapping,
+it stops obscuring the one you want. Chaining a second `xmul` by a
+*constant* is free in slice terms, since a constant operand lowers to
+shift-adds.
+```

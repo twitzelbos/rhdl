@@ -30,7 +30,25 @@ fn propagate_binary(
     if let (Operand::Literal(arg1), Operand::Literal(arg2)) = (arg1, arg2) {
         let arg1_val = obj.symtab[&arg1].clone();
         let arg2_val = obj.symtab[&arg2].clone();
-        let result: TypedBits = crate::rtl::runtime_ops::binary(op, arg1_val, arg2_val)?;
+        // At the destination's width, not the first operand's: a Binary
+        // whose operands are narrower than its result -- an XMul, since it
+        // stopped pre-widening -- would otherwise fold at the operand
+        // width and silently truncate the product.
+        //
+        // *** Defensive, and unexercised today. *** RHIF constant
+        // propagation folds any Binary with two literal operands before
+        // RTL lowering ever runs, so an all-literal XMul cannot reach
+        // here from a kernel. Verified by mutation: reverting this line to
+        // the width-unaware `binary` breaks no test, whereas doing the
+        // same in `rtl::vm` breaks the exhaustive xmul tests immediately.
+        //
+        // It is still the correct call rather than dead weight: this pass
+        // runs after other stage-2 passes that can literalise an operand,
+        // and the width-unaware version would be a silent wrong answer
+        // rather than a failure if one ever does.
+        let result_bits = obj.kind(lhs).bits();
+        let result: TypedBits =
+            crate::rtl::runtime_ops::binary_at_result_width(op, arg1_val, arg2_val, result_bits)?;
         let details = obj.symtab[&lhs].clone();
         let result = obj.symtab.lit(result, details);
         Ok(LocatedOpCode {
