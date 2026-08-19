@@ -20,13 +20,13 @@
 use rhdl::prelude::*;
 use rhdl_fpga::doc::write_svg_as_markdown;
 use rhdl_fpga::dsp::nco::{
-    composite::{In, Nco},
+    composite::{In, NcoDefault},
     config::{self, PHASE_W},
     frequency_composer, phase_composer,
 };
 
 fn main() -> Result<(), RHDLError> {
-    let uut = Nco::default();
+    let uut = NcoDefault::default();
 
     // 125 MHz / 64 = 1.953125 MHz, so one output cycle per 64 samples.
     let hz = config::F_SAMPLE_HZ as u128 / 64;

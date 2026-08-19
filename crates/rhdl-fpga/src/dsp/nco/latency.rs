@@ -125,7 +125,7 @@ mod tests {
     use super::*;
     use crate::dsp::nco::{
         frequency_composer::FrequencyComposer, phase_accumulator::PhaseAccumulator,
-        phase_composer::PhaseComposer, sin_cos_linear_interp::SinCosLinearInterp,
+        phase_composer::PhaseComposer, sin_cos_linear_interp::SinCosLinearInterpDefault,
     };
     use rhdl::prelude::*;
 
@@ -245,10 +245,10 @@ mod tests {
     #[test]
     fn phase_to_amplitude_latency_is_as_declared() {
         use crate::dsp::nco::sin_cos_linear_interp::{In as ScIn, TOTAL_W};
-        let uut = SinCosLinearInterp::default();
+        let uut = SinCosLinearInterpDefault::default();
         const STEP: usize = 4;
-        let seq: Vec<ScIn> = (0..12)
-            .map(|k| ScIn {
+        let seq: Vec<ScIn<TOTAL_W>> = (0..12)
+            .map(|k| ScIn::<TOTAL_W> {
                 phase: bits::<TOTAL_W>(if k >= STEP { 1 << 19 } else { 0 }),
             })
             .collect();
