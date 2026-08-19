@@ -31,6 +31,37 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-18 — `dsp::nco::modulation` §8.6: the stream modulation contract
+
+**Paths:** `crates/rhdl-fpga/src/dsp/nco/modulation.rs` (new), `nco/latency.rs`, `nco/mod.rs`, `examples/nco_modulation.rs` (new), `doc/nco_modulation.md` (new).
+
+**Why this, why now:** the last open §8 item. §8.6 does not ask for a port — the frequency composer already had a `modulation` term — it asks for a **contract**, and lists six things that must be defined. This module is that contract, with each clause answered in the docs and pinned by a test.
+
+**Design decisions:**
+
+- **The declared range is the type.** A 16-bit two's-complement sample cannot exceed full scale, so §8.6's "signed range and saturation behaviour" is enforced at the boundary by the width rather than by clamp logic that could be wrong. Wrapping in the composer's sum is then *unreachable* rather than suppressed — but that depends on the master frequency being sane, which is a precondition on the caller, so `the_contribution_cannot_wrap_a_sane_master` states it as a test rather than a comment.
+- **Scaling is a left shift, not a multiply** — exact, and costs no DSP slice. Full scale is ±955 Hz at 125 MHz, which is the right order for zero-order eddy-current compensation. `full_scale_deviation_microhertz` is a `const fn` so the range is a compile-time fact rather than a claim in prose.
+- **Same rate, no interpolation — as the contract, not as a limitation deferred.** A compensation waveform is scheduled against the same global timebase as RF and gradient activity, so it is generated at the sample rate by construction. A differing rate needs an interpolator whose own latency and numerical behaviour would then require defining — §8.6's own standard — and that belongs in a resampling widget upstream.
+- **An absent sample contributes zero, not hold-last.** A compensation value is specific to a *moment*: eddy-current decay is a function of time since the gradient event, so a held-over correction is not a stale approximation of the right answer, it is a confidently wrong one that persists. Reverting to uncorrected is the conservative failure and the step it introduces is visible.
+- **`stale` separates "stopped mid-experiment" from "never started."** Only the first is a fault; without the distinction an idle stream is indistinguishable from a dead one.
+
+**Surprises and gotchas:**
+
+- **Modulation needs one more cycle of lead than a frequency offset.** `MODULATION_CONTROL` = 4 against `FREQUENCY_CONTROL` = 3, because the modulation input registers before reaching the composer while a scheduled offset is applied directly. Same class of asymmetry as `FREQUENCY_LEADS_PHASE_BY`, and precisely why §8.6 requires the latency to be stated.
+- **Another codegen defect, same family as the signed-literal one.** `SignedBits::resize` on a value extracted from an `Option` payload emits `{{32{1'b0}}, r7}` — **zero** extension — while the Rust simulator sign-extends. Tiers 1 and 2 pass; only the `iverilog` round-trip catches it. The same operation on a *direct* signed input emits `$signed({{30{r38[17]}}, r38})` correctly, so RHDL can do it and something about extraction from an aggregate loses the signedness — plausibly the same root cause as the single-field `q`-bundle defect already filed in `tests/signed_literal_comparison.rs`.
+
+  Worked around with explicit sign extension using bit operations only, which do not depend on the operand's declared signedness. **Not diagnosed**: the minimal repro timed out on compile, so the observed behaviour is recorded rather than a root cause claimed. Compiler work, its own PR per §11.1.
+
+**Validation:** 11 tests, one per contract clause plus Tiers 3-5 including `iverilog` RTL and NTL. 84 `dsp::nco` tests green. `MODULATION_INPUT` is measured in `latency.rs` alongside the others rather than asserted.
+
+**Follow-ups:**
+
+- The `Option`-payload sign-extension defect, with the workaround marking where it bites.
+- §8 is now complete apart from §8.8 phase dithering, which is deliberately rejected — it trades a discrete spur for a raised noise floor, wrong for a sensitivity-limited instrument.
+- Next: the modulator, whose design note is at `../ocra2/docs/modulator_design_note.md`.
+
+---
+
 ## 2026-08-18 — `dsp::nco::ramp` §8.5: frequency ramps and chirps
 
 **Paths:** `crates/rhdl-fpga/src/dsp/nco/ramp.rs` (new), `nco/mod.rs`, `examples/nco_ramp.rs` (new), `doc/nco_ramp.md` (new).
