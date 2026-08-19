@@ -45,7 +45,12 @@
 //! transmit path's latency data-dependent and breaks the scheduler's
 //! arithmetic.
 //!
-//! So a mismatch sets `starved` and the output is idle for that cycle.
+//! So a mismatch sets `starved` and the sample emitted for that cycle is
+//! **zero** — deliberately not `None`. "Idle" would be the wrong word:
+//! `None` means TVALID low in the [`RCStream`] encoding, and this stream
+//! is isochronous, so it presents a sample every cycle. Zero is also a
+//! *defined* value where `dont_care` would not be, since it is read back
+//! through `q.out` on the following cycle.
 //! Alignment itself is the scheduler's job: it issues each source's
 //! control changes at the right lead time using the per-path latency
 //! constants. What this widget provides is **detectability**.

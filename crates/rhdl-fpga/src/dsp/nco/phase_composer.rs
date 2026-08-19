@@ -246,11 +246,11 @@ mod tests {
             .chain(vec![terms(100, 20, 3, 0, 0); 4])
             .collect());
         assert!(
-            out.iter().any(|v| *v == 123),
+            out.contains(&123),
             "the composed sum 123 never appeared: {out:?}"
         );
         assert!(
-            out.iter().any(|v| *v == 0),
+            out.contains(&0),
             "the pre-step value never appeared, so the test cannot tell a \
              working composer from one stuck at 123: {out:?}"
         );
