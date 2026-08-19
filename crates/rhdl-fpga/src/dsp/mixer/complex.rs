@@ -77,6 +77,20 @@
 //! [`Nco`](crate::dsp::nco::composite::Nco) does for the same condition.
 //! A silently dropped sample is the failure this codebase has shipped
 //! before.
+//!
+//!# Example
+//!
+//! Read alongside [`ComplexRealMixer`](super::ComplexRealMixer)'s
+//! example: the two differ in exactly the way the arithmetic does. Here
+//! both operands rotate and the product's frequency is their sum, which
+//! is the thing a real operand cannot do.
+//!
+//!```
+#![doc = include_str!("../../../examples/complex_mixer.rs")]
+//!```
+//!
+//! The trace below demonstrates the result.
+#![doc = include_str!("../../../doc/complex_mixer.md")]
 
 use rhdl::prelude::*;
 
