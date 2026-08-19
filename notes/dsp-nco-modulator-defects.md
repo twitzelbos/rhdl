@@ -366,6 +366,45 @@ Recorded so a later audit does not repeat the work:
   in the emitted Verilog and asserts 2 and 4 — a resource claim made
   checkable, exactly as `mixer/mod.rs` argues it must be.
 
+## Resolution (2026-08-19)
+
+All findings except 3 are fixed. Recorded here so the note reads as a
+closed audit rather than an open list.
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | `ComplexMixer` artifacts | **Fixed.** `examples/complex_mixer.rs` + `doc/complex_mixer.md`, written as the companion to `complex_real_mixer`'s so the two show what a real operand changes. |
+| 2 | Mixer ready + overrun | **Fixed.** `ready: true` and an `overrun` output on both, plus Tier-4/5 stimuli that actually drive the flags. |
+| 3 | `MODULATION_CONTROL` unmeasured | **Open**, and deliberately so — it needs a decision on whether `Nco` is the deployment unit or a subassembly. |
+| 4 | No spectral regression | **Fixed.** `worst_in_band_spur_is_below_the_threshold`, on the widget, verified able to fail at −0.00 dBc. |
+| 5 | `nco/mod.rs` drift | **Fixed.** Superseded recommendation marked at the point it is made; module table replaced. |
+| 6 | Four minor items | **Fixed**, all four. |
+
+### What the audit did not find, and the work did
+
+Recorded because it is the strongest argument for the audit's own method
+being insufficient on its own:
+
+- **The interpolation headroom was not scale-invariant.** Reviewing the
+  source found nothing wrong with `TABLE_SCALE`; the exhaustive test
+  proved it correct *at the default configuration*, and the docs argued
+  convincingly that one LSB was exactly the overshoot. All true, and all
+  specific to 8/18. Parameterising the widths and then **validating** the
+  wider configurations is what surfaced it: at 10/14/26/24 the sum
+  overshoots by 3 LSB, wraps, and the output collapses to −29.8 dBc and
+  4.7 effective bits. Reading cannot find that; running can.
+- **The multiply was emitted at `INT_W`, not at operand width.** A 48×48
+  signed multiply, in a widget that picked `AMP_W = 18` *because* 18 is
+  the DSP48E1's native port width. Reading the kernel does not show this
+  — the resize looks like ordinary width bookkeeping. It took reading the
+  emitted Verilog, prompted by a question about whether vendor primitives
+  are instantiated at all. They are not; see
+  `notes/xmul-natural-width-multiply.md`.
+
+Both were found by asking what the hardware actually does, not by
+comparing the source against the contract. Worth remembering the next
+time an audit comes back with a clean bill on a numeric datapath.
+
 ## Suggested order of work
 
 1. Finding 2 — do this first, not second.  It changes both mixers' `Out`,
