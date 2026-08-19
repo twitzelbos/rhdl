@@ -33,6 +33,48 @@ where
     pub im: SignedBits<W>,
 }
 
+/// A purely **real** sample.
+///
+/// A newtype rather than a bare `SignedBits<W>`, so that "a real
+/// signal" and "one component of a complex signal" are different types.
+/// Without the distinction a mixer cannot select its arithmetic from
+/// its inputs, and the multiplier count stops being visible in the
+/// instantiation.
+#[derive(PartialEq, Clone, Copy, Debug, Digital, Default)]
+pub struct Real<const W: usize>
+where
+    rhdl::bits::W<W>: BitWidth,
+{
+    /// The value.
+    pub v: SignedBits<W>,
+}
+
+/// A purely **imaginary** sample.
+///
+/// The counterpart to [`Real`], and it closes the algebra: with all
+/// three sample types the *result* type of a multiply follows from the
+/// operand types.
+///
+/// | A | B | result | multiplies |
+/// |---|---|---|---|
+/// | [`Iq`] | [`Iq`] | [`Iq`] | 4 |
+/// | [`Iq`] | [`Real`] or [`Imag`] | [`Iq`] | 2 |
+/// | [`Real`] | [`Real`] | [`Real`] | 1 |
+/// | [`Imag`] | [`Imag`] | [`Real`] **negated** | 1 |
+/// | [`Real`] | [`Imag`] | [`Imag`] | 1 |
+///
+/// The `Imag × Imag → Real` row carries a sign flip, because
+/// `i · i = −1`. Having it change the *type* is what makes the
+/// negation explicit rather than a sign error waiting to happen.
+#[derive(PartialEq, Clone, Copy, Debug, Digital, Default)]
+pub struct Imag<const W: usize>
+where
+    rhdl::bits::W<W>: BitWidth,
+{
+    /// The coefficient of `i`.
+    pub v: SignedBits<W>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -49,6 +91,13 @@ mod tests {
             <Iq<18> as Digital>::BITS,
             2 * <SignedBits<18> as Digital>::BITS
         );
+    }
+
+    /// The scalar types cost exactly their component and nothing else.
+    #[test]
+    fn scalar_types_are_free() {
+        assert_eq!(<Real<18> as Digital>::BITS, 18);
+        assert_eq!(<Imag<18> as Digital>::BITS, 18);
     }
 
     /// Default is the origin, which is the correct idle sample for a
