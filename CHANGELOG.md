@@ -31,6 +31,39 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-19 — `dsp::mixer`: the modulator, and `Real`/`Imag` sample types
+
+**Paths:** `crates/rhdl-fpga/src/dsp/mixer/{mod,complex,complex_real,rounding}.rs` (new), `dsp/iq.rs`, `dsp/mod.rs`, `examples/complex_real_mixer.rs` (new), `doc/complex_real_mixer.md` (new). Design note at `../ocra2/docs/modulator_design_note.md`.
+
+**Why this, why now:** the block that multiplies two sample streams. One arithmetic, two uses — transmit multiplies an `Iq` carrier by a `Real` envelope; receive multiplies real ADC samples by an `Iq` carrier — so the same widget serves the modulator and the DDC's first stage.
+
+**Design decisions:**
+
+- **Separate widgets rather than one generic**, because knowing an operand is real is worth silicon: 4 multiplies against 2. Two tidier options were rejected for the same reason — representing a real operand as an `Iq` with `im` tied to zero, or selecting with a `const IS_COMPLEX: bool` and an `if`. CLAUDE.md §4 is explicit that `if`/`else` lowers to a mux where **both branches always evaluate**, so either would leave the saving to a later pass and the emitted netlist would still hold four multiplies. **A resource claim that cannot be tested is not a resource claim** — `multiplier_count_is_as_claimed` counts multiplies in the emitted Verilog and asserts 4 and 2.
+- **`Real<W>` and `Imag<W>` join `Iq<W>`.** With all three the *output type* and the multiplier count both follow from the operand types, so an instantiation needing four multiplies cannot be mistaken for one needing two. The `Imag × Imag → Real` case carries a sign flip, and having it change the type makes the negation explicit rather than a sign error waiting to happen.
+- **Convergent rounding, chosen by measurement.** The design note initially took round-half-up from AMD's PG104. Measuring the narrowing on the real signal overturned it: convergent −103.0 dBc worst spur against round-half-up's −98.0, within 1.1 dB of dither while costing 13 dB less broadband floor.
+- **No saturation.** The full product is carried at its natural width, so the maximum-negative-squared case cannot overflow. This matches PG104, whose natural width is "the sum of the input widths plus one" and which has no saturation logic: overflow at a narrowing stage is a consequence of the chosen output width, not of the multiplier.
+- **Starvation is reported, not buffered.** Both inputs are isochronous, so a one-sided cycle cannot happen in a correct design; buffering would make the transmit path's latency data-dependent and break the scheduler's arithmetic.
+
+**Surprises and gotchas:**
+
+- **Convergent pays here for a reason that does not generalise.** The usual argument for skipping it is that exact ties are rare — true when many bits are discarded. Here the drop is small, so a tie is about **1 sample in 16**, and rounding all of them the same direction is a systematic error correlated with the signal: a spur, not noise. PG104 not offering convergent is not evidence against it; that is a general-purpose IP where drops are typically large.
+- **Const-generic shifts cost nothing.** `>> bits::<8>(SHIFT as u128)` const-folds to sign-extend-and-slice — `$signed({{4{r3[31]}}, r3})` then `r6[35:4]` — so the mixers are fully generic over input and output widths with no barrel shifter. `SignedBits<N> >> usize` is not implemented, which is what forces the `bits` form.
+- **Tuple patterns are not accepted in kernel match arms**, so the two streams are unpacked separately rather than matched as a pair.
+- **`dont_care()` cannot be used as a merge-path placeholder.** Both mixers initially used it for the not-both-present branch and for the pre-match value; RHDL correctly rejected reading it back through `q.out` as a partial initialisation. Zero is the right value anyway — it is the idle sample for a transmit chain.
+- **Two of my own tests were wrong in ways that made them prove nothing**, and only mutation testing exposed it. `ties_go_to_even` put the tie value in an *operand*, where it exceeded the 18-bit range, so every case hit `continue` and nothing ran; the fix factors the tie across both operands. `the_output_has_no_dc_offset` summed an odd number of samples, leaving one half of a ± pair unmatched and reading as a huge false offset — and its tolerance of `n/2` was exactly the bias truncation produces, so it passed under truncation. Tightened to `n/8`, it now fails with `re sum -64 over 128 samples`, which is precisely the half-LSB-per-sample bias.
+
+**Validation:** 19 tests. Both `iverilog` round-trips (RTL and NTL) pass, which also settles a worry: the earlier `Option`-payload signedness defect affects `resize`, not arithmetic — a signed multiply through an `Option` payload is emitted correctly. Mutation-verified twice: removing tie detection fails `ties_go_to_even`; removing the rounding constant fails the DC test. Plus maximum-negative-squared, `i·i = −1`, and starvation.
+
+**Follow-ups:**
+
+- `RealMixer` (`Real × Real`, 1 multiply) completes the table; not needed yet.
+- Karatsuba would trade one multiply for five adds. Not taken — DSP48 slices are plentiful on the Zynq and the adds land in fabric.
+- Utility widgets: `Iq` stream split into `Real`/`Imag`, the matching combiner, and a constant `RCStream` source.
+- The DDC: a CIC-style decimator with runtime factor `R` and compile-time stage count `N`, and a full P/Q resampler. Plus a Rust model for compensation-filter design.
+
+---
+
 ## 2026-08-18 — `dsp::nco::modulation` §8.6: the stream modulation contract
 
 **Paths:** `crates/rhdl-fpga/src/dsp/nco/modulation.rs` (new), `nco/latency.rs`, `nco/mod.rs`, `examples/nco_modulation.rs` (new), `doc/nco_modulation.md` (new).

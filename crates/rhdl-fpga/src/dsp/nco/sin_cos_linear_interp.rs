@@ -912,6 +912,92 @@ mod tests {
         Ok(())
     }
 
+    /// Which narrowing rule harms the signal least?
+    ///
+    /// Narrows the 18-bit oscillator output to the 14-bit DAC four
+    /// ways and reports the two things that matter separately: the
+    /// worst *discrete* spur, and the broadband floor. They trade
+    /// against each other, so a single number cannot answer it.
+    #[test]
+    #[ignore = "diagnostic"]
+    fn scratch_narrowing_rules() {
+        use crate::dsp::nco::model::{blackman_harris, fft};
+        let tbl = model_table();
+        const N: usize = 1 << 16;
+        const OUT_W: usize = 14;
+        const DROP: usize = AMP_W - OUT_W; // 4 bits
+        let half = 1i128 << (DROP - 1);
+        let win = blackman_harris(N);
+
+        // Deterministic xorshift, so the dither row reproduces.
+        let mut st: u32 = 0x1234_5678;
+        let mut rnd = move || {
+            st ^= st << 13;
+            st ^= st >> 17;
+            st ^= st << 5;
+            (st & ((1 << DROP) - 1) as u32) as i128
+        };
+
+        println!("\n  narrowing to {OUT_W} bits, worst discrete spur / broadband floor / DC");
+        println!(
+            "  {:<18} {:>10} {:>12} {:>10}",
+            "rule", "spur dBc", "floor dBc", "DC dBc"
+        );
+
+        for rule in ["truncate", "round-half-up", "convergent", "dither"] {
+            let mut re = vec![0.0f64; N];
+            let mut im = vec![0.0f64; N];
+            let mut phase = 0u128;
+            let word = 419_431u128; // odd, so truncation spurs are mild
+            for k in 0..N {
+                let (_s, c) = model_pair_raw(&tbl, phase);
+                let narrowed = match rule {
+                    "truncate" => c >> DROP,
+                    "round-half-up" => (c + half) >> DROP,
+                    "convergent" => {
+                        let q = (c + half) >> DROP;
+                        // ties (exact half) go to even
+                        if (c - half) & ((1 << DROP) - 1) == 0 && q % 2 != 0 {
+                            q - 1
+                        } else {
+                            q
+                        }
+                    }
+                    _ => (c + rnd()) >> DROP,
+                };
+                re[k] = narrowed as f64 * win[k];
+                phase = (phase + word) % (1u128 << TOTAL_W);
+            }
+            fft(&mut re, &mut im);
+            let mag: Vec<f64> = (0..N / 2)
+                .map(|k| (re[k] * re[k] + im[k] * im[k]).sqrt())
+                .collect();
+            let carrier = (1..N / 2)
+                .max_by(|a, b| mag[*a].total_cmp(&mag[*b]))
+                .unwrap();
+            let c_mag = mag[carrier];
+
+            let mut others: Vec<f64> = mag
+                .iter()
+                .enumerate()
+                .filter(|(k, _)| *k > 0 && (*k as i64 - carrier as i64).abs() > 8)
+                .map(|(_, m)| *m)
+                .collect();
+            let worst = others.iter().cloned().fold(0.0f64, f64::max);
+            others.sort_by(f64::total_cmp);
+            let floor = others[others.len() / 2];
+            let dc = mag[0];
+
+            println!(
+                "  {:<18} {:>10.1} {:>12.1} {:>10.1}",
+                rule,
+                20.0 * (worst / c_mag).log10(),
+                20.0 * (floor / c_mag).log10(),
+                20.0 * (dc / c_mag).log10()
+            );
+        }
+    }
+
     /// Bit-exact software model of the datapath, so the overflow
     /// question can be answered spectrally without running 65536 cycles
     /// of simulation.  Mirrors the kernel line for line.
