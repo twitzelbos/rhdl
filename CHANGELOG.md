@@ -31,6 +31,71 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-19 — `iverilog` becomes an enforced precondition instead of 504 identical failures
+
+**Paths:** `crates/rhdl-vlog/src/toolchain.rs` (new), `crates/rhdl-vlog/src/lib.rs`, `crates/rhdl/src/lib.rs`, `crates/rhdl/tests/iverilog_precondition.rs` (new), and one `iverilog_precondition` module in each of `rhdl-core`, `rhdl-fpga`, `rhdl-alto`, `rhdl-rule`, `rhdl-rv32i`, `doc/book/src/code`. `CLAUDE.md` §8 and §12 rule 3.
+
+**Why this, why now:** running the suite on a machine without the tool produced **504 individual failures**, every one a bare `NotFound` panic from `Command::new("iverilog")`. It read like a code regression; diagnosing it meant opening a failure and recognising the panic text. Tier 4 is the only tier that checks the *emitted hardware*, so this is a precondition rather than an optional convenience — a run without it reports success while proving much less than it appears to.
+
+**Design decisions:**
+
+- **The check verifies *working*, not *present*.** `iverilog` and `vvp` are separate binaries — one compiles the testbench, the other runs it — and they break independently. A `PATH` lookup for `iverilog` alone would pass on a machine that can compile and not simulate: a working compiler and a useless test suite. So the check compiles and runs a trivial module end to end and requires the sentinel output, which also catches a version too old for the flags in use and an install whose binaries exist but fail. Three diagnoses: `IverilogMissing`, `VvpMissing`, `NotWorking`.
+- **`std::process::exit(1)`, not `panic!`.** A panic fails one test and lets the rest of the binary reproduce the same failure with worse messages. Exiting fails the binary immediately, and since `cargo test` is fail-fast across binaries the run stops at the precondition.
+- **It lives in `rhdl-vlog`**, the lowest crate in the dependency graph that invokes the tool, re-exported as `rhdl::vlog` so downstream crates reach it without a new dependency edge.
+- **The message is part of the contract**, and has a test asserting so. It names the tool, the three install commands, that *both* binaries are required, and that the abort is deliberate.
+
+**Surprises and gotchas:**
+
+- ***** The first version of the precondition contained the exact bug class being fixed elsewhere in the same session. ***** It tested the failure path by clearing `PATH` process-wide; cargo runs tests in parallel, so `iverilog_precondition` saw the empty environment and exited 1 **on a machine where the tool was installed.** Same shared-mutable-state race as two tests sharing a file, with the process environment standing in. Refactored to `check_iverilog_with(iverilog_bin, vvp_bin)` and inject a nonexistent name — no global mutation at all. It also bought a second test: a missing `vvp` is now verified as a *separate* diagnosis.
+- **CLAUDE.md's documented workaround never worked.** Rule 3 said to run `cargo test --all -- --skip iverilog`. The affected tests include `test_vlog_generation`, `no_combinatorial_paths` and `test_synthesizable` — none of which match `iverilog` by name — so the filter skipped a fraction and left the rest failing. Withdrawn on both counts: wrong policy, and ineffective.
+- **Coverage is not total, and the code says so.** Each file under `crates/rhdl/tests/` is its own binary; one precondition per binary would be needed to guarantee no raw panic can ever appear. There are around thirty. What is in place — seven library-level checks plus one integration binary, with fail-fast — stops a toolchain-less run early with one clear message, but if cargo reaches another integration binary first, that binary panics the old way. Making it airtight is a mechanical change worth doing separately.
+
+**Validation:** the `toolchain` module's own four tests, covering the precondition, both missing-binary diagnoses separately, and the message staying actionable. All seven crate-level preconditions pass.
+
+**Follow-ups:**
+
+- One precondition per integration binary in `crates/rhdl/tests/`, if the ordering gap ever bites.
+- The same treatment for the IceStorm tools was considered and deliberately *not* applied: those are genuinely optional, so they use the runtime skip added earlier today rather than a hard precondition. The distinction is whether the tool's absence invalidates the run.
+
+---
+
+## 2026-08-19 — Closing four coverage gaps: two artifact-writing tests, a vacuous drift check, and a masked workspace
+
+**Paths:** `crates/rhdl-core/src/rtl/runtime_ops.rs`, `compiler/rtl_passes/constant_propagation.rs`, `crates/rhdl-fpga/src/doc.rs`, `doc/book/src/code/src/{count_ones,timed/tracing}.rs`, `doc/book/src/code/time_tracing_waveform.svg`, `crates/Justfile`, `CLAUDE.md` §8.
+
+**Why this, why now:** #85 shipped with one gap flagged honestly. Investigating it turned up three more, two of which were the same bug class as each other and one of which was hiding the other two.
+
+**Design decisions:**
+
+- **Cover the *logic*, not the unreachable call site.** `binary_at_result_width`'s use in `constant_propagation` genuinely cannot be reached from a kernel — RHIF constant propagation folds two-literal binaries before RTL lowering runs. Rather than contrive reachability, the shared function gets six unit tests including exhaustive signed and unsigned narrow-operand multiplies. What stays uncovered is one line of delegation, not the arithmetic.
+- **The FSM drift check becomes read-only, and the two tests merge.** `refresh_and_check_fsm_diagram` writes the file and then verifies its own write, so it could never fail on staleness. Removing the write both fixes the race and restores the property the test was named for.
+- **A runtime tool-availability gate for the IceStorm tests, not `#[ignore]`.** The first attempt used `#[ignore]`, matching the precedent in `xor.rs` and `half_adder.rs`. That fixes the failure but discards the coverage on every machine, and CLAUDE.md calls it "a temporary measure, not a permanent state" — so once the toolchain was installed it was replaced with `skip_without_icestorm!()`, which **runs** the tests where yosys/nextpnr/icetime/icepack are present and **skips** with a message naming the missing ones where they are not. An attribute cannot express this: `#[ignore]` is resolved at compile time and tool availability is a runtime fact.
+- **The gate does not cover hardware.** `test_build_flash` and `test_flash_icestorm` reach `iceprog` and need a board physically attached, which no `PATH` lookup can detect. They stay `#[ignore]`d, and that is permanent rather than environmental — confirmed by `test_build_flash` still failing with the full toolchain installed.
+- **`DetRng` in place, not a move to an example.** The 2026-08-16 work's own precedent: making the generator deterministic leaves the call site exercising what it was written to exercise. The write *is* the point for a book figure, and with a fixed seed it is idempotent.
+
+**Surprises and gotchas:**
+
+- ***** The test that looked like the FSM drift guard was the reason there wasn't one. ***** `refresh_and_check_fsm_diagram` refreshes before checking, so a kernel change with a forgotten refresh shipped a stale rustdoc diagram silently. CLAUDE.md rule 14 requires a drift guard for `#[derive(FsmWidget)]` widgets; for the `#[fsm_doc]` path it was present in name only. The flake was the *symptom* that led to it — the writer raced a sibling reader in the same test binary.
+- ***** Three permanently-failing tests were hiding the entire rest of the workspace. ***** `cargo test --all` is fail-fast **across test binaries**, so the `count_ones` failures aborted every run before `rhdl-fpga` was reached. That is how a flaky test and a random-artifact-rewriting test both survived unnoticed, and it means several "workspace clean" statements made while developing #83 and #85 rested on truncated runs. **Use `--no-fail-fast`.**
+- **A mutation check caught a bad test written in the same sitting** — the second time this repo has recorded that. `shifts_are_not_widened` used width 8 throughout, so widening was a no-op and it passed with the exclusion removed: named for a property it never checked. With a 16-bit result, where widening would preserve the shifted-out bits, it catches the mutation.
+- **Two of the four gaps are the same bug class** — a test writing a committed artifact — and both were leftovers from a convention this repo established and documented on 2026-08-16. Neither crate was covered by that sweep: `doc.rs`'s FSM path postdates it, and `doc/book/src/code` was never in scope.
+- **A full test run is not a safe place to `git stash`.** One run during #85 was discarded because a stash landed mid-compile and part of it built against `main`; it reported failures that had already been fixed. Same shape as the merged-branch mistake: check the state you are operating on.
+
+**Validation:** `cargo test --all --no-fail-fast` — **3206 passed, 0 failed** across 143 suites, the first fully green workspace run in this line of work. The three IceStorm timing tests are confirmed to *pass* with the toolchain installed, not merely to skip correctly — which was the honest gap in the `#[ignore]` version: it swapped a failure for a skip without establishing that the code underneath worked. The gate is verified both ways, by stripping `PATH` so all four tools vanish. `time_tracing_waveform.svg` verified byte-identical across three regenerations; the working tree is clean after a full run, which is the property that makes a dirty tree mean something again. Both mutations of `binary_at_result_width`'s widen/skip decision are caught. The FSM check run three consecutive times.
+
+**A guard, and a corrected instruction.** Following the 2026-08-16 precedent — that work added `tests/stall_lockstep_audit.rs` on the grounds that "reading is what let them in, so the check is mechanical now" — the same argument applies here, since both instances were found by noticing a dirty `git status`.
+
+A *syntactic* ban on writes was considered and rejected: every Tier-5 digest test legitimately writes its `.vcd.rhdl` sidecar, so a grep-based audit would flag ~100 correct sites. The invariant that actually matters is not "no writes" but **"a full test run leaves the tree clean"**, which is checkable directly. There are no CI workflows in this repo, so it lands as `just tree-clean` in `crates/Justfile`: refuse to start on a dirty tree, run the suite, then require `git status` to be empty, with a message naming the likely cause.
+
+**CLAUDE.md §8 is corrected too**, because the tooling table was part of the problem: it prescribed `cargo test --all`, which is fail-fast across binaries. It now prescribes `--no-fail-fast`, says the flag is not optional, and states the committed-artifact invariant with the reason — that a dirty `git status` has to mean something.
+
+**Follow-ups:**
+
+- **`iverilog` has the same problem at 168× the scale.** On a machine without it, 504 tests fail with the same panic. CLAUDE.md §12 rule 3 suggests `cargo test --all -- --skip iverilog`, and that demonstrably does not work: the failures include `test_vlog_generation`, `no_combinatorial_paths` and `test_synthesizable`, none of which match `iverilog` by name. The same gate would make the suite honest there, but it touches many call sites and wants its own PR.
+- `just tree-clean` is a command someone has to remember to run. It becomes a real guard only when there is CI to run it, and this repo has no workflows at all — worth deciding separately.
+
+---
+
 ## 2026-08-19 — Compiler: `XMul` emits its operands at their declared widths
 
 **Paths:** `crates/rhdl-core/src/compiler/lower_rhif_to_rtl.rs`, `rtl/runtime_ops.rs`, `rtl/vm.rs`, `rtl/spec.rs`, `compiler/rtl_passes/constant_propagation.rs`, `crates/rhdl/tests/dyn_bits.rs`, `doc/book/src/bits/dyn_bits.md`, `notes/xmul-natural-width-multiply.md`, plus two re-blessed snapshots (`dsp::nco::sin_cos_linear_interp`, `core::mac`).

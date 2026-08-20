@@ -11,3 +11,33 @@ coverage:
     # Open the coverage report in the default web browser (macOS)
     echo "Opening coverage report in browser..."
     open target/coverage/html/index.html
+
+# Committed artifacts (traces under doc/, VCD type sidecars under vcd/, FSM
+# diagrams) are refreshed by `cargo run --example ...` and only CHECKED by
+# tests. A test may write one, but only if the bytes are identical every
+# time. When that breaks, a dirty `git status` stops meaning anything and a
+# genuinely changed waveform is indistinguishable from the churn.
+#
+# --no-fail-fast is required: cargo test is fail-fast across test binaries,
+# so one failing crate hides every crate after it.
+
+# Verify that a full test run leaves the working tree clean
+tree-clean:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "$(git rev-parse --show-toplevel)"
+    if [ -n "$(git status --porcelain)" ]; then
+        echo "working tree is already dirty; commit or stash first" >&2
+        git status --short >&2
+        exit 1
+    fi
+    cargo test --all --no-fail-fast || echo "note: tests failed; still checking artifacts" >&2
+    if [ -n "$(git status --porcelain)" ]; then
+        echo "FAIL: the test run modified committed artifacts:" >&2
+        git status --short >&2
+        echo >&2
+        echo "A test is writing a committed file with non-identical bytes." >&2
+        echo "Fix the stimulus (see doc::DetRng) or move the write to an example." >&2
+        exit 1
+    fi
+    echo "OK: full test run left the working tree clean"

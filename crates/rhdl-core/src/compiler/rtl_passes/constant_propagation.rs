@@ -35,17 +35,23 @@ fn propagate_binary(
         // stopped pre-widening -- would otherwise fold at the operand
         // width and silently truncate the product.
         //
-        // *** Defensive, and unexercised today. *** RHIF constant
-        // propagation folds any Binary with two literal operands before
-        // RTL lowering ever runs, so an all-literal XMul cannot reach
-        // here from a kernel. Verified by mutation: reverting this line to
-        // the width-unaware `binary` breaks no test, whereas doing the
-        // same in `rtl::vm` breaks the exhaustive xmul tests immediately.
+        // *** This CALL SITE is not reachable from a kernel. *** RHIF
+        // constant propagation folds any Binary with two literal operands
+        // before RTL lowering ever runs, so an all-literal XMul never gets
+        // here. Verified by mutation: reverting this line to the
+        // width-unaware `binary` breaks no test, whereas doing the same in
+        // `rtl::vm` breaks the exhaustive xmul tests immediately.
         //
-        // It is still the correct call rather than dead weight: this pass
+        // It is still the correct call rather than dead weight -- this pass
         // runs after other stage-2 passes that can literalise an operand,
-        // and the width-unaware version would be a silent wrong answer
-        // rather than a failure if one ever does.
+        // and the width-unaware version would then be a silent wrong answer
+        // rather than a failure.
+        //
+        // The *logic* is covered regardless: `binary_at_result_width` has
+        // its own unit tests, including exhaustive signed and unsigned
+        // narrow-operand multiplies, and both mutations of its widen/skip
+        // decision are caught. So what is uncovered here is one line of
+        // delegation, not the arithmetic.
         let result_bits = obj.kind(lhs).bits();
         let result: TypedBits =
             crate::rtl::runtime_ops::binary_at_result_width(op, arg1_val, arg2_val, result_bits)?;

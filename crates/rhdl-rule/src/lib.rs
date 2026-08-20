@@ -181,3 +181,23 @@ pub fn rule_kernel_attr(attr: TokenStream, item: TokenStream) -> TokenStream {
         Err(err) => err.to_compile_error().into(),
     }
 }
+
+#[cfg(test)]
+mod iverilog_precondition {
+    //! Icarus Verilog is a required precondition, not an optional tool.
+    //!
+    //! Tier 4 of the validation stack compiles this crate's emitted Verilog
+    //! and simulates it against the Rust model. Without a working
+    //! `iverilog` that check does not run, so the suite would report
+    //! success while proving much less than it appears to.
+    //!
+    //! One test per crate, because `require_iverilog` exits the test
+    //! process: whichever crate cargo reaches first aborts the run with a
+    //! single actionable message instead of a few hundred `NotFound`
+    //! panics that all share the one cause.
+
+    #[test]
+    fn a_working_iverilog_is_present() {
+        rhdl::vlog::toolchain::require_iverilog();
+    }
+}
