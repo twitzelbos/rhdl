@@ -45,6 +45,16 @@
 //! defects in this tree, and a bit test does not depend on the
 //! operand's declared signedness at all.
 
+//!
+//!# Example
+//!
+//!```
+#![doc = include_str!("../../../examples/cordic_magphase.rs")]
+//!```
+//!
+//! The trace below demonstrates the result.
+#![doc = include_str!("../../../doc/cordic_magphase.md")]
+
 use rhdl::prelude::*;
 
 use crate::core::dff;
@@ -254,6 +264,7 @@ pub fn cordic_step(s: Stage, k: Bits<8>, angle: SignedBits<ANGLE_W>) -> Stage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use expect_test::expect;
     use std::f64::consts::TAU;
 
     const W: usize = 18;
@@ -449,6 +460,52 @@ mod tests {
             adds + subs >= ITERATIONS,
             "expected at least one add/subtract per iteration"
         );
+        Ok(())
+    }
+
+    /// Tier 3 — HDL emission shape.
+    ///
+    /// Shape only: 553 register declarations make a full snapshot
+    /// unreviewable, and the resource counts are asserted separately by
+    /// `report_the_resource_cost`.
+    #[test]
+    fn test_vlog_generation() -> miette::Result<()> {
+        let uut = Uut::default();
+        let hdl = uut.descriptor("top".into())?.hdl()?.modules.pretty();
+        let shape = hdl
+            .lines()
+            .filter(|l| l.starts_with("module "))
+            .map(|l| l.split('(').next().unwrap().to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let expect = expect![[r#"
+            module top
+            module top_pipe"#]];
+        expect.assert_eq(&shape);
+        Ok(())
+    }
+
+    /// Tier 5 — VCD digest.
+    #[test]
+    fn test_cordic_vectoring_trace() -> miette::Result<()> {
+        let uut = Uut::default();
+        let seq: Vec<In<W>> = (0..24i128)
+            .map(|k| In::<W> {
+                sample: Some(Iq::<W> {
+                    re: signed::<W>((k - 12) * 7000),
+                    im: signed::<W>((12 - k) * 5000),
+                }),
+            })
+            .collect();
+        let stream = seq.into_iter().with_reset(1).clock_pos_edge(100);
+        let vcd = uut.run(stream).collect::<VcdFile>();
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("vcd")
+            .join("cordic_vectoring");
+        std::fs::create_dir_all(&root).unwrap();
+        let expect = expect!["e95f2751c7ed7423be6e12d2008aae58d887461113270e03c0ef225d649ec366"];
+        let digest = vcd.dump_to_file(root.join("cordic_vectoring.vcd")).unwrap();
+        expect.assert_eq(&digest);
         Ok(())
     }
 

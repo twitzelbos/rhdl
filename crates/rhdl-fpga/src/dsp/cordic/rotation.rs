@@ -217,6 +217,7 @@ pub fn rotation_step(s: Stage, k: Bits<8>, angle: SignedBits<ANGLE_W>) -> Stage 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use expect_test::expect;
     use std::f64::consts::TAU;
 
     type Uut = CordicRotation;
@@ -403,6 +404,43 @@ mod tests {
             "round trip worst component error {worst} of {R}; the two \
              directions do not invert each other"
         );
+    }
+
+    /// Tier 3 — HDL emission shape.
+    #[test]
+    fn test_vlog_generation() -> miette::Result<()> {
+        let uut = Uut::default();
+        let hdl = uut.descriptor("top".into())?.hdl()?.modules.pretty();
+        let shape = hdl
+            .lines()
+            .filter(|l| l.starts_with("module "))
+            .map(|l| l.split('(').next().unwrap().to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let expect = expect![[r#"
+            module top
+            module top_pipe"#]];
+        expect.assert_eq(&shape);
+        Ok(())
+    }
+
+    /// Tier 5 — VCD digest.
+    #[test]
+    fn test_cordic_rotation_trace() -> miette::Result<()> {
+        let uut = Uut::default();
+        let seq: Vec<In> = (0..24i128)
+            .map(|k| polar(70_000, k as f64 / 24.0))
+            .collect();
+        let stream = seq.into_iter().with_reset(1).clock_pos_edge(100);
+        let vcd = uut.run(stream).collect::<VcdFile>();
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("vcd")
+            .join("cordic_rotation");
+        std::fs::create_dir_all(&root).unwrap();
+        let expect = expect!["1914f560697d499e6d1e89160cdc85f8428e547b21d210b7ab690719ecdce117"];
+        let digest = vcd.dump_to_file(root.join("cordic_rotation.vcd")).unwrap();
+        expect.assert_eq(&digest);
+        Ok(())
     }
 
     /// Tier 4 — emitted Verilog agrees with the Rust simulation.

@@ -140,12 +140,14 @@ The NMR-specific advice is stated plainly: **decimate first and convert in softw
 
 Also: `u8` is not `Digital`, so a shift amount must be `Bits<8>`.
 
-**Validation:** 12 tests. Both directions are accurate over the whole circle (64 vectors at constant radius, so magnitude and phase error are both visible), on all four axes, and at the origin. Latency is asserted at exactly `ITERATIONS` with exactly one result per sample. Both `iverilog` round-trips pass. The load-bearing test is `vectoring_then_rotation_is_the_identity`: a gain, quadrant or table error in *either* direction breaks it, and testing one direction alone would not catch a consistent mistake made in both.
+**Validation:** 16 tests, all five tiers.
+
+**The audit in `notes/dsp-nco-modulator-defects.md` finding 1 applied to this widget too**, and I shipped it one PR after that finding was written: no example, no committed trace, no Tier 3, no Tier 5. Added after reading the audit rather than before opening the PR, which is the wrong order. Finding 2 — the false `ready` — does *not* apply: the CORDIC takes a bare `Option<Iq<W>>` and emits plain fields with a `valid` flag, so there is no `RCStream` ready contract to misstate. Both directions are accurate over the whole circle (64 vectors at constant radius, so magnitude and phase error are both visible), on all four axes, and at the origin. Latency is asserted at exactly `ITERATIONS` with exactly one result per sample. Both `iverilog` round-trips pass. The load-bearing test is `vectoring_then_rotation_is_the_identity`: a gain, quadrant or table error in *either* direction breaks it, and testing one direction alone would not catch a consistent mistake made in both.
 
 **Follow-ups:**
 
-- The `lower_rhif_to_rtl.rs` shift overflow.
-- Iteration count is fixed at 16. Making it a const generic is natural but needs the dynamic-index bug fixed first, or a macro to generate the unrolled chain.
+- The `lower_rhif_to_rtl.rs` shift overflow. **Fixed separately** — `array.size.min(1 << slot_bits)` overflowed at a 64-bit index before `.min()` could clamp it. The boundary turned out to be sharp and narrow: `b63` compiled, `b64` panicked, so wide indices were always meant to work and 64 was an arithmetic edge case rather than a design boundary. A saturating shift was the whole of it.
+- Iteration count is fixed at 16. Making it a const generic is natural, but it needs a macro to generate the unrolled chain — or index sizing to improve. **It does *not* depend on the shift overflow above**, which an earlier version of this entry claimed. A const-generic loop bound needs `ATAN_TABLE[i]` with a loop variable, which produces a *type* error about the index needing to be a `Bits<N>` sized to the array; that is the `as_bits()` inference item in `widget-roadmap.md`, not the overflow. The two were coupled here by assumption, and measuring them showed they are unrelated.
 
 ---
 
