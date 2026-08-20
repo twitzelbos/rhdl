@@ -116,6 +116,39 @@ An independent confirmation fell out of the re-blessed Tier-3 snapshots: the NCO
 
 ---
 
+## 2026-08-19 — `dsp::cordic`: rectangular ↔ polar, and why you probably should not
+
+**Paths:** `crates/rhdl-fpga/src/dsp/cordic/{mod,vectoring,rotation}.rs` (new), `dsp/mod.rs`.
+
+**Why this, why now:** `Iq` ↔ magnitude/phase, requested as a utility. Unlike phase-to-amplitude — where a quarter-wave table beat CORDIC decisively — there is no table alternative here: `sqrt(re² + im²)` needs a square root or CORDIC, and vectoring mode yields magnitude *and* phase in one pass.
+
+**The documentation is the deliverable as much as the widget.** The module docs open with "on an FPGA this is usually the wrong thing to build", and the numbers are measured rather than asserted: `CordicVectoring<18>` at 16 iterations emits **101 adders, 553 register declarations, 16 cycles of latency**, against the entire quadrature oscillator's two BRAMs, two multipliers and one cycle. `report_the_resource_cost` prints them so they stay honest.
+
+The NMR-specific advice is stated plainly: **decimate first and convert in software.** After the DDC the rate is orders of magnitude lower and the host's `atan2` is exact rather than 16-iteration-approximate. Also noted: most DSP chains never need polar (detection can compare `x² + y²` against a squared threshold), and alpha-max-plus-beta-min gets within a few percent for magnitude alone.
+
+**Design decisions:**
+
+- **The gain is corrected inside the widget**, not left to the caller. This was a design fix forced by a test: with the gain on the output, `vectoring_then_rotation_is_the_identity` failed by **58212 of 90000**, which is exactly `90000·(K−1)` — the gain applied twice. A widget returning "the magnitude, times a constant you have to know about" is one whose outputs cannot be composed.
+- **The pipeline is unrolled**, not a loop over a dynamic index — see the compiler bug below.
+- **Sign tests use bit masks, not comparisons**, so they cannot depend on how signedness survives codegen. That is a live concern in this tree, not a hypothetical.
+
+**Surprises and gotchas — three distinct blockers, each with a real diagnosis:**
+
+1. **`signed::<18>(1 << 17)` is out of range.** A half turn is the *most negative* representable angle (−131072), not +131072 — and that is also the correct point, since angle arithmetic is modulo a full turn.
+2. **`-(1 << (ANGLE_W - 1))` is rejected** with "cannot negate unsigned value 20000_b64". The negation applies to an *unsigned* shift result before `signed()` converts it. The error prints the value in **hex** (`0x20000`), which cost a while to notice — I read it as decimal and went looking for a data value.
+3. **`ATAN_TABLE[k]` with a `usize` index panics the compiler.** `lower_rhif_to_rtl.rs:86` computes `array.size.min(1 << slot_bits)`; a `usize` index makes `slot_bits = 64`, so `1 << 64` overflows **before** the `.min()` can clamp it. Worked around by passing the table entry as a value. **This is a compiler bug and is filed as a follow-up** — an ICE, not a diagnostic.
+
+Also: `u8` is not `Digital`, so a shift amount must be `Bits<8>`.
+
+**Validation:** 12 tests. Both directions are accurate over the whole circle (64 vectors at constant radius, so magnitude and phase error are both visible), on all four axes, and at the origin. Latency is asserted at exactly `ITERATIONS` with exactly one result per sample. Both `iverilog` round-trips pass. The load-bearing test is `vectoring_then_rotation_is_the_identity`: a gain, quadrant or table error in *either* direction breaks it, and testing one direction alone would not catch a consistent mistake made in both.
+
+**Follow-ups:**
+
+- The `lower_rhif_to_rtl.rs` shift overflow.
+- Iteration count is fixed at 16. Making it a const generic is natural but needs the dynamic-index bug fixed first, or a macro to generate the unrolled chain.
+
+---
+
 ## 2026-08-19 — `widget-roadmap.md`: retract the `Synchronous` 12-tuple macro change
 
 **Paths:** `widget-roadmap.md`.
