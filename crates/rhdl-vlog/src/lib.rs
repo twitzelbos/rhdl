@@ -24,6 +24,8 @@
 //! ```
 //!
 
+pub mod toolchain;
+
 pub mod atoms;
 pub mod builder;
 pub mod expr;

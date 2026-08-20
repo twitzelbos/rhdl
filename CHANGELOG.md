@@ -31,6 +31,34 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-19 — `iverilog` becomes an enforced precondition instead of 504 identical failures
+
+**Paths:** `crates/rhdl-vlog/src/toolchain.rs` (new), `crates/rhdl-vlog/src/lib.rs`, `crates/rhdl/src/lib.rs`, `crates/rhdl/tests/iverilog_precondition.rs` (new), and one `iverilog_precondition` module in each of `rhdl-core`, `rhdl-fpga`, `rhdl-alto`, `rhdl-rule`, `rhdl-rv32i`, `doc/book/src/code`. `CLAUDE.md` §8 and §12 rule 3.
+
+**Why this, why now:** running the suite on a machine without the tool produced **504 individual failures**, every one a bare `NotFound` panic from `Command::new("iverilog")`. It read like a code regression; diagnosing it meant opening a failure and recognising the panic text. Tier 4 is the only tier that checks the *emitted hardware*, so this is a precondition rather than an optional convenience — a run without it reports success while proving much less than it appears to.
+
+**Design decisions:**
+
+- **The check verifies *working*, not *present*.** `iverilog` and `vvp` are separate binaries — one compiles the testbench, the other runs it — and they break independently. A `PATH` lookup for `iverilog` alone would pass on a machine that can compile and not simulate: a working compiler and a useless test suite. So the check compiles and runs a trivial module end to end and requires the sentinel output, which also catches a version too old for the flags in use and an install whose binaries exist but fail. Three diagnoses: `IverilogMissing`, `VvpMissing`, `NotWorking`.
+- **`std::process::exit(1)`, not `panic!`.** A panic fails one test and lets the rest of the binary reproduce the same failure with worse messages. Exiting fails the binary immediately, and since `cargo test` is fail-fast across binaries the run stops at the precondition.
+- **It lives in `rhdl-vlog`**, the lowest crate in the dependency graph that invokes the tool, re-exported as `rhdl::vlog` so downstream crates reach it without a new dependency edge.
+- **The message is part of the contract**, and has a test asserting so. It names the tool, the three install commands, that *both* binaries are required, and that the abort is deliberate.
+
+**Surprises and gotchas:**
+
+- ***** The first version of the precondition contained the exact bug class being fixed elsewhere in the same session. ***** It tested the failure path by clearing `PATH` process-wide; cargo runs tests in parallel, so `iverilog_precondition` saw the empty environment and exited 1 **on a machine where the tool was installed.** Same shared-mutable-state race as two tests sharing a file, with the process environment standing in. Refactored to `check_iverilog_with(iverilog_bin, vvp_bin)` and inject a nonexistent name — no global mutation at all. It also bought a second test: a missing `vvp` is now verified as a *separate* diagnosis.
+- **CLAUDE.md's documented workaround never worked.** Rule 3 said to run `cargo test --all -- --skip iverilog`. The affected tests include `test_vlog_generation`, `no_combinatorial_paths` and `test_synthesizable` — none of which match `iverilog` by name — so the filter skipped a fraction and left the rest failing. Withdrawn on both counts: wrong policy, and ineffective.
+- **Coverage is not total, and the code says so.** Each file under `crates/rhdl/tests/` is its own binary; one precondition per binary would be needed to guarantee no raw panic can ever appear. There are around thirty. What is in place — seven library-level checks plus one integration binary, with fail-fast — stops a toolchain-less run early with one clear message, but if cargo reaches another integration binary first, that binary panics the old way. Making it airtight is a mechanical change worth doing separately.
+
+**Validation:** the `toolchain` module's own four tests, covering the precondition, both missing-binary diagnoses separately, and the message staying actionable. All seven crate-level preconditions pass.
+
+**Follow-ups:**
+
+- One precondition per integration binary in `crates/rhdl/tests/`, if the ordering gap ever bites.
+- The same treatment for the IceStorm tools was considered and deliberately *not* applied: those are genuinely optional, so they use the runtime skip added earlier today rather than a hard precondition. The distinction is whether the tool's absence invalidates the run.
+
+---
+
 ## 2026-08-19 — Closing four coverage gaps: two artifact-writing tests, a vacuous drift check, and a masked workspace
 
 **Paths:** `crates/rhdl-core/src/rtl/runtime_ops.rs`, `compiler/rtl_passes/constant_propagation.rs`, `crates/rhdl-fpga/src/doc.rs`, `doc/book/src/code/src/{count_ones,timed/tracing}.rs`, `doc/book/src/code/time_tracing_waveform.svg`, `crates/Justfile`, `CLAUDE.md` §8.

@@ -550,7 +550,7 @@ If the widget introduces a new concept (a new abstraction, a new IR feature, a n
 | `cargo test --all --no-fail-fast` | run every test | yes — **the flag is not optional, see below** |
 | `cargo clippy --all -- -D warnings` | lints | yes |
 | `cargo fmt --all` | format | yes |
-| `iverilog` | Verilog round-trip in Tier-4 tests | yes for widget work |
+| `iverilog` + `vvp` | Verilog round-trip in Tier-4 tests | **required for any test run** — enforced by `iverilog_precondition` |
 | `cargo llvm-cov` | coverage report (via `crates/Justfile` `coverage` target) | recommended |
 | `UPDATE_EXPECT=1 cargo test` | accept new `expect_test` snapshots | when changing IR/codegen |
 | `cargo run --example <name> --package rhdl-fpga` | regenerate trace `.md` | after behavioral changes |
@@ -717,7 +717,9 @@ These are the rules whose violation will get a PR rejected without further discu
 0. **No implementation without first reading `architecture.md` and CLAUDE.md.** This rule is numbered zero because it precedes every other rule. If you cannot quote the relevant architectural constraint for the change you are making, re-read. Saying "I think it's fine" is not a substitute for consulting the document — the whole point of `architecture.md` is to make architectural drift visible *before* code lands.
 1. **No undocumented public API.** Every `pub` item has a doc comment.
 2. **No widget without all four/five test tiers** (1, 2, 3, 4, 5 if applicable). Tier 1 covers algorithmic correctness, Tier 2 covers sequencing, Tier 3 covers codegen, Tier 4 is the Verilog ground-truth, Tier 5 is regression detection.
-3. **No commit that breaks `cargo test --all`.** Local environment may lack `iverilog`; in that case run `cargo test --all -- --skip iverilog` before pushing AND ensure CI catches it.
+3. **No commit that breaks `cargo test --all --no-fail-fast`.** **A working `iverilog` is a hard precondition, not an optional convenience** — Tier 4 is the only tier that checks the emitted hardware, so a run without it reports success while proving much less than it appears to. Every Tier-4 crate carries an `iverilog_precondition` test that aborts the run with an actionable message if the tool is missing or broken; see `rhdl_vlog::toolchain`.
+
+    The old advice here was to run `cargo test --all -- --skip iverilog` when the tool was unavailable. That is withdrawn on two counts: it is the wrong policy, and **it never worked** — the affected tests include `test_vlog_generation`, `no_combinatorial_paths` and `test_synthesizable`, none of which match `iverilog` by name, so the filter skipped a fraction and left the rest failing. Install the tool.
 4. **No `unwrap`/`expect`/`panic!` in non-test code** without a justification comment. Prefer `RHDLError` and `Result`.
 5. **No accepting `expect_test` snapshot diffs without auditing them.** `UPDATE_EXPECT=1` is a sharp tool; it will silently bless wrong output if you let it. Always read the diff.
 6. **No clock-domain shortcuts.** If the type system says you cannot mix `Red` and `Blue`, do not "fix" it by erasing the domain. Use `Retime` explicitly and document the synchronizer.
