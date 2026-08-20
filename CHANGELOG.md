@@ -31,6 +31,27 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-19 — `widget-roadmap.md`: retract the `Synchronous` 12-tuple macro change
+
+**Paths:** `widget-roadmap.md`.
+
+**Why this, why now:** the Follow-ups entry said the 12-element `Q`/`D` tuple ceiling should be fixed by having the `Synchronous` macro emit a generated struct instead of a raw tuple, and that it was "worth doing before the next 12+-field widget shows up." **That work was already tried and rejected**, and the roadmap was the only document still recommending it.
+
+CLAUDE.md §3.1 records the settled position, and `notes/synchronous-tuple-ceiling-can-rx.md` is explicitly the *corrected* version: "the original recommended a macro change, which turned out to be the wrong layer to fix."
+
+**The substance:** the ceiling is on Rust's raw-tuple trait impls and never touches the inside of a `Digital` struct, which has no field limit. So 13+ *top-level* fields are only needed when the state is genuinely 13+ independent sub-circuits — rare, and usually a sign the state wants grouping anyway. `serial_bus::can_receiver` needed 17 registers and ships with three top-level fields.
+
+**Surprises and gotchas:**
+
+- **This entry caused the error it describes.** Asked what to work on next, I read the roadmap, took the entry at face value, and recommended the rejected macro change as a good next step — describing a solved design question as a limitation. The user corrected it. Documentation that contradicts a settled decision does not sit inert; it actively produces wrong work.
+- **Same failure mode as `nco/mod.rs` earlier the same day**, which still bolded "Recommendation: `P = 13`" for an architecture superseded seventy lines below. Both were stale *conclusions* left standing after the reasoning moved on. The lesson is not "update docs" but specifically: **when a decision is reversed, the retraction belongs at the point the old conclusion is stated**, not only in the document that supersedes it.
+- **Struck through rather than deleted.** A removed entry loses the warning; a struck one tells the next reader that the obvious-looking fix has already been considered and why it fails.
+- **One drafting error caught by checking.** The replacement first claimed `can_receiver` "lands at two DFFs". It has two DFFs *and* a `Constant` sub-circuit — three top-level fields. Verified against the source rather than the note.
+
+**Validation:** documentation only; no code changed. The two load-bearing constraints from §3.1 are carried into the entry so the pattern is not misapplied: the FSM enum must stay in its own DFF or the `FsmWidget` extractor silently stops matching, and genuine sub-circuits must not be bundled.
+
+---
+
 ## 2026-08-19 — `iverilog` becomes an enforced precondition instead of 504 identical failures
 
 **Paths:** `crates/rhdl-vlog/src/toolchain.rs` (new), `crates/rhdl-vlog/src/lib.rs`, `crates/rhdl/src/lib.rs`, `crates/rhdl/tests/iverilog_precondition.rs` (new), and one `iverilog_precondition` module in each of `rhdl-core`, `rhdl-fpga`, `rhdl-alto`, `rhdl-rule`, `rhdl-rv32i`, `doc/book/src/code`. `CLAUDE.md` §8 and §12 rule 3.
