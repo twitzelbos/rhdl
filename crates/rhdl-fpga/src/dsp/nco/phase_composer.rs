@@ -101,7 +101,10 @@ where
 }
 
 /// The layered phase terms of §8.2.
-#[derive(PartialEq, Clone, Copy, Debug, Digital)]
+// `Default` is derived so these term bundles can be the payload of a
+// `DFF` — `Nco` registers the previous value of each to detect a
+// configuration change and tag the sample it affects.
+#[derive(PartialEq, Clone, Copy, Debug, Digital, Default)]
 pub struct In<const PHASE_W: usize>
 where
     rhdl::bits::W<PHASE_W>: BitWidth,

@@ -47,16 +47,16 @@ const DR: usize = 19;
 const _: () = assert!(P == A + B + 1 && DR == P - O);
 
 fn main() -> Result<(), RHDLError> {
-    let uut = ComplexMixer::<A, B, O, P, DR>::default();
+    let uut = ComplexMixer::<(), A, B, O, P, DR>::default();
 
     // Two counter-rotating carriers at constant magnitude.
     let n = 48i128;
-    let seq: Vec<In<A, B>> = (0..n)
+    let seq: Vec<In<(), A, B>> = (0..n)
         .map(|k| {
             let amp = 110_000.0;
             let theta_a = 2.0 * std::f64::consts::PI * (k as f64) / 16.0;
             let theta_b = -2.0 * std::f64::consts::PI * (k as f64) / 24.0;
-            In::<A, B> {
+            In::<(), A, B> {
                 a: Some(Item::<Iq<A>, ()> {
                     data: Iq::<A> {
                         re: signed::<A>((theta_a.cos() * amp) as i128),

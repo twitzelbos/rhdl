@@ -65,6 +65,57 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-20 — `SyncMark` framing: the oscillator and the receive path each mark their own samples, and the modulator checks they agree
+
+**Paths:** `crates/rhdl-fpga/src/dsp/sync.rs` (new), `dsp/rx_trigger.rs` (new), `dsp/nco/composite.rs`, `dsp/mixer/complex.rs`, `dsp/nco/{frequency_composer,phase_composer}.rs`, `dsp/mod.rs`, `examples/rx_trigger.rs` (new), `doc/rx_trigger.md` (new), `tests/sync_alignment.rs` (new), `notes/zero-width-digital-types.md` (new), `widget-roadmap.md`.
+
+**Why this, why now:** latency compensation was documented and measured stage by stage, but nothing checked it *end to end*. `nco/latency.rs` opens by insisting a latency constant that has never been checked against hardware "is a comment that the scheduler trusts with the experiment's phase coherence" — and the composed claim, that a configuration issued N cycles early lands on the intended sample, had no test at all. This adds the framing that makes the claim observable and the test that exercises it.
+
+The shape: the receive path marks the sample that starts an acquisition; the oscillator marks the first sample its configuration change affects; both mark **at their own source**; the modulator raises `frame_mismatch` if the two markers do not coincide.
+
+**Design decisions:**
+
+- **The NCO tags itself, reversing a recorded decision.** `composite.rs` previously documented `F = ()` with "sync is inserted downstream at the acquisition gate, and the framing type changing there is what stops un-framed samples reaching the packetizer by accident." Tagging downstream requires the tagger to know the oscillator's control latency *and* be told when a change was issued — both already known inside the oscillator, and a second copy of a latency constant is a copy that can drift. The reversal is recorded at the point the old conclusion was stated (`Out::stream`), per the lesson from the 12-tuple retraction the day before. **The good half of the old decision survives**: the framing type still changes at a boundary, just at `RxTrigger` instead, so an un-framed stream still cannot reach a framed consumer.
+- **Two delay lines, not one.** A frequency change and a phase change have different control latencies (`FREQUENCY_LEADS_PHASE_BY`), so each change-detect pulse goes through a line matched to its own path. A co-scheduled pair issued the required cycle apart lands both pulses on the same sample, where the OR collapses them into one marker — which makes `FREQUENCY_LEADS_PHASE_BY` observable rather than merely asserted.
+- **`SyncMark`, not `bool`.** `F = bool` already means TLAST in nine widgets. Both being `bool` would let an end-of-frame stream connect to a sync port and typecheck. One bit either way, so the distinction is free. Named `SyncMark` rather than `Sync` because `Sync` is in the Rust prelude and would shadow the auto-trait in any module doing `use rhdl::prelude::*`.
+- **The mixer is generic over `F`, which settles the three framing cases in the type system.** Both framed and aligned → marker propagates. Both framed and disagreeing → `frame_mismatch`. Unframed (`F = ()`) → the unit type has one inhabitant, the comparison folds to constant `false`, nothing is paid. There is deliberately no "one side framed" case: `F` is shared by both ports, so that combination is a compile error, not a runtime rule.
+- **On a mismatch the product still carries the `a` side's marker.** Substituting a default would be quieter and worse — it would let a chain with a scheduling bug look well-framed. The flag is the thing to act on, and the docs say so.
+- **Trigger, not gate.** Marks one sample; does not open and close a window. A gate is a strictly larger widget with different failure modes and can be built on this. `arm` is rising-edge sensitive after a test caught the level-sensitive first version marking every sample while the line was held.
+
+**Surprises and gotchas:**
+
+- **Zero-width `Digital` types miscompile, found by instantiating the generic mixer at `F = ()`.** Three symptoms, and the first write-up filed them as three independent bugs at three layers. That was wrong — investigating properly found **two** root causes, and the correction matters for how they get fixed.
+
+  **(A) A zero-bit value renders as `0'b`** — width zero, no value digits, not legal Verilog. `core/dff.rs` interpolates its reset literal twice, so `DFF<()>` emits `o = 0'b;` and `o <= 0'b;`, which are exactly the two lines the syntax gate rejects. Confined to the `TypedBits → LitVerilog` conversion. **Fixed separately on 2026-08-21 — see the entry above.**
+
+  **(B) A zero-width value gets no defining instruction** — and this accounts for the other two symptoms. Emitted side by side, the comparison `a.frame != b.frame` at `F = bool` extracts both operands and compares them; at `F = ()` the extractions are gone (correctly — no bits) but the operand regs are still declared, still widened to one bit, and still referenced. An unassigned Verilog `reg` is `x`.
+
+  So the `Constant<()>` "slot is read before being written" ICE is **the partial-init checker working**, not a bug in it — the slot genuinely has no definition. And the zero-width `!=` evaluating to `x` in Verilog while defined in Rust is the *same* missing definition slipping past that checker on a different path. Only the second is serious: a silent cross-simulator divergence that compiles, passes every Rust tier, and is caught only by `test_complex_mixer_hdl_works`, as `Expected 000111…, got 0x0111…`.
+
+- **The bug bites only when zero-width operands produce a non-zero-width result.** A zero-width value is harmless while it stays zero-width — it contributes no bits, so an undriven one cannot corrupt anything. Comparison is the obvious escape: two 0-bit inputs, one 1-bit output. That is what makes padding the comparison a principled workaround rather than a patch over a symptom, and it is why the `match`-binding idiom that avoids the ICE is **not** a fix — it is the same missing definition going unnoticed.
+
+- **`allow_weak_partial` was the first attempted fix and was wrong.** It silenced the checker but let a `dont_care()` reach the multiplier, which reads as 0 in Rust and propagates as `x` through `iverilog` — trading a loud ICE for a second silent divergence. The right fix was real zeros in the `None` arms and no `allow_weak_partial` at all.
+- **Tuple patterns are not accepted in kernel match arms.** `(Some(a), Some(b)) => …` is rejected; match each side separately.
+- **`#[rhdl(dq_no_prefix)]` emits `Q`/`D` at module scope**, so two widgets cannot share a module — which is the mechanical reason behind CLAUDE.md §7's one-widget-per-file rule, and something to know when writing throwaway probe widgets in a `tests/` file.
+- **The marker cannot vouch for the constant it is built from.** The delay depths come *from* `FREQUENCY_CONTROL` and `PHASE_CONTROL`, so a test asserting "the marker is `FREQUENCY_CONTROL` cycles after the change" would restate the definition — exactly the vacuity `MODULATION_CONTROL` was guilty of until the day before. What makes it a real test: the marker is compared against **the first sample whose value departs from the trajectory it was on**, which is a fact about the datapath and not about any constant. Both directions were then perturbed to confirm the tests fail when the depths are wrong.
+
+**Validation:** the full workspace, `cargo test --all --no-fail-fast`: **3252 passed, 0 failed, 58 ignored** across 145 suites, and the tree is clean afterwards. Within that, 154 `dsp::` lib tests plus 4 in `tests/sync_alignment.rs`.
+
+New coverage: 3 for `SyncMark`, 5 NCO tagging tests, 5 mixer framing tests (including a second `iverilog` round-trip at `F = SyncMark`, since the framed and unframed instantiations emit different Verilog and only the framed one contains the comparison), and 17 for `RxTrigger` across all five tiers with example and committed trace.
+
+The end-to-end test computes the lead time as `FREQUENCY_CONTROL - RX_TRIGGER_LATENCY` and never writes the literal `2`, so the schedule follows the constants if either changes. It is falsifiable in three ways, all asserted: configuring one cycle early is caught, one cycle late is caught, and never configuring at all is caught. The whole chain round-trips through `iverilog` in RTL and NTL — which matters more than usual here, because the zero-width comparison bug lived precisely in the gap between the two simulators.
+
+An independent confirmation fell out of the re-blessed Tier-3 snapshots: the NCO now emits `freq_tag_dffs_c0..c2` and `phase_tag_dffs_c0..c1`, i.e. delay lines three and two deep, matching the two constants in the emitted hardware rather than only in the source.
+
+**Follow-ups:**
+
+- **Zero-width root cause B**, the serious one, is still open — a zero-width value gets no defining instruction during RHIF→RTL lowering while its register is still allocated. Root cause A (the `0'b` literal) landed on 2026-08-21. The padding workaround in `dsp/mixer/complex.rs` exists only because of B and should retire when it lands. The highest-value part of that fix is an **RTL well-formedness check: every register that is read must be written** — the analogue of `rhif_passes/partial_initialization_check.rs`, which has no RTL counterpart, and which is not about zero width at all. See `notes/zero-width-digital-types.md`.
+- `ComplexRealMixer` still has the unframed shape, so the two mixers are inconsistent and a real-operand stage between a trigger and a mixer would drop the marker. Mechanical, following `complex.rs`.
+- An acquisition *gate* — length-counted, marking the last sample too — on top of `RxTrigger`.
+- The modulation path (`MODULATION_CONTROL`) is not marked. `ModulationInput` sits outside `Nco`, so a modulation-carried marker would ride in on that stream's framing rather than being detected here.
+
+---
+
 ## 2026-08-19 — `widget-roadmap.md`: retract the `Synchronous` 12-tuple macro change
 
 **Paths:** `widget-roadmap.md`.
