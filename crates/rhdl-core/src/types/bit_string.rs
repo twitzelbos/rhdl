@@ -15,16 +15,27 @@ pub enum BitString {
     Unsigned(Vec<BitX>),
 }
 
-impl From<&BitString> for vlog::LitVerilog {
-    fn from(value: &BitString) -> Self {
+impl TryFrom<&BitString> for vlog::LitVerilog {
+    type Error = crate::RHDLError;
+
+    /// Fails for a zero-width value, for the same reason as the
+    /// `TypedBits` conversion in `hdl/builder.rs`: Verilog has no
+    /// zero-width literal.
+    fn try_from(value: &BitString) -> Result<Self, Self::Error> {
         let bits = value.bits();
         let len = bits.len();
+        if len == 0 {
+            return Err(crate::RHDLError::ZeroWidthVerilogLiteral);
+        }
         let sign_base = if value.is_signed() { "sb" } else { "b" };
         let s: String = match value {
             BitString::Signed(bits) => bitx_string(bits),
             BitString::Unsigned(bits) => bitx_string(bits),
         };
-        vlog::lit_verilog(len as u32, &format!("{}{}", sign_base, s))
+        Ok(vlog::lit_verilog(
+            len as u32,
+            &format!("{}{}", sign_base, s),
+        ))
     }
 }
 

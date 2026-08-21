@@ -31,6 +31,40 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-21 — Compiler: a zero-width value can no longer emit the illegal literal `0'b`
+
+**Paths:** `crates/rhdl-core/src/hdl/builder.rs`, `crates/rhdl-core/src/types/bit_string.rs`, `crates/rhdl-core/src/error.rs`, `crates/rhdl-core/src/ntl/hdl.rs`, `crates/rhdl-core/src/circuit/fixture.rs`, `crates/rhdl-core/src/sim/testbench/{kernel,synchronous,asynchronous}.rs`, `crates/rhdl-fpga/src/core/{dff,constant}.rs`, `crates/rhdl-fpga/src/core/ram/{synchronous,asynchronous}.rs`, `crates/rhdl-fpga/tests/zero_width_verilog_literal.rs` (new), `doc/book/src/digital/advanced.md`.
+
+**Why this, why now:** `TypedBits → LitVerilog` built its literal by writing the base specifier and then one character per bit. At zero bits the per-bit part contributes nothing, so the result was **`0'b`** — a sized literal with no digits, which is a Verilog syntax error. `Constant<()>` emitted `assign o = 0'b;` and `DFF<()>` emitted it twice, surfacing as bare "Malformed statement" errors from `iverilog` with no pointer to the cause. Found while making `ComplexMixer` generic over its framing type, where `F = ()` is the unframed instantiation every existing caller uses.
+
+**What guarantee this preserves:** *Verilog through the AST, never strings* — the AST exists to make illegal output unrepresentable, and a literal type that could hold `0'b` was not doing that. The conversions are now `TryFrom`, so no caller can obtain an illegal literal by accident.
+
+**Design decisions:**
+
+- **`From` → `TryFrom`, not a check at each call site.** Fourteen call sites render a value into a literal; a check at each is a check that can be forgotten at the fifteenth. Making the conversion fallible means the compiler enumerates them.
+- **Legalise at the driving sites, do not reject.** `signal_literal` substitutes a one-bit zero for a zero-width value, matching the one-bit port the emitter already declares for a zero-bit type (via the `saturating_sub` in `Kind → SignedWidth`). Declaration and literal now agree, where before one said one bit and the other said zero. A one-inhabitant type cannot lose information to the substitution.
+- **The two halves are deliberately separate.** The `TryFrom` conversion still *rejects* zero width, so nothing emits `0'b` by accident; `signal_literal` is the opt-in placeholder used only where a signal must be driven. That keeps "you cannot do this accidentally" and "here is the one place we do it on purpose" distinguishable.
+- **Three lazy `.map()` closures became eager `collect::<Result<_>>()`** so the error can propagate.
+- **`maybe_assign`'s separate `!value.is_empty()` guard was folded into the conversion.** Two places encoding the same rule is one place for them to drift.
+
+**Surprises and gotchas:**
+
+- **The first attempt rejected zero-width values outright, and that was wrong.** It broke `rcstream::util::split` and `combine`, whose `test_iq_*_hdl_works` failed in the full run. Both carry their framing type through a `Constant<F>` field *precisely because* `PhantomData` has no HDL and would fail at `descriptor()` — so at `F = ()` they contain a `Constant<()>`. **A zero-width sub-circuit is a deliberate idiom here, not a mistake to diagnose**, and rejecting it would have made an unframed `RCStream` unrepresentable — deleting a documented, load-bearing case. `iq_split_survives_a_zero_width_framing_type` is the regression test for it.
+- **The malformed module was being built and then discarded.** `IqSplit<W, ()>`'s composed Verilog contains no `0'b` and no `top_marker` module at all: a port with no bits gives a parent nothing to connect, so the child is elided. The bug was only reachable when the zero-width widget was the top of the design — which is why it survived so long.
+- **`Constant::descriptor()` returned `Ok` with malformed Verilog inside.** The syntax gate lives in `Descriptor::hdl()`, not in descriptor construction, so "the descriptor built fine" was never evidence that the Verilog was legal.
+- **`sim/testbench/kernel.rs` and the async testbench already had zero-width guards** (`!value.is_empty()`, `has_nonempty_input`), and `rtl_passes/` has three passes for zero-width operands. The hazard was known; this was a missed case in an existing policy.
+
+**Validation:** the full workspace, `cargo test --all --no-fail-fast`. Four unit tests on the conversion in `hdl/builder.rs`; ten integration tests in `rhdl-fpga/tests/zero_width_verilog_literal.rs`.
+
+**Verified able to fail:** removing the zero-width branch from `signal_literal` fails four of the ten integration tests and leaves the six regression tests passing. No `expect_test` snapshot changed, which is the evidence that non-zero widths emit byte-identical text.
+
+**Follow-ups:**
+
+- **The more serious zero-width defect is untouched.** A zero-width value gets no *defining instruction* during RHIF→RTL lowering while its register is still allocated, so a zero-width comparison reduces to `x != x` in Verilog while the Rust simulator returns a defined `false` — a silent cross-simulator divergence that every Rust tier passes. The highest-value part of fixing it is an **RTL well-formedness check: every register that is read must be written**, the analogue of `rhif_passes/partial_initialization_check.rs`, which has no RTL counterpart. Tracked in `widget-roadmap.md`.
+- The one-bit placeholder is a contained instance of the width lie that the `saturating_sub` coercions tell more broadly. If zero-width values are eventually erased before emission — the cleaner answer, and the one that would make root cause B unreachable too — `signal_literal` should retire with them.
+
+---
+
 ## 2026-08-19 — `widget-roadmap.md`: retract the `Synchronous` 12-tuple macro change
 
 **Paths:** `widget-roadmap.md`.

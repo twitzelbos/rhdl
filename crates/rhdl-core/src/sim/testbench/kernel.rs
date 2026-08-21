@@ -18,41 +18,43 @@ use rhdl_vlog as vlog;
 use syn::parse_quote;
 
 fn maybe_assign(target: &str, value: &TypedBits) -> Option<vlog::Stmt> {
-    (!value.is_empty()).then(|| {
-        let target = format_ident!("{target}");
-        let value: vlog::LitVerilog = value.into();
-        parse_quote! { #target = #value }
-    })
+    // A zero-width value has no Verilog literal and nothing to assign,
+    // so the conversion failing and "emit no statement" are the same
+    // outcome.  This used to be a separate `!value.is_empty()` guard;
+    // folding it into the conversion keeps the two from drifting apart.
+    let value: vlog::LitVerilog = value.try_into().ok()?;
+    let target = format_ident!("{target}");
+    Some(parse_quote! { #target = #value })
 }
 
-fn assert_stmt(left: TypedBits, right: &str, msg: &str) -> vlog::Stmt {
-    let left: vlog::LitVerilog = (&left).into();
+fn assert_stmt(left: TypedBits, right: &str, msg: &str) -> Result<vlog::Stmt, RHDLError> {
+    let left: vlog::LitVerilog = (&left).try_into()?;
     let right = format_ident!("{right}");
     let message = format!("ASSERTION FAILED 0x%0h !== 0x%0h CASE {msg}");
-    parse_quote! {
+    Ok(parse_quote! {
         if ((#left) !== (#right)) begin
             $display(#message, #left, #right);
             $finish;
         end
-    }
+    })
 }
 
 fn build_test_case(
     args: impl IntoIterator<Item = TypedBits>,
     q: TypedBits,
     ndx: usize,
-) -> vlog::stmt::StmtList {
+) -> Result<vlog::stmt::StmtList, RHDLError> {
     let arguments = args
         .into_iter()
         .enumerate()
         .flat_map(|(ndx, arg)| maybe_assign(&format!("arg_{ndx}"), &arg));
     let delay = vlog::delay_stmt(0);
-    let assertion = assert_stmt(q, "out", &ndx.to_string());
-    parse_quote! {
+    let assertion = assert_stmt(q, "out", &ndx.to_string())?;
+    Ok(parse_quote! {
         #(#arguments)*
         #delay ;
         #assertion;
-    }
+    })
 }
 
 fn decl_list(q_len: usize, arg_sizes: &[usize]) -> Vec<vlog::Declaration> {
@@ -127,7 +129,7 @@ impl<T0: Digital, T1: Digital, T2: Digital, T3: Digital, T4: Digital> TestArg
 pub trait Testable<Args, T1> {
     fn apply(&self, args: Args) -> T1;
     fn declaration() -> Vec<vlog::Declaration>;
-    fn test_case(&self, args: Args, ndx: usize) -> vlog::stmt::StmtList;
+    fn test_case(&self, args: Args, ndx: usize) -> Result<vlog::stmt::StmtList, RHDLError>;
 }
 
 impl<F, Q, T0> Testable<(T0,), Q> for F
@@ -143,7 +145,7 @@ where
     fn declaration() -> Vec<vlog::Declaration> {
         decl_list(Q::bits(), &[T0::bits()])
     }
-    fn test_case(&self, args: (T0,), ndx: usize) -> vlog::stmt::StmtList {
+    fn test_case(&self, args: (T0,), ndx: usize) -> Result<vlog::stmt::StmtList, RHDLError> {
         let (t0,) = args;
         let q = self.apply(args);
         build_test_case([t0.typed_bits()], q.typed_bits(), ndx)
@@ -164,7 +166,7 @@ where
     fn declaration() -> Vec<vlog::Declaration> {
         decl_list(Q::bits(), &[T0::bits(), T1::bits()])
     }
-    fn test_case(&self, args: (T0, T1), ndx: usize) -> vlog::stmt::StmtList {
+    fn test_case(&self, args: (T0, T1), ndx: usize) -> Result<vlog::stmt::StmtList, RHDLError> {
         let (t0, t1) = args;
         let q = self.apply(args);
         build_test_case([t0.typed_bits(), t1.typed_bits()], q.typed_bits(), ndx)
@@ -186,7 +188,7 @@ where
     fn declaration() -> Vec<vlog::Declaration> {
         decl_list(Q::bits(), &[T0::bits(), T1::bits(), T2::bits()])
     }
-    fn test_case(&self, args: (T0, T1, T2), ndx: usize) -> vlog::stmt::StmtList {
+    fn test_case(&self, args: (T0, T1, T2), ndx: usize) -> Result<vlog::stmt::StmtList, RHDLError> {
         let (t0, t1, t2) = args;
         let q = self.apply(args);
         build_test_case(
@@ -213,7 +215,11 @@ where
     fn declaration() -> Vec<vlog::Declaration> {
         decl_list(Q::bits(), &[T0::bits(), T1::bits(), T2::bits(), T3::bits()])
     }
-    fn test_case(&self, args: (T0, T1, T2, T3), ndx: usize) -> vlog::stmt::StmtList {
+    fn test_case(
+        &self,
+        args: (T0, T1, T2, T3),
+        ndx: usize,
+    ) -> Result<vlog::stmt::StmtList, RHDLError> {
         let (t0, t1, t2, t3) = args;
         let q = self.apply(args);
         build_test_case(
@@ -249,7 +255,11 @@ where
             &[T0::bits(), T1::bits(), T2::bits(), T3::bits(), T4::bits()],
         )
     }
-    fn test_case(&self, args: (T0, T1, T2, T3, T4), ndx: usize) -> vlog::stmt::StmtList {
+    fn test_case(
+        &self,
+        args: (T0, T1, T2, T3, T4),
+        ndx: usize,
+    ) -> Result<vlog::stmt::StmtList, RHDLError> {
         let (t0, t1, t2, t3, t4) = args;
         let q = self.apply(args);
         build_test_case(
@@ -270,7 +280,7 @@ fn test_module<F, Args, T0>(
     uut: &F,
     desc: vlog::FunctionDef,
     vals: impl Iterator<Item = Args>,
-) -> TestModule
+) -> Result<TestModule, RHDLError>
 where
     F: Testable<Args, T0>,
     T0: Digital,
@@ -281,9 +291,14 @@ where
         .iter()
         .filter(|x| x.kind.is_reg())
         .map(|x| format_ident!("{}", &x.name));
+    // Collected rather than lazily flat-mapped so a failed literal
+    // conversion has somewhere to propagate.
     let cases = vals
         .enumerate()
-        .flat_map(|(ndx, arg)| uut.test_case(arg, ndx).0);
+        .map(|(ndx, arg)| uut.test_case(arg, ndx).map(|c| c.0))
+        .collect::<Result<Vec<_>, RHDLError>>()?
+        .into_iter()
+        .flatten();
     let module: vlog::ModuleList = parse_quote! {
         module testbench;
             #(#decls;)*
@@ -297,7 +312,7 @@ where
         endmodule
     };
     log::debug!("Generated test module:\n{}", module.pretty());
-    module.into()
+    Ok(module.into())
 }
 
 // In general, a netlist cannot be reduced to a pure function, as it may contain internal
@@ -308,7 +323,7 @@ fn test_module_for_netlist<F, Args, T0>(
     uut: F,
     desc: vlog::ModuleList,
     vals: impl Iterator<Item = Args>,
-) -> TestModule
+) -> Result<TestModule, RHDLError>
 where
     F: Testable<Args, T0>,
     T0: Digital,
@@ -319,9 +334,14 @@ where
         let name = format_ident!("{}", decl.name);
         quote! {.#name(#name)}
     });
+    // Collected rather than lazily flat-mapped so a failed literal
+    // conversion has somewhere to propagate.
     let cases = vals
         .enumerate()
-        .flat_map(|(ndx, arg)| uut.test_case(arg, ndx).0);
+        .map(|(ndx, arg)| uut.test_case(arg, ndx).map(|c| c.0))
+        .collect::<Result<Vec<_>, RHDLError>>()?
+        .into_iter()
+        .flatten();
     let module: vlog::ModuleList = parse_quote! {
         module testbench;
             #(#decls;)*
@@ -334,7 +354,7 @@ where
         endmodule
         #desc
     };
-    module.into()
+    Ok(module.into())
 }
 
 fn test_kernel_vm_and_verilog_with_mode<K, F, Args, T0>(
@@ -385,7 +405,7 @@ where
     debug!("Generating Verilog to run external checks");
     let vlog = rtl.as_vlog()?;
     debug!("{}", vlog.pretty());
-    let tm = test_module(&uut, vlog, vals.clone());
+    let tm = test_module(&uut, vlog, vals.clone())?;
     tm.run_iverilog()?;
     debug!("Generating netlist from rtl");
     let ntl = build_ntl_from_rtl(&rtl);
@@ -393,7 +413,7 @@ where
     debug!("{rtl:?}");
     debug!("{ntl:?}");
     let desc = ntl.as_vlog("dut")?;
-    let tm = test_module_for_netlist(uut, desc.modules, vals);
+    let tm = test_module_for_netlist(uut, desc.modules, vals)?;
     debug!("Running netlist test");
     debug!("{}", tm);
     tm.run_iverilog()?;

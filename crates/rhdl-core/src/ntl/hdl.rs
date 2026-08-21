@@ -207,16 +207,24 @@ impl<'a> NetListHDLBuilder<'a> {
     ) -> Result<(), RHDLError> {
         let discriminant = self.opex_v(&op.discriminant);
         let lhs = self.reg(op.lhs, location)?;
-        let table = op.entries.iter().map(|(entry, operand)| {
-            let value = self.opex(*operand);
-            match entry {
-                CaseEntry::Literal(lit) => {
-                    let lit: vlog::LitVerilog = lit.into();
-                    quote! { #lit : #lhs = #value }
-                }
-                CaseEntry::WildCard => quote! { default : #lhs = #value },
-            }
-        });
+        // Collected into a `Result` rather than left lazy so a failed
+        // literal conversion propagates out of `case_op`.
+        let table = op
+            .entries
+            .iter()
+            .map(
+                |(entry, operand)| -> Result<proc_macro2::TokenStream, RHDLError> {
+                    let value = self.opex(*operand);
+                    Ok(match entry {
+                        CaseEntry::Literal(lit) => {
+                            let lit: vlog::LitVerilog = lit.try_into()?;
+                            quote! { #lit : #lhs = #value }
+                        }
+                        CaseEntry::WildCard => quote! { default : #lhs = #value },
+                    })
+                },
+            )
+            .collect::<Result<Vec<_>, RHDLError>>()?;
         self.add_stmt(parse_quote! {
             case (#discriminant)
                 #(#table;)*

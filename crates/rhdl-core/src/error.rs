@@ -78,6 +78,17 @@ pub enum RHDLError {
     HDLNotAvailable { name: String },
     #[error("Netlist not available for circuit {name}")]
     NetlistNotAvailable { name: String },
+    #[error("A zero-width value has no Verilog literal representation")]
+    #[diagnostic(help(
+        "Verilog has no zero-width literal -- `0'b` carries no digits and is a \
+         syntax error. This almost always means a generic widget was \
+         instantiated at a zero-width type parameter such as `()`, producing \
+         something like `DFF<()>` or `Constant<()>`: a register or constant \
+         holding a type with exactly one inhabitant, which has nothing to \
+         store. Bundle the zero-width value into a type that has bits, or \
+         avoid materialising it as a sub-circuit at all."
+    ))]
+    ZeroWidthVerilogLiteral,
 }
 
 pub fn rhdl_error<T>(error: T) -> RHDLError

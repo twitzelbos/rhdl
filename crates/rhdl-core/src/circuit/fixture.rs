@@ -404,7 +404,7 @@ pub fn constant_driver<T: Circuit, S: Digital>(
     }
     let mut driver = Driver::<T>::default();
     let input = driver.write_to_inner_input(path)?;
-    let lit: vlog::LitVerilog = val.typed_bits().into();
+    let lit: vlog::LitVerilog = val.typed_bits().try_into()?;
     driver.hdl = parse_quote!(assign #input = #lit;);
     Ok(driver)
 }

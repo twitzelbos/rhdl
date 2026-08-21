@@ -114,7 +114,11 @@ impl<I: Digital, O: Digital> TestBench<I, O> {
             quote! {}
         };
         let mut absolute_time = 0;
-        let test_cases = self.samples.iter().enumerate().map(|(test_case_counter, timed_entry)| {
+        // Collected eagerly into a `Result` rather than left lazy, so a
+        // failed literal conversion propagates instead of being unable
+        // to escape the closure.  The closure mutates `absolute_time`,
+        // so the eager drive also makes the ordering explicit.
+        let test_cases = self.samples.iter().enumerate().map(|(test_case_counter, timed_entry)| -> Result<proc_macro2::TokenStream, RHDLError> {
             let sample_time = timed_entry.time;
             let (sample_i, sample_o) = timed_entry.value;
             // First, we determine if at least the hold time has elapsed between the sample time and the previous recorded time
@@ -140,21 +144,22 @@ impl<I: Digital, O: Digital> TestBench<I, O> {
             let delay = vlog::delay_stmt(sample_time.saturating_sub(absolute_time));
             absolute_time = sample_time;
             let input_update = if has_nonempty_input {
-                let bin: LitVerilog = sample_i.typed_bits().into();
+                let bin: LitVerilog = sample_i.typed_bits().try_into()?;
                 quote! {
                     i = #bin;
                 }
             } else {
                 quote! {}
             };
-            let output_bin: LitVerilog = sample_o.typed_bits().into();
-            quote! {
+
+            let output_bin: LitVerilog = sample_o.typed_bits().try_into()?;
+            Ok(quote! {
                 #preamble
                 #delay;
                 #input_update
                 rust_out = #output_bin;
-            }
-        });
+            })
+        }).collect::<Result<Vec<_>, RHDLError>>()?;
         let module: vlog::ModuleList = parse_quote! {
             module testbench;
                 #(#declarations;)*
