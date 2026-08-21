@@ -1,0 +1,1 @@
+TraceInfo({"top.test":Enum((name:"derive::Test",variants:[(name:"A",discriminant:0,ty:Empty),(name:"B",discriminant:1,ty:Tuple((elements:[Bits(2),Bits(3)]))),(name:"C",discriminant:2,ty:Struct((name:"_Test__C",fields:[(name:"a",ty:Bits(8)),(name:"b",ty:Bits(8))]))),(name:"D",discriminant:3,ty:Empty)],discriminant_layout:(width:2,alignment:Msb,ty:Unsigned)))})

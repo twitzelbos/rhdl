@@ -1,5 +1,6 @@
 #![warn(missing_docs)]
-//! `ComplexMixer` — a full complex multiply, [`Iq`] times [`Iq`].
+//! `ComplexMixer` — a full complex multiply, [`Iq`] times [`Iq`],
+//! generic over the framing its operands carry.
 //!
 //! ```text
 //! (a + bi)(c + di) = (ac − bd) + (ad + bc)i
@@ -12,16 +13,46 @@
 //!
 //! Here is the schematic symbol
 #![doc = badascii_doc::badascii_formal!(r"
-      +-+ComplexMixer+-------+
-      |                      |
-+---->+ a              stream+----->
-      |                      |
-+---->+ b             starved+----->
-      |                      |
-+---->+ downstream_ready     |
-      |               overrun+----->
-      +----------------------+
+      +-+ComplexMixer+--------------+
+      |                             |
++---->+ a                    stream +----->
+      |   Option<Item<Iq,F>>        |
++---->+ b                   starved +----->
+      |                             |
++---->+ downstream_ready    overrun +----->
+      |                             |
+      |              frame_mismatch +----->
+      +-----------------------------+
 ")]
+//!
+//! # Framing, and the alignment contract
+//!
+//! Both operands carry framing of the same type `F`, and the product
+//! carries it onward. The mixer is where two independently-framed
+//! streams meet, so it is also the natural place to check that they
+//! agree: if both present data and their markers differ,
+//! [`Out::frame_mismatch`] is raised.
+//!
+//! Three cases, and the type system settles all of them:
+//!
+//! - **Both framed and aligned** — the marker passes through with the
+//!   product.
+//! - **Both framed, disagreeing** — reported. For `F = SyncMark` that
+//!   is a latency-compensation bug upstream: two paths that should
+//!   anchor the same instant do not. Making it visible here is the
+//!   entire reason each source tags its own stream.
+//! - **Unframed (`F = ()`)** — the unit type has one inhabitant, so
+//!   markers cannot differ and the check is always `false`. It costs a
+//!   one-bit constant rather than nothing: the comparison is padded to
+//!   a non-zero width, because a zero-width comparison currently emits
+//!   Verilog that evaluates to `x`. See the kernel comment and
+//!   `notes/zero-width-digital-types.md`.
+//!
+//! There is deliberately no "one side framed, the other not" case.
+//! `F` is one type parameter shared by both ports, so connecting a
+//! framed stream to an unframed one is a compile error rather than a
+//! runtime rule — which is what [`crate::rcstream::bus`] means by
+//! framing semantics being part of the type.
 //!
 //! # Karatsuba is not used
 //!
@@ -94,6 +125,7 @@
 
 use rhdl::prelude::*;
 
+use crate::core::constant::Constant;
 use crate::core::dff;
 use crate::dsp::iq::Iq;
 use crate::rcstream::bus::{Item, RCStream};
@@ -101,9 +133,10 @@ use crate::rcstream::bus::{Item, RCStream};
 use super::rounding::convergent;
 
 /// `Iq × Iq → Iq`, four multiplies.
-#[derive(Clone, Debug, Synchronous, SynchronousDQ, Default)]
+#[derive(Clone, Debug, Synchronous, SynchronousDQ)]
 #[rhdl(dq_no_prefix)]
 pub struct ComplexMixer<
+    F: Digital + Default,
     const A_W: usize,
     const B_W: usize,
     const OUT_W: usize,
@@ -115,30 +148,84 @@ pub struct ComplexMixer<
     rhdl::bits::W<OUT_W>: BitWidth,
     rhdl::bits::W<PROD_W>: BitWidth,
 {
-    /// Registered result.
-    out: dff::DFF<Iq<OUT_W>>,
+    /// Registered result **and the marker travelling with it**.
+    ///
+    /// One register rather than two, so the marker cannot come adrift
+    /// from the sample it belongs to. It also keeps this sub-circuit
+    /// non-zero-width for every `F`, which matters — see `idle`.
+    out: dff::DFF<Item<Iq<OUT_W>, F>>,
     /// A cycle where the two inputs did not both present data.
     starved: dff::DFF<bool>,
+    /// The two inputs disagreed about framing — see [`Out::frame_mismatch`].
+    mismatch: dff::DFF<bool>,
+    /// The idle item: a zero sample carrying `F::default()`.
+    ///
+    /// A kernel cannot call `<F as Default>::default()` — that is a Rust
+    /// call with no hardware meaning, and the compiler correctly reports
+    /// the slot as read-before-written. A [`Constant`] is how this tree
+    /// gets a compile-time value into a kernel, and it folds away in
+    /// synthesis, so this costs nothing.
+    ///
+    /// It is needed because reset and starvation must both drive `out`
+    /// with an *un-marked* item. A don't-care would let `F = SyncMark`
+    /// assert a spurious anchor on exactly the cycles where the data is
+    /// known to be invalid — the failure this widget exists to catch.
+    ///
+    /// **Why the whole `Item` and not just the marker.** A `Constant<F>`
+    /// is zero-width at `F = ()`, and zero-width values currently
+    /// miscompile two ways: a zero-bit reset literal renders as the
+    /// illegal `0'b`, so `DFF<()>` will not even parse; and a zero-width
+    /// value gets no defining instruction at all, which the
+    /// partial-init checker reports as "slot is read before being
+    /// written". Both are filed in
+    /// `notes/zero-width-digital-types.md`. Bundling the marker with the
+    /// zero sample keeps this constant `2·OUT_W + |F|` bits wide for
+    /// every `F`, so neither is reachable from here.
+    idle: Constant<Item<Iq<OUT_W>, F>>,
+}
+
+impl<
+    F: Digital + Default,
+    const A_W: usize,
+    const B_W: usize,
+    const OUT_W: usize,
+    const PROD_W: usize,
+    const DROP: usize,
+> Default for ComplexMixer<F, A_W, B_W, OUT_W, PROD_W, DROP>
+where
+    rhdl::bits::W<A_W>: BitWidth,
+    rhdl::bits::W<B_W>: BitWidth,
+    rhdl::bits::W<OUT_W>: BitWidth,
+    rhdl::bits::W<PROD_W>: BitWidth,
+{
+    fn default() -> Self {
+        Self {
+            out: dff::DFF::default(),
+            starved: dff::DFF::default(),
+            mismatch: dff::DFF::default(),
+            idle: Constant::new(Item::<Iq<OUT_W>, F>::default()),
+        }
+    }
 }
 
 /// Inputs to [`ComplexMixer`].
 #[derive(PartialEq, Clone, Copy, Debug, Digital)]
-pub struct In<const A_W: usize, const B_W: usize>
+pub struct In<F: Digital + Default, const A_W: usize, const B_W: usize>
 where
     rhdl::bits::W<A_W>: BitWidth,
     rhdl::bits::W<B_W>: BitWidth,
 {
     /// First operand.
-    pub a: Option<Item<Iq<A_W>, ()>>,
+    pub a: Option<Item<Iq<A_W>, F>>,
     /// Second operand.
-    pub b: Option<Item<Iq<B_W>, ()>>,
+    pub b: Option<Item<Iq<B_W>, F>>,
     /// Downstream's ready, per the `RCStream` contract.
     pub downstream_ready: bool,
 }
 
 /// Outputs from [`ComplexMixer`].
 #[derive(PartialEq, Clone, Copy, Debug, Digital)]
-pub struct Out<const OUT_W: usize>
+pub struct Out<F: Digital + Default, const OUT_W: usize>
 where
     rhdl::bits::W<OUT_W>: BitWidth,
 {
@@ -147,9 +234,30 @@ where
     /// `stream.ready` is vacuously `true` — see the module docs. This
     /// mixer consumes on every cycle and has no stall path, so it is
     /// always ready to accept from upstream.
-    pub stream: RCStream<Iq<OUT_W>, ()>,
+    pub stream: RCStream<Iq<OUT_W>, F>,
     /// The inputs did not both present data on some cycle.
     pub starved: bool,
+    /// **The two inputs disagreed about framing.**
+    ///
+    /// Raised when both operands presented data and their framing
+    /// markers differed. Registered, so it is asserted on the same cycle
+    /// as the product those operands produced.
+    ///
+    /// For `F = ()` this can never fire: the unit type has one
+    /// inhabitant, so the markers cannot differ. Getting a *defined*
+    /// `false` out of that comparison needs the padding described in
+    /// the kernel — unpadded, a zero-width comparison emits `x`. For
+    /// `F = SyncMark`
+    /// it is the alignment contract being enforced — one side claiming
+    /// an anchor the other does not is a latency-compensation error,
+    /// and the whole point of tagging at the source is that it becomes
+    /// visible here instead of silently mis-timing an acquisition.
+    ///
+    /// The product still carries the `a` side's marker on a mismatched
+    /// cycle. That value is not trustworthy; this flag is the one to
+    /// act on. Substituting a default would be quieter and worse — it
+    /// would let a chain with a scheduling bug look well-framed.
+    pub frame_mismatch: bool,
     /// A sample was presented while `downstream_ready` was low, and is
     /// gone.
     ///
@@ -158,22 +266,29 @@ where
     pub overrun: bool,
 }
 
-impl<const A_W: usize, const B_W: usize, const OUT_W: usize, const PROD_W: usize, const DROP: usize>
-    SynchronousIO for ComplexMixer<A_W, B_W, OUT_W, PROD_W, DROP>
+impl<
+    F: Digital + Default,
+    const A_W: usize,
+    const B_W: usize,
+    const OUT_W: usize,
+    const PROD_W: usize,
+    const DROP: usize,
+> SynchronousIO for ComplexMixer<F, A_W, B_W, OUT_W, PROD_W, DROP>
 where
     rhdl::bits::W<A_W>: BitWidth,
     rhdl::bits::W<B_W>: BitWidth,
     rhdl::bits::W<OUT_W>: BitWidth,
     rhdl::bits::W<PROD_W>: BitWidth,
 {
-    type I = In<A_W, B_W>;
-    type O = Out<OUT_W>;
-    type Kernel = complex_mixer_kernel<A_W, B_W, OUT_W, PROD_W, DROP>;
+    type I = In<F, A_W, B_W>;
+    type O = Out<F, OUT_W>;
+    type Kernel = complex_mixer_kernel<F, A_W, B_W, OUT_W, PROD_W, DROP>;
 }
 
 #[kernel]
 #[doc(hidden)]
 pub fn complex_mixer_kernel<
+    F: Digital + Default,
     const A_W: usize,
     const B_W: usize,
     const OUT_W: usize,
@@ -181,16 +296,16 @@ pub fn complex_mixer_kernel<
     const DROP: usize,
 >(
     cr: ClockReset,
-    i: In<A_W, B_W>,
-    q: Q<A_W, B_W, OUT_W, PROD_W, DROP>,
-) -> (Out<OUT_W>, D<A_W, B_W, OUT_W, PROD_W, DROP>)
+    i: In<F, A_W, B_W>,
+    q: Q<F, A_W, B_W, OUT_W, PROD_W, DROP>,
+) -> (Out<F, OUT_W>, D<F, A_W, B_W, OUT_W, PROD_W, DROP>)
 where
     rhdl::bits::W<A_W>: BitWidth,
     rhdl::bits::W<B_W>: BitWidth,
     rhdl::bits::W<OUT_W>: BitWidth,
     rhdl::bits::W<PROD_W>: BitWidth,
 {
-    let mut d = D::<A_W, B_W, OUT_W, PROD_W, DROP>::dont_care();
+    let mut d = D::<F, A_W, B_W, OUT_W, PROD_W, DROP>::dont_care();
     d.out = q.out;
     d.starved = false;
 
@@ -203,19 +318,87 @@ where
         im: signed::<B_W>(0),
     };
 
-    let mut av = zero_a;
-    let mut have_a = false;
-    if let Some(x) = i.a {
-        av = x.data;
-        have_a = true;
-    }
+    // Bind each operand as a whole item via `match`, rather than
+    // seeding a mutable local and reassigning it under `if let`.
+    //
+    // Not a style choice. At `F = ()` the marker is zero-width, and a
+    // zero-width value gets no defining instruction; a mutable local
+    // that is conditionally reassigned then trips the partial-init
+    // checker with "slot is read before being written". Binding the
+    // item in both match arms produces a RHIF shape that does not, and
+    // is the idiom `rcstream::zip` already uses.
+    //
+    // Sidestepping the checker is NOT the same as supplying the missing
+    // definition. See the padded comparison below, which is where that
+    // same gap actually escapes into the emitted Verilog.
+    //
+    // The `None` arms carry real zeros and the real un-marked
+    // marker -- deliberately *not* `Item::dont_care()`.
+    //
+    // A don't-care here is a genuine bug, not a tidiness question. Both
+    // arms of a mux always evaluate in hardware, so a don't-care operand
+    // reaches the multiplier, and while the Rust simulator reads it as
+    // zero, `iverilog` reads it as `x` and propagates. That divergence
+    // showed up as `test_complex_mixer_hdl_works` failing with
+    // `Expected 000111..., got 0x0111...` -- one bit of the output
+    // bundle unknown in Verilog and defined in Rust.
+    let (have_a, item_a) = match i.a {
+        Some(it) => (true, it),
+        None => (
+            false,
+            Item::<Iq<A_W>, F> {
+                data: zero_a,
+                frame: q.idle.frame,
+            },
+        ),
+    };
+    let (have_b, item_b) = match i.b {
+        Some(it) => (true, it),
+        None => (
+            false,
+            Item::<Iq<B_W>, F> {
+                data: zero_b,
+                frame: q.idle.frame,
+            },
+        ),
+    };
+    let av = item_a.data;
+    let bv = item_b.data;
+    let af = item_a.frame;
+    let bf = item_b.frame;
 
-    let mut bv = zero_b;
-    let mut have_b = false;
-    if let Some(x) = i.b {
-        bv = x.data;
-        have_b = true;
-    }
+    // The alignment check.  Gated on both operands being present: a
+    // starved cycle is already reported by `starved`, and comparing a
+    // real marker against a placeholder would double-report it as a
+    // framing fault.
+    //
+    // *** Padded so the compared type is never zero-width. ***
+    //
+    // `af != bf` on its own is wrong at `F = ()`. It does not fold to a
+    // constant `false`, which is the intuitive guess and was an earlier
+    // version of this comment. What the compiler actually emits
+    // declares both operands and never assigns them -- the bit
+    // extractions that would define them are elided, correctly, since
+    // there are no bits to extract -- so it reduces to `x != x`, which
+    // is `x`. The Rust simulator meanwhile evaluates `() != ()` as a
+    // defined `false`.
+    //
+    // That is a *silent* divergence between the two simulators: it
+    // compiles, it passes every Rust tier, and only
+    // `test_complex_mixer_hdl_works` catches it, as
+    // `Expected 000111..., got 0x0111...`.
+    //
+    // A zero-width value is harmless while it stays zero-width; it
+    // escapes only through an operation turning zero-width operands
+    // into a non-zero-width result, and a comparison is exactly that.
+    // Pairing each marker with the same one-bit constant keeps the
+    // compared type at least one bit wide for every `F` without
+    // changing what is asked: the pads are equal, so the pair differs
+    // exactly when the markers do.
+    //
+    // Diagnosed in `notes/zero-width-digital-types.md`.
+    let pad = bits::<1>(0);
+    d.mismatch = have_a && have_b && ((af, pad) != (bf, pad));
 
     if have_a && have_b {
         let ar = av.re.resize::<PROD_W>();
@@ -227,24 +410,27 @@ where
         let re = ar * br - ai * bi;
         let im = ar * bi + ai * br;
 
-        d.out = Iq::<OUT_W> {
-            re: convergent::<PROD_W, OUT_W, DROP>(re),
-            im: convergent::<PROD_W, OUT_W, DROP>(im),
+        // The marker rides with the product it belongs to.  On a
+        // mismatched cycle this is the `a` side's -- see
+        // `Out::frame_mismatch` for why that value is reported rather
+        // than quietly replaced.
+        d.out = Item::<Iq<OUT_W>, F> {
+            data: Iq::<OUT_W> {
+                re: convergent::<PROD_W, OUT_W, DROP>(re),
+                im: convergent::<PROD_W, OUT_W, DROP>(im),
+            },
+            frame: af,
         };
     } else {
         d.starved = true;
-        d.out = Iq::<OUT_W> {
-            re: signed::<OUT_W>(0),
-            im: signed::<OUT_W>(0),
-        };
+        // Zero sample, un-marked: a cycle with no valid product must not
+        // anchor anything.
+        d.out = q.idle;
     }
 
-    let mut o = Out::<OUT_W> {
-        stream: RCStream::<Iq<OUT_W>, ()> {
-            data: Some(Item::<Iq<OUT_W>, ()> {
-                data: q.out,
-                frame: (),
-            }),
+    let mut o = Out::<F, OUT_W> {
+        stream: RCStream::<Iq<OUT_W>, F> {
+            data: Some(q.out),
             // Vacuously true: `out` is overwritten every cycle, so the
             // mixer is always ready to accept from upstream.  See the
             // module docs on why forwarding `downstream_ready` here
@@ -255,15 +441,15 @@ where
         // The sample on `stream` this cycle is lost if downstream is not
         // ready to take it, and the mixer will not hold it.
         overrun: !i.downstream_ready,
+        frame_mismatch: q.mismatch,
     };
 
     if cr.reset.any() {
-        d.out = Iq::<OUT_W> {
-            re: signed::<OUT_W>(0),
-            im: signed::<OUT_W>(0),
-        };
+        d.out = q.idle;
         d.starved = false;
+        d.mismatch = false;
         o.overrun = false;
+        o.frame_mismatch = false;
     }
     (o, d)
 }
@@ -279,12 +465,12 @@ mod tests {
     // Complex: each partial product is A+B, and two are summed.
     const P: usize = 35;
     const DR: usize = 17;
-    type Uut = ComplexMixer<A, B, O, P, DR>;
+    type Uut = ComplexMixer<(), A, B, O, P, DR>;
 
     const _: () = assert!(P == A + B + 1 && DR == P - O);
 
-    fn feed(ar: i128, ai: i128, br: i128, bi: i128) -> In<A, B> {
-        In::<A, B> {
+    fn feed(ar: i128, ai: i128, br: i128, bi: i128) -> In<(), A, B> {
+        In::<(), A, B> {
             a: Some(Item::<Iq<A>, ()> {
                 data: Iq::<A> {
                     re: signed::<A>(ar),
@@ -303,7 +489,178 @@ mod tests {
         }
     }
 
-    fn run(seq: Vec<In<A, B>>) -> Vec<Out<O>> {
+    // ---- framing --------------------------------------------------
+    //
+    // A second instantiation at `F = SyncMark`, because the framing
+    // contract is invisible at `F = ()` -- the unit type has one
+    // inhabitant, so markers can never disagree there.
+
+    use crate::dsp::sync::SyncMark;
+
+    type Framed = ComplexMixer<SyncMark, A, B, O, P, DR>;
+
+    /// One cycle of framed stimulus with the two markers set
+    /// independently, so a test can make them disagree.
+    fn feed_framed(a_sync: bool, b_sync: bool) -> In<SyncMark, A, B> {
+        In::<SyncMark, A, B> {
+            a: Some(Item::<Iq<A>, SyncMark> {
+                data: Iq::<A> {
+                    re: signed::<A>(1000),
+                    im: signed::<A>(0),
+                },
+                frame: SyncMark { sync: a_sync },
+            }),
+            b: Some(Item::<Iq<B>, SyncMark> {
+                data: Iq::<B> {
+                    re: signed::<B>(1000),
+                    im: signed::<B>(0),
+                },
+                frame: SyncMark { sync: b_sync },
+            }),
+            downstream_ready: true,
+        }
+    }
+
+    fn run_framed(seq: Vec<In<SyncMark, A, B>>) -> Vec<Out<SyncMark, O>> {
+        let uut = Framed::default();
+        uut.run(seq.into_iter().with_reset(1).clock_pos_edge(100))
+            .synchronous_sample()
+            .map(|s| s.output)
+            .collect()
+    }
+
+    fn out_sync(o: &Out<SyncMark, O>) -> bool {
+        match o.stream.data {
+            Some(item) => item.frame.sync,
+            None => panic!("the mixer emits every cycle"),
+        }
+    }
+
+    /// Aligned markers pass through and raise nothing.
+    #[test]
+    fn aligned_markers_propagate() {
+        let seq = vec![
+            feed_framed(false, false),
+            feed_framed(true, true),
+            feed_framed(false, false),
+            feed_framed(false, false),
+        ];
+        let out = run_framed(seq);
+        // One cycle of reset, one cycle of mixer latency.
+        const LAT: usize = 2;
+        assert!(
+            out.iter().all(|o| !o.frame_mismatch),
+            "no mismatch expected"
+        );
+        let marked: Vec<usize> = out
+            .iter()
+            .enumerate()
+            .filter(|(_, o)| out_sync(o))
+            .map(|(k, _)| k)
+            .collect();
+        assert_eq!(
+            marked,
+            vec![1 + LAT],
+            "the marker should ride with its product"
+        );
+    }
+
+    /// **A one-sided marker is an error, and is reported.**
+    ///
+    /// This is the alignment contract. Either side asserting alone means
+    /// the two paths disagree about which sample is the anchor, which is
+    /// a latency-compensation bug upstream; the mixer is the place it
+    /// becomes visible.
+    #[test]
+    fn a_one_sided_marker_is_reported() {
+        let seq = vec![
+            feed_framed(false, false),
+            feed_framed(true, false),
+            feed_framed(false, true),
+            feed_framed(false, false),
+            feed_framed(false, false),
+        ];
+        let out = run_framed(seq);
+        const LAT: usize = 2;
+        let flagged: Vec<usize> = out
+            .iter()
+            .enumerate()
+            .filter(|(_, o)| o.frame_mismatch)
+            .map(|(k, _)| k)
+            .collect();
+        assert_eq!(
+            flagged,
+            vec![1 + LAT, 2 + LAT],
+            "both one-sided cycles should be flagged, and only those"
+        );
+    }
+
+    /// A starved cycle is not a framing fault, and carries no marker.
+    ///
+    /// Two claims in one test because they are the same decision: with
+    /// only one operand there is nothing to compare, so `starved` is the
+    /// correct report and `frame_mismatch` would be a double-report --
+    /// and the emitted zero sample must not anchor anything either.
+    #[test]
+    fn starvation_is_not_a_framing_fault() {
+        let mut lone = feed_framed(true, true);
+        lone.b = None;
+        let seq = vec![feed_framed(false, false), lone, feed_framed(false, false)];
+        let out = run_framed(seq);
+        assert!(
+            out.iter().all(|o| !o.frame_mismatch),
+            "a starved cycle must not be reported as a framing fault"
+        );
+        assert!(
+            out.iter().all(|o| !out_sync(o)),
+            "a starved cycle must not carry a marker"
+        );
+        assert!(
+            out.iter().any(|o| o.starved),
+            "starvation should still be reported"
+        );
+    }
+
+    /// Reset emits no marker and no fault.
+    #[test]
+    fn reset_is_unmarked() {
+        const RESET_CYCLES: usize = 3;
+        let uut = Framed::default();
+        let seq: Vec<In<SyncMark, A, B>> = (0..6).map(|_| feed_framed(true, true)).collect();
+        let out: Vec<Out<SyncMark, O>> = uut
+            .run(seq.into_iter().with_reset(RESET_CYCLES).clock_pos_edge(100))
+            .synchronous_sample()
+            .map(|s| s.output)
+            .collect();
+        for (k, o) in out.iter().take(RESET_CYCLES).enumerate() {
+            assert!(!out_sync(o), "sample {k} was marked during reset");
+            assert!(!o.frame_mismatch, "sample {k} flagged during reset");
+        }
+    }
+
+    /// The framed mixer survives `iverilog`, both RTL and NTL.
+    ///
+    /// Separate from `test_complex_mixer_hdl_works`, which covers
+    /// `F = ()`. The two instantiations emit different Verilog and the
+    /// framing comparison only exists in this one.
+    #[test]
+    fn test_framed_mixer_hdl_works() -> miette::Result<()> {
+        let uut = Framed::default();
+        let seq = vec![
+            feed_framed(false, false),
+            feed_framed(true, true),
+            feed_framed(true, false),
+            feed_framed(false, false),
+        ];
+        let tb = uut
+            .run(seq.into_iter().with_reset(1).clock_pos_edge(100))
+            .collect::<SynchronousTestBench<_, _>>();
+        tb.rtl(&uut, &Default::default())?.run_iverilog()?;
+        tb.ntl(&uut, &Default::default())?.run_iverilog()?;
+        Ok(())
+    }
+
+    fn run(seq: Vec<In<(), A, B>>) -> Vec<Out<(), O>> {
         let uut = Uut::default();
         uut.run(seq.into_iter().with_reset(1).clock_pos_edge(100))
             .synchronous_sample()
@@ -311,7 +668,7 @@ mod tests {
             .collect()
     }
 
-    fn got(o: &Out<O>) -> (i128, i128) {
+    fn got(o: &Out<(), O>) -> (i128, i128) {
         match o.stream.data {
             Some(item) => (item.data.re.raw(), item.data.im.raw()),
             None => panic!("the mixer must emit every cycle"),
@@ -346,7 +703,7 @@ mod tests {
             (-60_000, 80_000, -12_000, -9_000),
             (131_070, -131_070, 32_767, -32_768),
         ];
-        let seq: Vec<In<A, B>> = cases.iter().map(|c| feed(c.0, c.1, c.2, c.3)).collect();
+        let seq: Vec<In<(), A, B>> = cases.iter().map(|c| feed(c.0, c.1, c.2, c.3)).collect();
         let out = run(seq);
         let mut checked = 0;
         for (k, c) in cases.iter().enumerate() {
@@ -447,7 +804,7 @@ mod tests {
     fn the_output_has_no_dc_offset() {
         // A symmetric sweep: every value paired with its negation.
         const PAIRS: usize = 64;
-        let mut seq: Vec<In<A, B>> = Vec::new();
+        let mut seq: Vec<In<(), A, B>> = Vec::new();
         for k in 1..=PAIRS as i128 {
             seq.push(feed(k * 1500, k * 700, 9_000, 0));
             seq.push(feed(-k * 1500, -k * 700, 9_000, 0));
@@ -505,7 +862,7 @@ mod tests {
     /// makes the first assertion report it.
     #[test]
     fn a_lost_sample_is_reported() {
-        let stalled = In::<A, B> {
+        let stalled = In::<(), A, B> {
             downstream_ready: false,
             ..feed(1000, 2000, 300, 400)
         };
@@ -537,7 +894,7 @@ mod tests {
     /// honest answer here does not depend on downstream.
     #[test]
     fn ready_does_not_depend_on_downstream() {
-        let stalled = In::<A, B> {
+        let stalled = In::<(), A, B> {
             downstream_ready: false,
             ..feed(1000, 2000, 300, 400)
         };
@@ -551,7 +908,7 @@ mod tests {
     #[test]
     fn starvation_is_reported() {
         let mut seq = vec![feed(1000, 2000, 300, 400); 3];
-        seq.push(In::<A, B> {
+        seq.push(In::<(), A, B> {
             a: None,
             b: Some(Item::<Iq<B>, ()> {
                 data: Iq::<B> {
@@ -576,17 +933,17 @@ mod tests {
     /// left them constant would make the `iverilog` round-trip and the
     /// VCD digest cover them as tied-off wires, which is how a codegen
     /// bug in a flag output survives a green Tier 4.
-    fn hdl_stimulus() -> Vec<In<A, B>> {
-        let mut seq: Vec<In<A, B>> = (0..24i128)
+    fn hdl_stimulus() -> Vec<In<(), A, B>> {
+        let mut seq: Vec<In<(), A, B>> = (0..24i128)
             .map(|k| feed((k - 12) * 7000, (12 - k) * 5000, (k - 12) * 1500, k * 900))
             .collect();
         // Downstream drops ready: the registered sample is lost.
-        seq.push(In::<A, B> {
+        seq.push(In::<(), A, B> {
             downstream_ready: false,
             ..feed(50_000, -30_000, 20_000, -10_000)
         });
         // Only one operand presents data: starvation.
-        seq.push(In::<A, B> {
+        seq.push(In::<(), A, B> {
             b: None,
             ..feed(50_000, -30_000, 20_000, -10_000)
         });
@@ -608,7 +965,9 @@ mod tests {
         let expect = expect![[r#"
             module top
             module top_out
-            module top_starved"#]];
+            module top_starved
+            module top_mismatch
+            module top_idle"#]];
         expect.assert_eq(&shape);
         Ok(())
     }
@@ -634,7 +993,7 @@ mod tests {
             .join("vcd")
             .join("complex_mixer");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["b10599b74e5c3f13aa3dfd477c78fc987c94521a11ef2e95d53d2079fc72e7d6"];
+        let expect = expect!["70394ee358d81171d62e6788b28ba54b4bad400214271aca0bff3f0fea86ed33"];
         let digest = vcd.dump_to_file(root.join("complex_mixer.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())
