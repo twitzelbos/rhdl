@@ -161,7 +161,7 @@ impl<T: Digital> Synchronous for DFF<T> {
 impl<T: Digital> DFF<T> {
     fn hdl(&self, name: &str) -> Result<HDLDescriptor, RHDLError> {
         let module_name = format_ident!("{}", name);
-        let init: vlog::LitVerilog = self.reset.typed_bits().into();
+        let init = rhdl::core::hdl::builder::signal_literal(&self.reset.typed_bits());
         let data_width: vlog::BitRange = (0..T::static_kind().bits()).into();
         let cr = ClockReset::dont_care();
         let reset_index = bit_range(ClockReset::static_kind(), &path!(cr.reset))?;

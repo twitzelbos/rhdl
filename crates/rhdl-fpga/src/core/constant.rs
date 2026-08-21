@@ -92,7 +92,7 @@ impl<T: Digital> Constant<T> {
     fn hdl(&self, name: &str) -> Result<HDLDescriptor, RHDLError> {
         let module_name = name.into();
         let module_ident = format_ident!("{}", module_name);
-        let lit: vlog::LitVerilog = self.value.typed_bits().into();
+        let lit = rhdl::core::hdl::builder::signal_literal(&self.value.typed_bits());
         let bits: vlog::BitRange = (0..T::bits()).into();
         let module: vlog::ModuleDef = parse_quote! {
             module #module_ident(input wire [1:0] clock_reset, output wire [#bits] o);

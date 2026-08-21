@@ -335,13 +335,19 @@ where
         let address_bits: vlog::BitRange = (0..N).into();
         let data_bits: vlog::BitRange = (0..T::BITS).into();
         let memory_size: vlog::BitRange = (0..(1 << N)).into();
-        let initial_values = self.initial.iter().map(|(addr, val)| {
-            let val: vlog::LitVerilog = val.typed_bits().into();
-            let addr = syn::Index::from(addr.raw() as usize);
-            quote! {
-                mem[#addr] = #val;
-            }
-        });
+        // Collected into a `Result` rather than left lazy so a failed
+        // literal conversion propagates out of `hdl`.
+        let initial_values = self
+            .initial
+            .iter()
+            .map(|(addr, val)| {
+                let val: vlog::LitVerilog = val.typed_bits().try_into()?;
+                let addr = syn::Index::from(addr.raw() as usize);
+                Ok(quote! {
+                    mem[#addr] = #val;
+                })
+            })
+            .collect::<Result<Vec<_>, RHDLError>>()?;
         let i_kind = <<Self as CircuitIO>::I as Digital>::static_kind();
         let i = <Self as CircuitIO>::I::dont_care();
         let read_addr_range: vlog::BitRange =

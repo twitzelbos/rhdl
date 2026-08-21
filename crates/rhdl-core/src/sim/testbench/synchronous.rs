@@ -140,7 +140,10 @@ impl<I: Digital, O: Digital> SynchronousTestBench<I, O> {
             .samples
             .iter()
             .enumerate()
-            .map(|(test_case_counter, timed_entry)| {
+            // Collected eagerly into a `Result` rather than left lazy, so
+            // a failed literal conversion propagates instead of being
+            // unable to escape the closure.
+            .map(|(test_case_counter, timed_entry)| -> Result<proc_macro2::TokenStream, RHDLError> {
                 let sample_time = timed_entry.time;
                 let (sample_cr, sample_i, sample_o) = timed_entry.value;
                 // First, we determine if at least the hold time has elapsed between the sample time and the previous recorded time
@@ -167,24 +170,25 @@ impl<I: Digital, O: Digital> SynchronousTestBench<I, O> {
                 absolute_time = sample_time;
                 let cr: vlog::LitVerilog = clock_reset(sample_cr.clock, sample_cr.reset)
                     .typed_bits()
-                    .into();
+                    .try_into()?;
                 let input_update = if has_nonempty_input {
-                    let bin: vlog::LitVerilog = sample_i.typed_bits().into();
+                    let bin: vlog::LitVerilog = sample_i.typed_bits().try_into()?;
                     quote! {
                         i = #bin;
                     }
                 } else {
                     quote! {}
                 };
-                let output_bin: vlog::LitVerilog = sample_o.typed_bits().into();
-                quote! {
+                let output_bin: vlog::LitVerilog = sample_o.typed_bits().try_into()?;
+                Ok(quote! {
                     #preamble
                     #delay;
                     clock_reset = #cr;
                     #input_update
                     rust_out = #output_bin;
-                }
-            });
+                })
+            })
+            .collect::<Result<Vec<_>, RHDLError>>()?;
         let module: vlog::ModuleList = parse_quote! {
             module testbench;
                 #(#declarations;)*

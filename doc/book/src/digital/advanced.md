@@ -160,3 +160,63 @@ There is no reason why the enum discriminant need be an unsigned integer.  If yo
 We need a discriminant that can represent both `-5` and `+9`.  In this case, RHDL selected a signed 5 bit integer `s5`, which can represent values from `-16..15`.
 
 ![State SVG with signed discriminants](../code/state_signed_disc.svg)
+
+## Zero-Width Types
+
+A `Digital` type can have **zero bits**.  The unit type `()` is the
+obvious one, and a struct with no fields is another.  This is not an
+accident of the encoding — it is deliberately supported, and it is
+load-bearing for generic code.
+
+The clearest example is the framing parameter on the
+[`RCStream` bus](../rcstream/bus.md).  `RCStream<T, F>` carries a payload
+`T` and a framing marker `F`, and an unframed stream sets `F = ()`:
+
+```text
+Item<Iq<18>, ()>        is 36 bits — exactly the two payload components
+Item<Iq<18>, bool>      is 37 bits — payload plus a one-bit marker
+```
+
+A zero-width `F` costs nothing on the wire, so the same generic widget
+serves both framed and unframed streams without an unframed user paying
+for a bit that carries no information.
+
+### Why zero-width types work at all
+
+A type with zero bits has exactly **one inhabitant**.  There is only one
+value it can hold, so no bits are needed to distinguish which one it is,
+and any operation on such values has a result known at compile time —
+two of them are always equal, for instance.
+
+### Verilog has no zero-width signal
+
+Verilog has no zero-width signal, and in particular **no zero-width
+literal** — a sized literal needs at least one digit, so there is no
+legal rendering of a zero-bit constant.
+
+RHDL handles this by declaring a zero-bit type as a **one-bit** port and
+driving it with a one-bit zero.  Nothing is lost: a type with one
+inhabitant has only one value it could have been.  Such a module is in
+any case dropped from the composed design, since a port with no bits has
+nothing for a parent to connect.
+
+You will rarely think about this.  Where it shows up is in generic
+widgets that need to carry a type parameter without spending bits on it:
+
+```rust,ignore
+// `PhantomData` would be fatal: the derive treats every field as a
+// child circuit, and `PhantomData` has no HDL.  A zero-width
+// `Constant` is the idiom instead, and works at `F = ()`.
+pub struct IqSplit<const W: usize, F: Digital> {
+    marker: Constant<F>,
+}
+```
+
+```admonish note
+Internally, the conversion that builds a Verilog literal from a value
+*rejects* a zero-width input rather than inventing one, so no code path
+can emit an illegal `0'b` by accident.  Substituting the one-bit
+placeholder is a deliberate, opt-in step taken only where a signal has
+to be driven.
+```
+
