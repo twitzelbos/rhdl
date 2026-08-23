@@ -50,3 +50,29 @@ where
     };
     (widened + fill).as_signed()
 }
+
+/// Discard the low `FROM - TO` bits of a signed value.
+///
+/// The arithmetic meaning of a pruned CIC stage transfer: the next
+/// stage carries fewer bits, and the ones it drops are the least
+/// significant. An arithmetic right shift moves the retained bits down,
+/// and the narrowing `resize` keeps them.
+///
+/// `TO > FROM` fails at const evaluation rather than silently
+/// zero-extending, which is the right outcome — widening here would
+/// mean the pruning schedule was not monotonic and the caller has a
+/// design error, not a rounding question.
+///
+/// Truncation, not rounding. Hogenauer's §V error analysis is written
+/// for truncation and the discarded-bit budget assumes it; rounding
+/// would halve the mean error and double the register count for the
+/// adders' carry-in, which is not the trade this widget makes.
+#[kernel]
+#[doc(hidden)]
+pub fn narrow<const FROM: usize, const TO: usize>(v: SignedBits<FROM>) -> SignedBits<TO>
+where
+    rhdl::bits::W<FROM>: BitWidth,
+    rhdl::bits::W<TO>: BitWidth,
+{
+    (v >> bits::<8>((FROM - TO) as u128)).resize::<TO>()
+}

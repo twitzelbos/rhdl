@@ -40,6 +40,8 @@
 use rhdl::prelude::*;
 
 pub mod decimator;
+pub mod prune;
+pub mod pruned;
 
 pub use decimator::CicDecimate;
 
