@@ -60,12 +60,17 @@ use rhdl::prelude::*;
 use crate::core::dff;
 use crate::dsp::iq::Iq;
 
-use super::{ANGLE_W, ATAN_TABLE, HALF_TURN, INT_W, INV_GAIN_Q17, ITERATIONS, sign_extend};
+use super::{CordicConsts, int_width_is_sufficient, iterations_for, sign_extend};
+use crate::core::constant::Constant;
 
 /// One pipeline stage's state.
 #[derive(PartialEq, Clone, Copy, Debug, Digital, Default)]
 #[doc(hidden)]
-pub struct Stage {
+pub struct Stage<const INT_W: usize, const ANGLE_W: usize>
+where
+    rhdl::bits::W<INT_W>: BitWidth,
+    rhdl::bits::W<ANGLE_W>: BitWidth,
+{
     /// Real component, rotating toward the magnitude.
     pub x: SignedBits<INT_W>,
     /// Imaginary component, rotating toward zero.
@@ -77,17 +82,29 @@ pub struct Stage {
 }
 
 /// `Iq` to magnitude and phase.
-#[derive(Clone, Debug, Synchronous, SynchronousDQ, Default)]
+#[derive(Clone, Debug, Synchronous, SynchronousDQ)]
 #[rhdl(dq_no_prefix)]
-pub struct CordicVectoring<const W: usize>
+pub struct CordicVectoring<const W: usize, const INT_W: usize, const ANGLE_W: usize, const N: usize>
 where
     rhdl::bits::W<W>: BitWidth,
+    rhdl::bits::W<INT_W>: BitWidth,
+    rhdl::bits::W<ANGLE_W>: BitWidth,
 {
+    /// The width-dependent constants, folded away in synthesis.
+    consts: Constant<CordicConsts<ANGLE_W, N>>,
     /// One slot per iteration. Bundled in a single DFF rather than as
     /// sibling fields: sixteen `DFF`s would blow the twelve-element
     /// ceiling on the derived `Q`/`D` tuples (CLAUDE.md §3.1).
-    pipe: dff::DFF<[Stage; ITERATIONS]>,
+    pipe: dff::DFF<[Stage<INT_W, ANGLE_W>; N]>,
 }
+
+/// The validated default configuration: 18-bit samples, 22-bit internal
+/// datapath.
+///
+/// The widths the module's accuracy claims and resource counts were
+/// measured at. Use the generic form for anything else.
+pub type CordicVectoringDefault =
+    CordicVectoring<18, { super::INT_W }, { super::ANGLE_W }, { super::ITERATIONS }>;
 
 /// Inputs to [`CordicVectoring`].
 #[derive(PartialEq, Clone, Copy, Debug, Digital)]
@@ -101,7 +118,11 @@ where
 
 /// Outputs from [`CordicVectoring`].
 #[derive(PartialEq, Clone, Copy, Debug, Digital)]
-pub struct Out {
+pub struct Out<const INT_W: usize, const ANGLE_W: usize>
+where
+    rhdl::bits::W<INT_W>: BitWidth,
+    rhdl::bits::W<ANGLE_W>: BitWidth,
+{
     /// Magnitude, **gain-corrected**.
     ///
     /// The algorithm's own gain `K = 1.6468…` is removed inside the
@@ -116,26 +137,71 @@ pub struct Out {
     pub valid: bool,
 }
 
-impl<const W: usize> SynchronousIO for CordicVectoring<W>
+impl<const W: usize, const INT_W: usize, const ANGLE_W: usize, const N: usize> Default
+    for CordicVectoring<W, INT_W, ANGLE_W, N>
 where
     rhdl::bits::W<W>: BitWidth,
+    rhdl::bits::W<INT_W>: BitWidth,
+    rhdl::bits::W<ANGLE_W>: BitWidth,
+{
+    fn default() -> Self {
+        // Checked here rather than left to the caller to remember. A
+        // too-narrow datapath does not fail loudly, it silently clips
+        // the largest vectors; a wrong `N` silently changes the gain
+        // the correction is computed for.
+        assert!(
+            int_width_is_sufficient(W, INT_W),
+            "INT_W must be at least W + 4 to carry the CORDIC gain and \
+             the sqrt(2) a full-scale magnitude reaches"
+        );
+        assert_eq!(
+            N,
+            iterations_for(ANGLE_W),
+            "N must be the iteration count this angle width supports; \
+             fewer loses precision the width has paid for, more adds \
+             stages whose arctangent rounds to zero"
+        );
+        Self {
+            consts: Constant::new(CordicConsts::<ANGLE_W, N>::build()),
+            pipe: dff::DFF::new([Stage::<INT_W, ANGLE_W>::default(); N]),
+        }
+    }
+}
+
+impl<const W: usize, const INT_W: usize, const ANGLE_W: usize, const N: usize> SynchronousIO
+    for CordicVectoring<W, INT_W, ANGLE_W, N>
+where
+    rhdl::bits::W<W>: BitWidth,
+    rhdl::bits::W<INT_W>: BitWidth,
+    rhdl::bits::W<ANGLE_W>: BitWidth,
 {
     type I = In<W>;
-    type O = Out;
-    type Kernel = cordic_vectoring_kernel<W>;
+    type O = Out<INT_W, ANGLE_W>;
+    type Kernel = cordic_vectoring_kernel<W, INT_W, ANGLE_W, N>;
 }
 
 #[kernel]
 #[doc(hidden)]
-pub fn cordic_vectoring_kernel<const W: usize>(cr: ClockReset, i: In<W>, q: Q<W>) -> (Out, D<W>)
+pub fn cordic_vectoring_kernel<
+    const W: usize,
+    const INT_W: usize,
+    const ANGLE_W: usize,
+    const N: usize,
+>(
+    cr: ClockReset,
+    i: In<W>,
+    q: Q<W, INT_W, ANGLE_W, N>,
+) -> (Out<INT_W, ANGLE_W>, D<W, INT_W, ANGLE_W, N>)
 where
     rhdl::bits::W<W>: BitWidth,
+    rhdl::bits::W<INT_W>: BitWidth,
+    rhdl::bits::W<ANGLE_W>: BitWidth,
 {
-    let mut d = D::<W>::dont_care();
+    let mut d = D::<W, INT_W, ANGLE_W, N>::dont_care();
     let mut next = q.pipe;
 
     // ---- stage 0: quadrant fold, then iteration 0 ----
-    let mut seed = Stage {
+    let mut seed = Stage::<INT_W, ANGLE_W> {
         x: signed::<INT_W>(0),
         y: signed::<INT_W>(0),
         z: signed::<ANGLE_W>(0),
@@ -170,9 +236,9 @@ where
             // before `signed()` converts it, and the kernel compiler
             // rejects that with "cannot negate unsigned value 20000_b64"
             // -- 0x20000 being this constant in hex.
-            z = signed::<ANGLE_W>(HALF_TURN);
+            z = q.consts.half_turn;
         }
-        seed = Stage {
+        seed = Stage::<INT_W, ANGLE_W> {
             x,
             y,
             z,
@@ -180,33 +246,21 @@ where
         };
     }
 
-    // Unrolled rather than a loop over a dynamic index.
+    // A loop, not a hand-unrolled chain.
     //
-    // `for k in 1..ITERATIONS { next[k] = step(q.pipe[k-1], k) }` is the
-    // natural spelling and panics the compiler: `lower_rhif_to_rtl.rs`
-    // computes `array.size.min(1 << slot_bits)` for a dynamic index, and
-    // with a `usize` index `slot_bits` is 64, so `1 << 64` overflows
-    // before the `.min()` can clamp it.  Unrolling uses only constant
-    // indices, which take a different path.  Filed as compiler work.
-    next[0] = cordic_step(seed, bits::<8>(0), signed::<ANGLE_W>(ATAN_TABLE[0]));
-    next[1] = cordic_step(q.pipe[0], bits::<8>(1), signed::<ANGLE_W>(ATAN_TABLE[1]));
-    next[2] = cordic_step(q.pipe[1], bits::<8>(2), signed::<ANGLE_W>(ATAN_TABLE[2]));
-    next[3] = cordic_step(q.pipe[2], bits::<8>(3), signed::<ANGLE_W>(ATAN_TABLE[3]));
-    next[4] = cordic_step(q.pipe[3], bits::<8>(4), signed::<ANGLE_W>(ATAN_TABLE[4]));
-    next[5] = cordic_step(q.pipe[4], bits::<8>(5), signed::<ANGLE_W>(ATAN_TABLE[5]));
-    next[6] = cordic_step(q.pipe[5], bits::<8>(6), signed::<ANGLE_W>(ATAN_TABLE[6]));
-    next[7] = cordic_step(q.pipe[6], bits::<8>(7), signed::<ANGLE_W>(ATAN_TABLE[7]));
-    next[8] = cordic_step(q.pipe[7], bits::<8>(8), signed::<ANGLE_W>(ATAN_TABLE[8]));
-    next[9] = cordic_step(q.pipe[8], bits::<8>(9), signed::<ANGLE_W>(ATAN_TABLE[9]));
-    next[10] = cordic_step(q.pipe[9], bits::<8>(10), signed::<ANGLE_W>(ATAN_TABLE[10]));
-    next[11] = cordic_step(q.pipe[10], bits::<8>(11), signed::<ANGLE_W>(ATAN_TABLE[11]));
-    next[12] = cordic_step(q.pipe[11], bits::<8>(12), signed::<ANGLE_W>(ATAN_TABLE[12]));
-    next[13] = cordic_step(q.pipe[12], bits::<8>(13), signed::<ANGLE_W>(ATAN_TABLE[13]));
-    next[14] = cordic_step(q.pipe[13], bits::<8>(14), signed::<ANGLE_W>(ATAN_TABLE[14]));
-    next[15] = cordic_step(q.pipe[14], bits::<8>(15), signed::<ANGLE_W>(ATAN_TABLE[15]));
+    // With `N` generic the chain cannot be written out, and it does not
+    // need to be: a constant-bound loop unrolls during lowering and the
+    // index folds to a constant, so this emits the same hardware the
+    // sixteen hand-written lines did -- no address mux, no ROM. The
+    // arctangent comes from a `Constant`, which folds away too.
+    next[0] = cordic_step::<INT_W, ANGLE_W>(seed, bits::<8>(0), q.consts.atan[0]);
+    for k in 1..N {
+        next[k] =
+            cordic_step::<INT_W, ANGLE_W>(q.pipe[k - 1], bits::<8>(k as u128), q.consts.atan[k]);
+    }
     d.pipe = next;
 
-    let last = q.pipe[ITERATIONS - 1];
+    let last = q.pipe[N - 1];
 
     // Correct the CORDIC gain here rather than leaving it to the
     // caller.  An uncorrected magnitude is 64.7% too large, and a
@@ -216,21 +270,22 @@ where
     // 58212-of-90000 error the round-trip test caught when this
     // correction lived in the test instead.
     let corrected =
-        ((sign_extend::<INT_W, 48>(last.x) * signed::<48>(INV_GAIN_Q17)) >> 17).resize::<INT_W>();
+        ((sign_extend::<INT_W, 48>(last.x) * sign_extend::<20, 48>(q.consts.inv_gain_q17)) >> 17)
+            .resize::<INT_W>();
 
-    let o = Out {
+    let o = Out::<INT_W, ANGLE_W> {
         magnitude: corrected,
         phase: last.z,
         valid: last.valid,
     };
 
     if cr.reset.any() {
-        d.pipe = [Stage {
+        d.pipe = [Stage::<INT_W, ANGLE_W> {
             x: signed::<INT_W>(0),
             y: signed::<INT_W>(0),
             z: signed::<ANGLE_W>(0),
             valid: false,
-        }; ITERATIONS];
+        }; N];
     }
     (o, d)
 }
@@ -238,7 +293,15 @@ where
 /// One CORDIC vectoring iteration.
 #[kernel]
 #[doc(hidden)]
-pub fn cordic_step(s: Stage, k: Bits<8>, angle: SignedBits<ANGLE_W>) -> Stage {
+pub fn cordic_step<const INT_W: usize, const ANGLE_W: usize>(
+    s: Stage<INT_W, ANGLE_W>,
+    k: Bits<8>,
+    angle: SignedBits<ANGLE_W>,
+) -> Stage<INT_W, ANGLE_W>
+where
+    rhdl::bits::W<INT_W>: BitWidth,
+    rhdl::bits::W<ANGLE_W>: BitWidth,
+{
     // Direction from the sign of y: rotate toward y = 0. A bit test
     // rather than `y < 0`, so it cannot depend on how signedness
     // survives codegen.
@@ -268,7 +331,11 @@ mod tests {
     use std::f64::consts::TAU;
 
     const W: usize = 18;
-    type Uut = CordicVectoring<W>;
+    const INT_W: usize = super::super::INT_W;
+    /// Ditto the angle width and the iteration count.
+    const ANGLE_W: usize = super::super::ANGLE_W;
+    const ITERATIONS: usize = super::super::ITERATIONS;
+    type Uut = CordicVectoringDefault;
 
     /// The widget corrects its own gain, so this is a plain
     /// conversion.
@@ -465,7 +532,7 @@ mod tests {
 
     /// Tier 3 — HDL emission shape.
     ///
-    /// Shape only: 553 register declarations make a full snapshot
+    /// Shape only: 613 register declarations make a full snapshot
     /// unreviewable, and the resource counts are asserted separately by
     /// `report_the_resource_cost`.
     #[test]
@@ -480,6 +547,7 @@ mod tests {
             .join("\n");
         let expect = expect![[r#"
             module top
+            module top_consts
             module top_pipe"#]];
         expect.assert_eq(&shape);
         Ok(())
@@ -503,7 +571,7 @@ mod tests {
             .join("vcd")
             .join("cordic_vectoring");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["e95f2751c7ed7423be6e12d2008aae58d887461113270e03c0ef225d649ec366"];
+        let expect = expect!["cf8f65640867c0c3b0b2a4335dde38e0500c1fcaf8a4ab5440fbc137a85bf2f4"];
         let digest = vcd.dump_to_file(root.join("cordic_vectoring.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

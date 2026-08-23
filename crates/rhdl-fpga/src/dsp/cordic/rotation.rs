@@ -44,12 +44,17 @@ use rhdl::prelude::*;
 use crate::core::dff;
 use crate::dsp::iq::Iq;
 
-use super::{ANGLE_W, ATAN_TABLE, HALF_TURN, INT_W, INV_GAIN_Q17, ITERATIONS, sign_extend};
+use super::{CordicConsts, iterations_for, sign_extend};
+use crate::core::constant::Constant;
 
 /// One pipeline stage's state.
 #[derive(PartialEq, Clone, Copy, Debug, Digital, Default)]
 #[doc(hidden)]
-pub struct Stage {
+pub struct Stage<const INT_W: usize, const ANGLE_W: usize>
+where
+    rhdl::bits::W<INT_W>: BitWidth,
+    rhdl::bits::W<ANGLE_W>: BitWidth,
+{
     /// Real component.
     pub x: SignedBits<INT_W>,
     /// Imaginary component.
@@ -63,17 +68,32 @@ pub struct Stage {
 }
 
 /// Magnitude and phase to `Iq`.
-#[derive(Clone, Debug, Synchronous, SynchronousDQ, Default)]
+#[derive(Clone, Debug, Synchronous, SynchronousDQ)]
 #[rhdl(dq_no_prefix)]
-pub struct CordicRotation {
+pub struct CordicRotation<const INT_W: usize, const ANGLE_W: usize, const N: usize>
+where
+    rhdl::bits::W<INT_W>: BitWidth,
+    rhdl::bits::W<ANGLE_W>: BitWidth,
+{
+    /// The width-dependent constants, folded away in synthesis.
+    consts: Constant<CordicConsts<ANGLE_W, N>>,
     /// One slot per iteration; see the note in
     /// [`super::vectoring::CordicVectoring`] on why these are bundled.
-    pipe: dff::DFF<[Stage; ITERATIONS]>,
+    pipe: dff::DFF<[Stage<INT_W, ANGLE_W>; N]>,
 }
+
+/// The validated default configuration: 22-bit internal datapath,
+/// matching [`super::vectoring::CordicVectoringDefault`]'s output.
+pub type CordicRotationDefault =
+    CordicRotation<{ super::INT_W }, { super::ANGLE_W }, { super::ITERATIONS }>;
 
 /// Inputs to [`CordicRotation`].
 #[derive(PartialEq, Clone, Copy, Debug, Digital)]
-pub struct In {
+pub struct In<const INT_W: usize, const ANGLE_W: usize>
+where
+    rhdl::bits::W<INT_W>: BitWidth,
+    rhdl::bits::W<ANGLE_W>: BitWidth,
+{
     /// Magnitude, or `None` for an idle cycle.
     pub magnitude: Option<SignedBits<INT_W>>,
     /// Phase, a full turn being `2^ANGLE_W`.
@@ -82,26 +102,62 @@ pub struct In {
 
 /// Outputs from [`CordicRotation`].
 #[derive(PartialEq, Clone, Copy, Debug, Digital)]
-pub struct Out {
+pub struct Out<const INT_W: usize, const ANGLE_W: usize>
+where
+    rhdl::bits::W<INT_W>: BitWidth,
+    rhdl::bits::W<ANGLE_W>: BitWidth,
+{
     /// The rectangular sample.
     pub sample: Iq<INT_W>,
     /// The output corresponds to a real input sample.
     pub valid: bool,
 }
 
-impl SynchronousIO for CordicRotation {
-    type I = In;
-    type O = Out;
-    type Kernel = cordic_rotation_kernel;
+impl<const INT_W: usize, const ANGLE_W: usize, const N: usize> Default
+    for CordicRotation<INT_W, ANGLE_W, N>
+where
+    rhdl::bits::W<INT_W>: BitWidth,
+    rhdl::bits::W<ANGLE_W>: BitWidth,
+{
+    fn default() -> Self {
+        assert_eq!(
+            N,
+            iterations_for(ANGLE_W),
+            "N must be the iteration count this angle width supports"
+        );
+        Self {
+            consts: Constant::new(CordicConsts::<ANGLE_W, N>::build()),
+            pipe: dff::DFF::new([Stage::<INT_W, ANGLE_W>::default(); N]),
+        }
+    }
+}
+
+impl<const INT_W: usize, const ANGLE_W: usize, const N: usize> SynchronousIO
+    for CordicRotation<INT_W, ANGLE_W, N>
+where
+    rhdl::bits::W<INT_W>: BitWidth,
+    rhdl::bits::W<ANGLE_W>: BitWidth,
+{
+    type I = In<INT_W, ANGLE_W>;
+    type O = Out<INT_W, ANGLE_W>;
+    type Kernel = cordic_rotation_kernel<INT_W, ANGLE_W, N>;
 }
 
 #[kernel]
 #[doc(hidden)]
-pub fn cordic_rotation_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
-    let mut d = D::dont_care();
+pub fn cordic_rotation_kernel<const INT_W: usize, const ANGLE_W: usize, const N: usize>(
+    cr: ClockReset,
+    i: In<INT_W, ANGLE_W>,
+    q: Q<INT_W, ANGLE_W, N>,
+) -> (Out<INT_W, ANGLE_W>, D<INT_W, ANGLE_W, N>)
+where
+    rhdl::bits::W<INT_W>: BitWidth,
+    rhdl::bits::W<ANGLE_W>: BitWidth,
+{
+    let mut d = D::<INT_W, ANGLE_W, N>::dont_care();
     let mut next = q.pipe;
 
-    let mut seed = Stage {
+    let mut seed = Stage::<INT_W, ANGLE_W> {
         x: signed::<INT_W>(0),
         y: signed::<INT_W>(0),
         z: signed::<ANGLE_W>(0),
@@ -113,7 +169,8 @@ pub fn cordic_rotation_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         // Pre-scale by 1/K so the algorithm's own gain lands on the
         // right answer, rather than correcting both outputs afterwards.
         let scaled =
-            ((sign_extend::<INT_W, 48>(mag) * signed::<48>(INV_GAIN_Q17)) >> 17).resize::<INT_W>();
+            ((sign_extend::<INT_W, 48>(mag) * sign_extend::<20, 48>(q.consts.inv_gain_q17)) >> 17)
+                .resize::<INT_W>();
 
         let mut z = i.phase;
         let mut negate = false;
@@ -122,7 +179,7 @@ pub fn cordic_rotation_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         // Half a turn: the most negative representable angle, the same
         // point as +half modulo a full turn.  A literal, not
         // `-(1 << ...)` -- see the note in `super::vectoring`.
-        let half = signed::<ANGLE_W>(HALF_TURN);
+        let half = q.consts.half_turn;
         let z_neg = (z.as_unsigned() & bits::<ANGLE_W>(1 << (ANGLE_W - 1))) != bits::<ANGLE_W>(0);
         if z_neg {
             if z < -quarter {
@@ -134,7 +191,7 @@ pub fn cordic_rotation_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
             negate = true;
         }
 
-        seed = Stage {
+        seed = Stage::<INT_W, ANGLE_W> {
             x: scaled,
             y: signed::<INT_W>(0),
             z,
@@ -145,25 +202,19 @@ pub fn cordic_rotation_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
 
     // Unrolled; see the note in `super::vectoring` on the compiler
     // panic that a dynamic array index provokes.
-    next[0] = rotation_step(seed, bits::<8>(0), signed::<ANGLE_W>(ATAN_TABLE[0]));
-    next[1] = rotation_step(q.pipe[0], bits::<8>(1), signed::<ANGLE_W>(ATAN_TABLE[1]));
-    next[2] = rotation_step(q.pipe[1], bits::<8>(2), signed::<ANGLE_W>(ATAN_TABLE[2]));
-    next[3] = rotation_step(q.pipe[2], bits::<8>(3), signed::<ANGLE_W>(ATAN_TABLE[3]));
-    next[4] = rotation_step(q.pipe[3], bits::<8>(4), signed::<ANGLE_W>(ATAN_TABLE[4]));
-    next[5] = rotation_step(q.pipe[4], bits::<8>(5), signed::<ANGLE_W>(ATAN_TABLE[5]));
-    next[6] = rotation_step(q.pipe[5], bits::<8>(6), signed::<ANGLE_W>(ATAN_TABLE[6]));
-    next[7] = rotation_step(q.pipe[6], bits::<8>(7), signed::<ANGLE_W>(ATAN_TABLE[7]));
-    next[8] = rotation_step(q.pipe[7], bits::<8>(8), signed::<ANGLE_W>(ATAN_TABLE[8]));
-    next[9] = rotation_step(q.pipe[8], bits::<8>(9), signed::<ANGLE_W>(ATAN_TABLE[9]));
-    next[10] = rotation_step(q.pipe[9], bits::<8>(10), signed::<ANGLE_W>(ATAN_TABLE[10]));
-    next[11] = rotation_step(q.pipe[10], bits::<8>(11), signed::<ANGLE_W>(ATAN_TABLE[11]));
-    next[12] = rotation_step(q.pipe[11], bits::<8>(12), signed::<ANGLE_W>(ATAN_TABLE[12]));
-    next[13] = rotation_step(q.pipe[12], bits::<8>(13), signed::<ANGLE_W>(ATAN_TABLE[13]));
-    next[14] = rotation_step(q.pipe[13], bits::<8>(14), signed::<ANGLE_W>(ATAN_TABLE[14]));
-    next[15] = rotation_step(q.pipe[14], bits::<8>(15), signed::<ANGLE_W>(ATAN_TABLE[15]));
+    // A loop, not a hand-unrolled chain -- see the matching note in
+    // `super::vectoring`. A constant-bound loop unrolls during lowering
+    // and the index folds to a constant, so this emits the same
+    // hardware, and the arctangent comes from a `Constant` that folds
+    // away with it.
+    next[0] = rotation_step::<INT_W, ANGLE_W>(seed, bits::<8>(0), q.consts.atan[0]);
+    for k in 1..N {
+        next[k] =
+            rotation_step::<INT_W, ANGLE_W>(q.pipe[k - 1], bits::<8>(k as u128), q.consts.atan[k]);
+    }
     d.pipe = next;
 
-    let last = q.pipe[ITERATIONS - 1];
+    let last = q.pipe[N - 1];
     let mut re = last.x;
     let mut im = last.y;
     if last.negate {
@@ -174,19 +225,19 @@ pub fn cordic_rotation_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         im = zero - im;
     }
 
-    let o = Out {
+    let o = Out::<INT_W, ANGLE_W> {
         sample: Iq::<INT_W> { re, im },
         valid: last.valid,
     };
 
     if cr.reset.any() {
-        d.pipe = [Stage {
+        d.pipe = [Stage::<INT_W, ANGLE_W> {
             x: signed::<INT_W>(0),
             y: signed::<INT_W>(0),
             z: signed::<ANGLE_W>(0),
             negate: false,
             valid: false,
-        }; ITERATIONS];
+        }; N];
     }
     (o, d)
 }
@@ -194,7 +245,15 @@ pub fn cordic_rotation_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
 /// One CORDIC rotation iteration.
 #[kernel]
 #[doc(hidden)]
-pub fn rotation_step(s: Stage, k: Bits<8>, angle: SignedBits<ANGLE_W>) -> Stage {
+pub fn rotation_step<const INT_W: usize, const ANGLE_W: usize>(
+    s: Stage<INT_W, ANGLE_W>,
+    k: Bits<8>,
+    angle: SignedBits<ANGLE_W>,
+) -> Stage<INT_W, ANGLE_W>
+where
+    rhdl::bits::W<INT_W>: BitWidth,
+    rhdl::bits::W<ANGLE_W>: BitWidth,
+{
     // Direction from the sign of the remaining angle: drive z to zero.
     let z_neg = (s.z.as_unsigned() & bits::<ANGLE_W>(1 << (ANGLE_W - 1))) != bits::<ANGLE_W>(0);
 
@@ -220,9 +279,16 @@ mod tests {
     use expect_test::expect;
     use std::f64::consts::TAU;
 
-    type Uut = CordicRotation;
+    /// The internal width these tests exercise; the module default.
+    const INT_W: usize = super::super::INT_W;
+    /// Ditto the angle width and the iteration count.
+    const ANGLE_W: usize = super::super::ANGLE_W;
+    const ITERATIONS: usize = super::super::ITERATIONS;
+    type Uut = CordicRotationDefault;
+    /// `In` at that width, so the test bodies stay readable.
+    type TIn = In<INT_W, ANGLE_W>;
 
-    fn polar(mag: i128, turns: f64) -> In {
+    fn polar(mag: i128, turns: f64) -> TIn {
         let phase = (turns * (1i128 << ANGLE_W) as f64).round() as i128;
         // Wrap into the signed range: a full turn is 2^ANGLE_W.
         let full = 1i128 << ANGLE_W;
@@ -233,7 +299,7 @@ mod tests {
         if p < -full / 2 {
             p += full;
         }
-        In {
+        TIn {
             magnitude: Some(signed::<INT_W>(mag)),
             phase: signed::<ANGLE_W>(p),
         }
@@ -241,9 +307,9 @@ mod tests {
 
     fn convert(points: &[(i128, f64)]) -> Vec<(f64, f64)> {
         let uut = Uut::default();
-        let mut seq: Vec<In> = points.iter().map(|(m, t)| polar(*m, *t)).collect();
+        let mut seq: Vec<TIn> = points.iter().map(|(m, t)| polar(*m, *t)).collect();
         seq.extend(std::iter::repeat_n(
-            In {
+            TIn {
                 magnitude: None,
                 phase: signed::<ANGLE_W>(0),
             },
@@ -323,7 +389,7 @@ mod tests {
     /// consistent mistake made in both.
     #[test]
     fn vectoring_then_rotation_is_the_identity() {
-        use crate::dsp::cordic::vectoring::{CordicVectoring, In as VecIn};
+        use crate::dsp::cordic::vectoring::{CordicVectoringDefault, In as VecIn};
         use crate::dsp::iq::Iq;
 
         const W: usize = 18;
@@ -338,7 +404,7 @@ mod tests {
             .collect();
 
         // Forward: rectangular -> polar.
-        let vec_uut = CordicVectoring::<W>::default();
+        let vec_uut = CordicVectoringDefault::default();
         let mut vseq: Vec<VecIn<W>> = originals
             .iter()
             .map(|(re, im)| VecIn::<W> {
@@ -370,15 +436,15 @@ mod tests {
         // this test failed by 58212 of 90000 -- which is exactly
         // 90000*(K-1), the gain applied twice.
         let rot_uut = Uut::default();
-        let mut rseq: Vec<In> = polar_pairs
+        let mut rseq: Vec<TIn> = polar_pairs
             .iter()
-            .map(|(m, p)| In {
+            .map(|(m, p)| TIn {
                 magnitude: Some(signed::<INT_W>(*m)),
                 phase: signed::<ANGLE_W>(*p),
             })
             .collect();
         rseq.extend(std::iter::repeat_n(
-            In {
+            TIn {
                 magnitude: None,
                 phase: signed::<ANGLE_W>(0),
             },
@@ -419,6 +485,7 @@ mod tests {
             .join("\n");
         let expect = expect![[r#"
             module top
+            module top_consts
             module top_pipe"#]];
         expect.assert_eq(&shape);
         Ok(())
@@ -428,7 +495,7 @@ mod tests {
     #[test]
     fn test_cordic_rotation_trace() -> miette::Result<()> {
         let uut = Uut::default();
-        let seq: Vec<In> = (0..24i128)
+        let seq: Vec<TIn> = (0..24i128)
             .map(|k| polar(70_000, k as f64 / 24.0))
             .collect();
         let stream = seq.into_iter().with_reset(1).clock_pos_edge(100);
@@ -437,7 +504,7 @@ mod tests {
             .join("vcd")
             .join("cordic_rotation");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["1914f560697d499e6d1e89160cdc85f8428e547b21d210b7ab690719ecdce117"];
+        let expect = expect!["324576854e7f9d794f8f12ae847393b7414b73ff216cbb6e5473fe098ec81ee0"];
         let digest = vcd.dump_to_file(root.join("cordic_rotation.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())
@@ -447,7 +514,7 @@ mod tests {
     #[test]
     fn test_cordic_rotation_hdl_works() -> miette::Result<()> {
         let uut = Uut::default();
-        let seq: Vec<In> = (0..24i128)
+        let seq: Vec<TIn> = (0..24i128)
             .map(|k| polar(70_000, k as f64 / 24.0))
             .collect();
         let stream = seq.into_iter().with_reset(1).clock_pos_edge(100);

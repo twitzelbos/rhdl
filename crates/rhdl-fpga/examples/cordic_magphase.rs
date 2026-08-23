@@ -24,13 +24,13 @@
 
 use rhdl::prelude::*;
 use rhdl_fpga::doc::write_svg_as_markdown;
-use rhdl_fpga::dsp::cordic::vectoring::{CordicVectoring, In};
+use rhdl_fpga::dsp::cordic::vectoring::{CordicVectoringDefault, In};
 use rhdl_fpga::dsp::iq::Iq;
 
 const W: usize = 18;
 
 fn main() -> Result<(), RHDLError> {
-    let uut = CordicVectoring::<W>::default();
+    let uut = CordicVectoringDefault::default();
 
     const N: usize = 48;
     const R: f64 = 100_000.0;
