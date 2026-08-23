@@ -81,12 +81,13 @@ pub enum RHDLError {
     #[error("A zero-width value has no Verilog literal representation")]
     #[diagnostic(help(
         "Verilog has no zero-width literal -- `0'b` carries no digits and is a \
-         syntax error. This almost always means a generic widget was \
-         instantiated at a zero-width type parameter such as `()`, producing \
-         something like `DFF<()>` or `Constant<()>`: a register or constant \
-         holding a type with exactly one inhabitant, which has nothing to \
-         store. Bundle the zero-width value into a type that has bits, or \
-         avoid materialising it as a sub-circuit at all."
+         syntax error, so a value with no bits cannot be rendered as one. \
+         Note that a zero-width *sub-circuit* is fine: `DFF<()>` and \
+         `Constant<()>` drive a one-bit placeholder and are used \
+         deliberately to carry a type parameter that costs no wires. If you \
+         are seeing this from a generic widget, the usual cause is that the \
+         whole circuit collapsed at a zero-width parameter -- check whether \
+         its output type still has bits."
     ))]
     ZeroWidthVerilogLiteral,
 }

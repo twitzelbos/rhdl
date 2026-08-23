@@ -197,6 +197,18 @@ pub fn build_synchronous_descriptor<C: Synchronous>(
     circuit: &C,
     scoped_name: ScopedName,
 ) -> Result<Descriptor<SyncKind>, RHDLError> {
+    // Checked before the kernel is compiled, not after.
+    //
+    // `build_synchronous_netlist` below has always rejected this, but it
+    // runs third.  A circuit whose output has no bits usually has no
+    // bits anywhere -- inputs, state and `D`/`Q` collapse with it -- so
+    // compiling the kernel hit a zero-width literal first and reported
+    // that instead.  "A zero-width value has no Verilog literal
+    // representation" is true and useless here; "circuits with no
+    // outputs are not synthesizable" is the actual problem.
+    if <C as SynchronousIO>::O::static_kind().is_empty() {
+        return Err(RHDLError::NoOutputsError);
+    }
     let kernel = compile_design::<C::Kernel>(CompilationMode::Synchronous)?;
     let children = circuit
         .children(&scoped_name)
