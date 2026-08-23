@@ -50,6 +50,7 @@ fn main() -> Result<(), RHDLError> {
             };
             In::<WI> {
                 sample: Some(signed::<WI>(v)),
+                restart: false,
                 downstream_ready: true,
             }
         })

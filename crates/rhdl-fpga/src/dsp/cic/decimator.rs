@@ -104,6 +104,23 @@ where
     ///
     /// An idle cycle holds the whole filter — see the module docs.
     pub sample: Option<SignedBits<W_IN>>,
+    /// **Restart the decimation window on this sample.**
+    ///
+    /// Clears the integrator and comb state and makes this sample
+    /// number zero of a fresh window, so the next output falls exactly
+    /// `R` samples later and is built only from samples at or after
+    /// this one.
+    ///
+    /// Without it the decimation grid is free-running and the output
+    /// that follows a trigger is a window straddling it — a mix of
+    /// before and after. For an acquisition that is not a small phase
+    /// error, it is data from a different experiment.
+    ///
+    /// Clearing the state is part of it and not optional: an `N`-stage
+    /// cascade's effective window is `N·R·M` samples, so realigning the
+    /// grid alone would still leak pre-trigger history into the first
+    /// few outputs through the integrators.
+    pub restart: bool,
     /// Downstream's ready, per the `RCStream` contract.
     ///
     /// **This widget does not stall.** Its state is a running sum tied
@@ -234,37 +251,58 @@ where
         //
         // Each stage accumulates the previous stage's *new* value, so
         // the cascade is a single pass rather than a delay line.
+        //
+        // On a restart the running sums start from zero, so this sample
+        // is the first contribution to a clean window.
         let mut ints = q.integrators;
         let mut carry = x;
         for k in 0..STAGES {
+            let prior = if i.restart {
+                signed::<W_ACC>(0)
+            } else {
+                q.integrators[k]
+            };
             // Wraps, and must: see the module docs.
-            let acc = q.integrators[k] + carry;
+            let acc = prior + carry;
             ints[k] = acc;
             carry = acc;
         }
         d.integrators = ints;
+        if i.restart {
+            // The comb delay lines belong to the old window too.
+            d.combs = [[signed::<W_ACC>(0); M]; STAGES];
+        }
 
         // ---- decimation gate ----
-        let last = q.phase == bits::<CW>((R - 1) as u128);
+        //
+        // A restart makes this sample number zero, so the next output
+        // lands exactly R samples later.
+        let phase_now = if i.restart { bits::<CW>(0) } else { q.phase };
+        let last = phase_now == bits::<CW>((R - 1) as u128);
         d.phase = if last {
             bits::<CW>(0)
         } else {
-            q.phase + bits::<CW>(1)
+            phase_now + bits::<CW>(1)
         };
 
         if last {
             // ---- comb cascade, once per R input samples ----
-            let mut cs = q.combs;
+            let prior_combs = if i.restart {
+                [[signed::<W_ACC>(0); M]; STAGES]
+            } else {
+                q.combs
+            };
+            let mut cs = prior_combs;
             let mut v = carry;
             for k in 0..STAGES {
                 // y = x - x[-M]; then shift this stage's delay line.
-                let delayed = q.combs[k][M - 1];
+                let delayed = prior_combs[k][M - 1];
                 let diff = v - delayed;
-                let mut line = q.combs[k];
+                let mut line = prior_combs[k];
                 for j in 0..M {
                     // Shift toward the tail, newest at index 0.
                     let idx = M - 1 - j;
-                    line[idx] = if idx == 0 { v } else { q.combs[k][idx - 1] };
+                    line[idx] = if idx == 0 { v } else { prior_combs[k][idx - 1] };
                 }
                 cs[k] = line;
                 v = diff;
@@ -346,6 +384,7 @@ mod tests {
             .iter()
             .map(|v| In::<WI> {
                 sample: Some(signed::<WI>(*v)),
+                restart: false,
                 downstream_ready: true,
             })
             .collect();
@@ -355,6 +394,7 @@ mod tests {
         seq.extend(std::iter::repeat_n(
             In::<WI> {
                 sample: None,
+                restart: false,
                 downstream_ready: true,
             },
             2,
@@ -450,16 +490,19 @@ mod tests {
         for v in &x {
             gapped.push(In::<WI> {
                 sample: Some(signed::<WI>(*v)),
+                restart: false,
                 downstream_ready: true,
             });
             gapped.push(In::<WI> {
                 sample: None,
+                restart: false,
                 downstream_ready: true,
             });
         }
         gapped.extend(std::iter::repeat_n(
             In::<WI> {
                 sample: None,
+                restart: false,
                 downstream_ready: true,
             },
             2,
@@ -492,6 +535,7 @@ mod tests {
         let seq: Vec<In<WI>> = (0..24)
             .map(|_| In::<WI> {
                 sample: Some(signed::<WI>(3)),
+                restart: false,
                 downstream_ready: false,
             })
             .collect();
@@ -563,6 +607,162 @@ mod tests {
         );
     }
 
+    // ---- the restart contract --------------------------------------
+
+    /// **A restart excludes everything before it.**
+    ///
+    /// The decisive test for the marker semantics, phrased as an
+    /// *independence* property rather than an expected value: run the
+    /// same post-trigger data behind two completely different
+    /// pre-trigger histories and require every post-trigger output to
+    /// be identical. If any pre-trigger sample reaches the output, the
+    /// two runs diverge.
+    ///
+    /// Phrasing it this way avoids a trap an earlier version fell into.
+    /// That version asserted the first output equalled
+    /// `AFTER * (R*M)^N`, which is **wrong**: `(R*M)^N` is the
+    /// *steady-state* gain, and the first output after a clean start is
+    /// a partial window -- for two stages `n(n+1)/2 * A`, not
+    /// `n^2 * A`. A partial first window is the filter's step response,
+    /// not contamination, and conflating the two made the test assert
+    /// something false.
+    ///
+    /// Without the state clear this fails: an `N`-stage cascade
+    /// integrates over `N*R*M` samples, so the pre-trigger level
+    /// reaches the first outputs through the integrators.
+    #[test]
+    fn a_restart_excludes_everything_before_it() {
+        const AFTER: i128 = 7;
+        const TRIGGER: usize = 13;
+
+        let run_with = |before: i128| -> Vec<(usize, i128)> {
+            let uut = Uut::default();
+            let mut seq: Vec<In<WI>> = (0..64)
+                .map(|k| In::<WI> {
+                    sample: Some(signed::<WI>(if k < TRIGGER { before } else { AFTER })),
+                    restart: k == TRIGGER,
+                    downstream_ready: true,
+                })
+                .collect();
+            seq.extend(std::iter::repeat_n(
+                In::<WI> {
+                    sample: None,
+                    restart: false,
+                    downstream_ready: true,
+                },
+                2,
+            ));
+            uut.run(seq.into_iter().with_reset(1).clock_pos_edge(100))
+                .synchronous_sample()
+                .enumerate()
+                .filter_map(|(c, s)| s.output.sample.map(|v| (c, v.raw())))
+                .collect()
+        };
+
+        // Two wildly different histories, the same acquisition.
+        let a = run_with(-100);
+        let b = run_with(63);
+
+        // The first output belonging to the new window: the trigger
+        // sample is number zero, so the window closes R-1 samples later
+        // and is visible one cycle after that.
+        let first_cycle = TRIGGER + R - 1 + 2;
+        let post = |v: &[(usize, i128)]| -> Vec<(usize, i128)> {
+            v.iter()
+                .copied()
+                .filter(|(c, _)| *c >= first_cycle)
+                .collect()
+        };
+        let (pa, pb) = (post(&a), post(&b));
+
+        assert!(!pa.is_empty(), "no post-trigger outputs at all");
+        assert_eq!(
+            pa, pb,
+            "every output from the restarted window must be independent \
+             of what preceded the trigger"
+        );
+    }
+
+    /// **And it lands exactly `R` samples after the trigger.**
+    ///
+    /// The grid is defined by the marker, not merely realigned near it.
+    #[test]
+    fn the_first_output_is_exactly_r_samples_after_the_restart() {
+        let uut = Uut::default();
+        const TRIGGER: usize = 13;
+        let mut seq: Vec<In<WI>> = (0..64)
+            .map(|k| In::<WI> {
+                sample: Some(signed::<WI>(5)),
+                restart: k == TRIGGER,
+                downstream_ready: true,
+            })
+            .collect();
+        seq.extend(std::iter::repeat_n(
+            In::<WI> {
+                sample: None,
+                restart: false,
+                downstream_ready: true,
+            },
+            2,
+        ));
+
+        // Output cycle indices: one reset cycle, then stimulus index k
+        // is consumed at cycle k+1 and its effect visible at k+2.
+        let cycles: Vec<usize> = uut
+            .run(seq.into_iter().with_reset(1).clock_pos_edge(100))
+            .synchronous_sample()
+            .enumerate()
+            .filter_map(|(c, s)| s.output.sample.map(|_| c))
+            .collect();
+
+        // The sample at TRIGGER is number zero of the new window, so
+        // the window closes on the sample at TRIGGER + R - 1, which is
+        // visible one cycle later.
+        let want = TRIGGER + R - 1 + 2;
+        assert!(
+            cycles.contains(&want),
+            "expected an output at cycle {want}, R samples after the \
+             trigger; got {cycles:?}"
+        );
+    }
+
+    /// A restart with no sample on the same cycle does nothing.
+    ///
+    /// The marker rides *with* a sample; a restart on an idle cycle has
+    /// no sample to make number zero, so treating it as one would slip
+    /// the grid by however long the gap lasted.
+    #[test]
+    fn a_restart_without_a_sample_is_ignored() {
+        let uut = Uut::default();
+        let seq: Vec<In<WI>> = (0..40)
+            .map(|k| In::<WI> {
+                sample: if k == 9 { None } else { Some(signed::<WI>(4)) },
+                restart: k == 9,
+                downstream_ready: true,
+            })
+            .collect();
+        let plain: Vec<i128> = {
+            let u2 = Uut::default();
+            let s2: Vec<In<WI>> = (0..40)
+                .map(|k| In::<WI> {
+                    sample: if k == 9 { None } else { Some(signed::<WI>(4)) },
+                    restart: false,
+                    downstream_ready: true,
+                })
+                .collect();
+            u2.run(s2.into_iter().with_reset(1).clock_pos_edge(100))
+                .synchronous_sample()
+                .filter_map(|s| s.output.sample.map(|v| v.raw()))
+                .collect()
+        };
+        let got: Vec<i128> = uut
+            .run(seq.into_iter().with_reset(1).clock_pos_edge(100))
+            .synchronous_sample()
+            .filter_map(|s| s.output.sample.map(|v| v.raw()))
+            .collect();
+        assert_eq!(got, plain, "a restart on an idle cycle must be inert");
+    }
+
     // ---- Tier 3: HDL emission ---------------------------------------
 
     #[test]
@@ -617,7 +817,7 @@ mod tests {
             .join("vcd")
             .join("cic_decimate");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["a9d90a9a8edaf9d744c515d01088cb79429e170a616d2f68c12442c169caa460"];
+        let expect = expect!["256672bf48ff19e16d412829a622eb5ebf0dbd5ad338b6c9528b961f61b325c7"];
         let digest = vcd.dump_to_file(root.join("cic_decimate.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

@@ -330,26 +330,42 @@ where
     // a decimation phase.
     let mut prod_re = None;
     let mut prod_im = None;
+    // *** The marker defines the decimation grid. ***
+    //
+    // A marked sample restarts both arms: it becomes sample zero of a
+    // fresh window, so the first output lands exactly `R` samples later
+    // and contains nothing from before the trigger. Without this the
+    // grid free-runs and the output following a trigger straddles it --
+    // for an acquisition that is not a phase error, it is data from
+    // before the experiment began.
+    //
+    // Both arms restart on the same cycle from the same flag, which is
+    // what keeps I and Q on a common grid.
+    let mut restart = false;
     if let Some(p) = q.mix.stream.data {
         prod_re = Some(p.data.re);
         prod_im = Some(p.data.im);
+        restart = p.frame.sync;
     }
     d.cic_i = decimator::In::<W> {
         sample: prod_re,
+        restart,
         downstream_ready: i.downstream_ready,
     };
     d.cic_q = decimator::In::<W> {
         sample: prod_im,
+        restart,
         downstream_ready: i.downstream_ready,
     };
 
     // ---- recombine ----
     //
-    // The marker is sticky across the decimation: a marked input sample
-    // is almost always one the decimator drops, so the flag is held
-    // until the next output carries it. Losing it would leave the
-    // acquisition unanchored, which is the one thing this widget exists
-    // to prevent.
+    // The marker is held until the output it belongs to.
+    //
+    // With the grid restarted above, that output is exactly `R` samples
+    // after the trigger and is built only from post-trigger samples --
+    // so the marker names a boundary rather than merely pointing near
+    // one.
     let mut mark_now = q.marked;
     if let Some(p) = q.mix.stream.data {
         if p.frame.sync {
@@ -595,6 +611,68 @@ mod tests {
         );
     }
 
+    /// **The marker defines the decimation grid, end to end.**
+    ///
+    /// The DDC-level statement of the CIC's restart contract: the same
+    /// acquisition behind two completely different pre-trigger
+    /// histories must produce identical outputs. If anything from
+    /// before the marker survives into the decimated waveform, the two
+    /// runs diverge.
+    ///
+    /// This is what "phase sensitive" has to mean for an acquisition:
+    /// not merely that phase is preserved through the mix, but that the
+    /// decimated samples belong to the experiment rather than
+    /// straddling its start.
+    #[test]
+    fn the_marker_excludes_pre_trigger_data_from_the_output() {
+        const TRIGGER: usize = 21;
+        let f = 5_000_000.0;
+
+        let run_with = |pre_amp: f64| -> Vec<(f64, f64)> {
+            let uut = Uut::default();
+            let seq: Vec<In<W>> = (0..512)
+                .map(|k| {
+                    let t = TAU * f * (k as f64) / FS;
+                    // Wildly different signal before the trigger; the
+                    // same one after it.
+                    let amp = if k < TRIGGER { pre_amp } else { 100_000.0 };
+                    In::<W> {
+                        sample: Some(Item::<Iq<W>, SyncMark> {
+                            data: Iq::<W> {
+                                re: signed::<W>((amp * t.cos()) as i128),
+                                im: signed::<W>((amp * t.sin()) as i128),
+                            },
+                            frame: SyncMark { sync: k == TRIGGER },
+                        }),
+                        frequency: bits::<PHASE_W>(tune(f)),
+                        phase: bits::<PHASE_W>(0),
+                        downstream_ready: true,
+                    }
+                })
+                .collect();
+            uut.run(seq.into_iter().with_reset(1).clock_pos_edge(100))
+                .synchronous_sample()
+                .enumerate()
+                // Only outputs from the restarted window onward.
+                .filter(|(c, _)| *c >= TRIGGER + R + 4)
+                .filter_map(|(_, s)| {
+                    s.output
+                        .sample
+                        .map(|it| (it.data.re.raw() as f64, it.data.im.raw() as f64))
+                })
+                .collect()
+        };
+
+        let quiet = run_with(0.0);
+        let loud = run_with(-120_000.0);
+        assert!(!quiet.is_empty(), "no post-trigger outputs");
+        assert_eq!(
+            quiet, loud,
+            "the decimated waveform must not depend on anything before \
+             the marker"
+        );
+    }
+
     /// Reset leaves nothing behind.
     #[test]
     fn reset_clears_the_chain() {
@@ -652,7 +730,7 @@ mod tests {
             .join("vcd")
             .join("ddc");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["5306c54abb439223131116fc1f7cacd30d657f653bc349beefe0cb52651efbb9"];
+        let expect = expect!["e005ec801de1c38056a7217db5b7b59c48401090cbc763d53e27c74c6f8f295d"];
         let digest = vcd.dump_to_file(root.join("ddc.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())
