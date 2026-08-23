@@ -31,6 +31,37 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-23 — Macro layer: `Q` and `D` no longer demand `Copy` of a type parameter
+
+**Paths:** `crates/rhdl-macro-core/src/{utils,synchronous_dq,circuit_dq}.rs`, `crates/rhdl-macro-core/src/expect/*_dq_derive_*.expect`, `crates/rhdl-fpga/tests/generic_subcircuit.rs` (new), `doc/book/src/circuits/circuits_dq.md`, `architecture.md` §5.1.
+
+**Why this, why now:** a widget could not be generic over a sub-circuit, and the reason was three words in a derive list.
+
+Found while trying to let a digital down-converter accept either the uniform `cic::CicDecimate` or a `cic_pruned!`-generated decimator. Both present the same interface, so the parent should not have to care which one fills the slot — and it could not be written that way at all.
+
+**What guarantee changed:** none, and that is the substance of the claim rather than a disclaimer. The change *removes* bounds. It adds no code path, no opcode, no escape hatch, and no relaxation of any check. The conditions a `Q`/`D` field must satisfy never came from these impls: they come from `SynchronousIO::I`/`O: Digital` and the `CircuitIO` equivalents, which are untouched.
+
+**Design decisions:**
+
+- **The bounds were the defect, not the structs.** `derive_synchronous_dq` already projected `<C as SynchronousIO>::O` correctly. `#[derive(Clone, Copy, PartialEq)]` then bounded the *type parameter* rather than the *field types* — normally harmless, because a parameter usually appears in a field type unchanged. `Q` and `D` break that assumption: after normalising the projection, `C` appears in no field type at all. The derives nevertheless emitted `impl<C: Copy> Copy for Q<C>`, demanding `C: Copy` of a circuit.
+- **The three impls are emitted, not derived, and they are total.** `utils::perfect_derive_value_traits` writes `Clone`, `Copy` and `PartialEq` with the struct's own where-clause and nothing added. No extra predicates are needed, and that is checked rather than assumed: `Digital: Copy + PartialEq + Sized + Clone + 'static`, and if a field type somehow were not `Copy`, `fn clone(&self) -> Self { *self }` would fail to compile at that instantiation.
+- **`Digital` and `Timed` stay derives.** Neither has the problem — `Digital` uses `split_for_impl` on the declared generics and adds nothing, and `Timed` already builds its where-clause from field types. The fix makes the DQ derives consistent with `Timed` rather than inventing a pattern.
+- **Rejected: adding `where <C as SynchronousIO>::O: Copy` to the generated structs.** It does not work. `#[derive]` adds its parameter bounds regardless of what else the where-clause says, so the `C: Copy` demand survives. The bound has to come off, which means the impl has to be written out.
+- **Rejected: a general perfect-derive sweep across the crate.** Scope creep. Only the DQ derives had the defect. The convention is recorded in `architecture.md` §5.1 instead, so the next derive gets it right.
+
+**Surprises and gotchas:**
+
+- **Three of the four compile errors were downstream of one cause.** `Q<C>: PartialEq` failing made `<C as Synchronous>::S` — a tuple containing `Q<C>` — fail its `==`, surfacing as `binary operation == cannot be applied to &mut (Q<C>, ...)`. That points at the `Synchronous` derive, which is the wrong place to look.
+- **The diagnosis is illegible until every *satisfiable* bound is added by hand.** With `C: Synchronous` missing, the error list is dominated by that. Only after satisfying everything satisfiable do the genuinely unsatisfiable bounds stand alone — worth doing before concluding anything about a derive.
+- **The generated `PartialEq` is built conditionally rather than as `true #(&& ..)*`.** A trailing conjunction with a literal trips `clippy::nonminimal_bool`, and this code expands into user crates where their lint settings apply.
+- **This entry was nearly lost.** The insert was anchored on a heading that exists only on the sibling feature branch, so it silently no-oped and `git status` showed no CHANGELOG change. The script now asserts the anchor is present. Worth repeating for anyone scripting a CHANGELOG edit across branches.
+
+**Validation:** macro snapshots regenerated and audited — five files, all the same shape, showing `#[derive(Digital)]` plus three explicit unbounded impls. Kernel-level integration in `crates/rhdl-fpga/tests/generic_subcircuit.rs`: one generic widget instantiated with two different sub-circuits, checked *behaviourally* — a `DFF` and a `Delay<_, 3>` must compose to latencies exactly two cycles apart, so an implementation that erased the generic would fail even though it would compile — plus distinct emitted HDL per instantiation and an `iverilog` RTL and NTL round-trip. The asynchronous `CircuitDQ` path has its own test, because it is a separate code path that merely resembles the synchronous one. Full workspace suite passes without `UPDATE_EXPECT`: **no widget Tier-3 HDL snapshot and no VCD digest changed**, which is the evidence that emitted hardware is byte-identical.
+
+**Follow-ups:**
+
+- Unblocks a down-converter that hosts a pruned decimator.
+- `fsm`, `fsm_widget` and `digital_enum` also emit code over generics and were not audited. Worth a pass under the new `architecture.md` §5.1 convention.
 ## 2026-08-23 — `dsp::cic`: a pipelined integrator cascade and a Hogenauer-pruned datapath
 
 **Paths:** `crates/rhdl-fpga/src/dsp/cic/{decimator,prune,pruned}.rs`, `crates/rhdl-fpga/src/dsp/mod.rs` (`narrow`), `crates/rhdl-fpga/tests/cic_pruned.rs`, `examples/cic_pruned.rs`, `doc/cic_pruned.md`, `notes/generic-subcircuit-dq-bounds.md`.
