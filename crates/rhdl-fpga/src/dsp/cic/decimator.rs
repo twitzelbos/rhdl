@@ -249,25 +249,42 @@ where
     if have {
         // ---- integrator cascade, at the input rate ----
         //
-        // Each stage accumulates the previous stage's *new* value, so
-        // the cascade is a single pass rather than a delay line.
+        // *** Pipelined: each stage reads the previous stage's
+        // REGISTERED output, not its combinational one. ***
+        //
+        // Chaining the new values would make the cascade `STAGES`
+        // adders deep in a single cycle, and this section runs at the
+        // full converter rate -- it is the widget's critical path and
+        // would set fmax. Reading the registered value puts exactly one
+        // adder between registers regardless of depth.
+        //
+        // The cost is latency, not response: it multiplies the transfer
+        // function by `z^-(STAGES-1)`, whose magnitude is one. The
+        // filter is the same filter, delayed.
         //
         // On a restart the running sums start from zero, so this sample
-        // is the first contribution to a clean window.
+        // is the first contribution to a clean window -- and clearing
+        // every stage also discards the partial sums in flight between
+        // them, which belong to the old window too.
         let mut ints = q.integrators;
-        let mut carry = x;
         for k in 0..STAGES {
             let prior = if i.restart {
                 signed::<W_ACC>(0)
             } else {
                 q.integrators[k]
             };
+            let feed = if k == 0 {
+                x
+            } else if i.restart {
+                signed::<W_ACC>(0)
+            } else {
+                q.integrators[k - 1]
+            };
             // Wraps, and must: see the module docs.
-            let acc = prior + carry;
-            ints[k] = acc;
-            carry = acc;
+            ints[k] = prior + feed;
         }
         d.integrators = ints;
+        let carry = ints[STAGES - 1];
         if i.restart {
             // The comb delay lines belong to the old window too.
             d.combs = [[signed::<W_ACC>(0); M]; STAGES];
@@ -358,11 +375,13 @@ mod tests {
         let mut combs = vec![vec![0i128; m]; stages];
         let mut out = Vec::new();
         for (n, s) in x.iter().enumerate() {
-            let mut carry = *s;
-            for i in ints.iter_mut() {
-                *i += carry;
-                carry = *i;
+            // Pipelined, matching the widget: stage k reads stage k-1's
+            // value from the *previous* sample, not this one.
+            let prev = ints.clone();
+            for (k, i) in ints.iter_mut().enumerate() {
+                *i += if k == 0 { *s } else { prev[k - 1] };
             }
+            let carry = ints[stages - 1];
             if (n + 1) % r == 0 {
                 let mut v = carry;
                 for line in combs.iter_mut() {
@@ -817,7 +836,7 @@ mod tests {
             .join("vcd")
             .join("cic_decimate");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["256672bf48ff19e16d412829a622eb5ebf0dbd5ad338b6c9528b961f61b325c7"];
+        let expect = expect!["72fbcebe66f05625a9ed56d4e3e560a7f4925bde9957110854e4aff1956c79ed"];
         let digest = vcd.dump_to_file(root.join("cic_decimate.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())
