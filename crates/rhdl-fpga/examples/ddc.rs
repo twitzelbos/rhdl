@@ -30,7 +30,7 @@
 
 use rhdl::prelude::*;
 use rhdl_fpga::doc::write_svg_as_markdown;
-use rhdl_fpga::dsp::ddc::{Ddc, In};
+use rhdl_fpga::dsp::ddc::{In, UniformDdc};
 use rhdl_fpga::dsp::iq::Iq;
 use rhdl_fpga::dsp::nco::config::PHASE_W;
 use rhdl_fpga::dsp::sync::SyncMark;
@@ -47,7 +47,7 @@ const PROD_W: usize = W + 18 + 1;
 const FS: f64 = 125_000_000.0;
 
 fn main() -> Result<(), RHDLError> {
-    let uut = Ddc::<W, WA, S, R, M, CW, PROD_W>::default();
+    let uut = UniformDdc::<W, WA, S, R, M, CW, PROD_W>::default();
 
     let f = 5_000_000.0;
     let full = (1u128 << PHASE_W) as f64;

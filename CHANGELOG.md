@@ -62,6 +62,30 @@ Found while trying to let a digital down-converter accept either the uniform `ci
 
 - Unblocks a down-converter that hosts a pruned decimator.
 - `fsm`, `fsm_widget` and `digital_enum` also emit code over generics and were not audited. Worth a pass under the new `architecture.md` §5.1 convention.
+## 2026-08-23 — `dsp::ddc`: the down-converter is generic over its decimator
+
+**Paths:** `crates/rhdl-fpga/src/dsp/ddc.rs`, `crates/rhdl-fpga/tests/ddc_pruned.rs` (new), `crates/rhdl-fpga/examples/ddc.rs`.
+
+**Why this, why now:** `cic_pruned!` produced a decimator that nothing could use. The DDC hard-coded `CicDecimate` in both arms, so the pruned datapath was a facility with no consumer — the shape CLAUDE.md's first rule exists to forbid. Unblocked by the DQ-derive fix in the entry above.
+
+**Design decisions:**
+
+- **`Ddc<W, WA, PROD_W, C>` replaces `Ddc<W, WA, STAGES, R, M, CW, PROD_W>`.** `STAGES`, `R`, `M` and `CW` existed only to name the decimator's type; the kernel body never read any of them. They now live inside `C`, which is both shorter and more honest about what the DDC actually depends on: an interface, not a set of filter parameters.
+- **`UniformDdc` preserves the old shape** as a type alias with the same parameters in the same order, so the previous spelling still works and the migration is a rename.
+- **Both arms are the same type parameter `C`.** Not two parameters that happen to be equal. An asymmetry between the in-phase and quadrature decimators rotates the constellation, which is the one error a phase-sensitive measurement cannot tolerate, so the type system makes it unrepresentable rather than the docs discouraging it.
+- **The choice of decimator is left to the caller and not defaulted.** Pruning trades noise floor for area, and whether the coarser number is good enough is a question about the measurement rather than about the filter.
+
+**Surprises and gotchas:**
+
+- **Pruning costs rejection, not gain or null placement.** At `W = 18, N = 2, R = 16` the uniform arm rejects out of band by about 150,000x and the pruned arm by about 4,500x — still 73 dB, but now set by quantisation rather than by the filter. The two measure the same on-tune amplitude to within 3 parts in 10,000. Worth knowing before reading the smaller number as a regression: it is the trade, working.
+- **The refactor is provably behaviour-neutral.** Re-running `examples/ddc.rs` regenerated `doc/ddc.md` byte-identically, and the DDC's own eleven tests and VCD digest were untouched. Making a widget generic over a sub-circuit changes nothing about the hardware it emits.
+
+**Validation:** the DDC's existing eleven tests run unchanged through `UniformDdc`, including the VCD digest. `tests/ddc_pruned.rs` adds four: the pruned datapath is genuinely smaller (80 bits of decimator state per arm against 104), both variants down-convert a tone at the oscillator to DC and reject a quarter-rate offset, the two arms agree on amplitude to within the pruned output's own quantisation, and an `iverilog` RTL and NTL round-trip on the pruned composition.
+
+**Follow-ups:**
+
+- Only the two-stage configuration is exercised end to end in the DDC. The pruned decimator itself is tested at `N = 2, 3, 4` in `tests/cic_pruned.rs`, so the depth coverage is there, just not through the down-converter.
+
 ## 2026-08-23 — `dsp::cic`: a pipelined integrator cascade and a Hogenauer-pruned datapath
 
 **Paths:** `crates/rhdl-fpga/src/dsp/cic/{decimator,prune,pruned}.rs`, `crates/rhdl-fpga/src/dsp/mod.rs` (`narrow`), `crates/rhdl-fpga/tests/cic_pruned.rs`, `examples/cic_pruned.rs`, `doc/cic_pruned.md`, `notes/generic-subcircuit-dq-bounds.md`.

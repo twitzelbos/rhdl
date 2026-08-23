@@ -72,6 +72,33 @@
 //! produces output loses that output, which [`Out::overrun`] reports
 //! rather than hides.
 //!
+//! # Choosing the decimator
+//!
+//! [`Ddc`] is generic over its decimator, and both arms are the *same*
+//! type — an asymmetry between them rotates the constellation, which
+//! is the one error a phase-sensitive measurement cannot tolerate, so
+//! it is made unrepresentable rather than merely discouraged.
+//!
+//! Two things can fill the slot:
+//!
+//! - [`UniformDdc`] — the alias for a [`super::cic::CicDecimate`] in
+//!   both arms, every stage at the full accumulator width.
+//! - A [`crate::cic_pruned!`]-generated decimator, whose stages taper
+//!   per Hogenauer's §V schedule.
+//!
+//! At `W = 18, N = 2, R = 16` the uniform decimator spends 104 bits of
+//! state per arm and the pruned one 80, for a filter that measures the
+//! same amplitude to within 3 parts in 10,000. The gap widens sharply
+//! with depth and rate.
+//!
+//! What you give up is noise floor, and only that. Out-of-band
+//! rejection at that configuration goes from about 150,000x to about
+//! 4,500x — still 73 dB, but now set by quantisation rather than by
+//! the filter. That is the trade pruning makes: it does not move the
+//! nulls or change the gain, it coarsens the number. Whether the
+//! coarser number is good enough is a question about your measurement,
+//! not about the filter, so the choice is left to the caller.
+//!
 //!# Example
 //!
 //!```
@@ -99,19 +126,16 @@ use crate::rcstream::bus::Item;
 /// the mixer's output width — checked by the CIC's own `Default`.
 #[derive(Clone, Debug, Synchronous, SynchronousDQ)]
 #[rhdl(dq_no_prefix)]
-pub struct Ddc<
-    const W: usize,
-    const WA: usize,
-    const STAGES: usize,
-    const R: usize,
-    const M: usize,
-    const CW: usize,
-    const PROD_W: usize,
-> where
+pub struct Ddc<const W: usize, const WA: usize, const PROD_W: usize, C>
+where
     rhdl::bits::W<W>: BitWidth,
     rhdl::bits::W<WA>: BitWidth,
-    rhdl::bits::W<CW>: BitWidth,
     rhdl::bits::W<PROD_W>: BitWidth,
+    C: SynchronousIO<I = super::cic::decimator::In<W>, O = super::cic::decimator::Out<WA>>
+        + Synchronous
+        + Default
+        + Clone
+        + std::fmt::Debug,
 {
     /// The coherent local oscillator.
     lo: composite::NcoDefault,
@@ -125,15 +149,34 @@ pub struct Ddc<
         { sin_cos_linear_interp::AMP_W + 1 },
     >,
     /// In-phase decimator.
-    cic_i: CicDecimate<W, WA, STAGES, R, M, CW>,
-    /// Quadrature decimator, identical to the in-phase arm — see the
-    /// module docs on why that identity is what makes the measurement
-    /// phase sensitive.
-    cic_q: CicDecimate<W, WA, STAGES, R, M, CW>,
+    cic_i: C,
+    /// Quadrature decimator. **The same type as the in-phase arm**, and
+    /// that is load bearing rather than convenient — see the module
+    /// docs on why the identity is what makes the measurement phase
+    /// sensitive. Because both arms are `C`, an asymmetry between them
+    /// is not merely discouraged, it is unrepresentable.
+    cic_q: C,
     /// An acquisition marker seen since the last output, waiting to
     /// ride out with it.
     marked: crate::core::dff::DFF<bool>,
 }
+
+/// The [`Ddc`] as it was before the decimator became a parameter: a
+/// uniform-width [`CicDecimate`] in both arms.
+///
+/// Same shape, same order of parameters. Reach for `Ddc` directly when
+/// you want a [`crate::cic_pruned!`]-generated decimator instead — at
+/// any depth or rate worth decimating, the pruned datapath is
+/// materially cheaper for the same filter.
+pub type UniformDdc<
+    const W: usize,
+    const WA: usize,
+    const STAGES: usize,
+    const R: usize,
+    const M: usize,
+    const CW: usize,
+    const PROD_W: usize,
+> = Ddc<W, WA, PROD_W, CicDecimate<W, WA, STAGES, R, M, CW>>;
 
 /// Inputs to [`Ddc`].
 #[derive(PartialEq, Clone, Copy, Debug, Digital)]
@@ -188,20 +231,16 @@ where
     pub frame_mismatch: bool,
 }
 
-impl<
-    const W: usize,
-    const WA: usize,
-    const STAGES: usize,
-    const R: usize,
-    const M: usize,
-    const CW: usize,
-    const PROD_W: usize,
-> Default for Ddc<W, WA, STAGES, R, M, CW, PROD_W>
+impl<const W: usize, const WA: usize, const PROD_W: usize, C> Default for Ddc<W, WA, PROD_W, C>
 where
     rhdl::bits::W<W>: BitWidth,
     rhdl::bits::W<WA>: BitWidth,
-    rhdl::bits::W<CW>: BitWidth,
     rhdl::bits::W<PROD_W>: BitWidth,
+    C: SynchronousIO<I = super::cic::decimator::In<W>, O = super::cic::decimator::Out<WA>>
+        + Synchronous
+        + Default
+        + Clone
+        + std::fmt::Debug,
 {
     fn default() -> Self {
         assert_eq!(
@@ -222,49 +261,42 @@ where
     }
 }
 
-impl<
-    const W: usize,
-    const WA: usize,
-    const STAGES: usize,
-    const R: usize,
-    const M: usize,
-    const CW: usize,
-    const PROD_W: usize,
-> SynchronousIO for Ddc<W, WA, STAGES, R, M, CW, PROD_W>
+impl<const W: usize, const WA: usize, const PROD_W: usize, C> SynchronousIO
+    for Ddc<W, WA, PROD_W, C>
 where
     rhdl::bits::W<W>: BitWidth,
     rhdl::bits::W<WA>: BitWidth,
-    rhdl::bits::W<CW>: BitWidth,
     rhdl::bits::W<PROD_W>: BitWidth,
+    C: SynchronousIO<I = super::cic::decimator::In<W>, O = super::cic::decimator::Out<WA>>
+        + Synchronous
+        + Default
+        + Clone
+        + std::fmt::Debug,
 {
     type I = In<W>;
     type O = Out<WA>;
-    type Kernel = ddc_kernel<W, WA, STAGES, R, M, CW, PROD_W>;
+    type Kernel = ddc_kernel<W, WA, PROD_W, C>;
 }
 
 #[kernel]
 #[doc(hidden)]
 #[allow(clippy::type_complexity)]
-pub fn ddc_kernel<
-    const W: usize,
-    const WA: usize,
-    const STAGES: usize,
-    const R: usize,
-    const M: usize,
-    const CW: usize,
-    const PROD_W: usize,
->(
+pub fn ddc_kernel<const W: usize, const WA: usize, const PROD_W: usize, C>(
     cr: ClockReset,
     i: In<W>,
-    q: Q<W, WA, STAGES, R, M, CW, PROD_W>,
-) -> (Out<WA>, D<W, WA, STAGES, R, M, CW, PROD_W>)
+    q: Q<W, WA, PROD_W, C>,
+) -> (Out<WA>, D<W, WA, PROD_W, C>)
 where
     rhdl::bits::W<W>: BitWidth,
     rhdl::bits::W<WA>: BitWidth,
-    rhdl::bits::W<CW>: BitWidth,
     rhdl::bits::W<PROD_W>: BitWidth,
+    C: SynchronousIO<I = super::cic::decimator::In<W>, O = super::cic::decimator::Out<WA>>
+        + Synchronous
+        + Default
+        + Clone
+        + std::fmt::Debug,
 {
-    let mut d = D::<W, WA, STAGES, R, M, CW, PROD_W>::dont_care();
+    let mut d = D::<W, WA, PROD_W, C>::dont_care();
 
     // ---- the local oscillator ----
     //
@@ -417,7 +449,7 @@ mod tests {
     const CW: usize = 4;
     const PROD_W: usize = W + sin_cos_linear_interp::AMP_W + 1;
     const FS: f64 = 125_000_000.0;
-    type Uut = Ddc<W, WA, S, R, M, CW, PROD_W>;
+    type Uut = UniformDdc<W, WA, S, R, M, CW, PROD_W>;
 
     /// Tuning word for a signed frequency, wrapped into the unsigned
     /// accumulator.
