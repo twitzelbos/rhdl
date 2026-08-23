@@ -31,6 +31,60 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-22 — Compiler: a zero-width value may cross a control-flow merge
+
+**Paths:** `crates/rhdl-core/src/compiler/rhif_passes/check_rhif_flow.rs`, `crates/rhdl-fpga/tests/zero_width_control_flow.rs` (new), `crates/rhdl-fpga/src/dsp/mixer/complex.rs` (comment only), `notes/zero-width-digital-types.md`, `widget-roadmap.md`.
+
+**Why this, why now:** the third and last zero-width defect. Ordinary Rust that compiles for every framing type with bits was rejected at a zero-width one:
+
+```rust
+let mut f = seed;
+if flag { f = seed; }        // Slot sr2 is read before being written
+```
+
+**The cause is an interaction, not a single mistake.** A zero-width copy or select moves no bits, so an RHIF pass correctly removes it as a no-op — leaving the destination slot read but never written. The RHIF for the failing kernel is a single instruction:
+
+```text
+Reg r2 : ()   // f
+r3 <- (sl0, sr2)
+```
+
+`check_rhif_flow` then flagged `r2`. **Its sibling pass does not**: `partial_initialization_check::ensure_covered` opens with exactly the guard that was missing here. One of the two RHIF checks had been taught about zero width and the other had not — the same shape as the RTL binary-op case fixed earlier the same day, where four of the twenty-one lowering guards checked both operands and the comparison did not.
+
+**What guarantee this preserves:** *the kernel-accepted Rust subset is a property of the language, not of the instantiation.* A construct that compiles at `F = bool` and not at `F = ()` makes generic widget code unwritable for no reason a user could discover from the diagnostic.
+
+**Why relaxing a safety check is sound here:**
+
+- A slot with no bits **cannot be uninitialised**. Its type has one inhabitant, so there is no bit whose value could be unknown and no wrong value it could hold. Reading one before it is written yields the only value it could ever have.
+- The downstream guards are now in place, which is what makes this safe rather than merely convenient: `check_no_zero_width_registers` stops a zero-width value becoming an RTL register, and the `LitVerilog` conversion rejects a zero-width literal outright. **The two earlier fixes are the precondition for this one.**
+
+**Which constructs were affected — measured, not assumed.** At `F = ()`, before the fix:
+
+| construct | before |
+|---|---|
+| `let f = seed` | ok |
+| `let mut f = seed` (no reassign) | ok |
+| `let mut f = seed; if flag { f = seed; }` | **rejected** |
+| using `seed` directly | ok |
+| `match i { Some(x) => x, None => seed }` | **rejected** |
+
+So the trigger is a zero-width value crossing a **control-flow merge**, where SSA needs a select.
+
+**Surprises and gotchas:**
+
+- **This corrects two things I had written down earlier.** The note claimed the `Constant<()>` ICE was "the partial-init checker working correctly, not a bug in it." It was neither — it was a *different* pass, `check_rhif_flow`, and it was a false positive: the code does define the value on every path. And the note claimed the `match`-binding idiom "does not trip it"; a match merging a bare zero-width value trips it just the same. The mixer's match escaped only because it merges a `(bool, Item<…>)` tuple, which has bits — a reason I had not identified.
+- **`dsp/mixer/complex.rs` no longer needs its idiom for this reason.** The comment claiming `if let` was unavailable at `F = ()` is now false and has been corrected. The `match` form stays, justified by the separate `None`-arm argument about real zeros versus `dont_care`.
+
+**Validation:** the full workspace, `cargo test --all --no-fail-fast`. Five tests in `crates/rhdl-fpga/tests/zero_width_control_flow.rs`, including an `iverilog` round-trip — compiling is not enough, since the previous two zero-width defects both produced code that compiled and then disagreed between the simulators.
+
+**Verified able to fail:** reverting the guard fails the two zero-width tests and leaves the three control tests passing. One of those three, `the_bits_beside_it_still_work`, passes either way and is documented as not a catching test — `run()` interprets the circuit directly and never lowers it.
+
+**The negative test is the load-bearing one.** `a_real_uninitialised_read_is_still_an_error` reads a field *with bits* off a `dont_care()` aggregate and requires it to remain rejected. Without it, widening the guard beyond zero width would go unnoticed, and this is a relaxation of an initialisation check — precisely the kind of change that should not be able to drift.
+
+**Follow-ups:** none for zero width. All three defects are closed; `notes/zero-width-digital-types.md` records the set.
+
+---
+
 ## 2026-08-22 — Compiler: a zero-width value no longer leaves an undriven register behind
 
 **Paths:** `crates/rhdl-core/src/compiler/lower_rhif_to_rtl.rs`, `crates/rhdl-core/src/compiler/rtl_passes/check_registers_are_written.rs` (new), `.../check_no_zero_width_registers.rs` (new), `.../mod.rs`, `crates/rhdl-core/src/compiler/stage2.rs`, `crates/rhdl-core/src/compiler/mir/error.rs`, `crates/rhdl-fpga/src/dsp/mixer/complex.rs`, `notes/zero-width-digital-types.md`, `widget-roadmap.md`.
