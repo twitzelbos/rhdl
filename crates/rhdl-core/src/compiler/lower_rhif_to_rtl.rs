@@ -83,7 +83,19 @@ fn path_star_with_index_tracking(
                     }));
                 };
                 let slot_bits = object.kind(*slot).bits();
-                let upper_limit = array.size.min(1 << slot_bits);
+                // `1 << slot_bits` overflows at a 64-bit index, and it
+                // does so *before* `.min()` can clamp it -- so a `b64`
+                // index panicked the compiler with "attempt to shift
+                // left with overflow" and no diagnostic, while `b63`
+                // compiled fine.
+                //
+                // Saturating is the right answer rather than a
+                // workaround: `addressable` is how many distinct values
+                // the index can take, and a slot that wide can already
+                // address every element of any array, so the `.min()`
+                // was always going to pick `array.size`.
+                let addressable = 1usize.checked_shl(slot_bits as u32).unwrap_or(usize::MAX);
+                let upper_limit = array.size.min(addressable);
                 let mut paths = Vec::new();
                 for i in 0..upper_limit {
                     let path = std::iter::once(PathElement::Index(i))

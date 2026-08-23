@@ -31,6 +31,41 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-23 — Compiler: a 64-bit dynamic array index no longer panics the compiler
+
+**Paths:** `crates/rhdl-core/src/compiler/lower_rhif_to_rtl.rs`, `crates/rhdl-fpga/tests/wide_dynamic_index.rs` (new).
+
+**Why this, why now:** the one genuine compiler follow-up filed by the `dsp::cordic` work, closed while reassessing that PR. `path_star_with_index_tracking` bounds the concrete paths a dynamic index can take by how many distinct values it can hold:
+
+```rust
+let upper_limit = array.size.min(1 << slot_bits);
+```
+
+At `slot_bits = 64` the shift overflows **before** `.min()` can clamp it, so the compiler panicked with `attempt to shift left with overflow` and no diagnostic at all.
+
+**What guarantee this preserves:** the diagnostics contract — a compiler that panics tells the user nothing, and an ICE is never an acceptable answer to legal input.
+
+**The boundary was sharp, and misleading until measured:**
+
+| index width | before |
+|---|---|
+| `b2`, `b8`, `b32`, `b63` | compile |
+| `b64`, `b128` | **panic** |
+
+So wide indices were always intended to work — they are clamped by `.min(array.size)`. Sixty-four is an arithmetic edge case, not a design boundary. That is why saturating the shift is the fix rather than a workaround: a slot that wide can already address every element of any array, so `.min()` was always going to pick `array.size`. `b64` now behaves exactly as `b63` always did.
+
+**Surprises and gotchas:**
+
+- **The original report over-stated the scope, and the PR's own follow-up comment had already corrected it** — from "compiler bug" to "a diagnostics-quality issue, materially smaller than what I claimed." That narrowing was right, and this is the whole of what remained.
+- **The related follow-up's stated dependency is wrong.** *"Iteration count is fixed at 16; making it a const generic is natural but needs the dynamic-index bug fixed first"* couples two unrelated problems. A const-generic loop bound needs `ATAN_TABLE[i]` with a loop variable, which produces a **type** error about index sizing — not this overflow. Fixing this does not unblock that, and the follow-up wording should be corrected rather than acted on.
+- **One test passes with the fix reverted and says so.** Calling a kernel directly as a Rust function never invokes the compiler, so a value check cannot catch a lowering bug — CLAUDE.md §4's "direct Rust calls are more permissive than the kernel VM", met in the wild.
+
+**Validation:** the full workspace, `cargo test --all --no-fail-fast`. Five tests in `crates/rhdl-fpga/tests/wide_dynamic_index.rs`, including an `iverilog` round-trip — the fix changes how many concrete paths the lowering enumerates, so a wrong `upper_limit` would silently drop elements from the generated mux rather than fail loudly.
+
+**Verified able to fail:** reverting the one-line change fails three of the five and leaves the two that do not exercise the compiler passing.
+
+---
+
 ## 2026-08-23 — Compiler: a circuit that collapses to nothing says so
 
 **Paths:** `crates/rhdl-core/src/circuit/hdl/synchronous.rs`, `.../asynchronous.rs`, `crates/rhdl-core/src/error.rs`, `crates/rhdl-fpga/tests/zero_width_degenerate.rs` (new), `notes/zero-width-digital-types.md`.
