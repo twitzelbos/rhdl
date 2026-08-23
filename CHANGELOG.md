@@ -31,6 +31,31 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-23 — Compiler: a circuit that collapses to nothing says so
+
+**Paths:** `crates/rhdl-core/src/circuit/hdl/synchronous.rs`, `.../asynchronous.rs`, `crates/rhdl-core/src/error.rs`, `crates/rhdl-fpga/tests/zero_width_degenerate.rs` (new), `notes/zero-width-digital-types.md`.
+
+**Why this, why now:** found by re-running all three original zero-width reproductions against `main` after the third fix landed, instead of taking "all done" on trust. Two of the three were clean. The first still failed — not for its original reason, but because the *wrapper widget* in the reproduction collapses entirely at `F = ()`.
+
+**The defect is diagnostic ordering.** A widget whose output type has no bits produces nothing observable, and `build_synchronous_netlist` has always refused it with *"Circuits with no outputs are not synthesizable."* But that check ran **third**, after kernel compilation — and a circuit whose output collapses usually has its input, state and `D`/`Q` collapse with it, so compiling the kernel hit a zero-width literal first and reported "A zero-width value has no Verilog literal representation" instead. True, and useless: it says nothing about what to change.
+
+Hoisting the output check above kernel compilation, in both the synchronous and asynchronous descriptor builders, gets the apt diagnostic out. **Nothing newly fails** — a zero-output circuit was already rejected, just further along and less legibly.
+
+**What guarantee this preserves:** the diagnostics contract. RHDL's claim is that a compile error tells you what is wrong with your design; an error naming an internal representation detail of a value you never wrote does not.
+
+**Surprises and gotchas:**
+
+- **The help text on `ZeroWidthVerilogLiteral` was mine, and it had gone stale.** It told users that a zero-width *sub-circuit* was the likely cause and to "avoid materialising it as a sub-circuit at all." That was true of the design I first proposed — rejecting zero-width values — and false of the one that shipped, which legalises them. `DFF<()>` and `Constant<()>` work, and `rcstream::util::split` and `combine` depend on exactly that to carry a framing type costing no wires. I changed the design and did not revisit the help. Corrected, with a test (`a_zero_width_subcircuit_beside_real_bits_is_fine`) so the correction cannot regress.
+- **The boundary is narrower than it looks.** A zero-width sub-circuit inside a widget whose I/O has bits is fine and always was — that is the realistic case. Only a widget where *everything* collapses is refused. Measured both.
+
+**Validation:** the full workspace, `cargo test --all --no-fail-fast`. Four tests in `crates/rhdl-fpga/tests/zero_width_degenerate.rs`, including an `iverilog` round-trip on the mixed shape.
+
+**Verified able to fail:** reverting the hoist fails `a_circuit_with_no_outputs_says_so` and leaves the other three passing.
+
+**Zero width is now closed.** Four defects, all fixed: the illegal `0'b` literal; the undriven RTL register; the rejected control-flow merge; and this. `notes/zero-width-digital-types.md` records the set. Worth noting the shape they shared — in three of the four, a value with no bits is a no-op, something correctly elides it, and a check that had not been taught about zero width misreads the result. Twice that was an **asymmetry between siblings**: four of twenty-one lowering guards checked both operands and the comparison did not; one of two RHIF checks had the guard and the other did not.
+
+---
+
 ## 2026-08-22 — Compiler: a zero-width value may cross a control-flow merge
 
 **Paths:** `crates/rhdl-core/src/compiler/rhif_passes/check_rhif_flow.rs`, `crates/rhdl-fpga/tests/zero_width_control_flow.rs` (new), `crates/rhdl-fpga/src/dsp/mixer/complex.rs` (comment only), `notes/zero-width-digital-types.md`, `widget-roadmap.md`.

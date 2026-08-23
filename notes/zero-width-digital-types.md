@@ -1,4 +1,24 @@
-# Zero-width `Digital` types miscompiled — three defects, all fixed (2026-08-20 → 22)
+# Zero-width `Digital` types miscompiled — four defects, all fixed (2026-08-20 → 23)
+
+## The set, for the record
+
+| # | defect | where | fixed |
+|---|---|---|---|
+| A | a zero-bit value rendered as the illegal literal `0'b` | `TypedBits -> LitVerilog` | 2026-08-21 |
+| B1 | a zero-width value could not cross a control-flow merge | `check_rhif_flow` | 2026-08-22 |
+| B2 | a zero-width value left an undriven RTL register | `make_binary` lowering | 2026-08-22 |
+| C | a circuit collapsing to nothing reported the wrong error | descriptor ordering | 2026-08-23 |
+
+**Three of the four share a shape.** A value with no bits is a no-op, so
+something correctly elides it, and a check that had not been taught
+about zero width misreads the result. Twice that was an **asymmetry
+between siblings**: four of twenty-one lowering guards check both
+operands and the comparison did not; one of two RHIF checks had the
+zero-width guard and the other did not. Worth knowing before hunting
+the next one.
+
+C is different in kind — nothing was miscompiled, the diagnostic was
+just unhelpful because an apt check ran after a less apt one.
 
 ## Context
 

@@ -172,6 +172,11 @@ pub fn build_asynchronous_descriptor<C: Circuit>(
     circuit: &C,
     scoped_name: ScopedName,
 ) -> Result<Descriptor<AsyncKind>, RHDLError> {
+    // Checked before the kernel is compiled; see the matching comment in
+    // `super::synchronous::build_synchronous_descriptor`.
+    if <C as CircuitIO>::O::static_kind().is_empty() {
+        return Err(RHDLError::NoOutputsError);
+    }
     let kernel = compile_design::<C::Kernel>(CompilationMode::Asynchronous)?;
     let children = circuit
         .children(&scoped_name)
