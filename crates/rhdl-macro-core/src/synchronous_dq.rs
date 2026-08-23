@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{Data, DeriveInput, spanned::Spanned};
 
-use crate::utils::{FieldSet, parse_dq_no_prefix_attribute};
+use crate::utils::{FieldSet, parse_dq_no_prefix_attribute, perfect_derive_value_traits};
 
 pub fn derive_synchronous_dq(input: TokenStream) -> syn::Result<TokenStream> {
     let decl = syn::parse2::<syn::DeriveInput>(input)?;
@@ -46,15 +46,23 @@ fn derive_synchronous_dq_struct(decl: DeriveInput) -> syn::Result<TokenStream> {
     };
     // Create a new struct by appending a Q to the name of the struct, and for each field, map
     // the type to <ty as rhdl::core::Synchronous>::O,
+    // `Clone`, `Copy` and `PartialEq` are emitted rather than derived:
+    // the fields here are associated-type projections, so `#[derive]`
+    // would bound the type parameter instead of the field type. See
+    // `perfect_derive_value_traits`.
+    let q_value_traits = perfect_derive_value_traits(&q_name, generics, component_name);
+    let d_value_traits = perfect_derive_value_traits(&d_name, generics, component_name);
     let new_struct_q = quote! {
-        #[derive(Digital, Clone, Copy, PartialEq)]
+        #[derive(Digital)]
         #[doc(hidden)]
         pub struct #q_name #generics #where_clause #q_fields
+        #q_value_traits
     };
     let new_struct_d = quote! {
-        #[derive(Digital, Clone, Copy, PartialEq)]
+        #[derive(Digital)]
         #[doc(hidden)]
         pub struct #d_name #generics #where_clause #d_fields
+        #d_value_traits
     };
 
     Ok(quote! {

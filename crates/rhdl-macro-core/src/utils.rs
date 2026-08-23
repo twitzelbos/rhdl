@@ -99,3 +99,61 @@ pub(crate) fn parse_dq_no_prefix_attribute(attrs: &[Attribute]) -> bool {
     }
     false
 }
+
+/// Emit `Clone`, `Copy` and `PartialEq` for a generated `Q`/`D` struct
+/// without bounding the type parameters.
+///
+/// # Why this is not `#[derive(Clone, Copy, PartialEq)]`
+///
+/// `#[derive]` bounds the *type parameters*, not the *field types*.
+/// That is usually harmless, because a parameter normally appears in a
+/// field type unchanged. The `Q` and `D` structs break that assumption:
+/// their fields are the associated-type projections
+/// `<C as SynchronousIO>::O` and `<C as CircuitIO>::I`, so the
+/// parameter `C` does not appear in any field type once the projection
+/// is normalised.
+///
+/// A widget generic over a sub-circuit therefore produced
+/// `impl<C: Copy> Copy for Q<C>` — demanding `C: Copy` of a *circuit*,
+/// which is never `Copy`. The struct was fine; the bounds were not.
+///
+/// No where-clause needs adding here, and that is worth stating
+/// explicitly: `SynchronousIO::I`/`O` and `CircuitIO::I`/`O` are all
+/// bounded by `Digital`, and `Digital: Copy + Clone + PartialEq`. The
+/// field types are unconditionally all three, so the struct's own
+/// where-clause is sufficient and these impls are total.
+///
+/// The [`crate::timed`] derive already takes this shape, adding
+/// predicates over field types rather than parameters. This makes the
+/// DQ derives consistent with it.
+pub(crate) fn perfect_derive_value_traits(
+    name: &syn::Ident,
+    generics: &syn::Generics,
+    field_names: &[syn::Ident],
+) -> proc_macro2::TokenStream {
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    // Built conditionally rather than as `true #(&& ..)*`: a trailing
+    // conjunction with a literal trips `clippy::nonminimal_bool`, and
+    // this expands into user crates where their lint settings apply.
+    let eq_body = match field_names.split_first() {
+        None => quote::quote! { true },
+        Some((first, rest)) => {
+            quote::quote! { self.#first == other.#first #(&& self.#rest == other.#rest)* }
+        }
+    };
+    quote::quote! {
+        impl #impl_generics ::std::clone::Clone for #name #ty_generics #where_clause {
+            fn clone(&self) -> Self {
+                *self
+            }
+        }
+
+        impl #impl_generics ::std::marker::Copy for #name #ty_generics #where_clause {}
+
+        impl #impl_generics ::std::cmp::PartialEq for #name #ty_generics #where_clause {
+            fn eq(&self, other: &Self) -> bool {
+                #eq_body
+            }
+        }
+    }
+}
