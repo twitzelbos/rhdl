@@ -31,6 +31,43 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-23 — `dsp::cic` and `dsp::ddc`: a phase-sensitive CIC-based digital down-converter
+
+**Paths:** `crates/rhdl-fpga/src/dsp/cic/{mod,decimator}.rs` (new), `crates/rhdl-fpga/src/dsp/ddc.rs` (new), `crates/rhdl-fpga/src/dsp/mod.rs`, `crates/rhdl-fpga/src/dsp/cordic/mod.rs`, `examples/{cic_decimate,ddc}.rs` (new), `doc/{cic_decimate,ddc}.md` (new).
+
+**Why this, why now:** requested. The receive chain had an oscillator, a mixer, an acquisition trigger and a polar converter, and nothing to get from the converter's sample rate down to the bandwidth of interest. A CIC is the standard answer — no multipliers, no coefficients, just adders and registers.
+
+The composition is `Nco → conj → ComplexMixer → two identical CICs`, with the acquisition marker riding through.
+
+**Design decisions:**
+
+- **The CIC does not normalise its gain.** The DC gain is exactly `(R·M)^N` and undoing it costs either a multiply or a shift that discards bits the filter was built to keep. Which is right depends on what comes next, so `dc_gain` reports the factor instead.
+- **The accumulator width is checked, not documented.** Hogenauer's bound `w_in + N·log2(R·M)` is what makes two's-complement wrap in the integrators cancel in the combs. Below it the output is not noisy, it is *wrong* — and wrong in a way that looks like a plausible signal. `Default` asserts it.
+- **Idle cycles hold the whole filter.** A CIC's state is a running sum over *samples*, not cycles, so a gap must not be read as a zero. That also keeps the decimation phase from slipping, and makes the widget correct on a gated stream.
+- **Both quadrature arms are the same widget at the same configuration.** An asymmetry between them rotates the constellation, which is the one error a phase-sensitive measurement cannot tolerate. `both_arms_emit_together` checks the shared decimation phase rather than assuming it.
+- **The acquisition marker is sticky across decimation.** A marked input sample is almost always one the decimator drops, so the flag is held until the next output carries it.
+
+**Surprises and gotchas:**
+
+- **The first draft was an up-converter, and a magnitude test passed it.** Multiplying by the oscillator shifts *up*; down-conversion needs its conjugate. Without the conjugation the on-tune output was a flat, entirely plausible magnitude — so `a_tone_at_the_lo_lands_at_dc` passed. What caught it was sweeping the oscillator and finding the response peaked at **−f** instead of **+f**, 27× stronger there. The module's own ASCII diagram said `conj(LO)` while the code did not. `the_response_peaks_at_the_tuned_frequency` is the regression test, and it is worth more than the magnitude test it supersedes.
+- **The same bug hid the filter's whole point.** Before the fix, out-of-band rejection measured 3×. After, 334,000×. A number that bad should have been the first clue and was instead read as "the null placement must be fragile".
+- **`resize` on a value unwrapped from an `Option` zero-extends in Verilog and sign-extends in Rust.** The CIC hit it on its input sample: Tiers 1 and 2 passed and only the `iverilog` round-trip failed, with `Expected 01111111011000, got 01011011011000`. `dsp::cordic` already carried a `sign_extend` helper documenting exactly this; being the fourth site in the tree, it is promoted to `dsp::sign_extend` and cordic re-exports it.
+- **`generic_const_exprs` bites again.** `PROD_W` on the DDC and `CW` on the CIC are separate const generics only because Rust cannot derive an integer or array width from another const generic. `Default` asserts each — the pattern `Nco` established for `TRUNC`.
+
+**Validation:** 19 tests on the CIC, 10 on the DDC, both with `iverilog` round-trips in RTL and NTL, VCD digests, runnable examples and committed traces.
+
+The CIC is checked against an **independently written software model**, structured differently enough that a transcription error would have to be reproduced exactly to go unnoticed — plus the property that separates a filter from arithmetic: `a_tone_at_the_first_null_is_rejected`. A cascade wired in the wrong order can still match a model written the same wrong way; it will not null.
+
+The DDC's headline test is `the_output_phase_follows_the_oscillator_phase` — a quarter-turn oscillator offset must rotate the baseband output by a quarter turn and leave the magnitude alone. That is the property the widget is named for, and a phase-*insensitive* detector would pass a magnitude test while failing this.
+
+**Follow-ups:**
+
+- No gain normalisation stage. Deliberate, but a `CicNormalise` that shifts by the known `log2` of the gain would suit callers who want a fixed output width.
+- The CIC is fixed-decimation. A runtime-variable `R` would need the accumulator sized for the largest case and the comb section gated differently.
+- `dsp::cordic` after the DDC would give magnitude and phase directly at the decimated rate, which is the natural next stage for an NMR-style measurement.
+
+---
+
 ## 2026-08-23 — Compiler: a 64-bit dynamic array index no longer panics the compiler
 
 **Paths:** `crates/rhdl-core/src/compiler/lower_rhif_to_rtl.rs`, `crates/rhdl-fpga/tests/wide_dynamic_index.rs` (new).
