@@ -321,16 +321,16 @@ where
     // Bind each operand as a whole item via `match`, rather than
     // seeding a mutable local and reassigning it under `if let`.
     //
-    // Not a style choice. At `F = ()` the marker is zero-width, and a
-    // zero-width value gets no defining instruction; a mutable local
-    // that is conditionally reassigned then trips the partial-init
-    // checker with "slot is read before being written". Binding the
-    // item in both match arms produces a RHIF shape that does not, and
-    // is the idiom `rcstream::zip` already uses.
+    // The idiom `rcstream::zip` uses, and kept for the reason below
+    // rather than because it is forced.
     //
-    // Sidestepping the checker is NOT the same as supplying the missing
-    // definition. See the padded comparison below, which is where that
-    // same gap actually escapes into the emitted Verilog.
+    // It *was* forced: a mutable local of zero-width type, conditionally
+    // reassigned, used to trip `check_rhif_flow` with "slot is read
+    // before being written", so `if let` was unavailable at `F = ()`.
+    // That is fixed -- the check now knows a slot with no bits cannot be
+    // uninitialised -- so the choice is free again. The `match` form
+    // stays because of the `None`-arm argument below, which is the part
+    // that still matters.
     //
     // The `None` arms carry real zeros and the real un-marked
     // marker -- deliberately *not* `Item::dont_care()`.

@@ -1,4 +1,4 @@
-# Zero-width `Digital` types miscompiled — two root causes, both fixed (2026-08-20 → 22)
+# Zero-width `Digital` types miscompiled — three defects, all fixed (2026-08-20 → 22)
 
 ## Context
 
@@ -235,48 +235,66 @@ comparison on zero-width operands is neither stripped, nor rejected, nor
 folded. Fixing this completes an existing decision rather than making a
 new one.
 
-### Symptom B1 — the partial-initialisation checker catches it (an ICE)
+### Symptom B1 — a control-flow merge is rejected  **[FIXED 2026-08-22]**
 
 ```
 RHDL Internal Compile Error
   ╰─▶ Slot sr3 is read before being written
 ```
 
-Reproduced with a `Constant<F>` read in a kernel at `F = ()`:
+Reproduced with a mutable local of zero-width type, conditionally
+reassigned:
 
 ```rust
-pub struct ConstOnly<F: Digital + Default> {
-    c: Constant<F>,
-    keep: dff::DFF<b8>,      // keeps the widget non-trivial
-}
-// kernel: let mut f = q.c; if let Some(x) = i { f = x; }
+let mut f = seed;
+if flag { f = seed; }
 ```
 
-**This is the checker working, not a bug in the checker.**  The slot
-genuinely is read before being written, because a zero-width value never
-got a defining instruction.  The message is accurate; it just points at
-the consumer rather than at the missing definition, which is why it took
-a while to place.
+**An earlier version of this note called this "the partial-init checker
+working, not a bug in it". That was wrong on both counts.**
 
-Note it only fires for the `let mut x = …; if let … { x = … }` shape.
-Binding in both arms of a `match` — the `rcstream::zip` idiom — produces
-a different RHIF shape that does not put the undefined slot where the
-checker looks:
+It is not `partial_initialization_check` — that pass has a zero-width
+guard in `ensure_covered` and never fires here. It is
+`check_rhif_flow`, its sibling, which had no such guard. And it is a
+**false positive**: the code defines the value on every path. The slot
+looks undefined only because a zero-width copy or select moves no bits,
+so an earlier RHIF pass removes it as a no-op. The RHIF that reaches the
+check is a single instruction:
 
-```rust
-// trips it at F = ()
-let mut af = q.idle.frame;
-if let Some(x) = i.a { af = x.frame; }
-
-// does not
-let (have_a, item_a) = match i.a {
-    Some(it) => (true, it),
-    None     => (false, Item::<Iq<A_W>, F> { data: zero_a, frame: q.idle.frame }),
-};
+```
+Reg r2 : ()   // f
+r3 <- (sl0, sr2)
 ```
 
-That difference is **not** a fix.  It is the same missing definition
-going unnoticed.
+So one of the two RHIF checks had been taught about zero width and the
+other had not — the same shape as the RTL binary-op case in B2, where
+four of the twenty-one lowering guards check both operands and the
+comparison did not.
+
+**Fixed** by giving `check_rhif_flow::read` the guard its sibling
+already had: a slot with no bits cannot be uninitialised, because there
+is no bit whose value could be unknown and no wrong value it could hold.
+Sound to relax only because the downstream guards from A and B2 are now
+in place — a zero-width value cannot become an RTL register or a Verilog
+literal, so anything escaping the relaxation is caught later and loudly.
+
+**Which constructs were affected**, measured at `F = ()` before the fix:
+
+| construct | before |
+|---|---|
+| `let f = seed` | ok |
+| `let mut f = seed` (no reassign) | ok |
+| `let mut f = seed; if flag { f = seed; }` | **rejected** |
+| using `seed` directly | ok |
+| `match i { Some(x) => x, None => seed }` | **rejected** |
+
+The trigger is a zero-width value crossing a control-flow merge.
+
+**This also corrects the claim below** that the `match`-binding idiom
+"does not trip it". A match merging a bare zero-width value trips it
+just the same. The mixer's match escaped because it merges a
+`(bool, Item<…>)` tuple, which has bits — a distinction the earlier note
+did not draw.
 
 ### Symptom B2 — the checker does not catch it, and `x` reaches Verilog
 

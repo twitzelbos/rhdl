@@ -39,6 +39,20 @@ impl InitSet<'_> {
         Ok(())
     }
     fn read(&self, slot: &Slot) -> Result<(), RHDLError> {
+        // A slot with no bits cannot be uninitialised.
+        //
+        // Its type has exactly one inhabitant, so there is no bit whose
+        // value could be unknown and no wrong value it could hold.
+        // Reading one before it is written is therefore harmless, and
+        // the sibling pass `partial_initialization_check` already takes
+        // this position -- its `ensure_covered` opens with the same
+        // guard. This pass was simply never taught it, which made
+        // ordinary Rust fail to compile at a zero-width instantiation:
+        // `let mut f = seed; if flag { f = seed; }` is fine for every
+        // `F` with bits and was rejected for `F = ()`.
+        if self.obj.kind(*slot).is_empty() {
+            return Ok(());
+        }
         match slot {
             Slot::Literal(_) => {}
             Slot::Register(_) => {
