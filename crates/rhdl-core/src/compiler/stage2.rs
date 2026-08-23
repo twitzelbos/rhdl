@@ -3,7 +3,10 @@ use crate::{
     compiler::{
         lower_rhif_to_rtl::compile_to_rtl,
         rtl_passes::{
-            check_no_zero_resize::CheckNoZeroResize, constant_propagation::ConstantPropagationPass,
+            check_no_zero_resize::CheckNoZeroResize,
+            check_no_zero_width_registers::CheckNoZeroWidthRegisters,
+            check_registers_are_written::CheckRegistersAreWritten,
+            constant_propagation::ConstantPropagationPass,
             dead_code_elimination::DeadCodeEliminationPass,
             lower_empty_splice_to_copy::LowerEmptySpliceToCopy,
             lower_index_all_to_copy::LowerIndexAllToCopy,
@@ -57,6 +60,11 @@ pub(crate) fn compile(object: &crate::rhif::Object) -> Result<rtl::Object> {
         hash = new_hash;
     }
     rtl = wrap_pass::<CheckNoZeroResize>(rtl)?;
+    // Runs last, after the optimisation loop has settled, so it sees
+    // the object that will actually be emitted rather than an
+    // intermediate one.
+    rtl = wrap_pass::<CheckRegistersAreWritten>(rtl)?;
+    rtl = wrap_pass::<CheckNoZeroWidthRegisters>(rtl)?;
     debug!("{rtl:?}");
     Ok(rtl)
 }

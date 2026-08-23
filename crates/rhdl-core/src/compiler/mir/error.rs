@@ -186,6 +186,12 @@ pub enum ICE {
     UnaryOperatorError(Box<RHDLError>),
     #[error("RTL symbol table is incomplete for operand {operand:?}")]
     RTLSymbolTableIsIncomplete { operand: Operand },
+    #[error("RTL register {operand:?} is read but never written")]
+    RTLRegisterReadButNeverWritten { operand: Operand },
+    #[error(
+        "RTL register {operand:?} has zero width; a value with no bits must not be materialised as a register"
+    )]
+    RTLRegisterIsZeroWidth { operand: Operand },
     #[error("RTL Resize operation is invalid {lhs:?} and {arg:?} with length {len}")]
     InvalidResize {
         lhs: Operand,

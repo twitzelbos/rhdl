@@ -31,6 +31,45 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-22 — Compiler: a zero-width value no longer leaves an undriven register behind
+
+**Paths:** `crates/rhdl-core/src/compiler/lower_rhif_to_rtl.rs`, `crates/rhdl-core/src/compiler/rtl_passes/check_registers_are_written.rs` (new), `.../check_no_zero_width_registers.rs` (new), `.../mod.rs`, `crates/rhdl-core/src/compiler/stage2.rs`, `crates/rhdl-core/src/compiler/mir/error.rs`, `crates/rhdl-fpga/src/dsp/mixer/complex.rs`, `notes/zero-width-digital-types.md`, `widget-roadmap.md`.
+
+**Why this, why now:** the second and more serious half of the zero-width defect. The literal half landed on 2026-08-21; this is the one that mattered.
+
+`make_binary` guards its *result* for emptiness but not its operands, so `self.operand(arg)` materialised `b0` registers for zero-width arguments. Whatever would have defined them — an `Index` extracting no bits, say — had been skipped by its own `is_empty` guard. Side by side:
+
+```
+RTL at F = bool                RTL at F = ()
+  r0 <- r1[8..9]                 reg r1 : b0     <- allocated
+  r2 <- r3[8..9]                 reg r2 : b0     <- and never written
+  r4 <- r0 != r2                 r0 <- r1 != r2
+```
+
+An unassigned Verilog `reg` is `x`, so `a.frame != b.frame` was `x != x` in the emitted hardware while the Rust simulator returned a defined `false`. **A silent divergence between the two simulators** — it compiled, passed every Rust tier, and was caught only by the Tier-4 round-trip as `Expected 000111…, got 0x0111…`.
+
+**What guarantee this preserves:** *compile-time correctness*. The claim is that if a kernel compiles, whole classes of hardware bug have been excluded. An RTL object containing a register that is read and never written is malformed, and nothing checked for it — so the guarantee had a hole exactly the width of "a lowering forgot a case."
+
+**Design decisions:**
+
+- **The checks are the durable part, not the fold.** `rhif_passes/` has `partial_initialization_check.rs` and `check_rhif_flow.rs`; `rtl_passes/` had no equivalent, so a lowering could drop a defining instruction *after* the only check had passed. `check_registers_are_written` is that missing counterpart, and it is deliberately phrased as a general well-formedness invariant: **zero width is how the hole was found, not what the hole is.** Any future lowering that drops a defining instruction is now a compile error rather than an `x` in synthesis.
+- **The fold is narrow because the reasoning bounds it.** Comparisons are the only binary op that can reach the operand-materialising code with empty arguments — every other one has an empty *result* and returns at the existing `lhs.is_empty()` guard. `fold_empty_comparison` returns `None` for any operator where a zero-width operand is not meaningful, so an unexpected one falls through to the ordinary path and trips the check rather than being given an invented answer.
+- **Part 3 shipped as an enforced invariant, not as a mechanism.** The literal reading — have `operand()` hand back a zero-width literal instead of allocating a register — is honest in principle, since a one-inhabitant type *is* a constant. But `operand()` serves both reads and writes and cannot tell them apart, so a write to a zero-width `lhs` would silently target a literal. The twenty-one `lhs.is_empty()` guards should prevent that, and "should" is not a good enough basis for a change whose failure mode is silent — which is the precise property that made this bug expensive. `check_no_zero_width_registers` gives the same protection and fails loudly.
+- **The padding workaround in `dsp/mixer/complex.rs` is retired.** It existed only because of this bug; the comparison is written plainly again.
+
+**Surprises and gotchas:**
+
+- **The invariant already held.** `check_no_zero_width_registers` passed on the entire corpus the day it was added — nothing had to be erased to satisfy it. That is the good outcome, but it is worth recording that it was measured rather than assumed.
+- **The skip is deliberate and pervasive.** There are twenty-one `is_empty()` early returns in `lower_rhif_to_rtl.rs`. Skipping a zero-width result is the intended policy; leaving the register behind is the bug. Four of those guards already check *both* sides, which is what the comparison case needed and did not have.
+
+**Validation:** the full workspace, `cargo test --all --no-fail-fast`. Both new passes run over every kernel in the corpus on every test.
+
+**Verified able to fail:** disabling the fold makes `check_registers_are_written` fire with an ICE pointing at the kernel, where the same code previously emitted `x` and was caught only by a testbench byte-diff. That is the whole point of the change — the failure moved from a silent simulator divergence to a compile error at the layer that caused it.
+
+**Process note.** The agreed plan for this defect had four parts. The first PR shipped only part 4, on a narrow reading of "implement the fix for bug 1" — leaving the part I had myself ranked as highest-value undone and filed as a follow-up. That is the sliver failure CLAUDE.md §TL;DR-2 describes, and the wording of the request is not a defence: the plan was agreed as a whole. Parts 1–3 are here, including part 3 explicitly so it could not be deferred a second time.
+
+---
+
 ## 2026-08-21 — Compiler: a zero-width value can no longer emit the illegal literal `0'b`
 
 **Paths:** `crates/rhdl-core/src/hdl/builder.rs`, `crates/rhdl-core/src/types/bit_string.rs`, `crates/rhdl-core/src/error.rs`, `crates/rhdl-core/src/ntl/hdl.rs`, `crates/rhdl-core/src/circuit/fixture.rs`, `crates/rhdl-core/src/sim/testbench/{kernel,synchronous,asynchronous}.rs`, `crates/rhdl-fpga/src/core/{dff,constant}.rs`, `crates/rhdl-fpga/src/core/ram/{synchronous,asynchronous}.rs`, `crates/rhdl-fpga/tests/zero_width_verilog_literal.rs` (new), `doc/book/src/digital/advanced.md`.

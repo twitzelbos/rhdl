@@ -1,4 +1,4 @@
-# Zero-width `Digital` types miscompile — two root causes (2026-08-20)
+# Zero-width `Digital` types miscompiled — two root causes, both fixed (2026-08-20 → 22)
 
 ## Context
 
@@ -117,7 +117,30 @@ discussion — erasure would make this unreachable too).
 
 ---
 
-## Root cause B — RHIF→RTL lowering emits a register that is never written
+## Root cause B — RHIF→RTL lowering emits a register that is never written  **[FIXED 2026-08-22]**
+
+> **Fixed.** Three parts, in the order the "Proposed fix" section below
+> ranked them:
+>
+> 1. `rtl_passes/check_registers_are_written.rs` — every register that
+>    is read must be written. The RTL analogue of
+>    `rhif_passes/partial_initialization_check.rs`, which had no
+>    counterpart. **Not a zero-width check**: it catches any lowering
+>    that drops a defining instruction.
+> 2. `make_binary` folds a comparison over zero-width operands to a
+>    constant. Comparisons are the only binary op that can reach the
+>    operand-materialising code with empty arguments, because every
+>    other one has an empty *result* and returns at the existing
+>    `lhs.is_empty()` guard.
+> 3. `rtl_passes/check_no_zero_width_registers.rs` — no RTL register has
+>    zero width at all. Enforced as an invariant rather than made
+>    impossible in `operand()`; see the note on that below.
+>
+> The padding workaround in `dsp/mixer/complex.rs` was retired with it.
+> Verified able to fail: disabling the fold makes the check fire with an
+> ICE pointing at the kernel, where the same code previously emitted `x`
+> and was caught only by a testbench byte-diff.
+
 
 This is the real one, and it accounts for **both** of the other two
 symptoms.
@@ -291,23 +314,24 @@ Comparison is the obvious such operation — two 0-bit inputs, one 1-bit
 output — and is the only one hit so far.  Anything else that reduces a
 value to a flag would qualify.
 
-This is what makes the workaround in the tree principled rather than a
-hack.  Padding keeps the operands out of the one shape where the missing
-definition can escape:
+This is why the interim workaround — padding the comparison so the
+compared type was never zero-width — was principled rather than a hack:
+it kept the operands out of the one shape where the missing definition
+could escape.
+
+**That workaround is gone.** It was retired when the fix landed, and
+`dsp/mixer/complex.rs` now writes the comparison plainly:
 
 ```rust
-// dsp/mixer/complex.rs
-let pad = bits::<1>(0);
-d.mismatch = have_a && have_b && ((af, pad) != (bf, pad));
+d.mismatch = have_a && have_b && (af != bf);
 ```
 
-The pads are equal on both sides, so the pair differs exactly when the
-markers do, and the compared type is at least one bit wide for every
-`F`.
+The lowering folds it to a constant `false` at `F = ()` rather than
+materialising two undriven zero-width registers.
 
 ---
 
-## Proposed fix
+## The fix  **[ALL PARTS SHIPPED]**
 
 ### The principle
 
@@ -371,6 +395,18 @@ causes *unreachable* rather than fixed: no literal is rendered for a
 value that does not exist, and no register goes undriven that was never
 allocated.
 
+*Shipped as an enforced invariant rather than as a mechanism.* The
+mechanism version has `operand()` hand back a zero-width literal instead
+of allocating a register — honest in principle, since a one-inhabitant
+type is a constant. But `operand()` serves both reads and writes and
+cannot tell them apart, so a write to a zero-width `lhs` would silently
+target a literal. The twenty-one `lhs.is_empty()` guards in the lowering
+should prevent that, and "should" is not a good enough basis for a
+change whose failure mode is silent — which is exactly the property that
+made this bug expensive. `check_no_zero_width_registers` gives the same
+protection and fails loudly. The invariant held on the whole corpus the
+day it was added, so nothing had to be erased to satisfy it.
+
 **4. Remove the silent width coercions in the emitter.**  *(Partly
 addressed 2026-08-21 — see the banner on root cause A. The literal no
 longer disagrees with the declaration; the two `saturating_sub`
@@ -415,28 +451,21 @@ Not worth a PR by itself.
 documented, load-bearing feature. `rcstream::bus` promises `F = ()` adds
 no wire bits; the generic mixer depends on it. Wrong direction.
 
-### Tests that must ship with it
+### Tests that shipped with it
 
 - A kernel comparing a zero-width generic parameter, round-tripped
   through `iverilog`, asserting a **defined** result. This is the test
-  that would have caught B2 when the generic was first written, and it
-  does not exist today.
-- The new RTL check failing on the pre-fix tree, so it is demonstrably
-  able to fail.
-- A negative test that a zero-width declaration or literal is rejected
-  rather than coerced (part 4).
-- `ComplexMixer<(), ...>` continuing to work, with the padding
-  workaround in `dsp/mixer/complex.rs` **removed** — the padding exists
-  only because of this bug, and the fix landing should retire it.
+  that would have caught B when the generic was first written.
+- Both RTL checks demonstrated able to fail: disabling the fold makes
+  `check_registers_are_written` fire with an ICE pointing at the kernel,
+  where the same code previously emitted `x` and was caught only by a
+  testbench byte-diff.
+- A negative test that a zero-width literal is rejected rather than
+  coerced (part 4).
+- `ComplexMixer<(), ...>` continuing to work with the padding workaround
+  **removed**.
 
-### Why it is not in this branch
-
-Per CLAUDE.md §11.1 a compiler change is one feature per PR, with tests
-at every IR level it touches and a Justification section answering the
-five questions. Parts 1–3 are arguably one feature ("zero-width values
-are erased at the RHIF→RTL boundary") spanning layers, which §11.1
-permits; part 4 is separable. None of it is the framing work this branch
-is about, so it is filed here and in `widget-roadmap.md`.
+Parts 1–3 landed 2026-08-22, part 4 on 2026-08-21.
 
 ## Reproducing
 

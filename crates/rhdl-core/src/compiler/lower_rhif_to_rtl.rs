@@ -126,6 +126,24 @@ struct DynamicIndexDetails {
     table: Box<[(tl::CaseArgument, Path)]>,
 }
 
+/// The constant value of a comparison whose operands have no bits, if
+/// the operator is one whose answer is determined by that alone.
+///
+/// A zero-width type has exactly one inhabitant, so both operands are
+/// necessarily the same value.  Ordering comparisons are included
+/// because "equal" settles them too.
+///
+/// Returns `None` for any operator where a zero-width operand is not
+/// meaningful, so an unexpected one falls through to the ordinary path
+/// rather than being silently given an invented answer.
+fn fold_empty_comparison(op: AluBinary) -> Option<bool> {
+    match op {
+        AluBinary::Eq | AluBinary::Le | AluBinary::Ge => Some(true),
+        AluBinary::Ne | AluBinary::Lt | AluBinary::Gt => Some(false),
+        _ => None,
+    }
+}
+
 impl<'a> RTLCompiler<'a> {
     fn new(object: &'a rhif::object::Object) -> Self {
         let mut symbols = SymbolMap::default();
@@ -543,7 +561,33 @@ impl<'a> RTLCompiler<'a> {
             arg1,
             arg2,
         } = *binary;
+        let lhs_slot = lhs;
         if self.object.kind(lhs).is_empty() {
+            return Ok(());
+        }
+        // *** Zero-width operands fold to a constant. ***
+        //
+        // A type with no bits has exactly one inhabitant, so two values
+        // of it are always equal and every comparison over them is known
+        // here.  Without this the operands are materialised as `b0`
+        // registers by `self.operand` below and never written, because
+        // whatever would have defined them -- an `Index` extracting no
+        // bits, say -- was skipped by its own `is_empty` guard.  An
+        // undriven register reads as `x` in Verilog while the Rust
+        // simulator gives a defined answer, which is a silent divergence
+        // between the two.
+        //
+        // Only comparisons can reach here with empty operands: every
+        // other binary op over them has an empty *result*, so the guard
+        // above already returned.  `check_registers_are_written` is the
+        // backstop if that reasoning is ever wrong.
+        if self.object.kind(arg1).is_empty()
+            && self.object.kind(arg2).is_empty()
+            && let Some(value) = fold_empty_comparison(op)
+        {
+            let lhs = self.operand(lhs);
+            let rhs = self.lit(value.typed_bits(), self.object.symtab[lhs_slot].clone());
+            self.lop(tl::OpCode::Assign(tl::Assign { lhs, rhs }), loc);
             return Ok(());
         }
         let lhs = self.operand(lhs);
@@ -1210,4 +1254,46 @@ fn compile_rtl(object: &rhif::Object) -> Result<rtl::object::Object> {
 
 pub fn compile_to_rtl(object: &rhif::object::Object) -> Result<rtl::object::Object> {
     compile_rtl(object)
+}
+
+#[cfg(test)]
+mod fold_tests {
+    use super::*;
+
+    /// A zero-width type has one inhabitant, so both operands are
+    /// necessarily the same value; equality-shaped operators are true
+    /// and strict-inequality-shaped ones are false.
+    #[test]
+    fn comparisons_over_empty_operands_are_determined() {
+        assert_eq!(fold_empty_comparison(AluBinary::Eq), Some(true));
+        assert_eq!(fold_empty_comparison(AluBinary::Le), Some(true));
+        assert_eq!(fold_empty_comparison(AluBinary::Ge), Some(true));
+        assert_eq!(fold_empty_comparison(AluBinary::Ne), Some(false));
+        assert_eq!(fold_empty_comparison(AluBinary::Lt), Some(false));
+        assert_eq!(fold_empty_comparison(AluBinary::Gt), Some(false));
+    }
+
+    /// Anything else falls through rather than being given an invented
+    /// answer.
+    ///
+    /// Load-bearing: an operator this function does not recognise takes
+    /// the ordinary path, where `check_registers_are_written` will
+    /// reject it if it really did leave an undriven operand behind. A
+    /// catch-all returning `Some` here would convert that loud failure
+    /// back into a silent wrong answer.
+    #[test]
+    fn arithmetic_over_empty_operands_is_not_folded() {
+        for op in [
+            AluBinary::Add,
+            AluBinary::Sub,
+            AluBinary::Mul,
+            AluBinary::BitAnd,
+            AluBinary::BitOr,
+            AluBinary::BitXor,
+            AluBinary::Shl,
+            AluBinary::Shr,
+        ] {
+            assert_eq!(fold_empty_comparison(op), None, "{op:?} must not fold");
+        }
+    }
 }

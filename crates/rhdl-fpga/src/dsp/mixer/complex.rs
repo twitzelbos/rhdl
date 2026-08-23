@@ -372,33 +372,15 @@ where
     // real marker against a placeholder would double-report it as a
     // framing fault.
     //
-    // *** Padded so the compared type is never zero-width. ***
+    // The alignment check.  Gated on both operands being present: a
+    // starved cycle is already reported by `starved`, and comparing a
+    // real marker against a placeholder would double-report it as a
+    // framing fault.
     //
-    // `af != bf` on its own is wrong at `F = ()`. It does not fold to a
-    // constant `false`, which is the intuitive guess and was an earlier
-    // version of this comment. What the compiler actually emits
-    // declares both operands and never assigns them -- the bit
-    // extractions that would define them are elided, correctly, since
-    // there are no bits to extract -- so it reduces to `x != x`, which
-    // is `x`. The Rust simulator meanwhile evaluates `() != ()` as a
-    // defined `false`.
-    //
-    // That is a *silent* divergence between the two simulators: it
-    // compiles, it passes every Rust tier, and only
-    // `test_complex_mixer_hdl_works` catches it, as
-    // `Expected 000111..., got 0x0111...`.
-    //
-    // A zero-width value is harmless while it stays zero-width; it
-    // escapes only through an operation turning zero-width operands
-    // into a non-zero-width result, and a comparison is exactly that.
-    // Pairing each marker with the same one-bit constant keeps the
-    // compared type at least one bit wide for every `F` without
-    // changing what is asked: the pads are equal, so the pair differs
-    // exactly when the markers do.
-    //
-    // Diagnosed in `notes/zero-width-digital-types.md`.
-    let pad = bits::<1>(0);
-    d.mismatch = have_a && have_b && ((af, pad) != (bf, pad));
+    // At `F = ()` the markers cannot differ, and the lowering folds the
+    // comparison to a constant `false` rather than materialising two
+    // undriven zero-width registers.
+    d.mismatch = have_a && have_b && (af != bf);
 
     if have_a && have_b {
         let ar = av.re.resize::<PROD_W>();
