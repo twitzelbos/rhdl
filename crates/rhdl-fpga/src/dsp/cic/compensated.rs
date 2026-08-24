@@ -15,6 +15,7 @@
       |                 saturated |
       |                           +----->
       +---------------------------+
+   same In/Out as cic::decimator, so it drops into any decimator slot
 ")]
 //!
 //! # Internals
@@ -33,6 +34,20 @@
 //! a useful passband — [`super::response::passband_droop_db`] says
 //! 9.7 dB at `N = 4, R = 32, passband = 0.8` — and a receiver that
 //! reports amplitudes is simply wrong by that much.
+//!
+//! # It *is* a decimator
+//!
+//! `CompensatedCic` presents exactly [`super::decimator`]'s `In` and
+//! `Out`, so it drops into any slot that takes a decimator — including
+//! both arms of [`crate::dsp::ddc::Ddc`], which is where it earns its
+//! keep. A phase-sensitive receiver that reports amplitudes several
+//! decibels low near the band edge is reporting the filter, not the
+//! signal.
+//!
+//! That is why [`super::decimator::Out`] carries a `saturated` flag
+//! that the plain [`super::CicDecimate`] always drives false: one
+//! interface, two implementations, and the richer one does not need a
+//! wrapper to fit.
 //!
 //! # Generic over both halves
 //!
@@ -68,7 +83,7 @@
 
 use rhdl::prelude::*;
 
-use crate::dsp::fir::symmetric;
+use crate::dsp::fir;
 
 /// A decimator followed by its compensating FIR.
 #[derive(Clone, Debug, Synchronous, SynchronousDQ)]
@@ -82,7 +97,7 @@ where
         + Synchronous
         + Clone
         + std::fmt::Debug,
-    F: SynchronousIO<I = symmetric::In<W_MID>, O = symmetric::Out<W_OUT>>
+    F: SynchronousIO<I = fir::In<W_MID>, O = fir::Out<W_OUT>>
         + Synchronous
         + Clone
         + std::fmt::Debug,
@@ -103,7 +118,7 @@ where
         + Synchronous
         + Clone
         + std::fmt::Debug,
-    F: SynchronousIO<I = symmetric::In<W_MID>, O = symmetric::Out<W_OUT>>
+    F: SynchronousIO<I = fir::In<W_MID>, O = fir::Out<W_OUT>>
         + Synchronous
         + Clone
         + std::fmt::Debug,
@@ -121,37 +136,6 @@ where
     }
 }
 
-/// Inputs to [`CompensatedCic`].
-#[derive(PartialEq, Clone, Copy, Debug, Digital)]
-pub struct In<const W_IN: usize>
-where
-    rhdl::bits::W<W_IN>: BitWidth,
-{
-    /// The input sample, or `None` for an idle cycle.
-    pub sample: Option<SignedBits<W_IN>>,
-    /// Restart the decimation window on this sample — see
-    /// [`super::decimator::In::restart`].
-    pub restart: bool,
-    /// Downstream's ready.
-    pub downstream_ready: bool,
-}
-
-/// Outputs from [`CompensatedCic`].
-#[derive(PartialEq, Clone, Copy, Debug, Digital)]
-pub struct Out<const W_OUT: usize>
-where
-    rhdl::bits::W<W_OUT>: BitWidth,
-{
-    /// The decimated, compensated sample.
-    pub sample: Option<SignedBits<W_OUT>>,
-    /// Either stage produced a sample downstream was not ready for.
-    pub overrun: bool,
-    /// The filter clamped — see [`symmetric::Out::saturated`]. Means
-    /// the headroom budget is wrong upstream, not that the filter
-    /// misbehaved.
-    pub saturated: bool,
-}
-
 impl<const W_IN: usize, const W_MID: usize, const W_OUT: usize, C, F> SynchronousIO
     for CompensatedCic<W_IN, W_MID, W_OUT, C, F>
 where
@@ -162,13 +146,13 @@ where
         + Synchronous
         + Clone
         + std::fmt::Debug,
-    F: SynchronousIO<I = symmetric::In<W_MID>, O = symmetric::Out<W_OUT>>
+    F: SynchronousIO<I = fir::In<W_MID>, O = fir::Out<W_OUT>>
         + Synchronous
         + Clone
         + std::fmt::Debug,
 {
-    type I = In<W_IN>;
-    type O = Out<W_OUT>;
+    type I = super::decimator::In<W_IN>;
+    type O = super::decimator::Out<W_OUT>;
     type Kernel = compensated_cic_kernel<W_IN, W_MID, W_OUT, C, F>;
 }
 
@@ -177,9 +161,9 @@ where
 #[allow(clippy::type_complexity)]
 pub fn compensated_cic_kernel<const W_IN: usize, const W_MID: usize, const W_OUT: usize, C, F>(
     cr: ClockReset,
-    i: In<W_IN>,
+    i: super::decimator::In<W_IN>,
     q: Q<W_IN, W_MID, W_OUT, C, F>,
-) -> (Out<W_OUT>, D<W_IN, W_MID, W_OUT, C, F>)
+) -> (super::decimator::Out<W_OUT>, D<W_IN, W_MID, W_OUT, C, F>)
 where
     rhdl::bits::W<W_IN>: BitWidth,
     rhdl::bits::W<W_MID>: BitWidth,
@@ -188,7 +172,7 @@ where
         + Synchronous
         + Clone
         + std::fmt::Debug,
-    F: SynchronousIO<I = symmetric::In<W_MID>, O = symmetric::Out<W_OUT>>
+    F: SynchronousIO<I = fir::In<W_MID>, O = fir::Out<W_OUT>>
         + Synchronous
         + Clone
         + std::fmt::Debug,
@@ -209,15 +193,17 @@ where
     // The decimator's output is the filter's input. One sample every R
     // cycles, and `None` on the rest -- which the filter holds on
     // rather than reading as a zero.
-    d.fir = symmetric::In::<W_MID> {
+    d.fir = fir::In::<W_MID> {
         sample: q.cic.sample,
         downstream_ready: i.downstream_ready,
     };
 
-    let mut o = Out::<W_OUT> {
+    let mut o = super::decimator::Out::<W_OUT> {
         sample: q.fir.sample,
         overrun: q.cic.overrun || q.fir.overrun,
-        saturated: q.fir.saturated,
+        // The decimator half never clips; the filter half can, because
+        // a compensator has gain above one by construction.
+        saturated: q.cic.saturated || q.fir.saturated,
     };
 
     if cr.reset.any() {
@@ -226,7 +212,7 @@ where
             restart: false,
             downstream_ready: false,
         };
-        d.fir = symmetric::In::<W_MID> {
+        d.fir = fir::In::<W_MID> {
             sample: None,
             downstream_ready: false,
         };
@@ -239,6 +225,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::super::decimator::In;
     use super::*;
     use crate::dsp::cic::{CicDecimate, accumulator_width, compensator, counter_width, dc_gain};
     use crate::dsp::fir::{SymmetricFir, accumulator_width as fir_acc};
@@ -334,7 +321,7 @@ mod tests {
         // `None`, an off-by-one on the handshake -- shows up here and
         // nowhere else, because both halves are individually correct.
         use crate::dsp::cic::decimator::In as CicIn;
-        use crate::dsp::fir::symmetric::In as FirIn;
+        use crate::dsp::fir::In as FirIn;
 
         let x: Vec<i128> = (0..240).map(|k: i128| (k * 37) % 201 - 100).collect();
         let together = run(&x);
@@ -505,7 +492,7 @@ mod tests {
             .join("vcd")
             .join("cic_compensated");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["9836b38234150fff527f801061cb99cdedb98a5a222ae018b8fd51117886bcc3"];
+        let expect = expect!["4cb5eceab635b6cdc0a2ce5eb9e02c9620df2f62fcecbbf4df26089a215d086a"];
         let digest = vcd.dump_to_file(root.join("cic_compensated.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

@@ -32,7 +32,8 @@
 
 use rhdl::prelude::*;
 use rhdl_fpga::doc::write_svg_as_markdown;
-use rhdl_fpga::dsp::cic::compensated::{CompensatedCic, In};
+use rhdl_fpga::dsp::cic::compensated::CompensatedCic;
+use rhdl_fpga::dsp::cic::decimator::In;
 use rhdl_fpga::dsp::cic::{CicDecimate, accumulator_width, compensator, counter_width};
 use rhdl_fpga::dsp::fir::{SymmetricFir, accumulator_width as fir_acc};
 

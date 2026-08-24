@@ -17,7 +17,7 @@ use rhdl_fpga::dsp::cic::{
     accumulator_width, compensator, counter_width, decimator::CicDecimate, decimator::In as CicIn,
     response,
 };
-use rhdl_fpga::dsp::fir::{SymmetricFir, accumulator_width as fir_acc, symmetric::In as FirIn};
+use rhdl_fpga::dsp::fir::{In as FirIn, SymmetricFir, accumulator_width as fir_acc};
 use std::f64::consts::TAU;
 
 const WI: usize = 12;

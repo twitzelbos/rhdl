@@ -30,7 +30,7 @@
 
 use rhdl::prelude::*;
 use rhdl_fpga::doc::write_svg_as_markdown;
-use rhdl_fpga::dsp::fir::{SymmetricFir, accumulator_width, symmetric::In};
+use rhdl_fpga::dsp::fir::{In, SymmetricFir, accumulator_width};
 
 const WI: usize = 18;
 const WC: usize = 12;

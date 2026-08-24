@@ -133,7 +133,6 @@ where
     rhdl::bits::W<PROD_W>: BitWidth,
     C: SynchronousIO<I = super::cic::decimator::In<W>, O = super::cic::decimator::Out<WA>>
         + Synchronous
-        + Default
         + Clone
         + std::fmt::Debug,
 {
@@ -231,6 +230,46 @@ where
     pub frame_mismatch: bool,
 }
 
+impl<const W: usize, const WA: usize, const PROD_W: usize, C> Ddc<W, WA, PROD_W, C>
+where
+    rhdl::bits::W<W>: BitWidth,
+    rhdl::bits::W<WA>: BitWidth,
+    rhdl::bits::W<PROD_W>: BitWidth,
+    C: SynchronousIO<I = super::cic::decimator::In<W>, O = super::cic::decimator::Out<WA>>
+        + Synchronous
+        + Clone
+        + std::fmt::Debug,
+{
+    /// Build a down-converter around one decimator, cloned into both
+    /// arms.
+    ///
+    /// **One argument, not two, and that is the point.** An asymmetry
+    /// between the in-phase and quadrature decimators rotates the
+    /// constellation, which is the one error a phase-sensitive
+    /// measurement cannot absorb. Taking a single arm and cloning it
+    /// makes the two identical by construction rather than by the
+    /// caller's care.
+    ///
+    /// Use this for a decimator that cannot be defaulted — a
+    /// [`super::cic::compensated::CompensatedCic`], whose filter half
+    /// needs taps. [`Default`] covers the rest.
+    pub fn new(cic: C) -> Self {
+        assert_eq!(
+            PROD_W,
+            W + sin_cos_linear_interp::AMP_W + 1,
+            "PROD_W is the mixer's natural product width, A_W + B_W + 1; \
+             Rust cannot derive it from W without generic_const_exprs"
+        );
+        Self {
+            lo: Default::default(),
+            mix: Default::default(),
+            cic_i: cic.clone(),
+            cic_q: cic,
+            marked: Default::default(),
+        }
+    }
+}
+
 impl<const W: usize, const WA: usize, const PROD_W: usize, C> Default for Ddc<W, WA, PROD_W, C>
 where
     rhdl::bits::W<W>: BitWidth,
@@ -269,7 +308,6 @@ where
     rhdl::bits::W<PROD_W>: BitWidth,
     C: SynchronousIO<I = super::cic::decimator::In<W>, O = super::cic::decimator::Out<WA>>
         + Synchronous
-        + Default
         + Clone
         + std::fmt::Debug,
 {
@@ -292,7 +330,6 @@ where
     rhdl::bits::W<PROD_W>: BitWidth,
     C: SynchronousIO<I = super::cic::decimator::In<W>, O = super::cic::decimator::Out<WA>>
         + Synchronous
-        + Default
         + Clone
         + std::fmt::Debug,
 {
@@ -762,7 +799,7 @@ mod tests {
             .join("vcd")
             .join("ddc");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["fb4d034a73f4d7ef7b6f4c0c8c1a7b1353ab6c1860a9e9fe035eea2a783a44fc"];
+        let expect = expect!["72ddd1270f8d4ef074c59b3dcbae1b71fc75b72ede9c2e46e2808a0687de5a4e"];
         let digest = vcd.dump_to_file(root.join("ddc.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

@@ -516,6 +516,10 @@ macro_rules! cic_pruned_impl {
                 { $crate::dsp::cic::prune::stage_width(2 * $n, $wi, $n, $r, $m, $bo) },
             > {
                 sample: q.out,
+                // A pruned datapath truncates, it does not clip: every
+                // stage is wide enough for its own arithmetic, and the
+                // bits it drops are the low ones.
+                saturated: false,
                 overrun: !i.downstream_ready,
             };
 

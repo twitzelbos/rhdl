@@ -76,7 +76,7 @@
 
 use rhdl::prelude::*;
 
-use super::accumulator_width_is_sufficient;
+use super::{In, Out, accumulator_width_is_sufficient};
 use crate::core::constant::Constant;
 use crate::core::dff;
 use crate::dsp::sign_extend;
@@ -109,41 +109,6 @@ pub struct SymmetricFir<
     coeff: Constant<[SignedBits<W_C>; TAPS]>,
     /// The registered result.
     out: dff::DFF<Option<SignedBits<W_OUT>>>,
-}
-
-/// Inputs to [`SymmetricFir`].
-#[derive(PartialEq, Clone, Copy, Debug, Digital)]
-pub struct In<const W_IN: usize>
-where
-    rhdl::bits::W<W_IN>: BitWidth,
-{
-    /// The input sample, or `None` for an idle cycle.
-    ///
-    /// An idle cycle holds the delay line. A FIR's state is a window
-    /// over *samples*, not over cycles, so a gap in the stream must not
-    /// be read as a zero — the same rule the CIC follows, and what
-    /// makes this correct on the CIC's one-in-`R` output cadence.
-    pub sample: Option<SignedBits<W_IN>>,
-    /// Downstream's ready, per the `RCStream` contract.
-    pub downstream_ready: bool,
-}
-
-/// Outputs from [`SymmetricFir`].
-#[derive(PartialEq, Clone, Copy, Debug, Digital)]
-pub struct Out<const W_OUT: usize>
-where
-    rhdl::bits::W<W_OUT>: BitWidth,
-{
-    /// The filtered sample, one per input sample.
-    pub sample: Option<SignedBits<W_OUT>>,
-    /// The result did not fit `W_OUT` and was clamped.
-    ///
-    /// Not a warning to be ignored: a compensator with gain above one
-    /// can legitimately produce this on near-full-scale input, and it
-    /// means the headroom budget is wrong somewhere upstream.
-    pub saturated: bool,
-    /// A sample was produced while `downstream_ready` was low.
-    pub overrun: bool,
 }
 
 impl<
