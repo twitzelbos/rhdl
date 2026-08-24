@@ -61,7 +61,8 @@ Found while trying to let a digital down-converter accept either the uniform `ci
 **Follow-ups:**
 
 - Unblocks a down-converter that hosts a pruned decimator.
-- `fsm`, `fsm_widget` and `digital_enum` also emit code over generics and were not audited. Worth a pass under the new `architecture.md` §5.1 convention.
+- ~~`fsm`, `fsm_widget` and `digital_enum` also emit code over generics and were not audited.~~ Audited 2026-08-24: clean, and for a structural reason rather than by luck. Only the DQ derives generate a *type*; every other derive emits impls through `split_for_impl` on the declared generics and so adds no bounds of its own. Recorded in `architecture.md` §5.1, which now states the narrow rule — a derive that emits a type over generics needs its value traits written out; one that only emits impls does not.
+
 ## 2026-08-23 — `dsp::ddc`: the down-converter is generic over its decimator
 
 **Paths:** `crates/rhdl-fpga/src/dsp/ddc.rs`, `crates/rhdl-fpga/tests/ddc_pruned.rs` (new), `crates/rhdl-fpga/examples/ddc.rs`.
@@ -909,6 +910,7 @@ So the tree is overwhelmingly 2024 with a minority of stragglers. `rustfmt.toml`
 **Follow-ups:**
 
 - `bind!` / `Fixture` deserve more than one call site. A documented API with a single exercised usage is how these three doc defects survived.
+
 ## 2026-08-17 — Compiler: signed literals carry their signedness into Verilog
 
 **Paths:** `crates/rhdl-core/src/hdl/builder.rs`, `crates/rhdl/tests/literals.rs`, `crates/rhdl-fpga/tests/signed_literal_comparison.rs`, `crates/rhdl-fpga/src/dsp/nco/sin_cos_linear_interp.rs` (snapshot + doc note).
