@@ -31,6 +31,42 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-24 — `dsp::cic` compensation: response analysis, a PDF report, and the FIR that flattens it
+
+**Paths:** `crates/rhdl-fpga/src/dsp/cic/{response,compensator,compensated}.rs` (new), `crates/rhdl-fpga/src/dsp/fir/{mod,symmetric}.rs` (new), `crates/rhdl-fpga/src/doc/{pdf,plot,report}.rs` (new, `doc.rs` became `doc/mod.rs`), `crates/rhdl-fpga/tests/{cic_gold_model,cic_compensated}.rs` (new), `examples/{cic_report,symmetric_fir,cic_compensated}.rs`, `doc/cic_report.pdf`.
+
+**Why this, why now:** requested. A CIC's `sinc^N` shape is one expression with two consequences that pull in opposite directions — the nulls that reject every alias, and the droop across the passband. The library shipped the first and ignored the second, which means a receive chain built on it reported amplitudes several decibels low near the band edge. At `N = 4, R = 32, passband = 0.8` the edge was down **9.67 dB**.
+
+**The precondition was not met, and that mattered.** The request assumed the CIC was already validated against a gold Rust model. It was not: one test, one configuration, one hand-written stimulus, and the *pruned* decimator was never checked bit-exactly at all — only statistically against the uniform one. Both gaps were load-bearing, so they were closed first.
+
+**Design decisions:**
+
+- **Two frequency normalisations, named in every signature.** Input-rate `f` for null placement and alias analysis; output-rate `u = f·R` for anything the compensator sees, because the compensator runs after decimation. Mixing them up by a factor of `R` is the classic error here, so the functions are named `magnitude` and `magnitude_out` rather than taking a flag.
+- **`worst_alias_db` reports the folding-band maximum, not null depth.** A CIC's nulls are infinitely deep and therefore meaningless on their own; what matters is the largest `|H|` anywhere decimation folds into the passband. For the reported configuration that is **−23.7 dB**, which is a real limitation and is printed rather than buried.
+- **The compensator is symmetric and odd-length.** Type-I linear phase. It halves the multipliers, but the binding reason is constant group delay: a filter that delays one part of the band more than another distorts the envelope, and in `dsp::ddc` that *is* the measurement.
+- **The FIR's adder tree is deliberately not pipelined.** The CIC's cascade is, because it runs at the full converter rate and its depth set fmax. This runs after decimation, where the budget is `R` times larger. Stated in the module docs as a reading of where the budget is, with the conditions under which it stops holding.
+- **Saturation, not wrapping.** A compensator has gain above one by construction, so it can exceed the output range on signal that was already near full scale. Wrapping would turn a large positive sample into a large negative one — a sign flip, not a small error. It clamps and says so.
+- **`quantise` trims the centre tap to force DC gain to exactly 1.** See the gotcha below; this is the most consequential small decision in the change.
+- **The PDF writer is hand-rolled**, in `doc::pdf`. Not to avoid a dependency — though rendering SVG to PDF would pull a font database, a TrueType parser and a rasteriser to draw a few hundred straight lines. The decisive reason is **determinism**: most PDF writers stamp `/CreationDate`, so the same input gives different bytes every run, and CLAUDE.md §8 requires committed artifacts to regenerate byte-identically or `git status` stops meaning anything.
+- **The report builder lives in the library, not the example.** So a user can point it at their own configuration, and so it can be tested. A report generator that only runs inside an example is one nobody checks.
+- **`CompensatedCic` is generic over both halves** — any decimator presenting `cic::decimator`'s interface, any filter presenting `fir::symmetric`'s. Only possible because of the DQ-derive fix in the entry above; this is the first widget to use it.
+- **No `Default` for `CompensatedCic` or `SymmetricFir`.** A filter with no taps is a filter that outputs zero, and a pair that silently defaulted to it would look like a wiring fault rather than a missing design.
+
+**Surprises and gotchas:**
+
+- **Rounding each tap independently leaves a systematic gain error, and it is much worse than the ripple.** The quantised taps summed to 1020 instead of 1024 — a DC gain of 0.996, so every amplitude the chain reported was 0.4% low. That is twenty times the passband ripple the design works so hard to remove, and unlike ripple it does not average out. `quantise` now trims the centre tap (the largest by an order of magnitude, so a few LSBs there move the response shape immeasurably) to make the sum exactly `2^shift`. Cost: ripple went from 0.0188 to 0.0195 dB. **This was found because the example's trace settled at 1562 instead of the 1600 the comment claimed** — the comment was checked against the artifact rather than assumed.
+- **A too-narrow accumulator is invisible unless the signal is near-worst-case.** A sensitivity test asserting that one bit less than Hogenauer's bound must corrupt the output *failed*: the bound is set by `full_scale · (R·M)^N`, and a sign-alternating stimulus never integrates that far. The check needs sustained full-scale DC. This is exactly why the width is asserted at construction rather than left to testing — the failure waits until someone feeds the filter a large DC offset.
+- **A negative literal in a kernel trips the known signedness defect.** `signed::<W>(-(1 << k))` makes `descriptor()` fail with "cannot negate unsigned value". Building the value by subtraction instead reaches it without asking the compiler to negate anything. Fourth site in the tree for this family of bug; see `crate::dsp::sign_extend`.
+- **Mechanically rewriting the report's page builders with a regex corrupted the format strings**, substituting `N` inside string literals. Reverted and hand-written. Worth stating: a substitution that "obviously" only touches identifiers does not know what a string literal is.
+
+**Validation:** `tests/cic_gold_model.rs` — both decimators, bit-exact against independently written models, five configurations (`N = 2..5`, `R = 4..16`, `M = 1..2`), four seeds each, stimulus deliberately driven to full scale so integrator wrap is exercised; plus sensitivity checks proving the comparison can fail. `tests/cic_compensated.rs` — the measured response of the *real widgets*: the closed-form droop matches the widget to within 0.35 dB at every point, and compensation takes the passband from **7.23 dB of droop to 0.035 dB of span**. `response`, `compensator`, `pdf`, `plot` and `report` each carry unit tests, including PDF xref-offset validation (the one structural error no visual inspection catches) and byte-level determinism. `SymmetricFir` has all five tiers, including a Tier-3 assertion that the emitted Verilog contains `HALF + 1` multiplies rather than `TAPS` — the fold reaching hardware. `CompensatedCic` has all five plus a cross-check that the pair equals the two stages run in series.
+
+**Follow-ups:**
+
+- `dsp::ddc` still uses a bare `CicDecimate` in each arm. Now that `CompensatedCic` exists and the DDC is generic over its decimator, the substitution is mechanical — but it changes the DDC's output scaling, so it wants its own change rather than riding along here.
+- `worst_alias_db` samples its bands rather than solving for the extremum. Dense enough to be right, but a closed form exists.
+- The compensator is least-squares. An equiripple (Remez) design would trade a little mean accuracy for a better worst case; the current ripple is small enough that it has not mattered.
+
 ## 2026-08-23 — Macro layer: `Q` and `D` no longer demand `Copy` of a type parameter
 
 **Paths:** `crates/rhdl-macro-core/src/{utils,synchronous_dq,circuit_dq}.rs`, `crates/rhdl-macro-core/src/expect/*_dq_derive_*.expect`, `crates/rhdl-fpga/tests/generic_subcircuit.rs` (new), `doc/book/src/circuits/circuits_dq.md`, `architecture.md` §5.1.

@@ -1,3 +1,7 @@
+pub mod pdf;
+pub mod plot;
+pub mod report;
+
 use rhdl::core::fsm::analysis::Transition;
 use rhdl::core::fsm::diagram::{build_fsm_diagram, render_fsm_svg};
 use rhdl::prelude::*;
