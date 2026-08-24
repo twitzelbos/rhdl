@@ -351,6 +351,10 @@ This is not stylistic. The generated `Q` and `D` carry associated-type projectio
 
 When adding a derive or extending an existing one, ask which types actually need the capability and bound exactly those.
 
+**Why the defect was confined to two files, audited 2026-08-24.** The DQ derives are the only ones that *generate a type*. Every other derive in `rhdl-macro-core` emits impls through `split_for_impl` on the author's declared generics, so it adds no bounds of its own and cannot introduce this problem; `Timed` is the sole exception and it adds predicates over field types, which is the correct shape. Two generated types carry no derive at all: `#[fsm_properties]`'s marker is a unit struct with no generics, and `#[kernel]`'s zero-sized function type has `PhantomData` fields but a bare declaration.
+
+The rule to re-check, then, is narrow: **a derive that emits a type rather than an impl, over generics, needs its value traits written out.** A derive that only emits impls does not.
+
 ### 5.2 Trait dispatch into the framework
 
 A widget integrates with the framework via three trait pairs, all in `rhdl-core::circuit`:
