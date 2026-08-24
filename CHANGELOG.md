@@ -31,6 +31,43 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-24 — `dsp::cic::chain`: say what the filter must do, derive what it must be
+
+**Paths:** `crates/rhdl-fpga/src/dsp/cic/{chain,compensator,prune}.rs`.
+
+**Why this, why now:** requested — the high-level story for the Rust side of RHDL is that you specify DSP *requirements* and they lower into HDL. A CIC and its compensator take a dozen numbers before you can instantiate one, and none of them is a requirement. The requirements are the converter rate, the total decimation, the bandwidth that must come out alias-free, and how flat, how quiet and how well rejected it has to be.
+
+`ChainSpec` → `Result<ChainDesign, Unmet>` does that derivation. The worked case: **125 Msps, /488, a 128 kHz complex channel** yields a `8 × 61` cascade — stage 1 `N=2` at 125 MHz in 16-bit registers, stage 2 `N=5` at 15.6 MHz, an 11-tap compensator, achieving 0.069 dB ripple, 67.3 dB alias rejection, 84.6 dB SNR.
+
+**Design decisions:**
+
+- **Total decimation is an input, not a derived quantity.** Because the output rate you want is frequently unreachable: from 125 MHz an exact 256 kHz needs `R = 488.28125`; 488 gives 256.148 kHz and 512 gives 244.14 kHz. Which you can live with is a system decision, and a designer that quietly rounded it would be hiding the most consequential choice in the chain.
+- **Bandwidth is the one-sided edge**, documented as such, because "128 kHz of bandwidth" on a complex stream means ±64 kHz. Read the other way it is exactly the output Nyquist, which no CIC can deliver — the two readings differ between comfortable and impossible, so the convention is spelled out rather than inferred.
+- **Two budgets, not one.** Ripple is a systematic gain error across frequency and is bought with **taps**; noise is additive and broadband and is bought with **register width**. An earlier plan for this work claimed they shared an error budget. That was wrong, and building it that way would have produced a designer trading them against each other incoherently. There is a test asserting each is independent of the other.
+- **Cascading is searched, not assumed either way.** A single CIC at /488 needs 66-bit accumulators clocked at the full 125 MHz. Split `8 × 61`, nothing wider than 16 bits runs at 125 MHz and the wide registers run at 15.6. Both are designed and the cheaper wins; the loser is reported in `alternative`, because "a cascade would have been better" should be visible rather than implied.
+- **The cost model is rate-weighted register bits, and says it is a proxy.** By *plain area the single stage often wins* — 240 bits against the cascade's 269. Flops cost the same however slowly they are clocked; what the weighting captures is that a 66-bit adder at 125 MHz is a different proposition from the same adder at 15 MHz. Both numbers are reported so the caller can judge by whichever binds.
+- **Rejection cannot be shared between stages; noise can.** Once energy folds into the band no later stage removes it, so every decimation gets the *full* rejection requirement. Noise contributions add in power, so each stage is held to `min_snr + 10*log10(n)`.
+- **The compensator inverts the whole cascade, not just the last stage.** `compensator::Spec` now carries a list of `CicShape`, and `cascade_magnitude` evaluates each at *its own* input rate. Inverting only the final CIC was measurably worse — 0.0204 dB against 0.0017 dB on a `4 × 16` chain, a factor of twelve. The earlier "the first stage's droop is negligible" reasoning was an argument, not a measurement, and the measurement disagreed.
+- **The compensator can double as an anti-alias filter.** `stopband_edge` and `min_stopband_db` give it a real attenuation requirement, so it earns its keep twice: a CIC's own stopband is whatever `sinc^N` gives, and if that is not enough — or if something downstream decimates again — the compensator is the natural place to put the attenuation, since it is already there and already running at the low rate.
+- **The stopband weight is searched, not chosen.** It used to be a magic `0.05`. The right value depends on tap count, passband width and stopband depth, so the *smallest* weight meeting the requirement is found by bisection — every increment beyond sufficiency is ripple given away for nothing.
+- **`prune::predicted_sigma` was promoted out of the test file.** It is the schedule's own variance accounting and belongs with the schedule, now that the designer reads it too.
+
+**Surprises and gotchas:**
+
+- **`output_width` was nearly decorative.** The first SNR model counted only pruning noise, so an 8-bit output could "achieve" infinite SNR by declining to prune — no pruning, no pruning noise. Truncating a 40-bit datapath to 8 bits is the *dominant* noise in that design. Adding the output quantisation floor (variance `1/12` of an output LSB, which no schedule can go below) made the width load-bearing and the constraint meaningful.
+- **The pruning search was capped at the accumulator width, which is arbitrary**, and it was silently leaving pruning unspent. `prune_bits` subtracts `ceil_log4(2N*S_j)`, and `S_j` is enormous for the early integrators, so the budget must climb well past the full width before they give up a bit. Caught by a test asking whether the budget was actually maximal, which is a better question than whether it was legal.
+- **The search had to become joint.** Choosing the shallowest depth that rejects well enough and *then* trying to flatten it reports "ripple unreachable" when the real problem is that rejection and flatness pull against each other: more stages deepen the nulls and steepen the droop by the same expression. `Unmet::Incompatible` now names the tension and points at the bandwidth, the knob that helps.
+- **That also proved a default of mine wrong.** 60 dB of alias rejection across 0.8 of the output Nyquist is not available from a CIC at *any* depth.
+- **A linear weight ladder made one exploratory test take 70 seconds** — 33 least-squares fits per tap count, across a dozen tap counts and several splits. Bisecting on the weight took the whole `dsp::cic` suite to 6.65 s. Monotonicity of attenuation in the weight is empirical rather than a theorem, so the bisected result is verified against the requirement before being returned.
+
+**Validation:** 13 tests on the designer and 15 on the compensator. The load-bearing one sweeps `(decimation, bandwidth, rejection, ripple, SNR)` and asserts that **every accepted design meets every constraint it was given**, that the split multiplies back to the requested decimation, that the band lands where it was asked to, and that each pruning schedule is monotonic — plus that the sweep exercises both acceptance and refusal, so it cannot pass by refusing everything. Separate tests pin that a cascade's stage order changes its response away from DC (the classic scaling error), that each budget is maximal, that ripple buys taps while SNR buys width, and that every `Unmet` variant is reachable with a usable report.
+
+**Follow-ups:**
+
+- **The compensator is least-squares, and for deep stopbands that is the wrong method.** 60 dB across a 0.5→0.7 transition needs 57 taps here; an equiripple (Remez) design would want far fewer, because least squares minimises average error while a stopband requirement is about the worst case. This is now the binding limitation rather than a theoretical one.
+- Only two-stage cascades are searched. Three would help at very deep decimations.
+- Nothing yet lowers a `ChainDesign` into widget parameters automatically — that is the `cic_chain!` proc macro, which needs the design math in a crate the macro layer may depend on.
+
 ## 2026-08-24 — `dsp::ddc`: two real paths, split and recombined — and a mark bug it exposed
 
 **Paths:** `crates/rhdl-fpga/src/dsp/ddc.rs`, `crates/rhdl-fpga/src/dsp/cic/stream.rs` (new), `examples/cic_stream.rs`, `doc/cic_stream.md`.

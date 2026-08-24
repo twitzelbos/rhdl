@@ -61,13 +61,15 @@ impl Default for CicReport {
 /// null, where the required gain is unbounded.
 pub fn cic_report(cfg: CicReport) -> Option<Pdf> {
     let spec = compensator::Spec {
-        stages: cfg.stages,
-        rate: cfg.rate,
-        delay: cfg.delay,
+        cics: vec![compensator::CicShape {
+            decimate: cfg.rate,
+            stages: cfg.stages,
+            delay: cfg.delay,
+        }],
         passband: cfg.passband,
         taps: cfg.taps,
-        stopband: 1.0,
-        stopband_weight: 0.05,
+        stopband_edge: 1.0,
+        min_stopband_db: 0.0,
     };
     let design = compensator::design(spec)?;
     let quant = compensator::quantise(&design, cfg.coeff_width);

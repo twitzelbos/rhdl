@@ -181,6 +181,50 @@ pub const fn stage_width(
     if full <= cut + w_in { w_in } else { full - cut }
 }
 
+/// Truncation noise the schedule predicts at the output, in units of
+/// the output's own LSB.
+///
+/// Hogenauer's own accounting, evaluated for the schedule a given
+/// `b_out` actually produces. Stage `j` truncates `d_j` bits, injecting
+/// uniform error of variance `4^d_j / 12` in full-width LSBs, which
+/// reaches the output amplified in power by
+/// `S_j = sum_k h_j(k)^2`. Summing and referring to the output's LSB
+/// weight `2^d_2N`:
+///
+/// ```text
+/// sigma^2 = (1/12) * sum_j S_j * 4^(d_j - d_2N)
+/// ```
+///
+/// `d_j` comes from [`stage_width`] rather than [`prune_bits`], because
+/// the schedule clamps — a stage that would be pruned below the input
+/// width is not — and the estimate has to describe the hardware rather
+/// than the intent.
+///
+/// # A stage that discards nothing injects nothing
+///
+/// Hogenauer writes the per-stage variance as `4^B_j / 12`, which
+/// degrades to `1/12` at `B_j = 0`. That is an artefact of modelling
+/// truncation as noise that is always present: an unpruned stage is
+/// *exact*. Counting it swamps the estimate, because the early
+/// integrators carry enormous error gain and are precisely the stages
+/// the schedule leaves alone — including the term gives predictions
+/// hundreds of times too large, which is useless as a bound.
+pub fn predicted_sigma(w_in: usize, n: usize, r: usize, m: usize, b_out: usize) -> f64 {
+    let full = super::accumulator_width(w_in, n, r, m);
+    let discarded = |j: usize| (full - stage_width(j, w_in, n, r, m, b_out)) as i32;
+    let out = discarded(2 * n);
+    let var: f64 = (1..=2 * n)
+        .map(|j| {
+            if discarded(j) == 0 {
+                return 0.0;
+            }
+            error_gain_squared(j, n, r, m) as f64 * 4f64.powi(discarded(j) - out)
+        })
+        .sum::<f64>()
+        / 12.0;
+    var.sqrt()
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::accumulator_width;

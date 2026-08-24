@@ -36,13 +36,15 @@ fn main() -> Result<(), RHDLError> {
     // Say it on stdout too, so running this is useful on its own.
     let (n, r, m) = (cfg.stages, cfg.rate, cfg.delay);
     let spec = compensator::Spec {
-        stages: n,
-        rate: r,
-        delay: m,
+        cics: vec![compensator::CicShape {
+            decimate: r,
+            stages: n,
+            delay: m,
+        }],
         passband: cfg.passband,
         taps: cfg.taps,
-        stopband: 1.0,
-        stopband_weight: 0.05,
+        stopband_edge: 1.0,
+        min_stopband_db: 0.0,
     };
     let design = compensator::design(spec).expect("design");
     let quant = compensator::quantise(&design, cfg.coeff_width);

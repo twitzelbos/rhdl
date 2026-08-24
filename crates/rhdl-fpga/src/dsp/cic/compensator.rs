@@ -43,47 +43,111 @@
 //! large taps. [`design`] reports the gain it actually needs so that
 //! is visible rather than silent.
 
-use super::response::{magnitude_out, passband_edge_out};
+use super::response::passband_edge_out;
+
+/// One CIC in the response being inverted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CicShape {
+    /// This stage's decimation factor.
+    pub decimate: usize,
+    /// Integrator/comb pairs.
+    pub stages: usize,
+    /// Differential delay.
+    pub delay: usize,
+}
 
 /// What to design for.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Spec {
-    /// CIC stages.
-    pub stages: usize,
-    /// CIC decimation factor.
-    pub rate: usize,
-    /// CIC differential delay.
-    pub delay: usize,
-    /// Passband as a fraction of the decimated Nyquist. `0.8` is a
-    /// common choice; above about `0.9` the inverse-sinc gain climbs
-    /// steeply because the CIC null is close.
+    /// The CICs whose combined droop is to be inverted, in signal
+    /// order.
+    ///
+    /// One entry is the ordinary case. **A cascade must list every
+    /// stage**: inverting only the last one leaves the earlier stages'
+    /// droop uncorrected, which is usually small but is not zero and is
+    /// not something to assume. Each stage is evaluated at its own
+    /// input rate — see [`cascade_magnitude`].
+    pub cics: Vec<CicShape>,
+    /// Passband as a fraction of the decimated Nyquist. Above about
+    /// `0.9` the inverse-sinc gain climbs steeply, because the CIC null
+    /// is close.
     pub passband: f64,
     /// Number of taps. Must be odd, so the filter has a whole-sample
     /// group delay and a centre tap.
     pub taps: usize,
-    /// Where the don't-care region ends and the fitted stopband
-    /// begins, as a fraction of Nyquist. Between `passband` and this,
-    /// the design is unconstrained.
-    pub stopband: f64,
-    /// How hard to hold the stopband down, relative to passband
-    /// accuracy. Zero fits the passband alone and lets out-of-band
-    /// gain go where it likes.
-    pub stopband_weight: f64,
+    /// Where the stopband begins, as a fraction of Nyquist.
+    ///
+    /// Between `passband` and this the design is unconstrained — the
+    /// transition band. A narrow transition costs taps.
+    pub stopband_edge: f64,
+    /// Required stopband attenuation, in dB, positive.
+    ///
+    /// **This is what makes the filter an anti-alias filter as well as
+    /// a compensator.** A CIC's own stopband is whatever `sinc^N`
+    /// happens to give, which is often not enough — and if anything
+    /// downstream decimates further, the compensator is the natural
+    /// place to put the attenuation, because it is already there and
+    /// already running at the low rate.
+    ///
+    /// Zero means don't care: fit the passband alone and let
+    /// out-of-band gain go where it likes.
+    pub min_stopband_db: f64,
 }
 
 impl Spec {
-    /// A reasonable starting point for a CIC of the given shape.
-    pub fn for_cic(stages: usize, rate: usize, delay: usize) -> Self {
+    /// A reasonable starting point for a single CIC of the given shape.
+    ///
+    /// Compensation only — no stopband requirement. Add one by setting
+    /// [`Spec::min_stopband_db`] and [`Spec::stopband_edge`].
+    pub fn for_cic(stages: usize, decimate: usize, delay: usize) -> Self {
         Self {
-            stages,
-            rate,
-            delay,
+            cics: vec![CicShape {
+                decimate,
+                stages,
+                delay,
+            }],
             passband: 0.8,
             taps: 15,
-            stopband: 1.0,
-            stopband_weight: 0.05,
+            stopband_edge: 1.0,
+            min_stopband_db: 0.0,
         }
     }
+
+    /// A starting point for a cascade.
+    pub fn for_cascade(cics: Vec<CicShape>) -> Self {
+        Self {
+            cics,
+            passband: 0.8,
+            taps: 15,
+            stopband_edge: 1.0,
+            min_stopband_db: 0.0,
+        }
+    }
+
+    /// Total decimation across the listed stages.
+    pub fn total_decimate(&self) -> usize {
+        self.cics.iter().map(|c| c.decimate).product()
+    }
+}
+
+/// Combined normalised magnitude of a CIC cascade at output-rate `u`.
+///
+/// Each stage sees the same physical frequency, but normalised to its
+/// *own* input rate — which differs by the product of the factors ahead
+/// of it. Getting that scaling wrong is the classic error in cascade
+/// analysis, so the running divisor is explicit here rather than folded
+/// into an index.
+pub fn cascade_magnitude(cics: &[CicShape], u: f64) -> f64 {
+    let total: usize = cics.iter().map(|c| c.decimate).product();
+    // Physical frequency, normalised to the first stage's input rate.
+    let f = u / total as f64;
+    let mut mag = 1.0;
+    let mut ahead = 1usize;
+    for c in cics {
+        mag *= super::response::magnitude(f * ahead as f64, c.stages, c.decimate, c.delay);
+        ahead *= c.decimate;
+    }
+    mag
 }
 
 /// A designed compensator.
@@ -99,6 +163,17 @@ pub struct Design {
     /// Largest gain the design asks for, at the passband edge. Watch
     /// this: it is what drives coefficient width.
     pub peak_gain: f64,
+    /// Worst-case stopband attenuation achieved, in dB, positive.
+    ///
+    /// The filter alone, not the CIC-plus-filter: the CIC's own
+    /// stopband is reported by
+    /// [`super::response::worst_alias_db`], and confusing the two
+    /// flatters the result.
+    pub stopband_db: f64,
+    /// Weight the search settled on for the stopband term. Reported
+    /// because it is the knob, and a large value means flatness was
+    /// traded away for attenuation.
+    pub stopband_weight: f64,
 }
 
 /// Amplitude response of a symmetric odd-length FIR at output-rate
@@ -162,20 +237,85 @@ fn solve(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Option<Vec<f64>> {
 
 /// Design a compensator by weighted least squares.
 ///
-/// Fits the symmetric-FIR amplitude response to `1/|H_cic(u)|` across
-/// the passband and to zero across the stopband, on a dense frequency
-/// grid. Returns `None` if `taps` is even or the normal equations are
-/// singular — the latter should not happen for a sane spec, and is
-/// reported rather than papered over.
+/// Fits the symmetric-FIR amplitude response to `1/|H(u)|` across the
+/// passband, where `H` is the *combined* response of every CIC in
+/// [`Spec::cics`], and to zero across the stopband.
+///
+/// # The stopband weight is searched, not chosen
+///
+/// A least-squares fit balances passband accuracy against stopband
+/// attenuation through one weight, and the right value depends on the
+/// tap count, the passband width and how deep the stopband has to be —
+/// there is no good constant. So the weight is escalated along a
+/// geometric ladder and the *smallest* one meeting
+/// [`Spec::min_stopband_db`] is taken, because every increment beyond
+/// what the stopband needs is ripple given away for nothing.
+///
+/// With `min_stopband_db == 0` the ladder is skipped: pure
+/// compensation, no attenuation requirement, weight zero.
+///
+/// Returns `None` if `taps` is even, the passband touches a null (where
+/// `1/|H|` is unbounded), or the normal equations are singular.
 #[allow(clippy::needless_range_loop, clippy::manual_is_multiple_of)]
 pub fn design(spec: Spec) -> Option<Design> {
-    if spec.taps % 2 == 0 || spec.taps == 0 {
+    if spec.taps % 2 == 0 || spec.taps == 0 || spec.cics.is_empty() {
         return None;
     }
-    let c = spec.taps / 2;
-    let nb = c + 1; // unique taps: centre plus c pairs
+    if spec.min_stopband_db <= 0.0 {
+        // Pure compensation: no stopband term at all.
+        return design_at_weight(&spec, 0.0);
+    }
 
-    // Basis: phi_0 = 1, phi_i(u) = 2 cos(2 pi u i).
+    // Attenuation rises monotonically with the stopband weight, so the
+    // least sufficient rung is found by bisection rather than by
+    // walking the ladder. That matters: a linear scan of 33 rungs is 33
+    // full least-squares fits *per tap count*, and a chain designer
+    // tries a dozen tap counts across several splits. Bisection turns
+    // ~33 fits into ~6, which took one exploratory run from 70 seconds
+    // to a few.
+    //
+    // Monotonicity is an empirical property of the fit, not a theorem,
+    // so the result is *verified* against the requirement before being
+    // returned -- bisection on a non-monotonic function would otherwise
+    // hand back something that misses the spec.
+    const RUNGS: usize = 33;
+    let weight_of = |k: usize| 1e-3 * 10f64.powf(k as f64 / 8.0);
+
+    let top = design_at_weight(&spec, weight_of(RUNGS - 1))?;
+    if top.stopband_db < spec.min_stopband_db {
+        // Not reachable at any weight; report the deepest attempt so
+        // the caller sees how far short it fell.
+        return Some(top);
+    }
+    let mut lo = 0usize; // may not suffice
+    let mut hi = RUNGS - 1; // known to suffice
+    let mut best = top;
+    while lo + 1 < hi {
+        let mid = (lo + hi) / 2;
+        let d = design_at_weight(&spec, weight_of(mid))?;
+        if d.stopband_db >= spec.min_stopband_db {
+            hi = mid;
+            best = d;
+        } else {
+            lo = mid;
+        }
+    }
+    // Rung zero might already have been enough.
+    if hi == 1 {
+        let d = design_at_weight(&spec, weight_of(0))?;
+        if d.stopband_db >= spec.min_stopband_db {
+            best = d;
+        }
+    }
+    debug_assert!(best.stopband_db >= spec.min_stopband_db);
+    Some(best)
+}
+
+/// One least-squares fit at a fixed stopband weight.
+#[allow(clippy::needless_range_loop)]
+fn design_at_weight(spec: &Spec, weight: f64) -> Option<Design> {
+    let c = spec.taps / 2;
+    let nb = c + 1;
     let basis = |u: f64, i: usize| -> f64 {
         if i == 0 {
             1.0
@@ -189,41 +329,36 @@ pub fn design(spec: Spec) -> Option<Design> {
     let mut atb = vec![0.0; nb];
 
     const GRID: usize = 512;
-    // Passband: target the reciprocal of the CIC's droop.
     for g in 0..GRID {
         let u = edge * g as f64 / (GRID - 1) as f64;
-        let h = magnitude_out(u, spec.stages, spec.rate, spec.delay);
+        let h = cascade_magnitude(&spec.cics, u);
         if h <= 1e-12 {
-            return None; // passband touches a null; 1/H is unbounded
+            return None; // the passband touches a null
         }
         let target = 1.0 / h;
-        let w = 1.0;
         for i in 0..nb {
             let pi_ = basis(u, i);
             for j in 0..nb {
-                ata[i][j] += w * pi_ * basis(u, j);
+                ata[i][j] += pi_ * basis(u, j);
             }
-            atb[i] += w * pi_ * target;
+            atb[i] += pi_ * target;
         }
     }
-    // Stopband: pull toward zero, softly.
-    if spec.stopband_weight > 0.0 && spec.stopband < 0.5 {
+    let stop_lo = 0.5 * spec.stopband_edge;
+    if weight > 0.0 && stop_lo < 0.5 {
         for g in 0..GRID {
-            let u =
-                spec.stopband * 0.5 + (0.5 - spec.stopband * 0.5) * g as f64 / (GRID - 1) as f64;
-            let w = spec.stopband_weight;
+            let u = stop_lo + (0.5 - stop_lo) * g as f64 / (GRID - 1) as f64;
             for i in 0..nb {
                 let pi_ = basis(u, i);
                 for j in 0..nb {
-                    ata[i][j] += w * pi_ * basis(u, j);
+                    ata[i][j] += weight * pi_ * basis(u, j);
                 }
-                // target is zero, so atb gets no contribution
+                // target is zero, so `atb` gets nothing
             }
         }
     }
 
     let x = solve(ata, atb)?;
-    // Unpack the symmetric tap vector.
     let mut taps = vec![0.0; spec.taps];
     taps[c] = x[0];
     for i in 1..=c {
@@ -231,13 +366,34 @@ pub fn design(spec: Spec) -> Option<Design> {
         taps[c + i] = x[i];
     }
 
-    let (ripple_db, peak_gain) = evaluate(&taps, &spec);
+    let (ripple_db, peak_gain) = evaluate(&taps, spec);
     Some(Design {
-        taps,
-        spec,
+        stopband_db: stopband_db(&taps, spec),
         ripple_db,
         peak_gain,
+        stopband_weight: weight,
+        taps,
+        spec: spec.clone(),
     })
+}
+
+/// Worst-case stopband attenuation of the filter alone, in dB positive.
+fn stopband_db(taps: &[f64], spec: &Spec) -> f64 {
+    let lo = 0.5 * spec.stopband_edge;
+    if lo >= 0.5 {
+        return f64::INFINITY;
+    }
+    let mut worst: f64 = 0.0;
+    const GRID: usize = 512;
+    for g in 0..GRID {
+        let u = lo + (0.5 - lo) * g as f64 / (GRID - 1) as f64;
+        worst = worst.max(fir_amplitude(taps, u).abs());
+    }
+    if worst <= 1e-15 {
+        f64::INFINITY
+    } else {
+        -20.0 * worst.log10()
+    }
 }
 
 /// Peak-to-peak passband deviation in dB, and the largest tap gain
@@ -250,8 +406,7 @@ fn evaluate(taps: &[f64], spec: &Spec) -> (f64, f64) {
     const GRID: usize = 1024;
     for g in 0..GRID {
         let u = edge * g as f64 / (GRID - 1) as f64;
-        let composite =
-            magnitude_out(u, spec.stages, spec.rate, spec.delay) * fir_amplitude(taps, u).abs();
+        let composite = cascade_magnitude(&spec.cics, u) * fir_amplitude(taps, u).abs();
         let db = 20.0 * composite.log10();
         lo = lo.min(db);
         hi = hi.max(db);
@@ -263,7 +418,7 @@ fn evaluate(taps: &[f64], spec: &Spec) -> (f64, f64) {
 /// Combined CIC-plus-compensator magnitude, in dB relative to DC, at
 /// output-rate frequency `u`.
 pub fn composite_db(taps: &[f64], spec: &Spec, u: f64) -> f64 {
-    let a = magnitude_out(u, spec.stages, spec.rate, spec.delay) * fir_amplitude(taps, u).abs();
+    let a = cascade_magnitude(&spec.cics, u) * fir_amplitude(taps, u).abs();
     if a <= 1e-15 { -300.0 } else { 20.0 * a.log10() }
 }
 
@@ -287,6 +442,13 @@ pub struct Quantised {
     /// Passband ripple in dB of CIC-plus-quantised-filter — the number
     /// that actually ships, as opposed to the ideal-tap one.
     pub ripple_db: f64,
+    /// Stopband attenuation in dB of the quantised filter alone.
+    ///
+    /// Quantisation raises a stopband floor: rounded taps cannot cancel
+    /// as precisely as exact ones, and deep stopbands are where that
+    /// shows first. If this is well short of the ideal design's figure,
+    /// the coefficient width is the limit.
+    pub stopband_db: f64,
 }
 
 /// Quantise a design to `coeff_width`-bit signed taps.
@@ -333,6 +495,7 @@ pub fn quantise(design: &Design, coeff_width: usize) -> Quantised {
     let dc_gain = real.iter().sum::<f64>();
     let (ripple_db, _) = evaluate(&real, &design.spec);
     Quantised {
+        stopband_db: stopband_db(&real, &design.spec),
         taps,
         shift,
         coeff_width,
@@ -372,7 +535,7 @@ mod tests {
     fn compensation_flattens_the_passband() {
         for (n, r) in [(2, 8), (3, 16), (4, 32), (5, 64)] {
             let spec = Spec::for_cic(n, r, 1);
-            let d = design(spec).unwrap();
+            let d = design(spec.clone()).unwrap();
             let droop = passband_droop_db(spec.passband, n, r, 1).abs();
             println!(
                 "N={n} R={r}: droop {droop:.2} dB -> ripple {:.4} dB (peak gain {:.2})",
@@ -413,7 +576,7 @@ mod tests {
         // report that as rising peak gain rather than hiding it.
         let mut a = Spec::for_cic(4, 32, 1);
         a.passband = 0.5;
-        let mut b = a;
+        let mut b = a.clone();
         b.passband = 0.9;
         assert!(design(b).unwrap().peak_gain > design(a).unwrap().peak_gain);
     }
@@ -422,6 +585,7 @@ mod tests {
     fn quantised_taps_keep_most_of_the_flatness() {
         let spec = Spec::for_cic(4, 32, 1);
         let d = design(spec).unwrap();
+        #[allow(clippy::needless_range_loop)]
         for w in [12usize, 16, 18] {
             let q = quantise(&d, w);
             let peak = q.taps.iter().fold(0i64, |m, t| m.max(t.abs()));
@@ -448,7 +612,7 @@ mod tests {
     #[test]
     fn the_composite_is_flat_where_the_spec_says_and_not_beyond() {
         let spec = Spec::for_cic(4, 32, 1);
-        let d = design(spec).unwrap();
+        let d = design(spec.clone()).unwrap();
         let edge = passband_edge_out(spec.passband);
         // Flat inside.
         for g in 0..50 {
@@ -460,8 +624,220 @@ mod tests {
         }
         // And the CIC's own nulls survive: compensation shapes the
         // passband, it does not fill in the stopband.
-        let null_u = spec.rate as f64 / (spec.rate * spec.delay) as f64; // u = 1/M at output rate
-        let _ = null_u;
         assert!(composite_db(&d.taps, &spec, 0.5) < 0.0);
+    }
+}
+
+#[cfg(test)]
+mod cascade_and_stopband_tests {
+    use super::*;
+
+    fn shape(decimate: usize, stages: usize, delay: usize) -> CicShape {
+        CicShape {
+            decimate,
+            stages,
+            delay,
+        }
+    }
+
+    /// A one-stage cascade is the single-CIC case, exactly.
+    #[test]
+    fn one_stage_matches_the_plain_response() {
+        let cics = vec![shape(32, 4, 1)];
+        for k in 0..40 {
+            let u = 0.5 * k as f64 / 39.0;
+            let a = cascade_magnitude(&cics, u);
+            let b = super::super::response::magnitude_out(u, 4, 32, 1);
+            assert!((a - b).abs() < 1e-15, "u={u}: {a} vs {b}");
+        }
+    }
+
+    /// **Each stage is evaluated at its own input rate.**
+    ///
+    /// The classic cascade error is to normalise every stage to the
+    /// converter rate, which understates the later stages' droop by the
+    /// factors ahead of them. Two orderings of the same factors are
+    /// different filters, and if the scaling were dropped they would
+    /// come out identical.
+    #[test]
+    fn stage_order_changes_the_response() {
+        let fwd = vec![shape(8, 2, 1), shape(61, 5, 1)];
+        let rev = vec![shape(61, 5, 1), shape(8, 2, 1)];
+        // Same at DC by construction...
+        assert!((cascade_magnitude(&fwd, 0.0) - 1.0).abs() < 1e-12);
+        assert!((cascade_magnitude(&rev, 0.0) - 1.0).abs() < 1e-12);
+        // ...and different anywhere else.
+        let mut differ = false;
+        for k in 1..30 {
+            let u = 0.5 * k as f64 / 29.0;
+            if (cascade_magnitude(&fwd, u) - cascade_magnitude(&rev, u)).abs() > 1e-9 {
+                differ = true;
+            }
+        }
+        assert!(differ, "the ordering must matter away from DC");
+    }
+
+    /// Compensating a cascade must beat compensating only its last
+    /// stage — otherwise listing every stage buys nothing.
+    #[test]
+    fn compensating_the_whole_cascade_beats_the_last_stage_alone() {
+        let full = vec![shape(4, 3, 1), shape(16, 4, 1)];
+        let both = Spec {
+            cics: full.clone(),
+            passband: 0.7,
+            taps: 15,
+            stopband_edge: 1.0,
+            min_stopband_db: 0.0,
+        };
+        // Design for the last stage only, then measure it against the
+        // *whole* cascade -- which is what a designer that ignored the
+        // earlier stage would ship.
+        let last_only = Spec {
+            cics: vec![shape(16, 4, 1)],
+            ..both.clone()
+        };
+        let a = design(both.clone()).unwrap();
+        let b = design(last_only).unwrap();
+        let measured_b = {
+            let edge = passband_edge_out(both.passband);
+            let mut lo = f64::INFINITY;
+            let mut hi = f64::NEG_INFINITY;
+            for g in 0..512 {
+                let u = edge * g as f64 / 511.0;
+                let db =
+                    20.0 * (cascade_magnitude(&full, u) * fir_amplitude(&b.taps, u).abs()).log10();
+                lo = lo.min(db);
+                hi = hi.max(db);
+            }
+            hi - lo
+        };
+        println!(
+            "whole cascade {:.5} dB, last stage only {:.5} dB",
+            a.ripple_db, measured_b
+        );
+        assert!(
+            a.ripple_db <= measured_b,
+            "inverting every stage must be at least as flat: {} vs {}",
+            a.ripple_db,
+            measured_b
+        );
+    }
+
+    /// With no stopband asked for, the weight stays zero.
+    #[test]
+    fn compensation_only_uses_no_stopband_weight() {
+        let d = design(Spec::for_cic(4, 32, 1)).unwrap();
+        assert_eq!(d.stopband_weight, 0.0);
+    }
+
+    /// **The stopband requirement is met, and costs ripple.**
+    ///
+    /// This is the anti-alias half of the filter's job: attenuation
+    /// above a transition band, on top of inverting the droop.
+    #[test]
+    fn a_stopband_requirement_is_met() {
+        let plain = Spec {
+            cics: vec![shape(32, 4, 1)],
+            passband: 0.5,
+            taps: 31,
+            stopband_edge: 1.0,
+            min_stopband_db: 0.0,
+        };
+        let filtering = Spec {
+            stopband_edge: 0.7,
+            min_stopband_db: 40.0,
+            ..plain.clone()
+        };
+        let a = design(plain).unwrap();
+        let b = design(filtering.clone()).unwrap();
+        println!(
+            "compensation only: ripple {:.4} dB, stopband {:.1} dB\\n\
+             with anti-alias:   ripple {:.4} dB, stopband {:.1} dB (weight {:.3})",
+            a.ripple_db, a.stopband_db, b.ripple_db, b.stopband_db, b.stopband_weight
+        );
+        assert!(
+            b.stopband_db >= filtering.min_stopband_db,
+            "asked for {} dB, got {}",
+            filtering.min_stopband_db,
+            b.stopband_db
+        );
+        assert!(b.stopband_weight > 0.0, "the weight must have been raised");
+        // And it is not free: attenuation is bought with passband
+        // accuracy at a fixed tap count.
+        assert!(
+            b.ripple_db >= a.ripple_db,
+            "attenuation should cost ripple: {} vs {}",
+            b.ripple_db,
+            a.ripple_db
+        );
+    }
+
+    /// The weight chosen is the smallest that suffices.
+    #[test]
+    fn the_weight_is_not_overspent() {
+        let spec = Spec {
+            cics: vec![shape(32, 4, 1)],
+            passband: 0.5,
+            taps: 31,
+            stopband_edge: 0.7,
+            min_stopband_db: 30.0,
+        };
+        let d = design(spec.clone()).unwrap();
+        // One rung down the ladder must fail the requirement, or the
+        // search overspent and gave away ripple for nothing.
+        let lower = d.stopband_weight / 10f64.powf(1.0 / 8.0);
+        if lower >= 1e-3 {
+            let weaker = design_at_weight(&spec, lower).unwrap();
+            assert!(
+                weaker.stopband_db < spec.min_stopband_db,
+                "weight {} was more than needed: {} already gives {}",
+                d.stopband_weight,
+                lower,
+                weaker.stopband_db
+            );
+        }
+    }
+
+    /// An impossible stopband is reported, not silently missed.
+    #[test]
+    fn an_unreachable_stopband_returns_its_best() {
+        let spec = Spec {
+            cics: vec![shape(32, 4, 1)],
+            passband: 0.5,
+            taps: 5, // far too few for 90 dB
+            stopband_edge: 0.55,
+            min_stopband_db: 90.0,
+        };
+        let d = design(spec.clone()).expect("a design is still returned");
+        assert!(
+            d.stopband_db < spec.min_stopband_db,
+            "this cannot have succeeded: {}",
+            d.stopband_db
+        );
+        // The caller decides what to do; the designer reports honestly.
+        assert!(d.stopband_db.is_finite());
+    }
+
+    /// Quantisation raises the stopband floor, and that is reported.
+    #[test]
+    fn quantisation_limits_the_stopband() {
+        let spec = Spec {
+            cics: vec![shape(32, 4, 1)],
+            passband: 0.5,
+            taps: 31,
+            stopband_edge: 0.7,
+            min_stopband_db: 60.0,
+        };
+        let d = design(spec).unwrap();
+        let narrow = quantise(&d, 10);
+        let wide = quantise(&d, 20);
+        println!(
+            "ideal {:.1} dB, 10-bit {:.1} dB, 20-bit {:.1} dB",
+            d.stopband_db, narrow.stopband_db, wide.stopband_db
+        );
+        assert!(
+            wide.stopband_db >= narrow.stopband_db,
+            "more coefficient bits must not reject less"
+        );
     }
 }

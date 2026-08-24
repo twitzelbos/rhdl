@@ -59,7 +59,7 @@ fn main() -> Result<(), RHDLError> {
     let mut spec = compensator::Spec::for_cic(N, R, M);
     spec.taps = TAPS;
     spec.passband = 0.8;
-    let design = compensator::design(spec).expect("a sane spec must design");
+    let design = compensator::design(spec.clone()).expect("a sane spec must design");
     let quant = compensator::quantise(&design, WC);
     assert_eq!(
         quant.shift as usize, SHIFT,

@@ -41,43 +41,11 @@ type Exact = CicDecimate<WI, FULL, N, R, M, CW>;
 
 /// The error the schedule predicts, in output LSBs.
 ///
-/// Not a rule of thumb — this is Hogenauer's own accounting, evaluated
-/// for the schedule the macro actually generated. Stage `j` truncates
-/// `d_j` bits, injecting a uniform error of variance `4^d_j / 12` in
-/// full-width LSBs, which reaches the output amplified in power by
-/// `S_j = sum_k h_j(k)^2`. Summing over stages and referring the result
-/// to the output's own LSB weight `2^d_2N` gives
-///
-/// ```text
-/// sigma^2 = (1/12) * sum_j S_j * 4^(d_j - d_2N)
-/// ```
-///
-/// `d_j` comes from the widths the macro emitted, not from
-/// `prune_bits`, because the schedule clamps: a stage that would be
-/// pruned below the input width is not, and the bound has to describe
-/// the hardware rather than the intent.
+/// Thin wrapper over [`prune::predicted_sigma`], which is the library's
+/// own accounting — this used to be duplicated here, and belongs with
+/// the schedule it describes now that the chain designer reads it too.
 fn predicted_sigma(wi: usize, n: usize, r: usize, m: usize, bo: usize) -> f64 {
-    let full = accumulator_width(wi, n, r, m);
-    let d = |j: usize| (full - prune::stage_width(j, wi, n, r, m, bo)) as i32;
-    let out = d(2 * n);
-    let var: f64 = (1..=2 * n)
-        .map(|j| {
-            // A stage that discards nothing injects nothing. Hogenauer
-            // writes the variance as `2^(2B_j)/12`, which degrades to
-            // `1/12` at `B_j = 0` -- an artefact of modelling
-            // truncation as always-present noise. An unpruned stage is
-            // exact, and counting it swamps the estimate, because the
-            // early integrators have enormous error gain and it is
-            // precisely those that the schedule leaves unpruned.
-            if d(j) == 0 {
-                return 0.0;
-            }
-            let s = prune::error_gain_squared(j, n, r, m) as f64;
-            s * 4f64.powi(d(j) - out)
-        })
-        .sum::<f64>()
-        / 12.0;
-    var.sqrt()
+    prune::predicted_sigma(wi, n, r, m, bo)
 }
 
 /// How far past the predicted sigma a measurement may sit.
