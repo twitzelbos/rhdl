@@ -62,6 +62,105 @@ Found while trying to let a digital down-converter accept either the uniform `ci
 
 - Unblocks a down-converter that hosts a pruned decimator.
 - `fsm`, `fsm_widget` and `digital_enum` also emit code over generics and were not audited. Worth a pass under the new `architecture.md` §5.1 convention.
+## 2026-08-23 — `dsp::ddc`: the down-converter is generic over its decimator
+
+**Paths:** `crates/rhdl-fpga/src/dsp/ddc.rs`, `crates/rhdl-fpga/tests/ddc_pruned.rs` (new), `crates/rhdl-fpga/examples/ddc.rs`.
+
+**Why this, why now:** `cic_pruned!` produced a decimator that nothing could use. The DDC hard-coded `CicDecimate` in both arms, so the pruned datapath was a facility with no consumer — the shape CLAUDE.md's first rule exists to forbid. Unblocked by the DQ-derive fix in the entry above.
+
+**Design decisions:**
+
+- **`Ddc<W, WA, PROD_W, C>` replaces `Ddc<W, WA, STAGES, R, M, CW, PROD_W>`.** `STAGES`, `R`, `M` and `CW` existed only to name the decimator's type; the kernel body never read any of them. They now live inside `C`, which is both shorter and more honest about what the DDC actually depends on: an interface, not a set of filter parameters.
+- **`UniformDdc` preserves the old shape** as a type alias with the same parameters in the same order, so the previous spelling still works and the migration is a rename.
+- **Both arms are the same type parameter `C`.** Not two parameters that happen to be equal. An asymmetry between the in-phase and quadrature decimators rotates the constellation, which is the one error a phase-sensitive measurement cannot tolerate, so the type system makes it unrepresentable rather than the docs discouraging it.
+- **The choice of decimator is left to the caller and not defaulted.** Pruning trades noise floor for area, and whether the coarser number is good enough is a question about the measurement rather than about the filter.
+
+**Surprises and gotchas:**
+
+- **Pruning costs rejection, not gain or null placement.** At `W = 18, N = 2, R = 16` the uniform arm rejects out of band by about 150,000x and the pruned arm by about 4,500x — still 73 dB, but now set by quantisation rather than by the filter. The two measure the same on-tune amplitude to within 3 parts in 10,000. Worth knowing before reading the smaller number as a regression: it is the trade, working.
+- **The refactor is provably behaviour-neutral.** Re-running `examples/ddc.rs` regenerated `doc/ddc.md` byte-identically, and the DDC's own eleven tests and VCD digest were untouched. Making a widget generic over a sub-circuit changes nothing about the hardware it emits.
+
+**Validation:** the DDC's existing eleven tests run unchanged through `UniformDdc`, including the VCD digest. `tests/ddc_pruned.rs` adds four: the pruned datapath is genuinely smaller (80 bits of decimator state per arm against 104), both variants down-convert a tone at the oscillator to DC and reject a quarter-rate offset, the two arms agree on amplitude to within the pruned output's own quantisation, and an `iverilog` RTL and NTL round-trip on the pruned composition.
+
+**Follow-ups:**
+
+- Only the two-stage configuration is exercised end to end in the DDC. The pruned decimator itself is tested at `N = 2, 3, 4` in `tests/cic_pruned.rs`, so the depth coverage is there, just not through the down-converter.
+
+## 2026-08-23 — `dsp::cic`: a pipelined integrator cascade and a Hogenauer-pruned datapath
+
+**Paths:** `crates/rhdl-fpga/src/dsp/cic/{decimator,prune,pruned}.rs`, `crates/rhdl-fpga/src/dsp/mod.rs` (`narrow`), `crates/rhdl-fpga/tests/cic_pruned.rs`, `examples/cic_pruned.rs`, `doc/cic_pruned.md`, `notes/generic-subcircuit-dq-bounds.md`.
+
+**Why this, why now:** the CIC as first shipped was correct and unusable. Two reasons, both structural.
+
+The integrator cascade was combinational — stage `k` read stage `k-1`'s *new* value — so an `N`-stage filter put `N` adders between registers in the one section that runs at the full converter rate. That section sets fmax, and a CIC exists precisely to run at rates where fmax is the binding constraint.
+
+And every stage ran at the worst-case accumulator width. At `W_IN = 18, N = 5, R = 1024` that is 68 bits in each of ten registers plus ten adders of the same width, which is not a filter anyone puts on a die.
+
+**Design decisions:**
+
+- **Pipelining costs latency, not response.** Each stage now reads the previous stage's registered output: one adder between registers regardless of depth. This multiplies the transfer function by `z^-(N-1)`, whose magnitude is one — the same filter, delayed. The software reference model in the tests had to be told about the delay explicitly, because it was written from the definition and did not inherit it.
+- **Pruning is a macro, not a generic.** Hogenauer's §V schedule gives a *different width per stage*, which `[SignedBits<W>; N]` cannot hold and const generics cannot compute without `generic_const_exprs`. `cic_pruned!` substitutes literals into `prune::stage_width`, a `const fn`, so every field gets its own width on stable Rust. The widths are not asserted against the analysis — they *are* the analysis, by substitution, so they cannot drift.
+- **The schedule is integer arithmetic, no floating point.** Hogenauer writes `B_j = floor(B_out − ½·log2(2·N·S_j))`. Since `S_j = Σ h_j(k)²` is an integer, that is exactly `B_out − ceil_log4(2·N·S_j)`, which is a `const fn` and therefore usable in a type position. This is what makes the whole approach possible.
+- **State is bundled into one `Digital` struct** (CLAUDE.md §3.1). Not merely tidiness here: it makes the widget's field count independent of `N`, so the derived `Q`/`D` tuples never approach their twelve-element ceiling. An earlier draft gave each stage its own `DFF` and capped out at `N = 5`; the bundled version has no such limit, and the arm list stops at 8 only because someone has to type it.
+- **One arm per stage count, each naming its own fields.** `macro_rules!` cannot synthesise identifiers, and pulling in `paste` for this would add a dependency to dodge fifty lines of boilerplate. Each arm also carries each stage's *predecessor* index, because repetition cannot look at the preceding element and the inter-stage transfer needs both widths.
+- **Truncation, not rounding.** The §V error budget is written for truncation. Rounding would halve the mean error and cost a carry-in on every stage adder, which is not the trade this widget makes.
+
+**Surprises and gotchas:**
+
+- **The input has to be rescaled into stage one, and the obvious test cannot see it.** A pruned register does not hold the value; it holds the value divided by `2^(full − W_j)`. The input arrives at weight one, so it needs `narrow` into stage one's weight — but when the schedule leaves stage one unpruned, `full == W_1` and the shift is nothing. The first behavioural test used `b_out = 8`, whose schedule does not prune stage one, and passed against a datapath that injected the sample at the wrong scale by `2^(full − W_1)`. The `b_out = 16` case caught it: σ of 3005 output LSBs against a predicted 0.7. **The sweep over `(N, R, b_out)` exists because of this**, not for completeness.
+- **The error bound was hand-waved twice before it was right.** First `sqrt(2)/sqrt(12)` — a constant, which the deep configuration cleared by 0.0015 LSB, i.e. by luck. Then the schedule's own variance sum, which came out at 409 LSBs and would have passed anything. The reason: Hogenauer models stage variance as `4^B_j/12`, which degrades to `1/12` at `B_j = 0` — but a stage that discards *nothing* injects *nothing*, and it is exactly the unpruned early integrators that carry the enormous error gain. Special-casing `B_j = 0` gives predictions of 0.68 / 0.79 / 0.77 against measurements of 0.59 / 0.67 / 0.82. A bound that tracks the configuration, and one the input-scaling bug missed by four orders of magnitude.
+- **`$m:literal` breaks `for j in 0..$m` inside a kernel.** A `literal` capture reaches the proc macro wrapped in an invisible delimiter group, and the range parser rejects it with "For loop with non-integer end value". A `:tt` capture does not. Every numeric parameter in the macro is `:tt` for this reason.
+- **Pruning compiles to free wiring.** A constant shift feeding a narrowing assignment folds into a bit select — `r28 = r76[12:1]` in the emitted Verilog. The saving is register bits and adder width with no shifter logic added anywhere.
+- **`$crate` paths survive `#[kernel]`.** Not obvious in advance, and it is what lets the generated kernel body reference `$crate::dsp::narrow` without demanding the caller import it.
+
+**Validation:** all five tiers. Tier 1–2 in `decimator.rs` (22 tests) plus `tests/cic_pruned.rs` (11), including the pruned-versus-exact comparison at three configurations against a bound derived from the schedule, a DC-gain check, and a restart-independence property written as an invariance rather than an expected value. Tier 3 is an HDL snapshot showing the per-stage widths reaching the Verilog and the 44-bit bundled state against a uniform 48. Tier 4 runs both `.rtl()` and `.ntl()` through `iverilog`. Tier 5 commits a VCD digest. Example and trace committed; the trace's settled DC value of 400 rather than 1600 is the pruned output's coarser LSB and is called out in the example.
+
+**Follow-ups:**
+
+- **The DDC cannot yet use a pruned decimator, and this is a framework gap, not a design choice.** `Ddc` would need to be generic over its CIC sub-circuit. That fails because `#[derive(Copy, PartialEq)]` on the generated `Q<C>`/`D<C>` adds bounds on the *type parameter* rather than the *field types*, and a circuit is never `Copy` — the classic "perfect derive" problem. `derive_synchronous_dq` already projects `<C as SynchronousIO>::O` correctly, so the fix is confined to how those impls are emitted. It is `rhdl-macro-core`, so per §11.1 it is its own PR with an audit of every widget whose `Q`/`D` regenerates. Full reproduction and the exact four remaining errors are in `notes/generic-subcircuit-dq-bounds.md`. Duplicating the DDC kernel to work around it would leave ~100 lines that must stay in sync, which is worse than waiting.
+- `cic_pruned!` must be invoked at most once per module, because `#[rhdl(dq_no_prefix)]` puts `Q`, `D`, `CicStages` and the kernel at module scope. Same constraint as CLAUDE.md §7's one-widget-per-file, same fix.
+- Arms exist for `n = 2..=8`. Deeper cascades need another arm, which is mechanical.
+
+## 2026-08-23 — `dsp::cic` and `dsp::ddc`: a phase-sensitive CIC-based digital down-converter
+
+**Paths:** `crates/rhdl-fpga/src/dsp/cic/{mod,decimator}.rs` (new), `crates/rhdl-fpga/src/dsp/ddc.rs` (new), `crates/rhdl-fpga/src/dsp/mod.rs`, `crates/rhdl-fpga/src/dsp/cordic/mod.rs`, `examples/{cic_decimate,ddc}.rs` (new), `doc/{cic_decimate,ddc}.md` (new).
+
+**Why this, why now:** requested. The receive chain had an oscillator, a mixer, an acquisition trigger and a polar converter, and nothing to get from the converter's sample rate down to the bandwidth of interest. A CIC is the standard answer — no multipliers, no coefficients, just adders and registers.
+
+The composition is `Nco → conj → ComplexMixer → two identical CICs`, with the acquisition marker riding through.
+
+**Design decisions:**
+
+- **The CIC does not normalise its gain.** The DC gain is exactly `(R·M)^N` and undoing it costs either a multiply or a shift that discards bits the filter was built to keep. Which is right depends on what comes next, so `dc_gain` reports the factor instead.
+- **The accumulator width is checked, not documented.** Hogenauer's bound `w_in + N·log2(R·M)` is what makes two's-complement wrap in the integrators cancel in the combs. Below it the output is not noisy, it is *wrong* — and wrong in a way that looks like a plausible signal. `Default` asserts it.
+- **Idle cycles hold the whole filter.** A CIC's state is a running sum over *samples*, not cycles, so a gap must not be read as a zero. That also keeps the decimation phase from slipping, and makes the widget correct on a gated stream.
+- **Both quadrature arms are the same widget at the same configuration.** An asymmetry between them rotates the constellation, which is the one error a phase-sensitive measurement cannot tolerate. `both_arms_emit_together` checks the shared decimation phase rather than assuming it.
+- **The marker defines the decimation grid; it does not merely ride along.** A marked sample becomes sample zero of a fresh window: the CIC clears its integrator and comb state and restarts its phase, so the next output falls exactly `R` samples later and is built only from post-trigger data. Both arms restart from the same flag on the same cycle, which is what keeps I and Q on a common grid.
+
+  Clearing the state is part of it and not optional. An `N`-stage cascade's effective window is `N·R·M` samples, so realigning the phase alone would still leak pre-trigger history into the first outputs through the integrators. Realigning without clearing is the subtly-wrong version of this feature.
+
+**Surprises and gotchas:**
+
+- **The first draft was an up-converter, and a magnitude test passed it.** Multiplying by the oscillator shifts *up*; down-conversion needs its conjugate. Without the conjugation the on-tune output was a flat, entirely plausible magnitude — so `a_tone_at_the_lo_lands_at_dc` passed. What caught it was sweeping the oscillator and finding the response peaked at **−f** instead of **+f**, 27× stronger there. The module's own ASCII diagram said `conj(LO)` while the code did not. `the_response_peaks_at_the_tuned_frequency` is the regression test, and it is worth more than the magnitude test it supersedes.
+- **The same bug hid the filter's whole point.** Before the fix, out-of-band rejection measured 3×. After, 334,000×. A number that bad should have been the first clue and was instead read as "the null placement must be fragile".
+- **`resize` on a value unwrapped from an `Option` zero-extends in Verilog and sign-extends in Rust.** The CIC hit it on its input sample: Tiers 1 and 2 passed and only the `iverilog` round-trip failed, with `Expected 01111111011000, got 01011011011000`. `dsp::cordic` already carried a `sign_extend` helper documenting exactly this; being the fourth site in the tree, it is promoted to `dsp::sign_extend` and cordic re-exports it.
+- **The first version of the marker was sticky rather than defining, and that was the wrong semantics.** It carried the flag through to the next output while the decimation grid free-ran, so the output following a trigger was a window straddling it — a mix of before and after. For an acquisition that is not a phase error; it is data from before the experiment began. Corrected to restart the grid.
+- **The test for it asserted something false, and passed for the wrong reason.** The first version required the first post-trigger output to equal `AFTER · (R·M)^N`. That is wrong: `(R·M)^N` is the *steady-state* gain, and the first output after a clean start is a partial window — `n(n+1)/2 · A` for two stages. It also searched for *any* matching output rather than the first, so it passed even with the state clear removed. Rewritten as an independence property — the same acquisition behind two different pre-trigger histories must give identical outputs — which needs no expected value and does fail when the clear is removed.
+- **`generic_const_exprs` bites again.** `PROD_W` on the DDC and `CW` on the CIC are separate const generics only because Rust cannot derive an integer or array width from another const generic. `Default` asserts each — the pattern `Nco` established for `TRUNC`.
+
+**Validation:** 22 tests on the CIC, 11 on the DDC, both with `iverilog` round-trips in RTL and NTL, VCD digests, runnable examples and committed traces.
+
+The CIC is checked against an **independently written software model**, structured differently enough that a transcription error would have to be reproduced exactly to go unnoticed — plus the property that separates a filter from arithmetic: `a_tone_at_the_first_null_is_rejected`. A cascade wired in the wrong order can still match a model written the same wrong way; it will not null.
+
+The DDC's headline test is `the_output_phase_follows_the_oscillator_phase` — a quarter-turn oscillator offset must rotate the baseband output by a quarter turn and leave the magnitude alone. That is the property the widget is named for, and a phase-*insensitive* detector would pass a magnitude test while failing this.
+
+**Follow-ups:**
+
+- No gain normalisation stage. Deliberate, but a `CicNormalise` that shifts by the known `log2` of the gain would suit callers who want a fixed output width.
+- The CIC is fixed-decimation. A runtime-variable `R` would need the accumulator sized for the largest case and the comb section gated differently.
+- `dsp::cordic` after the DDC would give magnitude and phase directly at the decimated rate, which is the natural next stage for an NMR-style measurement.
+
+---
 
 ## 2026-08-23 — Compiler: a 64-bit dynamic array index no longer panics the compiler
 
