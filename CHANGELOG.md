@@ -31,6 +31,83 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-24 — `dsp::ddc`: two real paths, split and recombined — and a mark bug it exposed
+
+**Paths:** `crates/rhdl-fpga/src/dsp/ddc.rs`, `crates/rhdl-fpga/src/dsp/cic/stream.rs` (new), `examples/cic_stream.rs`, `doc/cic_stream.md`.
+
+**Why this, why now:** requested — the down-converter did not need to be a complex-valued widget. Mixing is irreducibly complex (multiplying by `e^-jwt` needs all four real products) but everything after it is two independent real filters, and the DDC was pulling `.re` and `.im` out by hand rather than saying so.
+
+Now: `ComplexMixer → IqSplit → two StreamDecimators → IqCombine`. The two paths are separately substitutable and the framing bookkeeping belongs to widgets that already do it.
+
+**Design decisions:**
+
+- **`StreamDecimator` is a new widget, not inline code.** `IqSplit` emits framed `Item`s; a CIC takes bare samples, so the frame cannot ride through it. Worse, a decimator discards `R - 1` of every `R` frames — and for a `SyncMark` the mark is almost never on the sample that survives. So the mark is latched: seen anywhere in the window, it rides out on the next output. That logic was inline in the DDC; extracting it made it testable, which is how the bug below was found.
+- **Not generic over the framing type, deliberately.** Reducing `R` frames to one requires knowing how frames combine, and a `#[kernel]` has no closures to be told. `SyncMark` has a definite answer — boolean or — and a different `F` would have a different one. A generic version would have to pick a rule and be wrong for most `F`.
+- **The two paths' marks must align, and the combined mark is their `and`.** A disagreement is flagged rather than resolved. `IqCombine` previously took the real side's frame and discarded the imaginary side's without comment — its own doc claimed "the type system requires both inputs to carry the same `F`", which requires the same *type*, not the same *value*, so two paths that had drifted produced a confident wrong answer.
+
+  Implemented at two levels because the right rule lives at different ones. `IqCombine` stays generic and gains `frame_mismatch`, set when the frames differ — equality is all a generic frame type supports, and it catches drift for every user of the widget. The DDC, where `SyncMark` is known, applies the `and`: agreeing marks pass through; disagreeing marks yield *unmarked*, the conservative answer, because forgetting an acquisition boundary is better than claiming one on a sample where only half the complex value is known to be aligned.
+- **`Imag<W>` converts to `Real<W>` at the boundary and back.** `IqSplit` hands out distinct newtypes, so filtering `Real` on one path and `Imag` on the other would make the two arms *different widget types* — destroying the invariant that they are provably identical, which is the property a phase-sensitive measurement depends on. A decimator is a real-valued filter and does not care which half it carries; the newtypes exist to stop the *caller* confusing them. Converting keeps one decimator type.
+
+**Surprises and gotchas:**
+
+- **I reintroduced a pitfall the code had already documented.** `iq_combine_kernel` carried a comment saying that hoisting a generic frame as `let mut frame = F::dont_care()` and filling it in a branch trips an RHDL partial-initialisation error, and that the framing is therefore read inside the `if let` that binds the item. The first attempt at comparing the two frames did exactly the forbidden thing.
+
+  It passed `cargo check` and failed at `descriptor()`, so only the HDL tests caught it — and `UPDATE_EXPECT` could not paper over it, because one of those is the `iverilog` round-trip. The fix is to compare inside *nested* `if let`s so neither frame leaves its binding, and to track presence with plain `bool`s, which hoist fine. The comment was right, it was load-bearing, and I removed the constraint before reading it properly.
+- **A real bug, present in the DDC's original inline code, found only once the logic was extracted and testable.** A mark arriving on cycle `T` restarts the window at `T` — but the output emerging at `T` was registered from `T-1` and belongs entirely to the *old* window. The code attached the arriving mark to it, labelling a pre-trigger sample as the start of the acquisition: exactly the error the restart exists to prevent.
+
+  The fix is one word: only a *carried* mark (`q.marked`) may ride out this cycle, not `q.marked || marked_now`. The distinction only bites when a mark lands one cycle after a window boundary — one input in `R` — which is why the DDC's own test, marking a single fixed offset, passed for weeks. The new test sweeps the mark across **every** offset in the window and asserts exactly one marked output each time; that is what caught it.
+
+  Worth generalising: the DDC test was not weak because it checked the wrong thing, but because it checked one phase of a periodic structure. Anything that latches across a window wants its stimulus swept over the window.
+
+- **Two of my own new tests failed for reasons that were not bugs**, and both are worth naming. A sparse-versus-dense comparison differed by one sample because the longer run gave the registered output more time to drain — a drain artifact, fixed by draining both equally. And a "mark during reset is cleared" test could not distinguish anything, because `with_reset` holds the first input through the reset cycles and then presents it again; the meaningful property is that the mark emerges exactly *once*.
+
+**Validation:** `StreamDecimator` carries all five tiers, including the swept-offset framing test, a restart-independence property written as invariance rather than an expected value, and `iverilog` RTL and NTL round-trips. All eleven of the DDC's existing tests pass unchanged through the restructure — the marker still survives decimation, both arms still emit together, the marker still excludes pre-trigger data, phase still tracks the oscillator, out-of-band rejection is intact. Only the HDL snapshot and VCD digest moved; the diff is `top_marked` replaced by `top_split` and `top_combine`, audited before blessing.
+
+**Follow-ups:**
+
+- `Ddc::Out` gained a `saturated` flag propagated from the arms, so a compensated down-converter reports clipping. Nothing consumes it yet.
+- `StreamDecimator` takes a `restart` input independent of the stream's marks. The DDC leaves it false; it exists for a restart that does not arrive in the stream, and nothing exercises that path yet.
+
+## 2026-08-24 — `dsp::cic` compensation: response analysis, a PDF report, and the FIR that flattens it
+
+**Paths:** `crates/rhdl-fpga/src/dsp/cic/{response,compensator,compensated}.rs` (new), `crates/rhdl-fpga/src/dsp/fir/{mod,symmetric}.rs` (new), `crates/rhdl-fpga/src/doc/{pdf,plot,report}.rs` (new, `doc.rs` became `doc/mod.rs`), `crates/rhdl-fpga/tests/{cic_gold_model,cic_compensated}.rs` (new), `examples/{cic_report,symmetric_fir,cic_compensated}.rs`, `doc/cic_report.pdf`.
+
+**Why this, why now:** requested. A CIC's `sinc^N` shape is one expression with two consequences that pull in opposite directions — the nulls that reject every alias, and the droop across the passband. The library shipped the first and ignored the second, which means a receive chain built on it reported amplitudes several decibels low near the band edge. At `N = 4, R = 32, passband = 0.8` the edge was down **9.67 dB**.
+
+**The precondition was not met, and that mattered.** The request assumed the CIC was already validated against a gold Rust model. It was not: one test, one configuration, one hand-written stimulus, and the *pruned* decimator was never checked bit-exactly at all — only statistically against the uniform one. Both gaps were load-bearing, so they were closed first.
+
+**Design decisions:**
+
+- **Two frequency normalisations, named in every signature.** Input-rate `f` for null placement and alias analysis; output-rate `u = f·R` for anything the compensator sees, because the compensator runs after decimation. Mixing them up by a factor of `R` is the classic error here, so the functions are named `magnitude` and `magnitude_out` rather than taking a flag.
+- **`worst_alias_db` reports the folding-band maximum, not null depth.** A CIC's nulls are infinitely deep and therefore meaningless on their own; what matters is the largest `|H|` anywhere decimation folds into the passband. For the reported configuration that is **−23.7 dB**, which is a real limitation and is printed rather than buried.
+- **The compensator is symmetric and odd-length.** Type-I linear phase. It halves the multipliers, but the binding reason is constant group delay: a filter that delays one part of the band more than another distorts the envelope, and in `dsp::ddc` that *is* the measurement.
+- **The FIR's adder tree is deliberately not pipelined.** The CIC's cascade is, because it runs at the full converter rate and its depth set fmax. This runs after decimation, where the budget is `R` times larger. Stated in the module docs as a reading of where the budget is, with the conditions under which it stops holding.
+- **Saturation, not wrapping.** A compensator has gain above one by construction, so it can exceed the output range on signal that was already near full scale. Wrapping would turn a large positive sample into a large negative one — a sign flip, not a small error. It clamps and says so.
+- **`quantise` trims the centre tap to force DC gain to exactly 1.** See the gotcha below; this is the most consequential small decision in the change.
+- **The PDF writer is hand-rolled**, in `doc::pdf`. Not to avoid a dependency — though rendering SVG to PDF would pull a font database, a TrueType parser and a rasteriser to draw a few hundred straight lines. The decisive reason is **determinism**: most PDF writers stamp `/CreationDate`, so the same input gives different bytes every run, and CLAUDE.md §8 requires committed artifacts to regenerate byte-identically or `git status` stops meaning anything.
+- **The report builder lives in the library, not the example.** So a user can point it at their own configuration, and so it can be tested. A report generator that only runs inside an example is one nobody checks.
+- **One FIR interface, two implementations.** `fir::In`/`fir::Out` are declared once and shared: [`fir::Fir`] takes arbitrary taps at one multiplier each, [`fir::SymmetricFir`] takes odd-length symmetric taps and folds them for half the multipliers and exactly linear phase. Interchangeable in any slot, and a test asserts they agree bit-for-bit on taps both accept — so folding is provably an identity rather than an approximation. A CIC compensator's taps qualify for the folded one; a matched filter or an asymmetric equaliser needs the general one.
+- **One decimator interface, two implementations.** `decimator::Out` gained a `saturated` flag that the plain `CicDecimate` always drives false — a guarantee, since an accumulator at Hogenauer's bound is exact and has nothing to clip. That is what lets `CompensatedCic` present the *same* interface and drop into any slot taking a decimator, including both arms of `Ddc`, with no wrapper and no change to the down-converter.
+- **`Ddc::new` takes one decimator and clones it into both arms.** One argument, not two, and that is the point: an I/Q asymmetry rotates the constellation, which is the one error a phase-sensitive measurement cannot absorb. Cloning makes the arms identical by construction rather than by the caller's care. `Default` still covers decimators that have one.
+- **`CompensatedCic` is generic over both halves** — any decimator presenting `cic::decimator`'s interface, any filter presenting `fir::symmetric`'s. Only possible because of the DQ-derive fix in the entry above; this is the first widget to use it.
+- **No `Default` for `CompensatedCic` or `SymmetricFir`.** A filter with no taps is a filter that outputs zero, and a pair that silently defaulted to it would look like a wiring fault rather than a missing design.
+
+**Surprises and gotchas:**
+
+- **Rounding each tap independently leaves a systematic gain error, and it is much worse than the ripple.** The quantised taps summed to 1020 instead of 1024 — a DC gain of 0.996, so every amplitude the chain reported was 0.4% low. That is twenty times the passband ripple the design works so hard to remove, and unlike ripple it does not average out. `quantise` now trims the centre tap (the largest by an order of magnitude, so a few LSBs there move the response shape immeasurably) to make the sum exactly `2^shift`. Cost: ripple went from 0.0188 to 0.0195 dB. **This was found because the example's trace settled at 1562 instead of the 1600 the comment claimed** — the comment was checked against the artifact rather than assumed.
+- **A too-narrow accumulator is invisible unless the signal is near-worst-case.** A sensitivity test asserting that one bit less than Hogenauer's bound must corrupt the output *failed*: the bound is set by `full_scale · (R·M)^N`, and a sign-alternating stimulus never integrates that far. The check needs sustained full-scale DC. This is exactly why the width is asserted at construction rather than left to testing — the failure waits until someone feeds the filter a large DC offset.
+- **A negative literal in a kernel trips the known signedness defect.** `signed::<W>(-(1 << k))` makes `descriptor()` fail with "cannot negate unsigned value". Building the value by subtraction instead reaches it without asking the compiler to negate anything. Fourth site in the tree for this family of bug; see `crate::dsp::sign_extend`.
+- **Mechanically rewriting the report's page builders with a regex corrupted the format strings**, substituting `N` inside string literals. Reverted and hand-written. Worth stating: a substitution that "obviously" only touches identifiers does not know what a string literal is.
+
+**Validation:** `tests/cic_gold_model.rs` — both decimators, bit-exact against independently written models, five configurations (`N = 2..5`, `R = 4..16`, `M = 1..2`), four seeds each, stimulus deliberately driven to full scale so integrator wrap is exercised; plus sensitivity checks proving the comparison can fail. `tests/cic_compensated.rs` — the measured response of the *real widgets*: the closed-form droop matches the widget to within 0.35 dB at every point, and compensation takes the passband from **7.23 dB of droop to 0.035 dB of span**. `response`, `compensator`, `pdf`, `plot` and `report` each carry unit tests, including PDF xref-offset validation (the one structural error no visual inspection catches) and byte-level determinism. `SymmetricFir` has all five tiers, including a Tier-3 assertion that the emitted Verilog contains `HALF + 1` multiplies rather than `TAPS` — the fold reaching hardware. `CompensatedCic` has all five plus a cross-check that the pair equals the two stages run in series.
+
+**Follow-ups:**
+
+- ~~`dsp::ddc` still uses a bare `CicDecimate` in each arm.~~ Done: `CompensatedCic` presents the decimator interface, so `Ddc<W, WA, PROD_W, CompensatedCic<..>>` composes with no changes to the down-converter. Measured on the widget, the down-converter's own passband goes from **4.822 dB of span to 0.186 dB**.
+- **The down-converter should not be a complex-valued widget.** Requested: two real paths in parallel, each with its own decimator, with `rcstream::util::IqSplit` before and `IqCombine` after. Mixing is inherently complex so the mixer stays, but the decimation stage currently extracts `.re`/`.im` by hand where it should compose the existing split/combine widgets — which already handle framing propagation, and which would make the two real paths genuinely independent and separately substitutable. Not attempted here: it is a rewrite of the DDC kernel plus its snapshot, digest and trace, and it belongs in its own change.
+- `worst_alias_db` samples its bands rather than solving for the extremum. Dense enough to be right, but a closed form exists.
+- The compensator is least-squares. An equiripple (Remez) design would trade a little mean accuracy for a better worst case; the current ripple is small enough that it has not mattered.
+
 ## 2026-08-23 — Macro layer: `Q` and `D` no longer demand `Copy` of a type parameter
 
 **Paths:** `crates/rhdl-macro-core/src/{utils,synchronous_dq,circuit_dq}.rs`, `crates/rhdl-macro-core/src/expect/*_dq_derive_*.expect`, `crates/rhdl-fpga/tests/generic_subcircuit.rs` (new), `doc/book/src/circuits/circuits_dq.md`, `architecture.md` §5.1.

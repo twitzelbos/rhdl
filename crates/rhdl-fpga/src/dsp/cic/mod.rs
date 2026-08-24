@@ -39,9 +39,13 @@
 
 use rhdl::prelude::*;
 
+pub mod compensated;
+pub mod compensator;
 pub mod decimator;
 pub mod prune;
 pub mod pruned;
+pub mod response;
+pub mod stream;
 
 pub use decimator::CicDecimate;
 

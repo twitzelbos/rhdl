@@ -168,3 +168,121 @@ fn iverilog_agrees_with_the_simulator() -> miette::Result<()> {
     tb.ntl(&uut, &Default::default())?.run_iverilog()?;
     Ok(())
 }
+
+/// A down-converter whose decimators are *compensated*.
+///
+/// The point of the whole compensation exercise. `Ddc` is generic over
+/// its decimator and `CompensatedCic` presents the decimator
+/// interface, so this composes with no changes to the down-converter
+/// at all — and both arms are the same type, so the I/Q symmetry a
+/// phase-sensitive measurement depends on stays unrepresentable to
+/// break.
+mod compensated {
+    use super::*;
+    use rhdl_fpga::dsp::cic::CicDecimate;
+    use rhdl_fpga::dsp::cic::compensated::CompensatedCic;
+    use rhdl_fpga::dsp::cic::compensator;
+    use rhdl_fpga::dsp::fir::{SymmetricFir, accumulator_width as fir_acc};
+
+    const CTAPS: usize = 7;
+    const CHALF: usize = 3;
+    const CWC: usize = 12;
+    const CSHIFT: usize = 10;
+    const CWACC: usize = fir_acc(WA, CWC, CTAPS);
+
+    type Arm = CompensatedCic<
+        W,
+        WA,
+        WA,
+        CicDecimate<W, WA, S, R, M, CW>,
+        SymmetricFir<WA, CWC, CWACC, CTAPS, CHALF, CSHIFT, WA>,
+    >;
+    type CompDdc = Ddc<W, WA, PROD_W, Arm>;
+
+    fn arm() -> Arm {
+        let mut spec = compensator::Spec::for_cic(S, R, M);
+        spec.taps = CTAPS;
+        spec.passband = 0.8;
+        let d = compensator::design(spec).expect("design");
+        let q = compensator::quantise(&d, CWC);
+        assert_eq!(q.shift as usize, CSHIFT, "SHIFT must track quantise()");
+        let mut t = [SignedBits::<CWC>::default(); CTAPS];
+        for (k, v) in q.taps.iter().enumerate() {
+            t[k] = signed::<CWC>(*v as i128);
+        }
+        CompensatedCic::new(CicDecimate::default(), SymmetricFir::new(t))
+    }
+
+    fn uut() -> CompDdc {
+        CompDdc::new(arm())
+    }
+
+    #[test]
+    fn it_elaborates_and_round_trips() -> miette::Result<()> {
+        let uut = uut();
+        let _ = uut.descriptor("top".into())?;
+        let input = stimulus(3_000_000.0, 3_000_000.0, 60)
+            .into_iter()
+            .with_reset(1)
+            .clock_pos_edge(100);
+        let tb = uut.run(input).collect::<SynchronousTestBench<_, _>>();
+        tb.rtl(&uut, &Default::default())?.run_iverilog()?;
+        tb.ntl(&uut, &Default::default())?.run_iverilog()?;
+        Ok(())
+    }
+
+    #[test]
+    fn the_passband_is_flatter_than_the_uncompensated_arm() {
+        // Measure the down-converter's own response by sweeping the
+        // input tone away from the oscillator: the offset lands at
+        // baseband, where the decimator's droop lives.
+        let f_lo = 3_000_000.0;
+        let edge_u = 0.5 * 0.8;
+        let probe = |uncomp: bool, u: f64| -> f64 {
+            let f = f_lo + u / R as f64 * FS;
+            if uncomp {
+                rms(&run!(Uniform, f, f_lo, 1200))
+            } else {
+                let uut = uut();
+                let input = stimulus(f, f_lo, 1200)
+                    .into_iter()
+                    .with_reset(1)
+                    .clock_pos_edge(100);
+                let out: Vec<(f64, f64)> = uut
+                    .run(input)
+                    .synchronous_sample()
+                    .filter_map(|t| {
+                        t.output
+                            .sample
+                            .map(|s| (s.data.re.raw() as f64, s.data.im.raw() as f64))
+                    })
+                    .collect();
+                rms(&out)
+            }
+        };
+        let span = |uncomp: bool| -> f64 {
+            let dc = probe(uncomp, 0.0);
+            assert!(dc > 1.0, "degenerate DC reference");
+            let mut lo = f64::INFINITY;
+            let mut hi = f64::NEG_INFINITY;
+            for k in 0..=8 {
+                let u = edge_u * k as f64 / 8.0;
+                let db = 20.0 * (probe(uncomp, u) / dc).log10();
+                lo = lo.min(db);
+                hi = hi.max(db);
+            }
+            hi - lo
+        };
+        let bare = span(true);
+        let comp = span(false);
+        println!("uncompensated span {bare:.3} dB, compensated span {comp:.3} dB");
+        assert!(
+            bare > 2.0,
+            "the bare arm must droop, or this proves nothing"
+        );
+        assert!(
+            comp < bare / 3.0,
+            "compensation must flatten the down-converter: {comp} vs {bare}"
+        );
+    }
+}

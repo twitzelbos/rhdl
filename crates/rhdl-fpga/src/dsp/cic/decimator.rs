@@ -145,6 +145,16 @@ where
     /// An output sample was produced while `downstream_ready` was low,
     /// and is gone.
     pub overrun: bool,
+    /// The result was clipped to fit the output width.
+    ///
+    /// **Always false for this widget**, and that is a guarantee rather
+    /// than an omission: with `W_ACC` at Hogenauer's bound the cascade
+    /// is exact, so there is nothing to clip. The field exists because
+    /// a *compensated* decimator can clip — a compensator has gain
+    /// above one — and carrying it here is what lets
+    /// [`super::compensated::CompensatedCic`] present this same
+    /// interface and drop into any slot that takes a decimator.
+    pub saturated: bool,
 }
 
 impl<
@@ -331,6 +341,8 @@ where
 
     let mut o = Out::<W_ACC> {
         sample: q.out,
+        // Exact by construction -- see the field docs.
+        saturated: false,
         // Combinational on `downstream_ready`: the sample at risk is
         // the one on the output this cycle.
         overrun: !i.downstream_ready,
@@ -836,7 +848,7 @@ mod tests {
             .join("vcd")
             .join("cic_decimate");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["72fbcebe66f05625a9ed56d4e3e560a7f4925bde9957110854e4aff1956c79ed"];
+        let expect = expect!["52fad2da579523583683ae997b9a4184f0ba78b49fe900595e243450b86b2735"];
         let digest = vcd.dump_to_file(root.join("cic_decimate.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

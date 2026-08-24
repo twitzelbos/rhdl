@@ -27,14 +27,37 @@
    phase ------>|  LO   +--+->|  rx * conj(LO) +--+
                 +-------+     +----------------+  |
                     |                             v
-                    +--> master (phase reference) |
-                                    +-------------+------------+
-                                    v                          v
-                            +-+Cic (I arm)+-+          +-+Cic (Q arm)+-+
-                            +---------------+          +---------------+
-                                    |                          |
-                                    +----------> Iq <----------+
+                    +--> master               +-+IqSplit+-+
+                         (phase reference)    +-----------+
+                                               |         |
+                                        Real<W>|         |Imag<W>
+                                               v         v
+                              +-+StreamDecimator+-+  +-+StreamDecimator+-+
+                              |   C  (I path)     |  |   C  (Q path)     |
+                              +-------------------+  +-------------------+
+                                               |         |
+                                               v         v
+                                             +-+IqCombine+-+
+                                             +-------------+
+                                                    |
+                                                    v
+                                          RCStream<Iq<WA>,SyncMark>
 ")]
+//!
+//! **The mixing is complex; everything after it is two real paths.**
+//! Multiplying by `e^-jwt` irreducibly needs all four real products, so
+//! the mixer stays complex — but decimation is two independent real
+//! filters, and saying so with [`crate::rcstream::util::IqSplit`] and
+//! [`crate::rcstream::util::IqCombine`] rather than extracting `.re`
+//! and `.im` by hand makes each path separately substitutable and
+//! hands the framing bookkeeping to widgets that already do it.
+//!
+//! Both paths are the *same* type, so an asymmetry between them — the
+//! one error a phase-sensitive measurement cannot absorb — is
+//! unrepresentable rather than merely discouraged. `Imag<W>` is
+//! converted to `Real<W>` at the boundary to make that possible: a
+//! decimator is a real filter and does not care which half of a
+//! complex signal it carries.
 //!
 //! # What "phase sensitive" means here, and what it costs
 //!
@@ -110,10 +133,10 @@
 
 use rhdl::prelude::*;
 
-use super::cic::decimator::{self, CicDecimate};
-use super::iq::Iq;
+use super::cic::decimator::CicDecimate;
+use super::iq::{Imag, Iq, Real};
 use super::mixer::complex::{self, ComplexMixer};
-use super::nco::composite::{self, Nco};
+use super::nco::composite;
 use super::nco::config::PHASE_W;
 use super::nco::{frequency_composer, phase_composer, sin_cos_linear_interp};
 use super::sync::SyncMark;
@@ -133,7 +156,6 @@ where
     rhdl::bits::W<PROD_W>: BitWidth,
     C: SynchronousIO<I = super::cic::decimator::In<W>, O = super::cic::decimator::Out<WA>>
         + Synchronous
-        + Default
         + Clone
         + std::fmt::Debug,
 {
@@ -148,17 +170,18 @@ where
         PROD_W,
         { sin_cos_linear_interp::AMP_W + 1 },
     >,
-    /// In-phase decimator.
-    cic_i: C,
-    /// Quadrature decimator. **The same type as the in-phase arm**, and
+    /// Splits the complex product into two real streams.
+    split: crate::rcstream::util::IqSplit<W, SyncMark>,
+    /// In-phase real path.
+    dec_i: super::cic::stream::StreamDecimator<W, WA, C>,
+    /// Quadrature real path. **The same type as the in-phase arm**, and
     /// that is load bearing rather than convenient — see the module
     /// docs on why the identity is what makes the measurement phase
-    /// sensitive. Because both arms are `C`, an asymmetry between them
-    /// is not merely discouraged, it is unrepresentable.
-    cic_q: C,
-    /// An acquisition marker seen since the last output, waiting to
-    /// ride out with it.
-    marked: crate::core::dff::DFF<bool>,
+    /// sensitive. Because both arms are the same type, an asymmetry
+    /// between them is not merely discouraged, it is unrepresentable.
+    dec_q: super::cic::stream::StreamDecimator<W, WA, C>,
+    /// Recombines the two real streams into a complex one.
+    combine: crate::rcstream::util::IqCombine<WA, SyncMark>,
 }
 
 /// The [`Ddc`] as it was before the decimator became a parameter: a
@@ -228,7 +251,57 @@ where
     /// oscillator retuned on a sample the acquisition was not expecting,
     /// so the output phase is relative to an origin the caller did not
     /// intend. See [`crate::dsp::sync`] for the alignment contract.
+    ///
+    /// Two causes, both meaning "the marks on this stream cannot be
+    /// trusted": the mixer's two inputs disagreed, or the in-phase and
+    /// quadrature decimated paths did. The second should be impossible
+    /// — both are fed from one split and restart on the same mark — so
+    /// if it fires, the paths have drifted.
     pub frame_mismatch: bool,
+    /// A decimator clipped. Only possible when the arms are
+    /// compensated — a compensator has gain above one.
+    pub saturated: bool,
+}
+
+impl<const W: usize, const WA: usize, const PROD_W: usize, C> Ddc<W, WA, PROD_W, C>
+where
+    rhdl::bits::W<W>: BitWidth,
+    rhdl::bits::W<WA>: BitWidth,
+    rhdl::bits::W<PROD_W>: BitWidth,
+    C: SynchronousIO<I = super::cic::decimator::In<W>, O = super::cic::decimator::Out<WA>>
+        + Synchronous
+        + Clone
+        + std::fmt::Debug,
+{
+    /// Build a down-converter around one decimator, cloned into both
+    /// arms.
+    ///
+    /// **One argument, not two, and that is the point.** An asymmetry
+    /// between the in-phase and quadrature decimators rotates the
+    /// constellation, which is the one error a phase-sensitive
+    /// measurement cannot absorb. Taking a single arm and cloning it
+    /// makes the two identical by construction rather than by the
+    /// caller's care.
+    ///
+    /// Use this for a decimator that cannot be defaulted — a
+    /// [`super::cic::compensated::CompensatedCic`], whose filter half
+    /// needs taps. [`Default`] covers the rest.
+    pub fn new(cic: C) -> Self {
+        assert_eq!(
+            PROD_W,
+            W + sin_cos_linear_interp::AMP_W + 1,
+            "PROD_W is the mixer's natural product width, A_W + B_W + 1; \
+             Rust cannot derive it from W without generic_const_exprs"
+        );
+        Self {
+            lo: Default::default(),
+            mix: Default::default(),
+            split: Default::default(),
+            dec_i: super::cic::stream::StreamDecimator::new(cic.clone()),
+            dec_q: super::cic::stream::StreamDecimator::new(cic),
+            combine: Default::default(),
+        }
+    }
 }
 
 impl<const W: usize, const WA: usize, const PROD_W: usize, C> Default for Ddc<W, WA, PROD_W, C>
@@ -252,11 +325,12 @@ where
         Self {
             lo: Default::default(),
             mix: Default::default(),
+            split: Default::default(),
             // Both arms identical, by construction rather than by
             // convention: an asymmetry here rotates the output phase.
-            cic_i: Default::default(),
-            cic_q: Default::default(),
-            marked: Default::default(),
+            dec_i: Default::default(),
+            dec_q: Default::default(),
+            combine: Default::default(),
         }
     }
 }
@@ -269,7 +343,6 @@ where
     rhdl::bits::W<PROD_W>: BitWidth,
     C: SynchronousIO<I = super::cic::decimator::In<W>, O = super::cic::decimator::Out<WA>>
         + Synchronous
-        + Default
         + Clone
         + std::fmt::Debug,
 {
@@ -292,7 +365,6 @@ where
     rhdl::bits::W<PROD_W>: BitWidth,
     C: SynchronousIO<I = super::cic::decimator::In<W>, O = super::cic::decimator::Out<WA>>
         + Synchronous
-        + Default
         + Clone
         + std::fmt::Debug,
 {
@@ -360,76 +432,124 @@ where
     // Split the mixer's product into its two components and filter each
     // with an identical CIC. Driven from the same stream, so they share
     // a decimation phase.
-    let mut prod_re = None;
-    let mut prod_im = None;
+    // ---- two real paths, split and recombined ----
+    //
+    // The mixing is irreducibly complex -- multiplying by e^-jwt needs
+    // all four real products -- but everything after it is two
+    // independent real filters. Saying so with `IqSplit` and
+    // `IqCombine`, rather than pulling `.re` and `.im` out by hand,
+    // makes the two paths separately substitutable and hands the
+    // framing bookkeeping to widgets that already do it.
+    d.split = crate::rcstream::util::split::In::<W, SyncMark> {
+        stream: q.mix.stream.data,
+        real_ready: i.downstream_ready,
+        imag_ready: i.downstream_ready,
+    };
+
     // *** The marker defines the decimation grid. ***
     //
-    // A marked sample restarts both arms: it becomes sample zero of a
-    // fresh window, so the first output lands exactly `R` samples later
-    // and contains nothing from before the trigger. Without this the
-    // grid free-runs and the output following a trigger straddles it --
-    // for an acquisition that is not a phase error, it is data from
-    // before the experiment began.
-    //
-    // Both arms restart on the same cycle from the same flag, which is
+    // Each `StreamDecimator` restarts on a marked sample, so the output
+    // carrying the mark is built only from post-trigger samples rather
+    // than from a window straddling the trigger. Both arms see the same
+    // mark on the same cycle because both see the same split, which is
     // what keeps I and Q on a common grid.
-    let mut restart = false;
-    if let Some(p) = q.mix.stream.data {
-        prod_re = Some(p.data.re);
-        prod_im = Some(p.data.im);
-        restart = p.frame.sync;
-    }
-    d.cic_i = decimator::In::<W> {
-        sample: prod_re,
-        restart,
-        downstream_ready: i.downstream_ready,
-    };
-    d.cic_q = decimator::In::<W> {
-        sample: prod_im,
-        restart,
+    //
+    // `restart` stays false here: the restart that matters arrives in
+    // the stream.
+    d.dec_i = super::cic::stream::In::<W> {
+        stream: q.split.real.data,
+        restart: false,
         downstream_ready: i.downstream_ready,
     };
 
-    // ---- recombine ----
-    //
-    // The marker is held until the output it belongs to.
-    //
-    // With the grid restarted above, that output is exactly `R` samples
-    // after the trigger and is built only from post-trigger samples --
-    // so the marker names a boundary rather than merely pointing near
-    // one.
-    let mut mark_now = q.marked;
-    if let Some(p) = q.mix.stream.data {
-        if p.frame.sync {
-            mark_now = true;
-        }
+    // `Imag<W>` becomes `Real<W>` on the way in and back on the way
+    // out. Not a fudge: a decimator is a real-valued filter and does
+    // not care which half of a complex signal it carries. The newtypes
+    // exist to stop the *caller* mixing the halves up, and converting
+    // at the boundary is what lets both arms be the same type -- which
+    // is the property the measurement depends on.
+    let mut q_in = None;
+    if let Some(it) = q.split.imag.data {
+        q_in = Some(Item::<Real<W>, SyncMark> {
+            data: Real::<W> { v: it.data.v },
+            frame: it.frame,
+        });
     }
+    d.dec_q = super::cic::stream::In::<W> {
+        stream: q_in,
+        restart: false,
+        downstream_ready: i.downstream_ready,
+    };
 
-    let mut out_sample = None;
-    let mut still_marked = mark_now;
-    if let Some(re) = q.cic_i.sample {
-        if let Some(im) = q.cic_q.sample {
-            out_sample = Some(Item::<Iq<WA>, SyncMark> {
-                data: Iq::<WA> { re, im },
-                frame: crate::dsp::sync::when(mark_now),
-            });
-            // Consumed by the output that carried it.
-            still_marked = false;
-        }
+    // ---- the two paths' marks must agree ----
+    //
+    // Both decimators were fed from the same split and restart on the
+    // same mark, so their output marks should be identical. The rule is
+    // therefore **and**, with a disagreement flagged:
+    //
+    // - Agreeing marks pass through, and `and` is that same value.
+    // - Disagreeing marks mean the paths have drifted. `and` yields
+    //   *unmarked*, which is the conservative answer -- better to
+    //   forget an acquisition boundary than to claim one on a sample
+    //   where only half the complex value is known to be aligned -- and
+    //   `frame_mismatch` reports it.
+    //
+    // Taking one side's frame and discarding the other, which is what
+    // `IqCombine` does by itself, would hide the drift entirely.
+    let mut i_sync = false;
+    let mut q_sync = false;
+    let mut i_present = false;
+    let mut q_present = false;
+    if let Some(it) = q.dec_i.stream.data {
+        i_sync = it.frame.sync;
+        i_present = true;
     }
-    d.marked = still_marked;
+    if let Some(it) = q.dec_q.stream.data {
+        q_sync = it.frame.sync;
+        q_present = true;
+    }
+    let aligned = SyncMark {
+        sync: i_sync && q_sync,
+    };
+    let mark_mismatch = i_present && q_present && (i_sync != q_sync);
+
+    let mut real_out = None;
+    if let Some(it) = q.dec_i.stream.data {
+        real_out = Some(Item::<Real<WA>, SyncMark> {
+            data: it.data,
+            frame: aligned,
+        });
+    }
+    let mut imag_out = None;
+    if let Some(it) = q.dec_q.stream.data {
+        imag_out = Some(Item::<Imag<WA>, SyncMark> {
+            data: Imag::<WA> { v: it.data.v },
+            frame: aligned,
+        });
+    }
+    d.combine = crate::rcstream::util::combine::In::<WA, SyncMark> {
+        real: real_out,
+        imag: imag_out,
+        downstream_ready: i.downstream_ready,
+    };
 
     let mut o = Out::<WA> {
-        sample: out_sample,
+        sample: q.combine.stream.data,
         master: q.lo.master,
-        overrun: !i.downstream_ready,
-        frame_mismatch: q.mix.frame_mismatch,
+        overrun: !i.downstream_ready || q.dec_i.overrun || q.dec_q.overrun,
+        // Two independent ways the framing can fail to line up: the
+        // mixer's inputs disagreed, or the two decimated paths did.
+        // Both mean the same thing to a consumer -- the marks on this
+        // stream cannot be trusted -- so they share one flag, and the
+        // module docs name both causes.
+        frame_mismatch: q.mix.frame_mismatch || mark_mismatch || q.combine.frame_mismatch,
+        saturated: q.dec_i.saturated || q.dec_q.saturated,
     };
 
     if cr.reset.any() {
-        d.marked = false;
         o.overrun = false;
         o.frame_mismatch = false;
+        o.saturated = false;
     }
     (o, d)
 }
@@ -737,7 +857,8 @@ mod tests {
             module top
             module top_lo
             module top_mix
-            module top_marked"#]];
+            module top_split
+            module top_combine"#]];
         expect.assert_eq(&shape);
         Ok(())
     }
@@ -762,7 +883,7 @@ mod tests {
             .join("vcd")
             .join("ddc");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["fb4d034a73f4d7ef7b6f4c0c8c1a7b1353ab6c1860a9e9fe035eea2a783a44fc"];
+        let expect = expect!["e21ce85dc1367882eb05dadfb5b062f5bb2994c5e8f2804564728dc10a33aeac"];
         let digest = vcd.dump_to_file(root.join("ddc.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

@@ -508,17 +508,17 @@ mod hardware {
         let uut = Uut::default();
         let hdl = uut.descriptor("top".into())?.hdl()?.modules.pretty();
         let expect = expect![[r#"
-            module top(input wire [1:0] clock_reset, input wire [10:0] i, output wire [11:0] o);
-               wire [68:0] od;
+            module top(input wire [1:0] clock_reset, input wire [10:0] i, output wire [12:0] o);
+               wire [69:0] od;
                wire [56:0] d;
                wire [56:0] q;
-               assign o = od[11:0];
+               assign o = od[12:0];
                top_stages c0(.clock_reset(clock_reset), .i(d[43:0]), .o(q[43:0]));
                top_phase c1(.clock_reset(clock_reset), .i(d[45:44]), .o(q[45:44]));
                top_out c2(.clock_reset(clock_reset), .i(d[56:46]), .o(q[56:46]));
-               assign d = od[68:12];
+               assign d = od[69:13];
                assign od = kernel_cic_pruned_kernel(clock_reset, i, q);
-               function [68:0] kernel_cic_pruned_kernel(input reg [1:0] arg_0, input reg [10:0] arg_1, input reg [56:0] arg_2);
+               function [69:0] kernel_cic_pruned_kernel(input reg [1:0] arg_0, input reg [10:0] arg_1, input reg [56:0] arg_2);
                      reg [43:0] r0;
                      reg [56:0] r1;
                      // d
@@ -599,28 +599,29 @@ mod hardware {
                      reg [10:0] r60;
                      reg [0:0] r61;
                      reg [0:0] r62;
-                     reg [11:0] r63;
-                     reg [11:0] r64;
-                     reg [0:0] r65;
-                     reg [1:0] r66;
-                     reg [0:0] r67;
-                     // d
-                     reg [56:0] r68;
+                     reg [12:0] r63;
+                     reg [12:0] r64;
+                     reg [12:0] r65;
+                     reg [0:0] r66;
+                     reg [1:0] r67;
+                     reg [0:0] r68;
                      // d
                      reg [56:0] r69;
                      // d
                      reg [56:0] r70;
-                     // o
-                     reg [11:0] r71;
                      // d
-                     reg [56:0] r72;
+                     reg [56:0] r71;
                      // o
-                     reg [11:0] r73;
-                     reg [68:0] r74;
-                     reg signed [11:0] r75;
-                     reg signed [12:0] r76;
-                     reg signed [10:0] r77;
-                     reg signed [11:0] r78;
+                     reg [12:0] r72;
+                     // d
+                     reg [56:0] r73;
+                     // o
+                     reg [12:0] r74;
+                     reg [69:0] r75;
+                     reg signed [11:0] r76;
+                     reg signed [12:0] r77;
+                     reg signed [10:0] r78;
+                     reg signed [11:0] r79;
                      localparam l0 = 57'bXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX;
                      localparam l1 = 11'b00000000000;
                      localparam l2 = 8'b10000000;
@@ -636,13 +637,14 @@ mod hardware {
                      localparam l12 = 2'b01;
                      localparam l13 = 2'b00;
                      localparam l14 = 1'b1;
-                     localparam l15 = 12'b000000000000;
-                     localparam l16 = 44'b00000000000000000000000000000000000000000000;
-                     localparam l17 = 2'b00;
-                     localparam l18 = 11'b00000000000;
-                     localparam l19 = 1'b0;
+                     localparam l15 = 13'b0000000000000;
+                     localparam l16 = 1'b0;
+                     localparam l17 = 44'b00000000000000000000000000000000000000000000;
+                     localparam l18 = 2'b00;
+                     localparam l19 = 11'b00000000000;
+                     localparam l20 = 1'b0;
                      begin
-                        r66 = arg_0;
+                        r67 = arg_0;
                         r7 = arg_1;
                         r1 = arg_2;
                         r0 = r1[43:0];
@@ -663,8 +665,8 @@ mod hardware {
                         r14 = r12 ? l3 : l4;
                         r15 = r13 + r14;
                         r16 = $signed(r15);
-                        r75 = $signed(r16[11:0]);
-                        r17 = $signed(r75[11:0]);
+                        r76 = $signed(r16[11:0]);
+                        r17 = $signed(r76[11:0]);
                         case (r8)
                            1'b1 : r18 = l6;
                            default : r18 = l7;
@@ -682,8 +684,8 @@ mod hardware {
                         r25[11:0] = r24;
                         r26 = r22[22:12];
                         r27 = r22[11:0];
-                        r76 = $signed({{1{r27[11]}}, r27});
-                        r28 = r76[12:1];
+                        r77 = $signed({{1{r27[11]}}, r27});
+                        r28 = r77[12:1];
                         r29 = $signed(r28[10:0]);
                         r30 = r26 + r29;
                         r31 = r25;
@@ -699,8 +701,8 @@ mod hardware {
                         r39 = r37 ? l13 : r38;
                         r40 = r32;
                         r40[45:44] = r39;
-                        r77 = $signed(r33[10:0]);
-                        r41 = $signed(r77[10:0]);
+                        r78 = $signed(r33[10:0]);
+                        r41 = $signed(r78[10:0]);
                         r42 = r22[33:23];
                         r43 = r41 - r42;
                         r44 = r22[33:23];
@@ -708,8 +710,8 @@ mod hardware {
                         r45[10:0] = r41;
                         r46 = r31;
                         r46[33:23] = r45;
-                        r78 = $signed({{1{r43[10]}}, r43});
-                        r47 = r78[11:1];
+                        r79 = $signed({{1{r43[10]}}, r43});
+                        r47 = r79[11:1];
                         r48 = $signed(r47[9:0]);
                         r49 = r22[43:34];
                         r50 = r48 - r49;
@@ -732,21 +734,23 @@ mod hardware {
                         r63 = l15;
                         r63[10:0] = r60;
                         r64 = r63;
-                        r64[11:11] = r62;
-                        r65 = r66[1:1];
-                        r67 = |r65;
-                        r68 = r59;
-                        r68[43:0] = l16;
-                        r69 = r68;
-                        r69[45:44] = l17;
+                        r64[12:12] = l16;
+                        r65 = r64;
+                        r65[11:11] = r62;
+                        r66 = r67[1:1];
+                        r68 = |r66;
+                        r69 = r59;
+                        r69[43:0] = l17;
                         r70 = r69;
-                        r70[56:46] = l18;
-                        r71 = r64;
-                        r71[11:11] = l19;
-                        r72 = r67 ? r70 : r59;
-                        r73 = r67 ? r71 : r64;
-                        r74 = {r72, r73};
-                        kernel_cic_pruned_kernel = r74;
+                        r70[45:44] = l18;
+                        r71 = r70;
+                        r71[56:46] = l19;
+                        r72 = r65;
+                        r72[11:11] = l20;
+                        r73 = r68 ? r71 : r59;
+                        r74 = r68 ? r72 : r65;
+                        r75 = {r73, r74};
+                        kernel_cic_pruned_kernel = r75;
                      end
                endfunction
             endmodule
@@ -820,7 +824,7 @@ mod hardware {
             .join("vcd")
             .join("cic_pruned");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["3692f4f5bc8f3a1156cc99c80cc665bd8e0867f3daa11015090ddaab7c0621c4"];
+        let expect = expect!["d58b039bd82df870b2341b75c4c5ae7f0aff39bd086694b94e02e24529d14b6d"];
         let digest = vcd.dump_to_file(root.join("cic_pruned.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())
