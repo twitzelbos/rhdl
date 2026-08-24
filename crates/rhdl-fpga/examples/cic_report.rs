@@ -45,6 +45,8 @@ fn main() -> Result<(), RHDLError> {
         taps: cfg.taps,
         stopband_edge: 1.0,
         min_stopband_db: 0.0,
+        max_ripple_db: 0.1,
+        method: compensator::Method::LeastSquares,
     };
     let design = compensator::design(spec).expect("design");
     let quant = compensator::quantise(&design, cfg.coeff_width);

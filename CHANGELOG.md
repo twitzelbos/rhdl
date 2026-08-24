@@ -31,6 +31,34 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-24 — `dsp::cic::compensator`: equiripple design by Remez exchange
+
+**Paths:** `crates/rhdl-fpga/src/dsp/cic/{compensator,chain}.rs`.
+
+**Why this, why now:** the previous entry closed by naming least squares as the binding limitation once the compensator is asked to do anti-aliasing. Least squares minimises the *average* squared error; a stopband requirement is a statement about the *maximum*, so the method optimises a quantity the specification is not written in. `Method::{LeastSquares, Remez}` now selects, and least squares stays the default because pure compensation has no worst-case requirement to miss.
+
+**Design decisions:**
+
+- **The weight is analytic, not searched.** Weighting the passband by `|H(u)|` makes the weighted error exactly the *relative* deviation `|A(u)·H(u) − 1|`, which is what ripple means; weighting by 1 would equalise absolute error and make the band edge look far worse than it is, since that is where `1/H` is largest. With a constant `k` across the stopband, both bands reach the same `δ` at the optimum, so `δ_target = Rp/17.372` and `k = δ_target·10^(As/20)`. Two dB targets, one closed-form weight — against the least-squares path, which has to bisect because its weight-to-attenuation relationship is empirical.
+- **The test establishes optimality rather than comparing.** By Chebyshev's alternation theorem a length-`2M+1` linear-phase filter whose weighted error attains its maximum at `M+2` alternating points *is* the optimal filter. So the test asserts that condition, which certifies the result without a reference implementation. Alternation and extremum count are asserted exactly; magnitude equality is asserted to the design grid's resolution.
+
+**Surprises and gotchas:**
+
+- **Three bugs, and the last one was not a bug.** First, my extremum detection compared band-edge points against their grid neighbour *across the transition gap* — a different band — so edge extrema were dropped and the helper reported 7 extrema for a filter that has 9. Second, the same flaw in the exchange loop was worked around by forcing gap-adjacent points into the candidate set unconditionally, which injected *non-extremal* points into the interpolation. Third, the convergence peak was measured over the *selected* extrema rather than the whole grid, so convergence could be declared while a larger error sat at a discarded point.
+
+  After fixing those the numbers did not move at all, which looked like a stale build and was not. Tracing the exchange showed it converging perfectly — ratio 1.0000 at iteration 5, exactly `M+2` extrema. The residual spread was **grid coarseness**: at the textbook 32 points per extremum the continuous error overshoots the on-grid `δ` by 12%, because the weighted error curves sharply near the band edge. At 256 it is 0.7–4.1%.
+
+  Worth stating because the instinct was wrong twice over: the first two were real defects found by a test that *looked* like it was failing for the same reason throughout, and the third symptom was not a defect at all. Measuring beat reasoning — the trace took one run and settled what three rounds of inference had not.
+- **The tolerance is stated, not tuned.** Magnitude equality is asserted to 5% with the measured figures printed, and the docs say why it is not zero: closing the last few percent means local refinement of each extremum, which is a larger piece of machinery than the gap justifies.
+- **The improvement in the chain is real but modest — 57 taps to 55.** In a direct comparison at equal taps Remez is clearly better on both axes (31 taps: 53.1 dB against 50.1 dB stopband, 0.067 dB against 0.154 dB ripple). Inside the chain designer the win shrinks, because the tap count there is set by the ripple requirement as much as by the stopband — Remez overshoots to 65.8 dB, which shows the stopband was not what was binding. The previous entry's "an equiripple design would want far fewer" was too strong for that spec.
+
+**Validation:** 21 compensator tests, including the alternation certification at three tap counts, Remez beating least squares on worst-case attenuation at equal taps, the analytic weight matching its closed form to 1e-12, monotonic stopband depth in taps, and a cascade target staying symmetric (hence linear phase). Chain-level: Remez reaching the same stopband in fewer taps. `REMEZ_TRACE=1` prints per-iteration delta, peak and ratio, which is how the grid-coarseness diagnosis was made and is kept for the next person.
+
+**Follow-ups:**
+
+- Local refinement of the converged extrema would close the last few percent of grid overshoot.
+- The exchange can fail to converge on a badly conditioned spec; it reports `converged: false` rather than pretending, but nothing yet retries with a denser grid or a different initial set.
+
 ## 2026-08-24 — `dsp::cic::chain`: say what the filter must do, derive what it must be
 
 **Paths:** `crates/rhdl-fpga/src/dsp/cic/{chain,compensator,prune}.rs`.

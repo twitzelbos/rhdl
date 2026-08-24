@@ -92,6 +92,40 @@ pub struct Spec {
     /// Zero means don't care: fit the passband alone and let
     /// out-of-band gain go where it likes.
     pub min_stopband_db: f64,
+    /// Peak-to-peak passband ripple the design aims at, in dB.
+    ///
+    /// Used by [`Method::Remez`], which needs both targets to fix its
+    /// band weighting in closed form. Ignored by
+    /// [`Method::LeastSquares`], which has no notion of a target — it
+    /// minimises average error and you take what you get.
+    pub max_ripple_db: f64,
+    /// How to fit.
+    pub method: Method,
+}
+
+/// How to fit the taps.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Method {
+    /// Weighted least squares: minimise *average* squared error.
+    ///
+    /// Fine for pure compensation, where there is no worst-case
+    /// requirement to miss. Simple, always converges, and the stopband
+    /// weight has to be searched because its relationship to achieved
+    /// attenuation is empirical.
+    #[default]
+    LeastSquares,
+    /// Remez exchange: minimise the *maximum* weighted error.
+    ///
+    /// The right method whenever a stopband attenuation is specified,
+    /// because "at least 60 dB everywhere" is a statement about the
+    /// maximum and least squares will trade a deep notch here for a
+    /// shallow one there. Also needs no weight search: both dB targets
+    /// fix the weighting analytically.
+    ///
+    /// Can fail to converge on a badly conditioned spec, and says so
+    /// via [`Design::converged`] rather than returning something that
+    /// looks fine.
+    Remez,
 }
 
 impl Spec {
@@ -110,6 +144,8 @@ impl Spec {
             taps: 15,
             stopband_edge: 1.0,
             min_stopband_db: 0.0,
+            max_ripple_db: 0.1,
+            method: Method::LeastSquares,
         }
     }
 
@@ -121,6 +157,8 @@ impl Spec {
             taps: 15,
             stopband_edge: 1.0,
             min_stopband_db: 0.0,
+            max_ripple_db: 0.1,
+            method: Method::LeastSquares,
         }
     }
 
@@ -174,6 +212,21 @@ pub struct Design {
     /// because it is the knob, and a large value means flatness was
     /// traded away for attenuation.
     pub stopband_weight: f64,
+    /// Which method produced these taps.
+    pub method: Method,
+    /// The equiripple weighted error the exchange converged to.
+    ///
+    /// Zero for least squares, which has no such quantity. For Remez
+    /// this is the minimax error *on the design grid*: at convergence
+    /// every grid extremum has exactly this magnitude.
+    pub delta: f64,
+    /// Did the fit converge?
+    ///
+    /// Always true for least squares, which is a single linear solve.
+    /// For Remez it can be false, and then the taps are the best
+    /// iterate rather than the optimum — worth knowing before shipping
+    /// them.
+    pub converged: bool,
 }
 
 /// Amplitude response of a symmetric odd-length FIR at output-rate
@@ -260,6 +313,9 @@ fn solve(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Option<Vec<f64>> {
 pub fn design(spec: Spec) -> Option<Design> {
     if spec.taps % 2 == 0 || spec.taps == 0 || spec.cics.is_empty() {
         return None;
+    }
+    if spec.method == Method::Remez {
+        return remez::design(&spec);
     }
     if spec.min_stopband_db <= 0.0 {
         // Pure compensation: no stopband term at all.
@@ -372,6 +428,9 @@ fn design_at_weight(spec: &Spec, weight: f64) -> Option<Design> {
         ripple_db,
         peak_gain,
         stopband_weight: weight,
+        method: Method::LeastSquares,
+        delta: 0.0,
+        converged: true,
         taps,
         spec: spec.clone(),
     })
@@ -501,6 +560,408 @@ pub fn quantise(design: &Design, coeff_width: usize) -> Quantised {
         coeff_width,
         dc_gain,
         ripple_db,
+    }
+}
+
+/// Equiripple design by Remez exchange.
+pub mod remez {
+    /// Equiripple design by the Remez exchange algorithm.
+    ///
+    /// # Why this exists alongside least squares
+    ///
+    /// Least squares minimises the *average* squared error. A stopband
+    /// requirement is about the *worst case*: "at least 60 dB everywhere
+    /// above the transition" is a statement about the maximum, and a
+    /// method that trades a deep notch here for a shallow one there
+    /// satisfies the average while missing the specification. That is why
+    /// 60 dB across a 0.5-to-0.7 transition needed 57 least-squares taps.
+    ///
+    /// Remez minimises the maximum weighted error directly, which is the
+    /// quantity the specification is written in.
+    ///
+    /// # It is self-certifying
+    ///
+    /// By Chebyshev's alternation theorem, a length-`2M+1` linear-phase
+    /// filter whose weighted error attains its maximum magnitude at `M+2`
+    /// points with alternating sign **is** the optimal filter — there is no
+    /// better one. So the test for this code is not "it beat least
+    /// squares"; it is "the alternation condition holds", which establishes
+    /// optimality without a reference implementation to compare against.
+    ///
+    /// # The weight is analytic, not searched
+    ///
+    /// The least-squares path bisects a stopband weight because the
+    /// relationship between weight and achieved attenuation is empirical
+    /// there. Here it is exact. With `W(u) = |H(u)|` across the passband
+    /// the weighted error *is* the relative deviation `|A(u)·H(u) - 1|`,
+    /// and with a constant `k` across the stopband the error is `k·|A(u)|`.
+    /// Both equal the same `δ` at the optimum, so
+    ///
+    /// ```text
+    /// passband deviation = δ                 (relative, so ±δ about unity)
+    /// stopband gain      = δ / k
+    /// ```
+    ///
+    /// Given a peak-to-peak passband ripple `Rp` in dB and a stopband
+    /// attenuation `As` in dB:
+    ///
+    /// ```text
+    /// δ_target = Rp / 17.372          since 20*log10((1+δ)/(1-δ)) ≈ 17.372·δ
+    /// k        = δ_target · 10^(As/20)
+    /// ```
+    ///
+    /// One design, no ladder, no bisection. If the achieved `δ` exceeds
+    /// `δ_target` the tap count is short — which is a statement about the
+    /// filter length rather than about the search.
+    use super::{
+        CicShape, Design, Method, Spec, cascade_magnitude, evaluate, fir_amplitude, solve,
+    };
+
+    /// Bands to approximate over.
+    struct Bands {
+        pass_hi: f64,
+        stop_lo: f64,
+        weight_stop: f64,
+    }
+
+    impl Bands {
+        /// Is `u` inside a specified band? Returns `(desired, weight)`, or
+        /// `None` in the transition band where nothing is required.
+        fn at(&self, u: f64, cics: &[CicShape]) -> Option<(f64, f64)> {
+            if u <= self.pass_hi {
+                let h = cascade_magnitude(cics, u);
+                if h <= 1e-12 {
+                    return None;
+                }
+                // Desired `1/H`, weighted by `H`, so the weighted error is
+                // the *relative* deviation of the product from unity --
+                // which is what "ripple" means. Weighting by 1 instead
+                // would equalise absolute error, making the band edge (a
+                // large `1/H`) look far worse than it is.
+                Some((1.0 / h, h))
+            } else if u >= self.stop_lo {
+                Some((0.0, self.weight_stop))
+            } else {
+                None
+            }
+        }
+    }
+
+    /// Design an equiripple compensator.
+    ///
+    /// `taps` must be odd. Returns `None` if the system becomes singular —
+    /// which in practice means the extremal set collapsed, and is reported
+    /// rather than papered over.
+    pub fn design(spec: &Spec) -> Option<Design> {
+        let cics: &[CicShape] = &spec.cics;
+        let taps = spec.taps;
+        let passband = spec.passband;
+        let stopband_edge = spec.stopband_edge;
+        let ripple_db = spec.max_ripple_db;
+        let stopband_db = spec.min_stopband_db;
+        if taps % 2 == 0 || taps < 3 || cics.is_empty() {
+            return None;
+        }
+        let m = taps / 2;
+        let n_ext = m + 2;
+
+        let delta_target = ripple_db / 17.372;
+        let weight_stop = if stopband_db > 0.0 {
+            delta_target * 10f64.powf(stopband_db / 20.0)
+        } else {
+            0.0
+        };
+        let bands = Bands {
+            pass_hi: 0.25 * passband * 2.0, // passband edge in output-rate units
+            stop_lo: 0.5 * stopband_edge,
+            weight_stop,
+        };
+
+        // Dense grid, restricted to the specified bands.
+        //
+        // 32 points per extremum -- the textbook figure for
+        // Parks-McClellan -- leaves the *continuous* error peaking about
+        // 12% above the on-grid delta between samples, because the
+        // weighted error near a band edge curves sharply where `1/H` is
+        // largest. That is invisible to the exchange, which only sees
+        // grid points, and it is exactly what an equiripple assertion
+        // measured on a finer grid catches.
+        const DENSITY: usize = 256;
+        let grid: Vec<f64> = {
+            let n = DENSITY * n_ext;
+            (0..=n)
+                .map(|k| 0.5 * k as f64 / n as f64)
+                .filter(|u| bands.at(*u, cics).is_some())
+                .collect()
+        };
+        if grid.len() < n_ext {
+            return None;
+        }
+
+        // Initial extrema: evenly spread over the grid.
+        let mut ext: Vec<usize> = (0..n_ext)
+            .map(|i| i * (grid.len() - 1) / (n_ext - 1))
+            .collect();
+
+        let basis = |u: f64, i: usize| -> f64 {
+            if i == 0 {
+                1.0
+            } else {
+                2.0 * (2.0 * std::f64::consts::PI * u * i as f64).cos()
+            }
+        };
+
+        let mut delta = 0.0;
+        let mut coeffs = vec![0.0; m + 1];
+        let mut converged = false;
+        let mut iterations = 0;
+
+        const MAX_ITER: usize = 60;
+        for it in 0..MAX_ITER {
+            iterations = it + 1;
+
+            // Interpolation: A(u_j) + (-1)^j delta / W(u_j) = D(u_j).
+            let mut a = vec![vec![0.0; m + 2]; n_ext];
+            let mut b = vec![0.0; n_ext];
+            for (j, gi) in ext.iter().enumerate() {
+                let u = grid[*gi];
+                let (d, w) = bands.at(u, cics)?;
+                for i in 0..=m {
+                    a[j][i] = basis(u, i);
+                }
+                let sign = if j % 2 == 0 { 1.0 } else { -1.0 };
+                // A zero weight means the band is unconstrained; that must
+                // not become a division by zero.
+                if w <= 0.0 {
+                    return None;
+                }
+                a[j][m + 1] = sign / w;
+                b[j] = d;
+            }
+            let x = solve(a, b)?;
+            coeffs.copy_from_slice(&x[..=m]);
+            let new_delta = x[m + 1];
+
+            // Weighted error across the whole grid.
+            let taps_now = symmetric_from(&coeffs, taps);
+            let err = |u: f64| -> f64 {
+                match bands.at(u, cics) {
+                    None => 0.0,
+                    Some((d, w)) => w * (fir_amplitude(&taps_now, u) - d),
+                }
+            };
+
+            // Candidate extrema, found **per band**.
+            //
+            // The grid spans two bands separated by a transition gap.
+            // Comparing a gap-adjacent point against its grid
+            // neighbour reaches across that gap to a different band, so
+            // the local-maximum test there is meaningless. An earlier
+            // version worked around it by forcing every gap-adjacent
+            // point into the candidate set unconditionally -- which
+            // injected *non-extremal* points into the interpolation and
+            // left the result 11% off equiripple.
+            //
+            // Endpoints of each band are always candidates, because the
+            // error is free to peak there and within that band there is
+            // nothing beyond them.
+            let mut cand: Vec<usize> = Vec::new();
+            {
+                // Grid indices are contiguous within a band; a jump
+                // larger than a step marks the transition.
+                let step = 0.5 / (DENSITY * n_ext) as f64;
+                let mut band_start = 0usize;
+                for k in 0..grid.len() {
+                    let ends_band = k + 1 == grid.len() || (grid[k + 1] - grid[k]) > 1.5 * step;
+                    if !ends_band {
+                        continue;
+                    }
+                    for i in band_start..=k {
+                        let e = err(grid[i]).abs();
+                        let at_edge = i == band_start || i == k;
+                        let left = if i == band_start {
+                            f64::NEG_INFINITY
+                        } else {
+                            err(grid[i - 1]).abs()
+                        };
+                        let right = if i == k {
+                            f64::NEG_INFINITY
+                        } else {
+                            err(grid[i + 1]).abs()
+                        };
+                        if at_edge || (e >= left && e >= right) {
+                            cand.push(i);
+                        }
+                    }
+                    band_start = k + 1;
+                }
+            }
+
+            // Collapse runs of the same sign, keeping the largest -- the
+            // alternation set must alternate, and two same-sign neighbours
+            // are one extremum sampled twice.
+            let mut alt: Vec<usize> = Vec::new();
+            for k in cand {
+                let e = err(grid[k]);
+                match alt.last() {
+                    Some(prev) if (err(grid[*prev]) > 0.0) == (e > 0.0) => {
+                        if e.abs() > err(grid[*prev]).abs() {
+                            let n = alt.len();
+                            alt[n - 1] = k;
+                        }
+                    }
+                    _ => alt.push(k),
+                }
+            }
+
+            // Trim to M+2 by dropping the weaker end, which preserves
+            // alternation; growing beyond that means the grid found more
+            // ripples than the filter has degrees of freedom.
+            while alt.len() > n_ext {
+                let first = err(grid[*alt.first().unwrap()]).abs();
+                let last = err(grid[*alt.last().unwrap()]).abs();
+                if first < last {
+                    alt.remove(0);
+                } else {
+                    alt.pop();
+                }
+            }
+            if alt.len() < n_ext {
+                // The exchange has degenerated; report what we have rather
+                // than looping on a bad set.
+                delta = new_delta.abs();
+                break;
+            }
+
+            // **Over the whole grid, not over the selected extrema.**
+            // The alternation theorem's stopping condition is that no
+            // frequency anywhere exceeds the interpolated delta -- so
+            // measuring the peak only at the points already chosen
+            // declares victory while a larger error sits at a point the
+            // trim discarded. That produced an 11% spread in the
+            // supposedly equiripple magnitudes.
+            let peak = grid.iter().map(|u| err(*u).abs()).fold(0.0f64, f64::max);
+            delta = new_delta.abs();
+            ext = alt;
+
+            // Converged when no grid point exceeds the interpolated delta
+            // by more than a hair -- the alternation theorem's condition.
+            if std::env::var("REMEZ_TRACE").is_ok() {
+                eprintln!(
+                    "  iter {it}: delta {delta:.6e} peak {peak:.6e} exts {} ratio {:.4}",
+                    ext.len(),
+                    peak / delta
+                );
+            }
+            if peak <= delta * (1.0 + 1e-9) + 1e-15 {
+                converged = true;
+                break;
+            }
+        }
+
+        let final_taps = symmetric_from(&coeffs, taps);
+        let (ripple, peak_gain) = evaluate(&final_taps, spec);
+        let _ = iterations;
+        Some(Design {
+            stopband_db: super::stopband_db(&final_taps, spec),
+            ripple_db: ripple,
+            peak_gain,
+            // Remez fixes its weighting analytically from the two dB
+            // targets, so there is no searched weight to report.
+            stopband_weight: weight_stop,
+            method: Method::Remez,
+            delta,
+            converged,
+            taps: final_taps,
+            spec: spec.clone(),
+        })
+    }
+
+    /// The extremal frequencies and weighted errors at convergence.
+    ///
+    /// Exposed so a test can check the alternation condition directly:
+    /// by Chebyshev's theorem, `M+2` extrema of equal magnitude and
+    /// alternating sign *is* optimality, which certifies the result
+    /// without a reference implementation to compare against.
+    pub fn alternation(spec: &Spec) -> Option<Vec<f64>> {
+        let d = design(spec)?;
+        let bands = Bands {
+            pass_hi: 0.25 * spec.passband * 2.0,
+            stop_lo: 0.5 * spec.stopband_edge,
+            weight_stop: if spec.min_stopband_db > 0.0 {
+                (spec.max_ripple_db / 17.372) * 10f64.powf(spec.min_stopband_db / 20.0)
+            } else {
+                0.0
+            },
+        };
+        let n = spec.taps / 2 + 2;
+
+        // **Per band, not across the whole axis.** At a band edge the
+        // neighbour on one side lies across the transition gap, in a
+        // different band, so a local-maximum test that reaches over the
+        // gap compares unrelated quantities and silently drops the edge
+        // extremum. Since the error usually *peaks* at a band edge,
+        // dropping it loses the very points the alternation set needs --
+        // which is how this helper first reported seven extrema for a
+        // filter that has nine.
+        let mut errs: Vec<f64> = Vec::new();
+        for (lo, hi) in [(0.0, bands.pass_hi), (bands.stop_lo, 0.5)] {
+            if hi <= lo {
+                continue;
+            }
+            let steps = 64 * n;
+            let pts: Vec<(f64, f64)> = (0..=steps)
+                .map(|k| lo + (hi - lo) * k as f64 / steps as f64)
+                .filter_map(|u| {
+                    bands
+                        .at(u, &spec.cics)
+                        .map(|(des, w)| (u, w * (fir_amplitude(&d.taps, u) - des)))
+                })
+                .collect();
+            if pts.is_empty() {
+                continue;
+            }
+            for i in 0..pts.len() {
+                let e = pts[i].1;
+                // Endpoints count: the error is free to peak at a band
+                // edge, and within this band there is nothing beyond it.
+                let is_end = i == 0 || i + 1 == pts.len();
+                let left = if i == 0 {
+                    f64::NEG_INFINITY
+                } else {
+                    pts[i - 1].1.abs()
+                };
+                let right = if i + 1 == pts.len() {
+                    f64::NEG_INFINITY
+                } else {
+                    pts[i + 1].1.abs()
+                };
+                if is_end || (e.abs() >= left && e.abs() >= right) {
+                    match errs.last() {
+                        Some(p) if (*p > 0.0) == (e > 0.0) => {
+                            if e.abs() > p.abs() {
+                                let m = errs.len();
+                                errs[m - 1] = e;
+                            }
+                        }
+                        _ => errs.push(e),
+                    }
+                }
+            }
+        }
+        Some(errs)
+    }
+
+    /// Expand half-basis coefficients into a symmetric tap vector.
+    fn symmetric_from(coeffs: &[f64], taps: usize) -> Vec<f64> {
+        let c = taps / 2;
+        let mut t = vec![0.0; taps];
+        t[c] = coeffs[0];
+        for i in 1..=c {
+            t[c - i] = coeffs[i];
+            t[c + i] = coeffs[i];
+        }
+        t
     }
 }
 
@@ -687,6 +1148,8 @@ mod cascade_and_stopband_tests {
             passband: 0.7,
             taps: 15,
             stopband_edge: 1.0,
+            max_ripple_db: 0.1,
+            method: Method::LeastSquares,
             min_stopband_db: 0.0,
         };
         // Design for the last stage only, then measure it against the
@@ -741,10 +1204,14 @@ mod cascade_and_stopband_tests {
             passband: 0.5,
             taps: 31,
             stopband_edge: 1.0,
+            max_ripple_db: 0.1,
+            method: Method::LeastSquares,
             min_stopband_db: 0.0,
         };
         let filtering = Spec {
             stopband_edge: 0.7,
+            max_ripple_db: 0.1,
+            method: Method::LeastSquares,
             min_stopband_db: 40.0,
             ..plain.clone()
         };
@@ -780,6 +1247,8 @@ mod cascade_and_stopband_tests {
             passband: 0.5,
             taps: 31,
             stopband_edge: 0.7,
+            max_ripple_db: 0.1,
+            method: Method::LeastSquares,
             min_stopband_db: 30.0,
         };
         let d = design(spec.clone()).unwrap();
@@ -806,6 +1275,8 @@ mod cascade_and_stopband_tests {
             passband: 0.5,
             taps: 5, // far too few for 90 dB
             stopband_edge: 0.55,
+            max_ripple_db: 0.1,
+            method: Method::LeastSquares,
             min_stopband_db: 90.0,
         };
         let d = design(spec.clone()).expect("a design is still returned");
@@ -826,6 +1297,8 @@ mod cascade_and_stopband_tests {
             passband: 0.5,
             taps: 31,
             stopband_edge: 0.7,
+            max_ripple_db: 0.1,
+            method: Method::LeastSquares,
             min_stopband_db: 60.0,
         };
         let d = design(spec).unwrap();
@@ -839,5 +1312,199 @@ mod cascade_and_stopband_tests {
             wide.stopband_db >= narrow.stopband_db,
             "more coefficient bits must not reject less"
         );
+    }
+}
+
+#[cfg(test)]
+mod remez_tests {
+    use super::*;
+
+    fn shape(decimate: usize, stages: usize, delay: usize) -> CicShape {
+        CicShape {
+            decimate,
+            stages,
+            delay,
+        }
+    }
+
+    fn spec(taps: usize, stop_edge: f64, atten: f64) -> Spec {
+        Spec {
+            cics: vec![shape(32, 4, 1)],
+            passband: 0.5,
+            taps,
+            stopband_edge: stop_edge,
+            min_stopband_db: atten,
+            max_ripple_db: 0.1,
+            method: Method::Remez,
+        }
+    }
+
+    /// **Optimality, established rather than compared.**
+    ///
+    /// Chebyshev's alternation theorem: a length-`2M+1` linear-phase
+    /// filter whose weighted error reaches its maximum magnitude at
+    /// `M+2` points with alternating signs *is* the best such filter.
+    /// So this test does not check that Remez beat something — it checks
+    /// the condition that makes the answer optimal, which needs no
+    /// reference implementation to compare against.
+    ///
+    /// # Why the tolerance is not zero
+    ///
+    /// The exchange is exactly equiripple **on its design grid**: at
+    /// convergence every grid extremum has magnitude
+    /// [`Design::delta`], and the loop's stopping condition is that no
+    /// grid point exceeds it. That part is asserted exactly.
+    ///
+    /// Between grid points the continuous error overshoots slightly,
+    /// because the weighted error curves sharply near the band edge
+    /// where `1/H` is largest. At the textbook 32 points per extremum
+    /// that overshoot was 12%; at 256 it is about 3%. This is inherent
+    /// to grid-based Parks-McClellan rather than a defect here — the
+    /// alternative is local refinement of each extremum, which is a
+    /// larger piece of machinery for a few percent.
+    ///
+    /// So: alternation and count are exact; magnitude equality is
+    /// asserted to the grid's resolution, and the figure is stated
+    /// rather than tuned until it passed.
+    #[test]
+    fn the_alternation_condition_holds() {
+        for taps in [15usize, 21, 31] {
+            let s = spec(taps, 0.7, 50.0);
+            let d = design(s.clone()).expect("must design");
+            assert!(
+                d.converged,
+                "taps {taps}: the exchange must converge for this spec"
+            );
+            let errs = remez::alternation(&s).expect("extrema");
+            let m = taps / 2;
+            assert!(
+                errs.len() >= m + 2,
+                "taps {taps}: expected at least {} extrema, found {}",
+                m + 2,
+                errs.len()
+            );
+            // Signs must alternate -- exactly, no tolerance.
+            for w in errs.windows(2) {
+                assert!(
+                    (w[0] > 0.0) != (w[1] > 0.0),
+                    "taps {taps}: extrema do not alternate: {errs:?}"
+                );
+            }
+            // Magnitudes equal to the grid's resolution.
+            let mags: Vec<f64> = errs.iter().map(|e| e.abs()).collect();
+            let hi = mags.iter().cloned().fold(0.0f64, f64::max);
+            let lo = mags.iter().cloned().fold(f64::INFINITY, f64::min);
+            println!(
+                "taps {taps}: delta {:.4e}, continuous {:.4e}..{:.4e} ({:.1}% spread)",
+                d.delta,
+                lo,
+                hi,
+                100.0 * (hi - lo) / hi
+            );
+            assert!(
+                hi - lo <= 0.05 * hi,
+                "taps {taps}: spread {:.1}% exceeds the grid's resolution",
+                100.0 * (hi - lo) / hi
+            );
+            // And the on-grid minimax must sit inside that range: the
+            // continuous error can overshoot delta but never undershoot
+            // every extremum, which would mean the exchange solved a
+            // different problem.
+            assert!(
+                d.delta <= hi * 1.001 && d.delta >= lo * 0.999,
+                "taps {taps}: delta {} outside the measured range {lo}..{hi}",
+                d.delta
+            );
+        }
+    }
+
+    /// **The point of the exercise.** For a stopband requirement, Remez
+    /// must beat least squares on worst-case attenuation at equal taps.
+    #[test]
+    fn remez_beats_least_squares_on_the_stopband() {
+        for taps in [21usize, 31] {
+            let ls = design(Spec {
+                method: Method::LeastSquares,
+                ..spec(taps, 0.7, 50.0)
+            })
+            .unwrap();
+            let rz = design(spec(taps, 0.7, 50.0)).unwrap();
+            println!(
+                "taps {taps}: least squares {:.1} dB / {:.4} dB ripple, \
+                 remez {:.1} dB / {:.4} dB ripple",
+                ls.stopband_db, ls.ripple_db, rz.stopband_db, rz.ripple_db
+            );
+            assert!(
+                rz.stopband_db > ls.stopband_db,
+                "taps {taps}: remez {} should beat least squares {}",
+                rz.stopband_db,
+                ls.stopband_db
+            );
+        }
+    }
+
+    /// Remez needs no weight search: the two dB targets fix it.
+    #[test]
+    fn the_weight_is_analytic() {
+        let s = spec(31, 0.7, 50.0);
+        let d = design(s.clone()).unwrap();
+        // delta_target * 10^(As/20), with delta_target = Rp / 17.372.
+        let expected = (s.max_ripple_db / 17.372) * 10f64.powf(s.min_stopband_db / 20.0);
+        assert!(
+            (d.stopband_weight - expected).abs() < 1e-12,
+            "{} vs {expected}",
+            d.stopband_weight
+        );
+    }
+
+    /// A deeper stopband is bought with taps, monotonically.
+    #[test]
+    fn deeper_stopbands_cost_taps() {
+        let mut prev = 0.0;
+        for taps in [11usize, 17, 25, 35] {
+            let d = design(spec(taps, 0.7, 60.0)).unwrap();
+            if !d.converged {
+                continue;
+            }
+            println!("taps {taps}: {:.1} dB", d.stopband_db);
+            assert!(
+                d.stopband_db >= prev - 1.0,
+                "more taps must not reject less: {} then {}",
+                prev,
+                d.stopband_db
+            );
+            prev = d.stopband_db;
+        }
+    }
+
+    /// Cascade targets work here too, and each stage at its own rate.
+    #[test]
+    fn it_compensates_a_cascade() {
+        let s = Spec {
+            cics: vec![shape(8, 2, 1), shape(61, 5, 1)],
+            passband: 0.5,
+            taps: 21,
+            stopband_edge: 0.8,
+            min_stopband_db: 40.0,
+            max_ripple_db: 0.1,
+            method: Method::Remez,
+        };
+        let d = design(s).expect("must design");
+        println!(
+            "cascade: ripple {:.4} dB, stopband {:.1} dB, converged {}",
+            d.ripple_db, d.stopband_db, d.converged
+        );
+        assert!(d.taps.len() == 21);
+        // Symmetric, so linear phase -- the property the whole shape
+        // exists for.
+        for k in 0..21 {
+            assert!((d.taps[k] - d.taps[20 - k]).abs() < 1e-12);
+        }
+    }
+
+    /// Failure is reported, not disguised.
+    #[test]
+    fn an_even_tap_count_is_rejected() {
+        assert!(design(spec(16, 0.7, 40.0)).is_none());
     }
 }

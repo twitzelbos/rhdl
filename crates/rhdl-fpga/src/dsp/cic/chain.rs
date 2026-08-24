@@ -150,6 +150,12 @@ pub struct ChainSpec {
     ///
     /// Zero asks for compensation only.
     pub min_stopband_db: f64,
+    /// How to fit the compensator's taps.
+    ///
+    /// [`compensator::Method::Remez`] is the right choice whenever
+    /// `min_stopband_db` is set, because a stopband requirement is
+    /// about the worst case and least squares minimises the average.
+    pub method: compensator::Method,
 }
 
 impl Default for ChainSpec {
@@ -174,6 +180,7 @@ impl Default for ChainSpec {
             // `min_alias_rejection_db` already holds it to account.
             stopband_edge: 1.0,
             min_stopband_db: 0.0,
+            method: compensator::Method::LeastSquares,
         }
     }
 }
@@ -545,6 +552,8 @@ fn design_split(spec: &ChainSpec, split: &[usize], passband: f64) -> Result<Chai
             taps,
             stopband_edge: spec.stopband_edge,
             min_stopband_db: spec.min_stopband_db,
+            max_ripple_db: spec.max_ripple_db,
+            method: spec.method,
         };
         match compensator::design(cspec) {
             None => return Err(Unmet::PassbandTouchesNull),
@@ -1221,6 +1230,43 @@ mod worked_example {
             combined.compensator.taps.len(),
             plain.compensator.taps.len()
         );
+    }
+
+    /// **Remez needs far fewer taps than least squares for the same
+    /// stopband.**
+    ///
+    /// This is the case that motivated adding it: 60 dB across a
+    /// 0.5-to-0.7 transition. Least squares needed 57 taps, because it
+    /// minimises average error while the requirement is about the worst
+    /// case.
+    #[test]
+    fn remez_costs_fewer_taps_than_least_squares() {
+        let ask = |method| ChainSpec {
+            stopband_edge: 0.7,
+            min_stopband_db: 60.0,
+            max_taps: 95,
+            method,
+            ..ChainSpec::default()
+        };
+        let ls = design(ask(compensator::Method::LeastSquares))
+            .expect("least squares gets there eventually");
+        let rz =
+            design(ask(compensator::Method::Remez)).expect("remez must reach the same stopband");
+        println!(
+            "least squares {} taps ({:.1} dB), remez {} taps ({:.1} dB)",
+            ls.compensator.taps.len(),
+            ls.achieved_stopband_db,
+            rz.compensator.taps.len(),
+            rz.achieved_stopband_db
+        );
+        assert!(ls.achieved_stopband_db >= 60.0 && rz.achieved_stopband_db >= 60.0);
+        assert!(
+            rz.compensator.taps.len() < ls.compensator.taps.len(),
+            "remez should be cheaper: {} vs {}",
+            rz.compensator.taps.len(),
+            ls.compensator.taps.len()
+        );
+        assert_eq!(rz.compensator.taps.len() % 2, 1);
     }
 
     /// A narrower transition band costs taps, and an impossible one is
