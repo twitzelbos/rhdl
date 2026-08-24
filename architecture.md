@@ -345,6 +345,12 @@ The macro layer is split deliberately:
 
 This split lets the macro logic itself be unit-tested. Do not collapse the two crates.
 
+**Convention: generated code bounds field types, never type parameters.** Any derive that emits a struct or an impl must place its bounds on the *types of the fields*, not on the enclosing type parameters. `#[derive(Clone, Copy, PartialEq)]` does the opposite — it bounds the parameters — which is why the `Q`/`D` structs emit those three impls explicitly instead (`utils::perfect_derive_value_traits`), and why the `Timed` derive builds a where-clause from its field types.
+
+This is not stylistic. The generated `Q` and `D` carry associated-type projections — `<C as SynchronousIO>::O`, `<C as CircuitIO>::I` — so a type parameter can be absent from every field type after normalisation. Bounding the parameter then demands something of a type that does not participate: `#[derive(Copy)]` produced `impl<C: Copy> Copy for Q<C>`, requiring a *circuit* to be `Copy`, which made it impossible to write a widget generic over a sub-circuit. The struct was correct; only the bounds were wrong.
+
+When adding a derive or extending an existing one, ask which types actually need the capability and bound exactly those.
+
 ### 5.2 Trait dispatch into the framework
 
 A widget integrates with the framework via three trait pairs, all in `rhdl-core::circuit`:

@@ -75,3 +75,49 @@ This will cause RHDL to derive a pair of structs named `XD` and `XQ` (and more g
 It might seem like `XD` and `XQ` should have just been defined as tuples, so that `D = (child_1::I, child_2::I, ...)` and similarly `Q = (child_1::O, child_2::O, ...)`.  And while from a Rust idiomatic perspective, these definitions may be the best, they do not lead to particularly clean kernels.  The approach I adopted here is messier because there is an implicit requirement on `D` and `Q` that is not otherwise expressed.  An alternate strategy would have been to define a pair of _traits_ and then `impl` the traits on structs.  I'm not sure the extra complexity is really worth it.  But I acknowledge that this aspect of the implementation is not particularly elegant.
 ```
 
+
+## Being generic over a sub-circuit
+
+A parent circuit's field can be a *type parameter* rather than a
+concrete widget, as long as the sub-circuit's interface is pinned by
+the bound:
+
+```rust,ignore
+#[derive(Clone, Debug, Synchronous, SynchronousDQ, Default)]
+#[rhdl(dq_no_prefix)]
+pub struct Pipe<C>
+where C: SynchronousIO<I = bool, O = bool> + Synchronous + Default + Clone + Debug,
+{
+    inner: C,
+    tail: dff::DFF<bool>,
+}
+```
+
+`Pipe<DFF<bool>>` and `Pipe<Delay<bool, 3>>` are then two different
+circuits built from one source. This is how you write a widget that
+composes over an interface — a decimator stage, a stream relay, an
+arbiter — without committing to which implementation fills the slot.
+
+Note that nothing in the *kernel* becomes generic. `Q<C>`'s `inner`
+field is `<C as SynchronousIO>::O`, which the bound pins to `bool`, so
+`q.inner` is a `bool` whatever `C` is. The parameter shapes the
+composition, not the logic.
+
+```admonish note
+This did not work before the DQ derives stopped using `#[derive(Clone,
+Copy, PartialEq)]` on the generated `Q` and `D`.
+
+`#[derive]` places its bounds on the *type parameters*, not on the
+*field types*. That is normally harmless, because a parameter usually
+appears in a field type unchanged. `Q` and `D` break the assumption:
+their fields are the projections `<C as SynchronousIO>::O` and `::I`,
+so `C` does not appear in any field type once normalised. The derives
+nevertheless emitted `impl<C: Copy> Copy for Q<C>`, demanding `C: Copy`
+of a circuit — which is never `Copy`.
+
+The impls are now written out with the struct's own where-clause and no
+parameter bounds. They are total rather than conditional, and provably
+so: `SynchronousIO::I`/`O` and `CircuitIO::I`/`O` are all bounded by
+`Digital`, and `Digital: Copy + Clone + PartialEq`. The `Timed` derive
+had always taken this shape; the DQ derives are now consistent with it.
+```

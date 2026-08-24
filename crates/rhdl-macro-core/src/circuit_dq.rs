@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{Data, DeriveInput, spanned::Spanned};
 
-use crate::utils::{FieldSet, parse_dq_no_prefix_attribute};
+use crate::utils::{FieldSet, parse_dq_no_prefix_attribute, perfect_derive_value_traits};
 
 pub fn derive_circuit_dq(input: TokenStream) -> syn::Result<TokenStream> {
     let decl = syn::parse2::<syn::DeriveInput>(input)?;
@@ -44,15 +44,23 @@ fn derive_circuit_dq_struct(decl: DeriveInput) -> syn::Result<TokenStream> {
     } else {
         format_ident!("{}D", struct_name)
     };
+    // As in `synchronous_dq`: `Clone`, `Copy` and `PartialEq` are
+    // emitted rather than derived, because the fields are
+    // associated-type projections. `Timed` already bounds field types
+    // rather than parameters, so it stays a derive.
+    let q_value_traits = perfect_derive_value_traits(&q_name, generics, component_name);
+    let d_value_traits = perfect_derive_value_traits(&d_name, generics, component_name);
     let new_struct_q = quote! {
-        #[derive(PartialEq, Digital, Clone, Copy, Timed)]
+        #[derive(Digital, Timed)]
         #[doc(hidden)]
         pub struct #q_name #generics #where_clause #q_fields
+        #q_value_traits
     };
     let new_struct_d = quote! {
-        #[derive(PartialEq, Digital, Clone, Copy, Timed)]
+        #[derive(Digital, Timed)]
         #[doc(hidden)]
         pub struct #d_name #generics #where_clause #d_fields
+        #d_value_traits
     };
     Ok(quote! {
         #new_struct_q
