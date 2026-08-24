@@ -31,6 +31,43 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-24 — `dsp::ddc`: two real paths, split and recombined — and a mark bug it exposed
+
+**Paths:** `crates/rhdl-fpga/src/dsp/ddc.rs`, `crates/rhdl-fpga/src/dsp/cic/stream.rs` (new), `examples/cic_stream.rs`, `doc/cic_stream.md`.
+
+**Why this, why now:** requested — the down-converter did not need to be a complex-valued widget. Mixing is irreducibly complex (multiplying by `e^-jwt` needs all four real products) but everything after it is two independent real filters, and the DDC was pulling `.re` and `.im` out by hand rather than saying so.
+
+Now: `ComplexMixer → IqSplit → two StreamDecimators → IqCombine`. The two paths are separately substitutable and the framing bookkeeping belongs to widgets that already do it.
+
+**Design decisions:**
+
+- **`StreamDecimator` is a new widget, not inline code.** `IqSplit` emits framed `Item`s; a CIC takes bare samples, so the frame cannot ride through it. Worse, a decimator discards `R - 1` of every `R` frames — and for a `SyncMark` the mark is almost never on the sample that survives. So the mark is latched: seen anywhere in the window, it rides out on the next output. That logic was inline in the DDC; extracting it made it testable, which is how the bug below was found.
+- **Not generic over the framing type, deliberately.** Reducing `R` frames to one requires knowing how frames combine, and a `#[kernel]` has no closures to be told. `SyncMark` has a definite answer — boolean or — and a different `F` would have a different one. A generic version would have to pick a rule and be wrong for most `F`.
+- **The two paths' marks must align, and the combined mark is their `and`.** A disagreement is flagged rather than resolved. `IqCombine` previously took the real side's frame and discarded the imaginary side's without comment — its own doc claimed "the type system requires both inputs to carry the same `F`", which requires the same *type*, not the same *value*, so two paths that had drifted produced a confident wrong answer.
+
+  Implemented at two levels because the right rule lives at different ones. `IqCombine` stays generic and gains `frame_mismatch`, set when the frames differ — equality is all a generic frame type supports, and it catches drift for every user of the widget. The DDC, where `SyncMark` is known, applies the `and`: agreeing marks pass through; disagreeing marks yield *unmarked*, the conservative answer, because forgetting an acquisition boundary is better than claiming one on a sample where only half the complex value is known to be aligned.
+- **`Imag<W>` converts to `Real<W>` at the boundary and back.** `IqSplit` hands out distinct newtypes, so filtering `Real` on one path and `Imag` on the other would make the two arms *different widget types* — destroying the invariant that they are provably identical, which is the property a phase-sensitive measurement depends on. A decimator is a real-valued filter and does not care which half it carries; the newtypes exist to stop the *caller* confusing them. Converting keeps one decimator type.
+
+**Surprises and gotchas:**
+
+- **I reintroduced a pitfall the code had already documented.** `iq_combine_kernel` carried a comment saying that hoisting a generic frame as `let mut frame = F::dont_care()` and filling it in a branch trips an RHDL partial-initialisation error, and that the framing is therefore read inside the `if let` that binds the item. The first attempt at comparing the two frames did exactly the forbidden thing.
+
+  It passed `cargo check` and failed at `descriptor()`, so only the HDL tests caught it — and `UPDATE_EXPECT` could not paper over it, because one of those is the `iverilog` round-trip. The fix is to compare inside *nested* `if let`s so neither frame leaves its binding, and to track presence with plain `bool`s, which hoist fine. The comment was right, it was load-bearing, and I removed the constraint before reading it properly.
+- **A real bug, present in the DDC's original inline code, found only once the logic was extracted and testable.** A mark arriving on cycle `T` restarts the window at `T` — but the output emerging at `T` was registered from `T-1` and belongs entirely to the *old* window. The code attached the arriving mark to it, labelling a pre-trigger sample as the start of the acquisition: exactly the error the restart exists to prevent.
+
+  The fix is one word: only a *carried* mark (`q.marked`) may ride out this cycle, not `q.marked || marked_now`. The distinction only bites when a mark lands one cycle after a window boundary — one input in `R` — which is why the DDC's own test, marking a single fixed offset, passed for weeks. The new test sweeps the mark across **every** offset in the window and asserts exactly one marked output each time; that is what caught it.
+
+  Worth generalising: the DDC test was not weak because it checked the wrong thing, but because it checked one phase of a periodic structure. Anything that latches across a window wants its stimulus swept over the window.
+
+- **Two of my own new tests failed for reasons that were not bugs**, and both are worth naming. A sparse-versus-dense comparison differed by one sample because the longer run gave the registered output more time to drain — a drain artifact, fixed by draining both equally. And a "mark during reset is cleared" test could not distinguish anything, because `with_reset` holds the first input through the reset cycles and then presents it again; the meaningful property is that the mark emerges exactly *once*.
+
+**Validation:** `StreamDecimator` carries all five tiers, including the swept-offset framing test, a restart-independence property written as invariance rather than an expected value, and `iverilog` RTL and NTL round-trips. All eleven of the DDC's existing tests pass unchanged through the restructure — the marker still survives decimation, both arms still emit together, the marker still excludes pre-trigger data, phase still tracks the oscillator, out-of-band rejection is intact. Only the HDL snapshot and VCD digest moved; the diff is `top_marked` replaced by `top_split` and `top_combine`, audited before blessing.
+
+**Follow-ups:**
+
+- `Ddc::Out` gained a `saturated` flag propagated from the arms, so a compensated down-converter reports clipping. Nothing consumes it yet.
+- `StreamDecimator` takes a `restart` input independent of the stream's marks. The DDC leaves it false; it exists for a restart that does not arrive in the stream, and nothing exercises that path yet.
+
 ## 2026-08-24 — `dsp::cic` compensation: response analysis, a PDF report, and the FIR that flattens it
 
 **Paths:** `crates/rhdl-fpga/src/dsp/cic/{response,compensator,compensated}.rs` (new), `crates/rhdl-fpga/src/dsp/fir/{mod,symmetric}.rs` (new), `crates/rhdl-fpga/src/doc/{pdf,plot,report}.rs` (new, `doc.rs` became `doc/mod.rs`), `crates/rhdl-fpga/tests/{cic_gold_model,cic_compensated}.rs` (new), `examples/{cic_report,symmetric_fir,cic_compensated}.rs`, `doc/cic_report.pdf`.
