@@ -1,0 +1,8 @@
+[package]
+name = "rhdl-dsp-design"
+version = "0.1.0"
+edition = "2024"
+description = "Design-time DSP filter mathematics: CIC response, Hogenauer pruning schedules, and compensator design. No hardware, no RHDL dependency."
+license = "MIT"
+
+[dependencies]

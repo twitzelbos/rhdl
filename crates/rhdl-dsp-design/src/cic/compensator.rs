@@ -967,8 +967,8 @@ pub mod remez {
 
 #[cfg(test)]
 mod tests {
+    use super::super::response::passband_droop_db;
     use super::*;
-    use crate::dsp::cic::response::passband_droop_db;
 
     #[test]
     fn an_even_tap_count_is_rejected() {

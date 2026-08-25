@@ -39,133 +39,19 @@
 
 use rhdl::prelude::*;
 
-pub mod chain;
 pub mod compensated;
-pub mod compensator;
 pub mod decimator;
-pub mod prune;
 pub mod pruned;
-pub mod response;
 pub mod stream;
 
 pub use decimator::CicDecimate;
 
-/// Smallest `b` with `2^b >= v`, for `v >= 1`.
-const fn ceil_log2(v: usize) -> usize {
-    let mut b = 0;
-    while (1usize << b) < v {
-        b += 1;
-    }
-    b
-}
-
-/// Bits of growth the integrator cascade adds.
-///
-/// The DC gain is `(R·M)^N`, so the signal grows by `N·log2(R·M)` bits.
-/// Computed as `N · ceil(log2(R·M))`, which is exact when `R·M` is a
-/// power of two and conservative by at most `N` bits otherwise —
-/// deliberately the safe direction, since too few bits corrupts the
-/// output rather than degrading it.
-pub const fn gain_bits(stages: usize, r: usize, m: usize) -> usize {
-    stages * ceil_log2(r * m)
-}
-
-/// The accumulator width a CIC needs, per Hogenauer.
-///
-/// `w_in + N·log2(R·M)`. Every integrator and comb stage must be at
-/// least this wide for the two's-complement wrap in the integrators to
-/// cancel in the combs.
-pub const fn accumulator_width(w_in: usize, stages: usize, r: usize, m: usize) -> usize {
-    w_in + gain_bits(stages, r, m)
-}
-
-/// Is `w_acc` wide enough to carry this configuration without
-/// corrupting the output?
-pub const fn accumulator_width_is_sufficient(
-    w_in: usize,
-    w_acc: usize,
-    stages: usize,
-    r: usize,
-    m: usize,
-) -> bool {
-    w_acc >= accumulator_width(w_in, stages, r, m)
-}
-
-/// Width needed for a decimation counter that counts to `r`.
-pub const fn counter_width(r: usize) -> usize {
-    let b = ceil_log2(r);
-    if b == 0 { 1 } else { b }
-}
-
-/// The exact DC gain, `(R·M)^N`.
-///
-/// Exposed so a caller can undo it: the CIC deliberately does not, since
-/// the right place to rescale depends on what comes next.
-pub const fn dc_gain(stages: usize, r: usize, m: usize) -> u128 {
-    let mut g: u128 = 1;
-    let rm = (r * m) as u128;
-    let mut i = 0;
-    while i < stages {
-        g *= rm;
-        i += 1;
-    }
-    g
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn ceil_log2_is_right_at_the_boundaries() {
-        assert_eq!(ceil_log2(1), 0);
-        assert_eq!(ceil_log2(2), 1);
-        assert_eq!(ceil_log2(3), 2);
-        assert_eq!(ceil_log2(4), 2);
-        assert_eq!(ceil_log2(5), 3);
-        assert_eq!(ceil_log2(64), 6);
-        assert_eq!(ceil_log2(65), 7);
-    }
-
-    /// The published bound, on the configuration Hogenauer's paper uses
-    /// as its worked example.
-    #[test]
-    fn the_accumulator_bound_matches_hogenauer() {
-        // N = 4, R = 25, M = 1, 16-bit input.  ceil(log2 25) = 5, so
-        // 20 bits of growth.
-        assert_eq!(gain_bits(4, 25, 1), 20);
-        assert_eq!(accumulator_width(16, 4, 25, 1), 36);
-        // Exact for a power-of-two rate: N=3, R=64 -> 18 bits.
-        assert_eq!(gain_bits(3, 64, 1), 18);
-        assert_eq!(accumulator_width(12, 3, 64, 1), 30);
-    }
-
-    /// The differential delay doubles the effective rate for growth
-    /// purposes.
-    #[test]
-    fn the_differential_delay_counts_toward_growth() {
-        assert_eq!(gain_bits(2, 8, 1), 6);
-        assert_eq!(gain_bits(2, 8, 2), 8);
-    }
-
-    #[test]
-    fn the_dc_gain_is_the_product() {
-        assert_eq!(dc_gain(1, 8, 1), 8);
-        assert_eq!(dc_gain(3, 4, 1), 64);
-        assert_eq!(dc_gain(2, 8, 2), 256);
-    }
-
-    #[test]
-    fn the_sufficiency_check_is_tight() {
-        assert!(accumulator_width_is_sufficient(12, 30, 3, 64, 1));
-        assert!(!accumulator_width_is_sufficient(12, 29, 3, 64, 1));
-    }
-
-    #[test]
-    fn a_counter_always_has_at_least_one_bit() {
-        assert_eq!(counter_width(1), 1);
-        assert_eq!(counter_width(2), 1);
-        assert_eq!(counter_width(64), 6);
-        assert_eq!(counter_width(100), 7);
-    }
-}
+// The design mathematics lives in `rhdl-dsp-design`, a leaf crate with
+// no RHDL dependency, because a proc macro must be able to reach it and
+// `rhdl-macro-core` may not depend on `rhdl-core` (architecture.md §2).
+// Re-exported here so callers -- and the `cic_pruned!` macro's
+// `$crate::dsp::cic::prune::stage_width` paths -- see no difference.
+pub use rhdl_dsp_design::cic::{
+    accumulator_width, accumulator_width_is_sufficient, chain, compensator, counter_width, dc_gain,
+    gain_bits, prune, response,
+};

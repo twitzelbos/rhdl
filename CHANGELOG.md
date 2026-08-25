@@ -31,6 +31,32 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-24 — `rhdl-dsp-design`: the filter mathematics moves to a leaf crate
+
+**Paths:** `crates/rhdl-dsp-design/**` (new crate), `crates/rhdl-fpga/src/dsp/{cic/mod.rs,fir/mod.rs}`, `architecture.md` §2 and §5, `CLAUDE.md` §1, `Cargo.toml`.
+
+**Why this, why now:** prerequisite for a `cic_chain!` proc macro. A macro that turns DSP *requirements* into const-generic widget parameters has to run the filter design at **expansion time**, and proc macros live in `rhdl-macro-core`, which `architecture.md` §2 forbids from depending on `rhdl-core`. So the macro cannot reach `rhdl-fpga`, where the design math lived.
+
+**Design decisions:**
+
+- **A new L0 leaf crate, and §5 says default no — so here is the justification.** Two consumers need the same computation and no existing crate can serve both: `rhdl-fpga` at runtime, the macro layer at expansion time. The math has *no RHDL dependency of its own* — it is `f64` and integer arithmetic, no `Digital`, no widgets, no Verilog — so it is genuinely substrate rather than library code wearing a crate. Checked, not asserted: none of `response`, `prune`, `compensator` or `chain` referenced `rhdl::` at all before the move.
+- **Rejected: putting it in an existing L0 crate.** `rhdl-bits` is arithmetic types and `rhdl-vlog` is a Verilog AST; filter design in either is worse drift than one leaf crate.
+- **Rejected: duplicating the math in the macro layer.** Two copies of a pruning schedule that must agree exactly, with nothing to keep them in step.
+- **Rejected: relaxing the `rhdl-macro-core` → `rhdl-core` prohibition.** That rule exists for build cycles and incremental-compile cost, and is worth more than the convenience.
+- **`rhdl-fpga` re-exports the tree from `dsp::cic`**, so every call site and the `cic_pruned!` macro's `$crate::dsp::cic::prune::stage_width` paths resolve unchanged. The extraction is invisible from outside.
+- **The general shape is now recorded in §2**, because it will recur: *when a proc macro needs a computation the runtime also needs, the computation goes in an L0 leaf crate both depend on.* §5 gains this as its worked example of a justification that clears the bar.
+
+**Surprises and gotchas:**
+
+- **The guard for this crate's defining property tripped on its own name.** A test asserting no RHDL dependency scanned the whole manifest and flagged `name = "rhdl-dsp-design"`. Now scoped to dependency sections, including the `[dependencies.foo]` table form.
+- **I verified the guard can fail.** Temporarily added `rhdl-bits`, watched it catch it, removed it. A guard nobody has seen fail is a guard nobody should trust — and this one protects a property whose loss is *silent*: everything would still compile, and the macro would simply become unwritable.
+
+**Validation:** the moved modules brought their tests with them — 60 tests now run in `rhdl-dsp-design`, unchanged. Two new tests enforce the no-RHDL-dependency property, one on the manifest and one scanning every source file for `rhdl::` in code (prose mentions it constantly and should). Full workspace suite green; because the extraction is a move plus re-exports, a mistake would have failed to compile rather than passing quietly.
+
+**Follow-ups:**
+
+- The `cic_chain!` macro itself, which is what this unblocks. `rhdl-macro-core` gains a dependency on this crate — a new edge in §2's graph, L0 → L2, no cycle — and that is the part which genuinely changes the architecture rather than moving files.
+
 ## 2026-08-24 — The DSP Chain book part, and a derived-design report
 
 **Paths:** `doc/book/src/dsp/*.md` (new, 9 pages), `doc/book/src/SUMMARY.md`, `doc/book/src/code/src/dsp/design.rs` (new), `crates/rhdl-fpga/src/doc/report.rs`, `examples/cic_report.rs`, `doc/cic_chain_report.pdf` (new).
