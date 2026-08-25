@@ -65,13 +65,14 @@ The full rules below expand each item. Every section has examples drawn from exi
 
 ## 1 — Repository Map
 
-This is a Cargo workspace. Twelve member crates plus mdbook source:
+This is a Cargo workspace. Member crates plus mdbook source:
 
 ```
 crates/
   rhdl/                  meta-crate; users depend on this. prelude re-exports everything.
   rhdl-bits/             Bits<N>/SignedBits<N>, BitWidth, b1..b128 / s1..s128 aliases
   rhdl-core/             compiler (RHIF/RTL/NTL), type system, simulation, tracing
+  rhdl-dsp-design/       design-time DSP maths (CIC response, pruning, compensators); no rhdl deps
   rhdl-macro/            proc-macro entry points (#[derive(...)], #[kernel])
   rhdl-macro-core/       macro implementations (the actual code-gen logic lives here)
   rhdl-vlog/             Verilog AST, parser, pretty-printer (no string templating)

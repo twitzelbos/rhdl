@@ -12,6 +12,7 @@ badascii-doc = "0.4.1"
 quote = "1.0.40"
 rand = "0.9.1"
 rhdl = { path = "../rhdl" }
+rhdl-dsp-design = { path = "../rhdl-dsp-design" }
 syn = "2.0.106"
 
 [dev-dependencies]

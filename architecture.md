@@ -116,20 +116,25 @@ Verified dependency edges (from `crates/*/Cargo.toml`):
 | `rhdl-span` | — | L0 |
 | `rhdl-trace-type` | — | L0 |
 | `rhdl-vlog` | — | L0 |
+| `rhdl-dsp-design` | — | L0 |
 | `rhdl-core` | `rhdl-bits`, `rhdl-span`, `rhdl-trace-type`, `rhdl-vlog` | L2 |
 | `rhdl-macro-core` | `rhdl-span`, `rhdl-vlog` | L2 (proc-macro support) |
 | `rhdl-macro` | `rhdl-macro-core` | L2 (proc-macro entry) |
 | `rhdl-toolchains` | `rhdl-core`, `rhdl-vlog` | L2 |
 | `rhdl` | `rhdl-bits`, `rhdl-core`, `rhdl-macro`, `rhdl-trace-type`, `rhdl-vlog` | L3 (meta-crate) |
-| `rhdl-fpga` | `rhdl` | L4 |
+| `rhdl-fpga` | `rhdl`, `rhdl-dsp-design` | L4 |
 | `rhdl-bsp` | `rhdl`, `rhdl-fpga` | L4 |
 | `rhdl-surfer-plugin` | `rhdl-trace-type` only | side (WASM) |
 
 ### Rules
 
-**Foundational crates (L0) take no internal dependencies.** They are the substrate. `rhdl-bits`, `rhdl-span`, `rhdl-trace-type`, and `rhdl-vlog` may depend on each other only when there is no alternative — at the time of writing, they are independent. Adding an internal dependency between L0 crates is a structural change requiring justification.
+**Foundational crates (L0) take no internal dependencies.** They are the substrate. `rhdl-bits`, `rhdl-span`, `rhdl-trace-type`, `rhdl-vlog`, and `rhdl-dsp-design` may depend on each other only when there is no alternative — at the time of writing, they are independent. Adding an internal dependency between L0 crates is a structural change requiring justification.
 
-**`rhdl-macro-core` deliberately does not depend on `rhdl-core`.** This is not an oversight. Procedural macros run *at compile time*, in the host toolchain's process. A proc-macro crate that depends on the runtime crate it generates code for creates build-time cycles and slows incremental compilation dramatically. The macro layer uses only `rhdl-vlog` (for embedded Verilog snippets in macro output) and `rhdl-span` (for source spans). All runtime semantics live in `rhdl-core`.
+**`rhdl-macro-core` deliberately does not depend on `rhdl-core`.** This is not an oversight. Procedural macros run *at compile time*, in the host toolchain's process. A proc-macro crate that depends on the runtime crate it generates code for creates build-time cycles and slows incremental compilation dramatically. The macro layer uses only `rhdl-vlog` (for embedded Verilog snippets in macro output), `rhdl-span` (for source spans), and `rhdl-dsp-design` (for design-time filter arithmetic a macro must evaluate at expansion time). All runtime semantics live in `rhdl-core`.
+
+**This is the constraint that motivated `rhdl-dsp-design`.** A macro that turns DSP *requirements* into const-generic widget parameters has to run the filter design at expansion time — and it cannot reach `rhdl-fpga`, where that math naturally lived, without violating the rule above. Since the math has no RHDL dependency of its own (it is `f64` and integer arithmetic; no `Digital`, no widgets, no Verilog), extracting it to an L0 leaf crate satisfies both consumers without weakening anything. `rhdl-fpga` re-exports it so callers see one module.
+
+The general shape is worth naming, because it will recur: **when a proc macro needs a computation the runtime also needs, the computation goes in an L0 leaf crate that both depend on.** Duplicating it in the macro layer, or relaxing the `rhdl-macro-core` → `rhdl-core` prohibition, are both worse.
 
 **`rhdl` is a thin meta-crate.** Its entire purpose is the `prelude` re-export tree. It contains no logic. If you find yourself wanting to add a function to `rhdl/src/`, the function probably belongs in one of the underlying crates with a re-export added to `rhdl/src/prelude.rs`.
 
@@ -415,7 +420,9 @@ When new structural needs arise, follow these patterns rather than improvising.
 
 **New target / vendor primitive.** Per `vendor-primitive-architecture.md`. Add a `Target` impl, register primitives, supply simulation models if needed. The widget API does not change.
 
-**New crate at the workspace level.** Justify why the existing twelve are insufficient. Place it in the dependency graph at §2 and update this document. Strong default is *no* — most new functionality belongs inside an existing crate.
+**New crate at the workspace level.** Justify why the existing crates are insufficient. Place it in the dependency graph at §2 and update this document. Strong default is *no* — most new functionality belongs inside an existing crate.
+
+*Worked example, and the bar to clear.* `rhdl-dsp-design` was added because two consumers needed the same computation and no existing crate could serve both: `rhdl-fpga` needs CIC design arithmetic at runtime, and a `cic_chain!` proc macro needs it at expansion time, but `rhdl-macro-core` may not depend on `rhdl-core` (§2). The math has no RHDL dependency, so it is genuinely L0 substrate rather than library code wearing a crate. The alternatives — filter design inside `rhdl-bits`, or duplicating it in the macro layer — were both worse drift than one leaf crate. That is the shape of an acceptable justification: a named structural constraint, two consumers that cannot share an existing home, and no dependency of its own.
 
 **Restructuring `rhdl-core`'s internal modules.** Update §3 of this document. The IR-stage boundaries (`rhif/`, `rtl/`, `ntl/`, `compiler/*_passes/`) are part of the architecture and require especially careful review.
 

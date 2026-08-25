@@ -68,29 +68,7 @@ where
     pub overrun: bool,
 }
 
-/// Accumulator width that cannot overflow for the given shape.
-///
-/// A product of a `w_in`-bit and a `w_coeff`-bit signed value needs
-/// `w_in + w_coeff` bits, and summing `taps` of them needs
-/// `ceil(log2(taps))` more. Folding adds one bit before the multiply,
-/// because a symmetric pair is added first.
-pub const fn accumulator_width(w_in: usize, w_coeff: usize, taps: usize) -> usize {
-    let mut growth = 0;
-    let mut v = 1;
-    while v < taps {
-        v *= 2;
-        growth += 1;
-    }
-    // +1 for the fold's pre-add.
-    w_in + w_coeff + growth + 1
-}
-
-/// Is `w_acc` wide enough for this shape?
-pub const fn accumulator_width_is_sufficient(
-    w_in: usize,
-    w_coeff: usize,
-    taps: usize,
-    w_acc: usize,
-) -> bool {
-    w_acc >= accumulator_width(w_in, w_coeff, taps)
-}
+// Width arithmetic lives in `rhdl-dsp-design` for the same reason the
+// CIC's does: a proc macro has to be able to compute it, and the macro
+// layer may not depend on `rhdl-core`.
+pub use rhdl_dsp_design::fir::{accumulator_width, accumulator_width_is_sufficient};
