@@ -260,6 +260,10 @@ where
 
 #[kernel]
 /// Kernel for [Uart16550].
+// `0xC0 | 0x00` rather than `0xC0`: these arms are the 16550 IIR
+// table, and writing each as FIFO-enable bits OR the interrupt-id
+// field keeps the layout legible.
+#[allow(clippy::identity_op)]
 pub fn uart_16550<const DIV_W: usize, const FIFO_W: usize>(
     _cr: ClockReset,
     i: In,
@@ -327,16 +331,16 @@ where
     // Pack into Bits<4> for storage / delta computation.
     let mut cur_modem = bits::<4>(0);
     if cts {
-        cur_modem = cur_modem | bits::<4>(0x1);
+        cur_modem |= bits::<4>(0x1);
     }
     if dsr {
-        cur_modem = cur_modem | bits::<4>(0x2);
+        cur_modem |= bits::<4>(0x2);
     }
     if ri {
-        cur_modem = cur_modem | bits::<4>(0x4);
+        cur_modem |= bits::<4>(0x4);
     }
     if dcd {
-        cur_modem = cur_modem | bits::<4>(0x8);
+        cur_modem |= bits::<4>(0x8);
     }
     d.prev_modem = cur_modem;
     let modem_changed = cur_modem ^ q.prev_modem;
@@ -357,15 +361,15 @@ where
     // ---- LSR composition ----
     let mut lsr = bits::<8>(0);
     if rx_valid {
-        lsr = lsr | bits::<8>(0x01); // DR (data ready)
+        lsr |= bits::<8>(0x01); // DR (data ready)
     }
     if q.overrun {
-        lsr = lsr | bits::<8>(0x02); // OE (overrun)
+        lsr |= bits::<8>(0x02); // OE (overrun)
     }
     // Bits 2-4 (parity / framing / break) — not yet wired; v3.
     if !q.uart.tx_full {
-        lsr = lsr | bits::<8>(0x20); // THRE (TX holding register empty)
-        lsr = lsr | bits::<8>(0x40); // TEMT (TX shifter empty — approximated)
+        lsr |= bits::<8>(0x20); // THRE (TX holding register empty)
+        lsr |= bits::<8>(0x40); // TEMT (TX shifter empty — approximated)
     }
 
     // ---- IIR composition (priority-encoded) ----
@@ -400,28 +404,28 @@ where
     // ---- MSR composition ----
     let mut msr = bits::<8>(0);
     if dcts {
-        msr = msr | bits::<8>(0x01);
+        msr |= bits::<8>(0x01);
     }
     if ddsr {
-        msr = msr | bits::<8>(0x02);
+        msr |= bits::<8>(0x02);
     }
     if teri {
-        msr = msr | bits::<8>(0x04);
+        msr |= bits::<8>(0x04);
     }
     if ddcd {
-        msr = msr | bits::<8>(0x08);
+        msr |= bits::<8>(0x08);
     }
     if cts {
-        msr = msr | bits::<8>(0x10);
+        msr |= bits::<8>(0x10);
     }
     if dsr {
-        msr = msr | bits::<8>(0x20);
+        msr |= bits::<8>(0x20);
     }
     if ri {
-        msr = msr | bits::<8>(0x40);
+        msr |= bits::<8>(0x40);
     }
     if dcd {
-        msr = msr | bits::<8>(0x80);
+        msr |= bits::<8>(0x80);
     }
 
     // ---- Read mux ----

@@ -67,7 +67,6 @@ bool |                              | B<8>
 //!
 //! And the auto-generated FSM diagram for the cycle FSM:
 #![doc = include_str!("../../doc/parallel_port_epp_fsm.md")]
-use rhdl::core::fsm::analysis::Transition;
 use rhdl::prelude::*;
 
 use crate::core::{constant::Constant, dff};

@@ -65,7 +65,6 @@ bool |                             | bool
 //!
 //! And the auto-generated FSM diagram for the half-cell tick FSM:
 #![doc = include_str!("../../doc/i2s_tx_fsm.md")]
-use rhdl::core::fsm::analysis::Transition;
 use rhdl::prelude::*;
 
 use crate::core::dff;

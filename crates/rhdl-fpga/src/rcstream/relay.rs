@@ -66,7 +66,7 @@
 
 use rhdl::prelude::*;
 
-use crate::lid::carloni::{self, Carloni};
+use crate::lid::carloni::Carloni;
 use crate::rcstream::bus::{Item, RCStream};
 
 /// A Carloni relay station with the typed [`RCStream`] interface.
@@ -141,7 +141,11 @@ pub fn relay_kernel<T: Digital, F: Digital>(
 
 #[cfg(test)]
 mod tests {
+    // `carloni` is referenced only from these tests, so the
+    // import is scoped to them -- at file level it reads as
+    // unused when the crate is checked without test targets.
     use super::*;
+    use crate::lid::carloni;
 
     /// Stimulus for the Tier-5 digest.
     ///

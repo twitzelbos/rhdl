@@ -23,15 +23,15 @@ impl NextpnrIce40Output {
                 if parts.len() == 2 {
                     let logic_part = parts[0];
                     let routing_part = parts[1];
-                    if let Some(logic_str) = logic_part.split_whitespace().nth(1) {
-                        if let Ok(val) = logic_str.parse::<f64>() {
-                            logic_delay = Some(val);
-                        }
+                    if let Some(logic_str) = logic_part.split_whitespace().nth(1)
+                        && let Ok(val) = logic_str.parse::<f64>()
+                    {
+                        logic_delay = Some(val);
                     }
-                    if let Some(routing_str) = routing_part.split_whitespace().nth(0) {
-                        if let Ok(val) = routing_str.parse::<f64>() {
-                            routing_delay = Some(val);
-                        }
+                    if let Some(routing_str) = routing_part.split_whitespace().nth(0)
+                        && let Ok(val) = routing_str.parse::<f64>()
+                    {
+                        routing_delay = Some(val);
                     }
                 }
             }

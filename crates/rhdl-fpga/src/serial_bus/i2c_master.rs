@@ -75,8 +75,6 @@ bool |                         | bool
 #![doc = include_str!("../../doc/i2c_master_fsm.md")]
 use rhdl::prelude::*;
 
-use rhdl::core::fsm::analysis::Transition;
-
 use crate::core::{constant::Constant, dff};
 
 /// State of the I2C transaction.
@@ -210,6 +208,9 @@ where
 
 #[kernel]
 /// Kernel for [I2cMaster].
+// Collapsing the `if` into the outer `match` needs a match guard,
+// which the kernel subset does not accept.
+#[allow(clippy::collapsible_match)]
 pub fn i2c_master<const DIV_W: usize>(cr: ClockReset, i: In, q: Q<DIV_W>) -> (Out, D<DIV_W>)
 where
     rhdl::bits::W<DIV_W>: BitWidth,

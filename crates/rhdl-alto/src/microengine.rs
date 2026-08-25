@@ -377,6 +377,11 @@ impl SynchronousIO for Microengine {
 /// in Phase 1 (we model only the universal codes: NOP, shifts on L,
 /// task-yield/block which are no-ops without an arbiter, and the
 /// universal NEXT-modify F2 codes).
+// The identical arms are a decode table written one row per source
+// value: F1 codes 9 and 10 genuinely map to the same result, and
+// merging them would hide the shape of the table in the Alto
+// Hardware Manual that this transcribes.
+#[allow(clippy::if_same_then_else)]
 pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let mut d = D::dont_care();
     let mut o = Out::dont_care();
@@ -719,44 +724,43 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     //   LoadIr (Emul)      — bus bits 0,5,6,7 merged into NEXT[0-3]
     //   BUSODD (Emul)      — bus bit 0 → NEXT bit 0
     let mut next_modifier_this_cycle: Bits<10> = bits::<10>(0);
-    next_modifier_this_cycle = next_modifier_this_cycle
-        | match mi.f2 {
-            F2Function::BusEqZero => {
-                if bus == bits::<16>(0) {
-                    bits::<10>(0x1)
-                } else {
-                    bits::<10>(0)
-                }
+    next_modifier_this_cycle |= match mi.f2 {
+        F2Function::BusEqZero => {
+            if bus == bits::<16>(0) {
+                bits::<10>(0x1)
+            } else {
+                bits::<10>(0)
             }
-            // Spec §3.4: SH<0 sets NEXT bit 0 if Shifter Output is negative
-            // (MSB SET).  Previous code had this inverted (== 0 instead of != 0),
-            // making the engine branch the wrong way on signed comparisons.
-            F2Function::ShiftLessThanZero => {
-                if (l_after_f1 & bits::<16>(0x8000)) != bits::<16>(0) {
-                    bits::<10>(0x1)
-                } else {
-                    bits::<10>(0)
-                }
+        }
+        // Spec §3.4: SH<0 sets NEXT bit 0 if Shifter Output is negative
+        // (MSB SET).  Previous code had this inverted (== 0 instead of != 0),
+        // making the engine branch the wrong way on signed comparisons.
+        F2Function::ShiftLessThanZero => {
+            if (l_after_f1 & bits::<16>(0x8000)) != bits::<16>(0) {
+                bits::<10>(0x1)
+            } else {
+                bits::<10>(0)
             }
-            F2Function::ShiftEqZero => {
-                if l_after_f1 == bits::<16>(0) {
-                    bits::<10>(0x1)
-                } else {
-                    bits::<10>(0)
-                }
+        }
+        F2Function::ShiftEqZero => {
+            if l_after_f1 == bits::<16>(0) {
+                bits::<10>(0x1)
+            } else {
+                bits::<10>(0)
             }
-            // ALUCY uses the STICKY carry from the last cycle that loaded L,
-            // NOT this cycle's carry.  Per spec §3.4 footnote.
-            F2Function::AluCarryToNext => {
-                if q.alu_carry {
-                    bits::<10>(0x1)
-                } else {
-                    bits::<10>(0)
-                }
+        }
+        // ALUCY uses the STICKY carry from the last cycle that loaded L,
+        // NOT this cycle's carry.  Per spec §3.4 footnote.
+        F2Function::AluCarryToNext => {
+            if q.alu_carry {
+                bits::<10>(0x1)
+            } else {
+                bits::<10>(0)
             }
-            F2Function::BusToNext => bus.resize() & bits::<10>(0x3FF),
-            _ => bits::<10>(0),
-        };
+        }
+        F2Function::BusToNext => bus.resize() & bits::<10>(0x3FF),
+        _ => bits::<10>(0),
+    };
     // F2=IDispatch (Emulator only, F2=15B = binary 13): the 16-way
     // PROM dispatch per *Alto Hardware Manual* §3.5 + spec §6.6.
     // Full table per ContrAlto's EmulatorTask.cs (verified against
@@ -808,7 +812,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         } else {
             ir_4_7
         };
-        next_modifier_this_cycle = next_modifier_this_cycle | dispatch_value;
+        next_modifier_this_cycle |= dispatch_value;
     }
 
     // Per-task F2 NEXT-modify codes for Disk tasks per *Alto Hardware
@@ -851,7 +855,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         // above (the Emulator-vs-Disk dispatch is gated by
         // current_task, so the two never collide).
         if mi.f2 == F2Function::IDispatch {
-            next_modifier_this_cycle = next_modifier_this_cycle | bits::<10>(1);
+            next_modifier_this_cycle |= bits::<10>(1);
         }
         // Other F2 disk codes: stub 0 → no modification → no-op.
         // F2=DiskWordTransfer (= INIT in spec §8.5) gets the existing
@@ -926,7 +930,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
             };
             ind_bit | dispatch
         };
-        next_modifier_this_cycle = next_modifier_this_cycle | acs_dispatch;
+        next_modifier_this_cycle |= acs_dispatch;
     }
 
     // F2=LoadIr (Emulator only, F2=12 binary, real spec name IR←):
@@ -956,7 +960,7 @@ pub fn microengine_kernel(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let is_busodd: bool = mi.f2 == F2Function::DiskWordTransfer;
     if is_emulator_for_busodd && is_busodd {
         let bus_lsb: Bits<10> = (bus & bits::<16>(1)).resize();
-        next_modifier_this_cycle = next_modifier_this_cycle | bus_lsb;
+        next_modifier_this_cycle |= bus_lsb;
     }
 
     // Apply LAST cycle's pending modifier to THIS cycle's NEXT field,

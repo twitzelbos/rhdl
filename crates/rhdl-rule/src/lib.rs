@@ -19,8 +19,8 @@
 //! This is the *Phase 0* slice of the broader `rule-architecture.md`
 //! plan.  It ships:
 //!
-//! - The [`rule_kernel!`] function-like macro that parses a struct
-//!   + impl block containing `#[rule]` and `#[output]` methods, and
+//! - The [`rule_kernel!`] function-like macro that parses a struct and
+//!   its impl block containing `#[rule]` and `#[output]` methods, and
 //!   emits a regular RHDL `Synchronous` widget + `#[kernel]`
 //!   function.
 //! - A simplified scheduler — rules fire in source-code (= priority)

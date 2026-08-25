@@ -173,6 +173,10 @@ impl SynchronousIO for CsrFile {
 /// hardcoded values; unimplemented addresses return 0.  `mip` is
 /// derived from the live `int_pending` input rather than a stored
 /// register.
+// `mhartid` reads zero because this is a single-hart core, and the
+// fallback reads zero because an unimplemented CSR must. Same value,
+// different reasons; merging them would delete that distinction.
+#[allow(clippy::if_same_then_else)]
 pub fn csr_read(addr: Bits<12>, q: Q, mip: Bits<32>) -> Bits<32> {
     let mstatus_a: Bits<12> = bits::<12>(0x300);
     let misa_a: Bits<12> = bits::<12>(0x301);

@@ -68,7 +68,6 @@ bool |                               | bool
 //!
 //! And the auto-generated FSM diagram:
 #![doc = include_str!("../../doc/mfm_encoder_fsm.md")]
-use rhdl::core::fsm::analysis::Transition;
 use rhdl::prelude::*;
 
 use crate::core::dff;

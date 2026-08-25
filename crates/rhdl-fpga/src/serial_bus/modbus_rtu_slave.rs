@@ -617,7 +617,7 @@ pub fn modbus_rtu_slave<const NREG: usize, const NCOIL: usize>(
                             i.discrete_inputs[safe_addr]
                         };
                         if in_range && bit_val {
-                            packed = packed | (bits::<8>(1) << bits::<8>(b as u128));
+                            packed |= bits::<8>(1) << bits::<8>(b as u128);
                         }
                     }
                     d.resp_buf[bi + bits::<8>(3)] = packed;

@@ -21,10 +21,8 @@ impl Pass for RemoveEmptyCasesPass {
                         lop.op = OpCode::Noop;
                     }
                 }
-                OpCode::Select(select) => {
-                    if input.kind(select.lhs).is_empty() {
-                        lop.op = OpCode::Noop;
-                    }
+                OpCode::Select(select) if input.kind(select.lhs).is_empty() => {
+                    lop.op = OpCode::Noop;
                 }
                 _ => {}
             }

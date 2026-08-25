@@ -384,13 +384,13 @@ pub fn parse_payload(shifter: Bits<80>) -> LtcFrame {
 
     let mut bgf: Bits<8> = bits::<8>(0);
     if bgf0 {
-        bgf = bgf | bits::<8>(0x01);
+        bgf |= bits::<8>(0x01);
     }
     if bgf1 {
-        bgf = bgf | bits::<8>(0x02);
+        bgf |= bits::<8>(0x02);
     }
     if bgf2 {
-        bgf = bgf | bits::<8>(0x04);
+        bgf |= bits::<8>(0x04);
     }
 
     LtcFrame {

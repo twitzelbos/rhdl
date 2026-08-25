@@ -80,7 +80,6 @@ bool |                                | B<8>
 //!
 //! And the auto-generated FSM diagram for the bidirectional FSM:
 #![doc = include_str!("../../doc/parallel_port_ecp_fsm.md")]
-use rhdl::core::fsm::analysis::Transition;
 use rhdl::prelude::*;
 
 use super::super::core::rle_decoder::{RleDecoder, rle_decoder as rle_decoder_kernel};

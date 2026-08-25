@@ -37,8 +37,6 @@
 //! [`accumulator_width`] is therefore checked at construction rather
 //! than left to the caller.
 
-use rhdl::prelude::*;
-
 pub mod cascaded;
 pub mod compensated;
 pub mod decimator;

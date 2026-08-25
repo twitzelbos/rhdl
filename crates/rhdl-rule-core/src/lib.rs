@@ -250,12 +250,12 @@ pub struct FieldInfo {
 /// can switch to the attribute form and not list it under
 /// `subwidgets = "..."` to keep the DFF default.
 fn classify_field(ty: &Type) -> FieldKind {
-    if let Type::Path(p) = ty {
-        if let Some(seg) = p.path.segments.last() {
-            let name = seg.ident.to_string();
-            if name == "DFF" || name == "Reg" {
-                return FieldKind::Dff;
-            }
+    if let Type::Path(p) = ty
+        && let Some(seg) = p.path.segments.last()
+    {
+        let name = seg.ident.to_string();
+        if name == "DFF" || name == "Reg" {
+            return FieldKind::Dff;
         }
     }
     FieldKind::SubWidget
@@ -541,17 +541,17 @@ fn lower_rule_kernel_with_subwidget_marker(
     // type with the #[output] method.  Rules without an input
     // parameter are unconstrained.
     for rule in &rules {
-        if let Some(rule_input_type) = rule.input_type.as_ref() {
-            if !types_equal(rule_input_type, &output.input_type) {
-                return Err(syn::Error::new(
-                    rule_input_type.span(),
-                    format!(
-                        "every #[rule] that takes an input must use the same type as #[output]; \
+        if let Some(rule_input_type) = rule.input_type.as_ref()
+            && !types_equal(rule_input_type, &output.input_type)
+        {
+            return Err(syn::Error::new(
+                rule_input_type.span(),
+                format!(
+                    "every #[rule] that takes an input must use the same type as #[output]; \
                          rule `{}`'s input differs from the #[output] method's input",
-                        rule.name,
-                    ),
-                ));
-            }
+                    rule.name,
+                ),
+            ));
         }
     }
 
@@ -716,10 +716,10 @@ fn lower_rule_kernel_with_subwidget_marker(
                 }
             }
         }
-        if let Some(marker) = attr_subwidget_marker.as_ref() {
-            if marker.contains(name) {
-                return FieldKind::SubWidget;
-            }
+        if let Some(marker) = attr_subwidget_marker.as_ref()
+            && marker.contains(name)
+        {
+            return FieldKind::SubWidget;
         }
         FieldKind::Dff
     };
@@ -946,17 +946,17 @@ fn lower_rule_kernel_with_subwidget_marker(
     // Validate: every rule that *has* an input parameter uses the
     // same name as `in_param`.  Rules without input are unaffected.
     for rule in &rules {
-        if let Some(name) = rule.input_name.as_ref() {
-            if name != &in_param {
-                return Err(syn::Error::new(
-                    name.span(),
-                    format!(
-                        "every #[rule] that takes an input parameter must use the same \
+        if let Some(name) = rule.input_name.as_ref()
+            && name != &in_param
+        {
+            return Err(syn::Error::new(
+                name.span(),
+                format!(
+                    "every #[rule] that takes an input parameter must use the same \
                          parameter name; rule `{}` uses `{}` but the canonical name is `{}`",
-                        rule.name, name, in_param,
-                    ),
-                ));
-            }
+                    rule.name, name, in_param,
+                ),
+            ));
         }
     }
     // The output method's input name may differ; we shadow it
@@ -1441,11 +1441,11 @@ impl VisitMut for RuleBodyWalker {
 
     fn visit_expr_mut(&mut self, expr: &mut Expr) {
         // Inline guard!/set! in expression position (rare but supported).
-        if let Expr::Macro(ExprMacro { mac, .. }) = expr {
-            if let Some(rewritten) = self.try_handle_macro(mac) {
-                *expr = rewritten;
-                return;
-            }
+        if let Expr::Macro(ExprMacro { mac, .. }) = expr
+            && let Some(rewritten) = self.try_handle_macro(mac)
+        {
+            *expr = rewritten;
+            return;
         }
         // DFF read: `*ctx.field` → `q.field`.
         if let Some((rewritten, field)) = try_rewrite_ctx_read_with_field(expr) {
@@ -1606,17 +1606,13 @@ fn try_rewrite_ctx_read_with_field(expr: &Expr) -> Option<(Expr, String)> {
         expr: inner,
         ..
     }) = expr
+        && let Expr::Field(syn::ExprField { base, member, .. }) = &**inner
+        && let Expr::Path(syn::ExprPath { path, .. }) = &**base
+        && path.is_ident("ctx")
+        && let syn::Member::Named(field) = member
     {
-        if let Expr::Field(syn::ExprField { base, member, .. }) = &**inner {
-            if let Expr::Path(syn::ExprPath { path, .. }) = &**base {
-                if path.is_ident("ctx") {
-                    if let syn::Member::Named(field) = member {
-                        let name = field.to_string();
-                        return Some((syn::parse_quote! { q.#field }, name));
-                    }
-                }
-            }
-        }
+        let name = field.to_string();
+        return Some((syn::parse_quote! { q.#field }, name));
     }
     None
 }
@@ -1675,15 +1671,13 @@ fn try_rewrite_ctx_subwidget_read(expr: &Expr) -> Option<(Expr, String)> {
     // Helper: given an expression that might be `ctx.<field>`,
     // return the field name and a fresh `q.<field>` to substitute.
     fn ctx_field_to_q_field(e: &Expr) -> Option<(Expr, String)> {
-        if let Expr::Field(syn::ExprField { base, member, .. }) = e {
-            if let Expr::Path(syn::ExprPath { path, .. }) = &**base {
-                if path.is_ident("ctx") {
-                    if let syn::Member::Named(field) = member {
-                        let name = field.to_string();
-                        return Some((syn::parse_quote! { q.#field }, name));
-                    }
-                }
-            }
+        if let Expr::Field(syn::ExprField { base, member, .. }) = e
+            && let Expr::Path(syn::ExprPath { path, .. }) = &**base
+            && path.is_ident("ctx")
+            && let syn::Member::Named(field) = member
+        {
+            let name = field.to_string();
+            return Some((syn::parse_quote! { q.#field }, name));
         }
         None
     }
@@ -1773,30 +1767,24 @@ impl VisitMut for OutputBodyWalker {
             expr: inner,
             ..
         }) = expr
+            && let Expr::Field(syn::ExprField { base, member, .. }) = &**inner
+            && let Expr::Path(syn::ExprPath { path, .. }) = &**base
+            && path.is_ident(&self.receiver_name)
+            && let syn::Member::Named(field) = member
         {
-            if let Expr::Field(syn::ExprField { base, member, .. }) = &**inner {
-                if let Expr::Path(syn::ExprPath { path, .. }) = &**base {
-                    if path.is_ident(&self.receiver_name) {
-                        if let syn::Member::Named(field) = member {
-                            self.field_reads.insert(field.to_string());
-                            *expr = syn::parse_quote! { q.#field };
-                            return;
-                        }
-                    }
-                }
-            }
+            self.field_reads.insert(field.to_string());
+            *expr = syn::parse_quote! { q.#field };
+            return;
         }
         // Also rewrite plain `<receiver>.field` (no deref).
-        if let Expr::Field(syn::ExprField { base, member, .. }) = expr {
-            if let Expr::Path(syn::ExprPath { path, .. }) = &**base {
-                if path.is_ident(&self.receiver_name) {
-                    if let syn::Member::Named(field) = member {
-                        self.field_reads.insert(field.to_string());
-                        *expr = syn::parse_quote! { q.#field };
-                        return;
-                    }
-                }
-            }
+        if let Expr::Field(syn::ExprField { base, member, .. }) = expr
+            && let Expr::Path(syn::ExprPath { path, .. }) = &**base
+            && path.is_ident(&self.receiver_name)
+            && let syn::Member::Named(field) = member
+        {
+            self.field_reads.insert(field.to_string());
+            *expr = syn::parse_quote! { q.#field };
+            return;
         }
         visit_mut::visit_expr_mut(self, expr);
     }

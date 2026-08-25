@@ -207,11 +207,11 @@ pub fn cic_chain(input: TokenStream) -> syn::Result<TokenStream> {
 fn emit(name: &Ident, d: &chain::ChainDesign) -> syn::Result<TokenStream> {
     let module = format_ident!("{}", to_snake(&name.to_string()));
     let report = format!("{d}");
-    let doc_header = format!(
+    let doc_header =
         " Decimation chain derived from requirements by [`cic_chain!`](crate::cic_chain).\n\n \
          Everything here was computed at compile time; the numbers are `pub const` so they \
          can be audited rather than trusted.\n\n # Design report\n\n ```text"
-    );
+            .to_string();
     let doc_lines: Vec<String> = report.lines().map(|l| format!(" {l}")).collect();
 
     // --- the derived numbers, as inspectable constants ---

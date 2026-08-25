@@ -632,7 +632,7 @@ fn design_split(spec: &ChainSpec, split: &[usize], passband: f64) -> Result<Chai
         }
         taps += 2;
     }
-    let quant = chosen.ok_or_else(|| {
+    let quant = chosen.ok_or({
         // Attribute the failure to whichever requirement was missed,
         // so the report points at a knob that helps.
         if spec.min_stopband_db > 0.0 && best_stop < spec.min_stopband_db {
@@ -701,6 +701,11 @@ fn combined_ripple_db(
 /// [`ChainSpec::max_chain_stages`] stages. The cheapest feasible option
 /// wins by the rate-weighted cost model in the module docs, and the
 /// runner-up is reported in [`ChainDesign::alternative`].
+// `!(a > b)` rather than `a <= b`, deliberately: these compare
+// f64 requirements that may be NaN, where every comparison is
+// false and the negated form is the one that rejects rather than
+// silently accepts. Same reasoning as `doc::plot::nice_ticks`.
+#[allow(clippy::neg_cmp_op_on_partial_ord)]
 pub fn design(spec: ChainSpec) -> Result<ChainDesign, Unmet> {
     if !(spec.fs_hz > 0.0) {
         return Err(Unmet::Invalid {

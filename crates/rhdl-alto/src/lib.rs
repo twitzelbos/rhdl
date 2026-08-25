@@ -11,25 +11,25 @@
 //! ## What ships in Phases 1+2 (this crate's first PR)
 //!
 //! - [`isa`]         — 32-bit microinstruction format + ALU/F1/F2/BS
-//!                      enums per the Alto Hardware Manual.
+//!   enums per the Alto Hardware Manual.
 //! - [`alu`]         — pure-combinational kernel implementing the 16
-//!                      Alto ALU functions.
+//!   Alto ALU functions.
 //! - [`regfile`]     — R-register file (32 × 16 bits).  S-registers
-//!                      (256 × 16 bits, 8 banks) are deferred to Phase 3.
+//!   (256 × 16 bits, 8 banks) are deferred to Phase 3.
 //! - [`microcycle`]  — shared per-cycle execution kernel
-//!                      (`compute_cycle`); used by both single-task
-//!                      microengine and multi-task system.
+//!   (`compute_cycle`); used by both single-task
+//!   microengine and multi-task system.
 //! - [`microengine`] — 2-stage MIF/MIE pipeline running a single
-//!                      task from a 1024-microinstruction RAM.
+//!   task from a 1024-microinstruction RAM.
 //! - [`task_system`] — **the 16-task wakeup arbiter as an
-//!                      [`rhdl_rule`] kernel** (Phase 2).  Each
-//!                      Alto hardware task is one `#[rule]` method
-//!                      with a `wakeup`-bit guard; the
-//!                      `#[rule_kernel_attr]` macro generates a
-//!                      priority-arbitrated scheduler from the
-//!                      `#[rule(priority = N)]` annotations.
-//!                      The most direct, BSV-natural expression
-//!                      of the Alto's defining microarchitecture.
+//!   [`rhdl_rule`] kernel** (Phase 2).  Each
+//!   Alto hardware task is one `#[rule]` method
+//!   with a `wakeup`-bit guard; the
+//!   `#[rule_kernel_attr]` macro generates a
+//!   priority-arbitrated scheduler from the
+//!   `#[rule(priority = N)]` annotations.
+//!   The most direct, BSV-natural expression
+//!   of the Alto's defining microarchitecture.
 //!
 //! Sufficient to execute hand-written Alto microcode that does ALU
 //! ops on R-registers and stores results, AND to demonstrate the

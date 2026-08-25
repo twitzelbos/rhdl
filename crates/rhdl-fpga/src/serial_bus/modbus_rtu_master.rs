@@ -493,7 +493,7 @@ pub fn modbus_rtu_master<const NREG: usize, const NCOIL: usize>(
                                 if in_range { coil_idx } else { bits::<16>(0) };
                             let bit_val: bool = q.write_coils[safe_idx];
                             if in_range && bit_val {
-                                packed = packed | (bits::<8>(1) << bits::<8>(b as u128));
+                                packed |= bits::<8>(1) << bits::<8>(b as u128);
                             }
                         }
                         d.req_buf[buf_idx] = packed;

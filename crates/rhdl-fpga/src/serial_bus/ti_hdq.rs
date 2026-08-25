@@ -73,7 +73,6 @@ bool |                                 | bool
 //!
 //! And the auto-generated FSM diagram for the slot-walking machine:
 #![doc = include_str!("../../doc/ti_hdq_fsm.md")]
-use rhdl::core::fsm::analysis::Transition;
 use rhdl::prelude::*;
 
 use crate::core::{constant::Constant, dff};

@@ -43,6 +43,8 @@ impl Timed for Output {}
 mod summaries {
     use super::*;
 
+    // Quoted by `timed/derive.md`; never called.
+    #[allow(dead_code)]
     // ANCHOR: circuit_io_trait
     pub trait CircuitIO: 'static + CircuitDQ {
         // The input type of the circuit

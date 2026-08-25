@@ -71,7 +71,6 @@ bool |                            | bool
 //!
 //! And the auto-generated FSM diagram for the bit-walker:
 #![doc = include_str!("../../doc/ps2_keyboard_fsm.md")]
-use rhdl::core::fsm::analysis::Transition;
 use rhdl::prelude::*;
 
 use crate::core::dff;

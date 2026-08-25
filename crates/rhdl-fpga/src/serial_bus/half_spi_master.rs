@@ -88,7 +88,6 @@ bool |                          | bool
 //!
 //! And the auto-generated FSM diagram for the half-duplex transaction:
 #![doc = include_str!("../../doc/half_spi_master_fsm.md")]
-use rhdl::core::fsm::analysis::Transition;
 use rhdl::prelude::*;
 
 use crate::core::dff;

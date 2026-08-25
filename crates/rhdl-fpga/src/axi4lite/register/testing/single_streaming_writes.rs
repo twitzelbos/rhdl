@@ -34,6 +34,8 @@ impl Fixture {
     /// The acceptor's `assert_eq!(res, Ok(()))` fires only when a result
     /// arrives, so a register path that completed no writes would run
     /// zero assertions and the test would pass. Assert on the count.
+    // Kept for tests that want the accept counter; unused today.
+    #[allow(dead_code)]
     fn new_counted() -> (Self, AcceptCount) {
         let count = AcceptCount::default();
         let sink_count = count.clone();

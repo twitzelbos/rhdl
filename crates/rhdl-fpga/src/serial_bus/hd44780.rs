@@ -62,7 +62,6 @@ bool |                       | bool
 //!
 //! And the auto-generated FSM diagram for the byte-write walk:
 #![doc = include_str!("../../doc/hd44780_fsm.md")]
-use rhdl::core::fsm::analysis::Transition;
 use rhdl::prelude::*;
 
 use crate::core::{constant::Constant, dff};
@@ -257,16 +256,16 @@ where
     // Truncate Bits<8> → Bits<4> via masking (already masked above).
     let mut db = bits::<4>(0);
     if (nibble_byte & bits::<8>(0x1)) != bits::<8>(0) {
-        db = db | bits::<4>(0x1);
+        db |= bits::<4>(0x1);
     }
     if (nibble_byte & bits::<8>(0x2)) != bits::<8>(0) {
-        db = db | bits::<4>(0x2);
+        db |= bits::<4>(0x2);
     }
     if (nibble_byte & bits::<8>(0x4)) != bits::<8>(0) {
-        db = db | bits::<4>(0x4);
+        db |= bits::<4>(0x4);
     }
     if (nibble_byte & bits::<8>(0x8)) != bits::<8>(0) {
-        db = db | bits::<4>(0x8);
+        db |= bits::<4>(0x8);
     }
     let e = match q.state {
         Hd44780State::HighStrobe | Hd44780State::LowStrobe => true,

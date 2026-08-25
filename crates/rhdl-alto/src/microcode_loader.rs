@@ -212,6 +212,9 @@ const CONSTANT_PROM_BIT_POSITIONS: [u32; NUM_CONSTANT_PROMS] = [12, 8, 4, 0];
 const CONSTANT_ROM_ADDRESS_MAP: [u32; 8] = [7, 2, 1, 0, 3, 4, 5, 6];
 
 /// Apply the address-scramble transform.
+// The index *is* the address being decoded; iterating the values
+// would lose the thing the function returns.
+#[allow(clippy::needless_range_loop)]
 fn address_map_constant_rom(address: usize) -> usize {
     let mut mapped = 0usize;
     for i in 0..8 {
@@ -236,6 +239,9 @@ fn data_map_constant_rom(data: u32) -> u32 {
 /// Load the Alto II Constant ROM from 4 in-memory PROM byte arrays.
 ///
 /// `roms` must be in the order documented by [`CONSTANT_PROM_FILENAMES`].
+// `addr` indexes two collections at once, so an iterator over one
+// of them still needs the counter.
+#[allow(clippy::needless_range_loop)]
 pub fn load_alto_ii_constant_rom(
     roms: &[&[u8]; NUM_CONSTANT_PROMS],
 ) -> Result<[u16; CONSTANT_ROM_WORDS], LoadError> {

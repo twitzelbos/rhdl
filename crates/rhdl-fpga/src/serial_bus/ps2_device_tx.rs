@@ -188,6 +188,11 @@ where
 
 #[kernel]
 /// Kernel for [Ps2DeviceTx].
+// `data_oe = false` is the safe state for a tristate enable, and it
+// stays as the declared default even though every path below assigns
+// it -- so a path added later that forgets to is not driving the bus
+// by accident.
+#[allow(unused_assignments)]
 pub fn ps2_device_tx<const DIV_W: usize>(cr: ClockReset, i: In, q: Q<DIV_W>) -> (Out, D<DIV_W>)
 where
     rhdl::bits::W<DIV_W>: BitWidth,

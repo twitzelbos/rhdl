@@ -52,7 +52,6 @@ bool |                                 | bool
 //!
 //! And the auto-generated FSM diagram for the polling sequence:
 #![doc = include_str!("../../doc/battery_monitor_fsm.md")]
-use rhdl::core::fsm::analysis::Transition;
 use rhdl::prelude::*;
 
 use super::ti_hdq::{TiHdqMaster, TiHdqOp, TiHdqTimings, ti_hdq as ti_hdq_kernel};

@@ -92,7 +92,7 @@ pub fn not_present(ty: &TraceType) -> TranslationResult {
         },
         TraceType::Signal(inner, _) => TranslationResult {
             val: ValueRepr::NotPresent,
-            subfields: vec![SubFieldTranslationResult::new("value", not_present(&inner))],
+            subfields: vec![SubFieldTranslationResult::new("value", not_present(inner))],
             kind: ValueKind::Normal,
         },
         _ => TranslationResult {
