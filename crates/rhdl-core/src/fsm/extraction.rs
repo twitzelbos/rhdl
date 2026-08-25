@@ -183,13 +183,11 @@ fn typed_bits_to_discriminant(tb: &TypedBits) -> Option<i128> {
 /// Find the opcode (if any) that defines the given slot in `ops`.
 ///
 /// Returns the index into `ops` where the LHS first matches.
-fn find_definer<'a>(ops: &'a [OpCode], slot: Slot) -> Option<&'a OpCode> {
-    for op in ops.iter().rev() {
-        if op.lhs() == Some(slot) {
-            return Some(op);
-        }
-    }
-    None
+fn find_definer(ops: &[OpCode], slot: Slot) -> Option<&OpCode> {
+    ops.iter()
+        .rev()
+        .find(|&op| op.lhs() == Some(slot))
+        .map(|v| v as _)
 }
 
 /// Extract the source variant index for a `CaseArgument`.
@@ -200,6 +198,7 @@ fn find_definer<'a>(ops: &'a [OpCode], slot: Slot) -> Option<&'a OpCode> {
 ///
 /// Returns `None` for `CaseArgument::Wild` (the catch-all `_`
 /// arm) or when the slot can't be resolved to a known variant.
+#[allow(dead_code)]
 fn source_variant_for_case_arg(
     desc: &FsmDescriptor,
     arg: &CaseArgument,
@@ -302,10 +301,10 @@ fn locate_state_field_slot(
                 // otherwise it comes from the `template` (dont_care)
                 // and we have no state slot to walk.
                 for fv in &struct_op.fields {
-                    if let Member::Named(name) = &fv.member {
-                        if name.as_str() == state_field {
-                            return Ok(fv.value);
-                        }
+                    if let Member::Named(name) = &fv.member
+                        && name.as_str() == state_field
+                    {
+                        return Ok(fv.value);
                     }
                 }
                 return Err(
@@ -370,10 +369,11 @@ fn slot_reads_reset_field(ops: &[OpCode], slot: Slot) -> bool {
             OpCode::Index(idx) => {
                 // Check if this Index targets the .reset field.
                 let mut it = idx.path.iter();
-                if let Some(PathElement::Field(f)) = it.next() {
-                    if f.as_str() == "reset" && it.next().is_none() {
-                        return true;
-                    }
+                if let Some(PathElement::Field(f)) = it.next()
+                    && f.as_str() == "reset"
+                    && it.next().is_none()
+                {
+                    return true;
                 }
                 // Otherwise, walk back through the indexed slot.
                 current = idx.arg;
@@ -522,12 +522,11 @@ fn possible_state_values_under_constraint(
     use std::collections::BTreeSet;
 
     // Literal of the state type — direct discriminant lookup.
-    if let Some(tb) = literal_lookup(slot) {
-        if let Some(disc) = typed_bits_to_discriminant(&tb) {
-            if let Some(idx) = variant_index_for_discriminant(desc, disc) {
-                return Ok(BTreeSet::from([idx]));
-            }
-        }
+    if let Some(tb) = literal_lookup(slot)
+        && let Some(disc) = typed_bits_to_discriminant(&tb)
+        && let Some(idx) = variant_index_for_discriminant(desc, disc)
+    {
+        return Ok(BTreeSet::from([idx]));
     }
 
     let Some(definer) = find_definer(ops, slot) else {
@@ -608,18 +607,18 @@ fn possible_state_values_under_constraint(
         // --- Struct: explicit field set or template fall-through ---
         OpCode::Struct(struct_op) => {
             for fv in &struct_op.fields {
-                if let Member::Named(name) = &fv.member {
-                    if name.as_str() == state_field {
-                        return possible_state_values_under_constraint(
-                            desc,
-                            ops,
-                            fv.value,
-                            state_field,
-                            source_variant,
-                            literal_lookup,
-                            allow_implicit,
-                        );
-                    }
+                if let Member::Named(name) = &fv.member
+                    && name.as_str() == state_field
+                {
+                    return possible_state_values_under_constraint(
+                        desc,
+                        ops,
+                        fv.value,
+                        state_field,
+                        source_variant,
+                        literal_lookup,
+                        allow_implicit,
+                    );
                 }
             }
             // Field comes from template — no state value here.
@@ -736,13 +735,12 @@ fn possible_state_values_under_constraint(
                             wild_arm = Some(*arm_slot);
                         }
                         CaseArgument::Slot(disc_slot) => {
-                            if let Some(tb) = literal_lookup(*disc_slot) {
-                                if let Some(disc) = typed_bits_to_discriminant(&tb) {
-                                    if disc == source_disc {
-                                        matched_arm = Some(*arm_slot);
-                                        break;
-                                    }
-                                }
+                            if let Some(tb) = literal_lookup(*disc_slot)
+                                && let Some(disc) = typed_bits_to_discriminant(&tb)
+                                && disc == source_disc
+                            {
+                                matched_arm = Some(*arm_slot);
+                                break;
                             }
                         }
                     }

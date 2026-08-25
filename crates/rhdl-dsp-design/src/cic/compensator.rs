@@ -733,6 +733,7 @@ pub mod remez {
     /// `taps` must be odd. Returns `None` if the system becomes singular —
     /// which in practice means the extremal set collapsed, and is reported
     /// rather than papered over.
+    #[allow(clippy::needless_range_loop)]
     pub fn design(spec: &Spec) -> Option<Design> {
         let cics: &[CicShape] = &spec.cics;
         let taps = spec.taps;
@@ -740,7 +741,7 @@ pub mod remez {
         let stopband_edge = spec.stopband_edge;
         let ripple_db = spec.max_ripple_db;
         let stopband_db = spec.min_stopband_db;
-        if taps % 2 == 0 || taps < 3 || cics.is_empty() {
+        if taps.is_multiple_of(2) || taps < 3 || cics.is_empty() {
             return None;
         }
         let m = taps / 2;

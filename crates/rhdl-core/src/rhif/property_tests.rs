@@ -362,7 +362,7 @@ pub fn check_lowering_correctness<K: DigitalFn>(
     };
 
     let rtl_obj = crate::compiler::driver::compile_design_stage2(&rhif_obj)?;
-    let rtl_args: Vec<BitString> = arguments.iter().map(|tb| BitString::from(tb)).collect();
+    let rtl_args: Vec<BitString> = arguments.iter().map(BitString::from).collect();
     let rtl_result = match crate::rtl::vm::execute(&rtl_obj, rtl_args) {
         Ok(v) => v,
         Err(e) => {
@@ -521,6 +521,7 @@ pub fn generate_chain_program(bit_width: usize, n_ops: usize, rng: &mut impl Rng
 
 /// Internal helper used by every random-program generator.  Owns
 /// the `SymbolTable` and provides an interning helper for slots.
+#[allow(dead_code)]
 struct ProgramBuilder {
     symtab: crate::common::symtab::SymbolTable<
         TypedBits,

@@ -79,7 +79,6 @@ bool |                       | B<32>
 //!
 //! And the auto-generated FSM diagram for the NEC receive walk:
 #![doc = include_str!("../../doc/ir_nec_rx_fsm.md")]
-use rhdl::core::fsm::analysis::Transition;
 use rhdl::prelude::*;
 
 use crate::core::{constant::Constant, dff};
@@ -234,6 +233,11 @@ where
 
 #[kernel]
 /// Kernel for [IrNecRx].
+// An arriving edge and an expiring space are different causes with
+// the same effect, and saying so as two arms keeps the two exit
+// paths visible. Collapsing them to `||` also re-shapes the emitted
+// mux tree, which churns the Tier-3 snapshot for no behavioural gain.
+#[allow(clippy::if_same_then_else)]
 pub fn ir_nec_rx<const T_W: usize>(cr: ClockReset, i: In, q: Q<T_W>) -> (Out, D<T_W>)
 where
     rhdl::bits::W<T_W>: BitWidth,
