@@ -1,3 +1,4 @@
+pub mod cic_chain;
 mod digital;
 mod utils;
 pub use digital::derive_digital;

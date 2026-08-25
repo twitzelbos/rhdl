@@ -131,3 +131,59 @@ mod tests {
         assert!(text.contains("achieved stopband"), "{text}");
     }
 }
+
+// ANCHOR: macro
+// The same requirements, lowered straight to widgets. The design runs
+// during compilation; what reaches the linker is a pruned CIC per
+// stage cascaded through their framing, plus the derived taps and the
+// compensating FIR emitted *beside* the chain -- a compensator need not
+// sit right behind the decimator, or be in the FPGA at all.
+rhdl::prelude::cic_chain!(
+    NarrowbandChain,
+    fs = 125e6,
+    decimate = 488,
+    alias_free_bw = 64e3,
+    in_w = 16,
+    out_w = 24,
+    ripple_db = 0.1,
+    alias_db = 60,
+    snr_db = 80,
+);
+// ANCHOR_END: macro
+
+#[cfg(test)]
+mod macro_tests {
+    use super::*;
+
+    /// The chapter states these numbers; if the designer changes its
+    /// mind the chapter is wrong and this says so.
+    #[test]
+    fn the_macro_derives_what_the_chapter_claims() {
+        assert_eq!(narrowband_chain::DECIMATE, 488);
+        assert_eq!(narrowband_chain::SPLIT, [8, 61]);
+        assert_eq!(narrowband_chain::TAPS.len(), 11);
+        assert!(narrowband_chain::RIPPLE_DB <= 0.1);
+        assert!(narrowband_chain::ALIAS_REJECTION_DB >= 60.0);
+        assert!(narrowband_chain::SNR_DB >= 80.0);
+    }
+
+    #[test]
+    fn the_emitted_chain_elaborates() -> miette::Result<()> {
+        use rhdl::prelude::*;
+        // Decimation alone...
+        let uut = narrowband_chain::new();
+        let _ = uut.descriptor("top".into())?;
+        // ...and with the compensator behind it, if that is where you
+        // want it.
+        let comp = narrowband_chain::compensated();
+        let _ = comp.descriptor("top".into())?;
+        Ok(())
+    }
+
+    /// The chapter quotes both figures; they must stay true.
+    #[test]
+    fn the_droop_and_ripple_figures_are_as_documented() {
+        assert!((narrowband_chain::DROOP_DB - -19.586).abs() < 0.01);
+        assert!((narrowband_chain::RIPPLE_DB - 0.0689).abs() < 0.001);
+    }
+}
