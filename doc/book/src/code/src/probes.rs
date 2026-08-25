@@ -50,9 +50,11 @@ pub mod edge_time {
             )
             .unwrap();
         }
+        // ANCHOR: edge-time-demo
         let edge_times = outputs
             .edge_time(|sample| sample.output)
             .collect::<Vec<_>>();
+        // ANCHOR_END: edge-time-demo
         let mut edge_file = std::fs::File::create("edge_time_output.txt").unwrap();
         writeln!(edge_file, "| Time | Clock Reset | Input | Output |").unwrap();
         writeln!(edge_file, "|------|-------------|-------|--------|").unwrap();
