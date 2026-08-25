@@ -514,15 +514,14 @@ fn chain_page_two(d: &chain::ChainDesign) -> Page {
         Series::new("flat", vec![(0.0, 0.0), (x_hi, 0.0)], (0.6, 0.6, 0.6)).dashed(),
     ];
     if let Some((band, db)) = stop {
-        // Both levels are properties of the *compensator*, not of the
-        // composite: `stopband_db` measures the filter alone. The
-        // composite is better than either, because the cascade
-        // contributes its own rolloff on top — so the achieved line
-        // reads as a floor the design guarantees, not as a description
-        // of the green curve. Drawing the achieved line in the
-        // compensator's own colour is what says which curve it belongs
-        // to; a reader matching it to the composite would conclude the
-        // report was wrong by 20 dB or more.
+        // Both levels describe the composite, so the achieved line is
+        // drawn in the composite's colour and sits on the green curve's
+        // stopband peaks. It used to describe the compensator alone,
+        // which needed the line drawn in *that* curve's colour and
+        // explicitly labelled, because a reader matching it to the
+        // composite would have read an error of 30 dB. Measuring what
+        // the requirement is actually about removed the need to explain
+        // which curve the number belonged to.
         s.push(
             Series::new(
                 "stopband edge",
@@ -541,12 +540,12 @@ fn chain_page_two(d: &chain::ChainDesign) -> Page {
         );
         s.push(
             Series::new(
-                format!("compensator {:.1} dB", d.achieved_stopband_db),
+                format!("composite {:.1} dB", d.achieved_stopband_db),
                 vec![
                     (band, -d.achieved_stopband_db),
                     (x_hi, -d.achieved_stopband_db),
                 ],
-                PALETTE[4],
+                PALETTE[2],
             )
             .dashed(),
         );
@@ -607,14 +606,8 @@ fn chain_page_two(d: &chain::ChainDesign) -> Page {
                 "stopband .......... {:.1} dB above {:.2} Nyquist (asked >= {:.1})",
                 d.achieved_stopband_db, d.spec.stopband_edge, d.spec.min_stopband_db
             ));
-            // Say which filter the number describes. The composite sits
-            // well below it, and a reader comparing this figure to the
-            // green curve on the plot would otherwise think one of them
-            // is wrong.
-            lines.push(
-                "                    compensator alone; the composite is lower by the cascade's rolloff"
-                    .to_string(),
-            );
+            // No disambiguating note any more: the figure is the
+            // composite's, which is the curve the reader is looking at.
         } else {
             // `stopband_db` reports infinity when the edge leaves no
             // band above it. Printing that with `{:.1}` gave
@@ -707,8 +700,8 @@ mod tests {
         assert!(out.contains("stopband edge"), "no stopband edge marker");
         assert!(out.contains("asked >= 60 dB"), "no requested level");
         assert!(
-            out.contains("compensator 66.0 dB"),
-            "no achieved level, or it does not name the compensator"
+            out.contains("composite 66.0 dB"),
+            "no achieved level, or it does not name the composite"
         );
     }
 
@@ -732,7 +725,7 @@ mod tests {
     #[test]
     fn a_wildly_overshot_stopband_still_fits_the_frame() {
         let out = rendered(&design_with_stopband(40.0, 90.0));
-        assert!(out.contains("compensator 90.0 dB"));
+        assert!(out.contains("composite 90.0 dB"));
         // The y axis is labelled in round steps; asking for 40 but
         // achieving 90 must push the floor past -90.
         assert!(

@@ -259,8 +259,10 @@ pub struct ChainDesign {
     pub achieved_alias_db: f64,
     /// Achieved output SNR, in dB.
     pub achieved_snr_db: f64,
-    /// Stopband attenuation the compensator achieves, in dB. Infinite
-    /// when no stopband was requested.
+    /// Composite stopband attenuation achieved, in dB — the cascade and
+    /// the compensator together, above [`ChainSpec::stopband_edge`].
+    /// Infinite when no stopband was requested, or when the edge sits at
+    /// Nyquist and leaves no band to measure.
     pub achieved_stopband_db: f64,
     /// Compensator multipliers, exploiting symmetry.
     pub multipliers: usize,

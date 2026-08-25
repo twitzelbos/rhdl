@@ -31,6 +31,37 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-25 — `min_stopband_db` measures the composite, not the compensator alone
+
+**Paths:** `crates/rhdl-dsp-design/src/cic/{compensator,chain}.rs`, `crates/rhdl-fpga/src/doc/report.rs`, `crates/rhdl-fpga/doc/cic_chain_report_antialias.pdf`, `doc/book/src/dsp/{design,compensation}.md`, `doc/book/src/code/src/dsp/design.rs`.
+
+**Why this, why now:** the stopband figure described the compensator considered on its own, which is not a thing anyone listens to. What decides whether out-of-band content reaches the output is the cascade and the compensator together, and that is several to thirty dB better. Charging the compensator for rolloff the cascade already provides spends taps on attenuation that already exists.
+
+It was also creating a perverse incentive. A deeper CIC droops harder, so the compensator must boost harder to undo it, and that boost spills past the passband edge — which made the *filter's own* stopband worse. Measured that way, adding CIC stages made the requirement harder to meet: at `stopband_edge: 0.7`, N=4 needed 31 taps and N=5 needed 33. The search was being punished for reaching for the cheap resource.
+
+**Design decisions:**
+
+- **The metric is the composite, referenced to unity.** `stopband_db` now maximises `|H(u)·A(u)|` above the edge. Unity is the right reference rather than the measured DC gain, because the passband target is `1/|H|` — the composite is 1.0 at DC by construction, and `quantise` trims the centre tap to keep it exactly there.
+- **Both Remez bands are weighted by `|H(u)|`.** The passband already was, which is what makes its weighted error the relative deviation `|A·H − 1|`. Applying the same weight in the stopband makes the weighted error `|A·H|`, so the equiripple property lands on the composite rather than on the filter alone. This is a one-line change that follows from taking the metric seriously, not a separate feature.
+- **The Remez stopband weight is floored 12 dB past the requirement.** A CIC's stopband contains exact nulls, the exchange solves with `δ/W`, and an unfloored weight goes to zero there and returns `None` — rejecting the design outright rather than returning a poor one. At 12 dB past, a frequency carries 1/16th the weight of one that binds, so the floor costs nothing real. The least-squares path needs no floor: it accumulates `|H|²` into normal equations, where a vanishing weight simply drops the frequency out of the objective, which is the correct answer.
+- **The chapter's tap counts are now asserted.** They had already drifted silently — the chapter said 50 dB cost 29 taps across a wide transition and 67 across a narrow one, and the real figures under the new metric are 17 and 53. Prose is not compiled, so nothing failed. Each claimed count is now pinned from both sides: the claimed count meets the spec and two fewer taps does not.
+
+**Surprises and gotchas:**
+
+- **The obvious hope does not work, and it is worth knowing why.** One expects a composite requirement to let the search buy attenuation with CIC stages, which are cheap, instead of taps, which are not. It cannot. The deeper droop needs more boost, the boost spills past the passband edge, and the two effects very nearly cancel: at 29 taps, N=4 and N=6 land within a dB of each other. Extra CIC depth does not *buy* stopband — it stops *costing* stopband, which is a smaller claim and the true one. The test asserting this is deliberately "no worse" rather than "better".
+- **The saving is nonetheless large where the cascade is deep.** On small single-stage specs it is 2–4 taps. On the committed anti-alias report — `/488` as `[8, 61]`, 60 dB above 0.75 Nyquist — it is **47 taps down to 25**, and 24 multipliers down to 13, because a two-stage cascade with N=2 then N=5 contributes a great deal above the edge. The headline saving depends entirely on how much cascade there is above the stopband edge.
+- **A monotonicity test broke, and it was the test's premise that was wrong.** `quantisation_limits_the_stopband` asserted that more coefficient bits never reject less. That held while the metric was the filter alone, whose worst case is the quantisation noise floor across the whole stopband and so improves with every bit. The composite's worst case sits in a narrow region near the stopband edge where the cascade has not yet rolled off, and there a coefficient perturbation moves the figure about a dB either way at random — 10 bits scored 52.8 dB against 20 bits' 51.7, and the *ideal* design scored 50.2, worse than either. The test now asserts what is true: bits buy attenuation steeply while quantisation binds (6 → 8 → 10 bits is 30 → 41 → 53 dB), and past that the design binds and width stops mattering.
+- **The report got simpler.** The previous entry had to draw the achieved level in the compensator's colour and label it "compensator 66.0 dB", because a reader matching it to the composite would have read an error of 30 dB. The line now describes the composite, sits on the green curve's stopband peaks, and needs no explanation. Measuring the right thing removed the need to explain which curve the number belonged to — the disambiguation was a symptom.
+- **The compensator now visibly rises above 0 dB in the stopband**, up to about +3 dB at Nyquist on the committed report. That is correct and is the whole point: it has stopped paying to attenuate frequencies the cascade has already killed. It looks alarming next to the old plot and is not.
+
+**Validation:** 66 tests in `rhdl-dsp-design`. Three new: that the reported figure equals the composite recomputed on a deliberately different grid and exceeds the filter-alone figure; that extra CIC depth does not cost stopband; and that a CIC null inside the stopband still designs, which is the floor's reason for existing. `cargo test --all --no-fail-fast` green, tree clean, and the two reports with no stopband request are byte-identical — the inertness check that says this only touches designs that asked for attenuation.
+
+**Follow-ups:**
+
+- The composite figure is measured, not guaranteed. Nothing stops a *quantised* design from missing the requirement the ideal one met; `Quantised::stopband_db` reports it but `chain::design` does not re-verify against it. Worth closing, since the hardware runs the quantised taps.
+- `min_stopband_db` and `min_alias_rejection_db` are different questions about different bands and are easy to confuse. The book now says so explicitly; the API could say it too, or the two could be unified into one statement about what reaches the output.
+- The pinning test for the chapter's tap counts costs 35 seconds, because it runs eight full chain designs. Worth it against silent drift, but a cheaper formulation would be welcome.
+
 ## 2026-08-25 — Follow-ups from the DSP chain: three-stage splits, a stopband you can see, and a book that checks itself
 
 **Paths:** `crates/rhdl-dsp-design/src/cic/chain.rs`, `crates/rhdl-fpga/src/doc/report.rs`, `crates/rhdl-fpga/examples/cic_report.rs`, `crates/rhdl-fpga/doc/cic_chain_report_antialias.pdf` (new), `crates/rhdl-macro-core/src/cic_chain.rs`, `doc/book/src/code/tests/book_integrity.rs` (new), `doc/book/src/code/src/{probes,timed/derive}.rs`, `doc/book/src/digital/advanced.md`.

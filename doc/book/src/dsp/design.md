@@ -156,8 +156,21 @@ average while missing the specification. Remez minimises the maximum
 weighted error, which is the quantity the requirement is written in.
 
 Attenuation is not free. It is bought with taps, and the transition
-width dominates: 50 dB across a wide transition costs 29 taps, and the
-same 50 dB across a narrow one costs 67.
+width dominates far more than the depth does: 50 dB across a wide
+transition (`stopband_edge: 0.9`) costs 17 taps, and the same 50 dB
+across a narrow one (`0.6`) costs 53.
+
+The requirement is on the **composite** — the cascade and the
+compensator together, which is what decides whether out-of-band content
+reaches the output. That is worth stating because the obvious reading is
+wrong in a specific way: since the cascade contributes its own rolloff
+above the stopband edge, you might expect to be able to buy attenuation
+with CIC stages, which are cheap, instead of taps, which are not. You
+cannot. A deeper CIC droops harder, the compensator must boost harder to
+undo it, and that boost spills past the passband edge — the two effects
+very nearly cancel. Extra CIC depth does not buy stopband; it merely
+stops *costing* stopband, which it did while the figure was measured
+against the compensator alone.
 
 ## Lowering it to hardware
 
