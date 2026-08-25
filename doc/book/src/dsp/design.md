@@ -94,9 +94,19 @@ accumulators, **all of them clocked at the full 125 MHz**. Split as
 registers run at 15.6, where width is cheap and timing is not the
 binding constraint.
 
-Both are designed and the cheaper wins. The loser is reported, because
-"a cascade would have been better here" is exactly the sort of
-conclusion that should be visible rather than implied.
+Every ordered way of factoring the decimation into at most
+`max_chain_stages` stages is designed, and the cheapest feasible one
+wins. Order matters, because each stage sees a different fraction of
+its own output band -- `8 x 61` and `61 x 8` are different filters. The
+runner-up is reported, because "a cascade would have been better here"
+is exactly the sort of conclusion that should be visible rather than
+implied.
+
+Three stages is the default ceiling rather than two, because a deep
+decimation often does split better three ways: at `/1024` with a 16 kHz
+band, `[128, 8]` costs 65.0 and `[4, 32, 8]` costs 49.0. Each extra
+stage multiplies the search, so the ceiling is a budget rather than an
+aspiration.
 
 ```admonish warning title="The cost model is a proxy"
 Cost is register bits weighted by the rate they run at. That is *not*

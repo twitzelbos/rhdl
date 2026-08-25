@@ -140,7 +140,7 @@ pub fn as_design(cfg: CicReport) -> Option<chain::ChainDesign> {
             coeff_width: cfg.coeff_width,
             max_stages: n,
             max_taps: cfg.taps,
-            allow_cascade: false,
+            max_chain_stages: 1,
             stopband_edge: 1.0,
             min_stopband_db: 0.0,
             method: compensator::Method::LeastSquares,

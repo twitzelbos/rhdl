@@ -2172,7 +2172,7 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595.00 842.00] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 8 0 R >>
 endobj
 8 0 obj
-<< /Length 49063 >>
+<< /Length 49065 >>
 stream
 0.000 0.000 0.000 rg
 BT /F2 16.00 Tf 198.820 800.000 Td (Compensation and Result) Tj ET
@@ -4726,7 +4726,7 @@ BT /F1 8.00 Tf 60.000 187.000 Td () Tj ET
 BT /F1 8.00 Tf 60.000 176.000 Td (register bits ..... 269 \(rate-weighted cost 89.6\)) Tj ET
 BT /F1 8.00 Tf 60.000 165.000 Td (taps .............. [-177, 1286, -4829, 12002, -21186, 26320, -21186, 12002, -4829, 1286, -177]) Tj ET
 BT /F1 8.00 Tf 60.000 154.000 Td (DC gain ........... 1.000000 \(exact by construction\)) Tj ET
-BT /F1 8.00 Tf 60.000 143.000 Td (alternative ....... [122, 4], cost 97.3, 259 bits - feasible, but costlier by the rate-weighted model) Tj ET
+BT /F1 8.00 Tf 60.000 143.000 Td (alternative ....... [4, 61, 2], cost 96.8, 384 bits - feasible, but costlier by the rate-weighted model) Tj ET
 BT /F1 7.50 Tf 60.000 124.000 Td (Rate-weighted cost is a proxy, not an area figure: flops cost the same however slowly) Tj ET
 BT /F1 7.50 Tf 60.000 115.000 Td (they are clocked. It captures that a wide adder at the converter rate is the hard part.) Tj ET
 endstream
@@ -4745,5 +4745,5 @@ xref
 trailer
 << /Size 9 /Root 1 0 R >>
 startxref
-91321
+91323
 %%EOF
