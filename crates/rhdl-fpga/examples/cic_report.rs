@@ -46,6 +46,29 @@ fn main() -> Result<(), RHDLError> {
     println!("wrote {}", chain_path.display());
     println!();
 
+    // And once more with a stopband requirement, which is the case the
+    // equiripple fit exists for. Worth committing separately because it
+    // renders a different page: the survey plot spans the full output
+    // Nyquist so the transition and the achieved floor are visible,
+    // where the reports above -- having asked for no attenuation -- show
+    // the passband alone.
+    let anti_alias = chain::design(chain::ChainSpec {
+        stopband_edge: 0.75,
+        min_stopband_db: 60.0,
+        max_taps: 51,
+        method: compensator::Method::Remez,
+        ..Default::default()
+    })
+    .expect("the anti-alias spec must design");
+    let aa_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("doc")
+        .join("cic_chain_report_antialias.pdf");
+    std::fs::write(&aa_path, chain_report(&anti_alias).to_bytes()).expect("write");
+    println!("--- derived chain, with a 60 dB stopband above 0.75 Nyquist ---");
+    println!("{anti_alias}");
+    println!("wrote {}", aa_path.display());
+    println!();
+
     // Say it on stdout too, so running this is useful on its own.
     let (n, r, m) = (cfg.stages, cfg.rate, cfg.delay);
     let spec = compensator::Spec {
