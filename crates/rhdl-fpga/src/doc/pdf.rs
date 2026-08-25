@@ -47,20 +47,53 @@ impl Font {
         }
     }
 
-    /// Approximate advance width of `text` at `size`, in points.
+    /// Advance width of `text` at `size`, in points.
     ///
-    /// Averaged rather than metric-accurate: this is used to centre and
-    /// right-align labels, where being a few percent out is invisible,
-    /// and carrying the full Helvetica width table would be more code
-    /// than the rest of this module.
+    /// The real Adobe metrics for the two faces, in 1/1000 em, for
+    /// printable ASCII. An earlier version averaged 0.52 em per
+    /// character, which put centred and right-aligned labels a few
+    /// percent off true — visible on a tick label sitting next to its
+    /// gridline, and the sort of thing that makes a plot look
+    /// approximate even when the data is not.
     pub fn width_of(self, text: &str, size: f64) -> f64 {
-        let per = match self {
-            Font::Regular => 0.52,
-            Font::Bold => 0.56,
+        let table = match self {
+            Font::Regular => &HELVETICA,
+            Font::Bold => &HELVETICA_BOLD,
         };
-        text.chars().count() as f64 * size * per
+        let mils: u32 = text
+            .chars()
+            .map(|c| {
+                let i = c as usize;
+                if (32..127).contains(&i) {
+                    table[i - 32] as u32
+                } else {
+                    // Anything unprintable is dropped by `escape`, so it
+                    // contributes no width either.
+                    0
+                }
+            })
+            .sum();
+        mils as f64 * size / 1000.0
     }
 }
+
+/// Adobe Helvetica advance widths, 1/1000 em, for ASCII 32..126.
+const HELVETICA: [u16; 95] = [
+    278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556,
+    556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556, 1015, 667, 667, 722, 722, 667,
+    611, 778, 722, 278, 500, 667, 556, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667,
+    667, 611, 278, 278, 278, 469, 556, 333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500,
+    222, 833, 556, 556, 556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584,
+];
+
+/// Adobe Helvetica-Bold advance widths, 1/1000 em, for ASCII 32..126.
+const HELVETICA_BOLD: [u16; 95] = [
+    278, 333, 474, 556, 556, 889, 722, 238, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556,
+    556, 556, 556, 556, 556, 556, 556, 333, 333, 584, 584, 584, 611, 975, 722, 722, 722, 722, 667,
+    611, 778, 722, 278, 556, 722, 611, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667,
+    667, 611, 333, 278, 333, 584, 556, 333, 556, 611, 556, 611, 556, 333, 611, 611, 278, 278, 556,
+    278, 889, 611, 611, 611, 611, 389, 556, 333, 611, 556, 778, 556, 556, 500, 389, 280, 389, 584,
+];
 
 /// Horizontal alignment for [`Page::text`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -161,6 +194,36 @@ impl Page {
     /// Fill a rectangle with the current fill colour.
     pub fn rect_filled(&mut self, x: f64, y: f64, w: f64, h: f64) -> &mut Self {
         let _ = writeln!(self.ops, "{x:.3} {y:.3} {w:.3} {h:.3} re f");
+        self
+    }
+
+    /// Draw text rotated 90 degrees counter-clockwise, reading upward.
+    ///
+    /// For axis labels, which is the one place a technical plot needs
+    /// it. `x`, `y` is the baseline origin; alignment runs along the
+    /// text's own direction, so `Centre` centres it vertically.
+    pub fn text_vertical(
+        &mut self,
+        x: f64,
+        y: f64,
+        size: f64,
+        font: Font,
+        align: Align,
+        text: &str,
+    ) -> &mut Self {
+        let w = font.width_of(text, size);
+        let y = match align {
+            Align::Left => y,
+            Align::Centre => y - w / 2.0,
+            Align::Right => y - w,
+        };
+        // Text matrix for a quarter turn: [0 1 -1 0 x y].
+        let _ = writeln!(
+            self.ops,
+            "BT {} {size:.2} Tf 0 1 -1 0 {x:.3} {y:.3} Tm ({}) Tj ET",
+            font.resource(),
+            escape(text)
+        );
         self
     }
 
@@ -457,5 +520,69 @@ mod tests {
         );
         // The landscape page must keep its own MediaBox.
         assert!(s.contains("/MediaBox [0 0 842.00 595.00]"));
+    }
+}
+
+#[cfg(test)]
+mod metric_tests {
+    use super::*;
+
+    /// Real Adobe metrics, not an average.
+    ///
+    /// An averaged 0.52 em per character put centred labels a few
+    /// percent off true, which shows on a tick label beside its
+    /// gridline. These are the published values.
+    #[test]
+    fn widths_match_the_published_metrics() {
+        // At 1000pt a character's width in points is its metric value.
+        assert!((Font::Regular.width_of("i", 1000.0) - 222.0).abs() < 1e-9);
+        assert!((Font::Regular.width_of("W", 1000.0) - 944.0).abs() < 1e-9);
+        assert!((Font::Regular.width_of(" ", 1000.0) - 278.0).abs() < 1e-9);
+        assert!((Font::Bold.width_of("i", 1000.0) - 278.0).abs() < 1e-9);
+        assert!((Font::Bold.width_of("W", 1000.0) - 944.0).abs() < 1e-9);
+    }
+
+    /// Proportional, which an average cannot be.
+    #[test]
+    fn narrow_text_is_narrower_than_wide_text() {
+        let thin = Font::Regular.width_of("iiii", 10.0);
+        let wide = Font::Regular.width_of("WWWW", 10.0);
+        assert!(
+            wide > 3.0 * thin,
+            "`WWWW` should dwarf `iiii`: {wide} vs {thin}"
+        );
+    }
+
+    /// Characters `escape` drops must contribute no width, or centring
+    /// is thrown off by glyphs that were never drawn.
+    #[test]
+    fn dropped_characters_have_no_width() {
+        let a = Font::Regular.width_of("abc", 10.0);
+        let b = Font::Regular.width_of("a\u{4e2d}bc", 10.0);
+        assert!((a - b).abs() < 1e-12, "{a} vs {b}");
+    }
+
+    #[test]
+    fn vertical_text_uses_a_rotation_matrix() {
+        let mut p = Page::a4();
+        p.text_vertical(50.0, 400.0, 8.0, Font::Regular, Align::Centre, "dB");
+        let mut d = Pdf::new();
+        d.push(p);
+        let s = String::from_utf8_lossy(&d.to_bytes()).to_string();
+        // A quarter turn: [0 1 -1 0 x y].
+        assert!(s.contains("0 1 -1 0 50.000"), "no rotation matrix: {s}");
+        assert!(s.contains("(dB) Tj"), "{s}");
+    }
+
+    #[test]
+    fn vertical_text_is_still_deterministic() {
+        let build = || {
+            let mut p = Page::a4();
+            p.text_vertical(10.0, 20.0, 9.0, Font::Bold, Align::Left, "frequency");
+            let mut d = Pdf::new();
+            d.push(p);
+            d.to_bytes()
+        };
+        assert_eq!(build(), build());
     }
 }
