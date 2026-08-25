@@ -31,3 +31,30 @@ where
 // ANCHOR: timed_blanket_impl
 impl Timed for Output {}
 // ANCHOR_END: timed_blanket_impl
+
+/// The trait summaries the chapter quotes.
+///
+/// These mirror `rhdl::core::CircuitIO` and `rhdl::core::Timed` rather
+/// than re-exporting them, because the chapter wants the *shape* of each
+/// trait without the doc comments and supertrait plumbing that would
+/// bury it. Keeping them here as compiling code means a change to the
+/// real traits that makes these summaries wrong is at least a change
+/// somebody has to look at.
+mod summaries {
+    use super::*;
+
+    // ANCHOR: circuit_io_trait
+    pub trait CircuitIO: 'static + CircuitDQ {
+        // The input type of the circuit
+        type I: Timed;
+        // The output type of the circuit
+        type O: Timed;
+        // The kernel: fn(I, Q) -> (O, D), annotated with #[kernel]
+        type Kernel: DigitalFn + DigitalFn2<A0 = Self::I, A1 = Self::Q, O = (Self::O, Self::D)>;
+    }
+    // ANCHOR_END: circuit_io_trait
+
+    // ANCHOR: timed_trait
+    pub trait Timed: Digital {}
+    // ANCHOR_END: timed_trait
+}

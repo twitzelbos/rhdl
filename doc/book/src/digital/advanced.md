@@ -132,7 +132,7 @@ Now things compile again.
 We can add a test to generate the SVG layout again:
 
 ```rust
-{{#rustdoc_include ../code/src/digital/advanced.rs:one-hot-svg-test}}
+{{#rustdoc_include ../code/src/digital/advanced.rs:one-hot-test}}
 ```
 
 which results in the following SVG:

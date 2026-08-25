@@ -130,8 +130,16 @@ pub struct ChainSpec {
     pub max_stages: usize,
     /// Cap on compensator length.
     pub max_taps: usize,
-    /// Consider splitting the decimation across two CICs.
-    pub allow_cascade: bool,
+    /// Most CIC stages the chain may use.
+    ///
+    /// `1` forbids cascading. `2` and `3` allow it — and three is worth
+    /// having, because a very deep decimation splits better three ways
+    /// than two: the fast stage stays narrow, the middle stage runs
+    /// slower, and only the last carries full width.
+    ///
+    /// Every extra stage multiplies the search, so this is a budget
+    /// rather than an aspiration.
+    pub max_chain_stages: usize,
     /// Where the compensator's stopband begins, as a fraction of the
     /// output Nyquist.
     ///
@@ -174,7 +182,7 @@ impl Default for ChainSpec {
             coeff_width: 16,
             max_stages: 8,
             max_taps: 31,
-            allow_cascade: true,
+            max_chain_stages: 3,
             // Compensation only by default. Asking for attenuation
             // costs taps, and the CIC's own stopband is often enough --
             // `min_alias_rejection_db` already holds it to account.
@@ -337,6 +345,41 @@ pub enum Unmet {
         /// What is wrong with it.
         reason: &'static str,
     },
+}
+
+/// Every ordered factorisation of `n` into at most `max_parts` factors,
+/// each at least two.
+///
+/// Ordered rather than unordered: a cascade's stages each see a
+/// different fraction of their own output band, so `8 x 61` and
+/// `61 x 8` are genuinely different filters. `[n]` itself is always
+/// included, so a caller who forbids cascading still gets the single
+/// stage.
+fn ordered_factorisations(n: usize, max_parts: usize) -> Vec<Vec<usize>> {
+    fn rec(n: usize, max_parts: usize, cur: &mut Vec<usize>, out: &mut Vec<Vec<usize>>) {
+        // `n` as the final factor of whatever prefix we are holding.
+        if n >= 2 {
+            cur.push(n);
+            out.push(cur.clone());
+            cur.pop();
+        }
+        // Splitting further would need at least two more factors, so
+        // stop when that would exceed the budget.
+        if cur.len() + 2 > max_parts {
+            return;
+        }
+        for d in 2..n {
+            if n.is_multiple_of(d) && n / d >= 2 {
+                cur.push(d);
+                rec(n / d, max_parts, cur, out);
+                cur.pop();
+            }
+        }
+    }
+    let mut out = Vec::new();
+    let mut cur = Vec::new();
+    rec(n, max_parts, &mut cur, &mut out);
+    out
 }
 
 /// Output signal-to-noise ratio, in dB, for one CIC at a given budget.
@@ -652,10 +695,10 @@ fn combined_ripple_db(
 
 /// Derive a chain from what it has to achieve.
 ///
-/// Designs a single CIC and, when `allow_cascade` is set, every
-/// two-factor split of the total decimation. The cheapest feasible
-/// option wins by the rate-weighted cost model in the module docs, and
-/// the runner-up is reported in [`ChainDesign::alternative`].
+/// Designs every ordered factorisation of the decimation into at most
+/// [`ChainSpec::max_chain_stages`] stages. The cheapest feasible option
+/// wins by the rate-weighted cost model in the module docs, and the
+/// runner-up is reported in [`ChainDesign::alternative`].
 pub fn design(spec: ChainSpec) -> Result<ChainDesign, Unmet> {
     if !(spec.fs_hz > 0.0) {
         return Err(Unmet::Invalid {
@@ -683,28 +726,15 @@ pub fn design(spec: ChainSpec) -> Result<ChainDesign, Unmet> {
         return Err(Unmet::BandwidthTooWide { passband });
     }
 
-    // Candidate splits: the single stage, then every two-factor split.
-    let mut splits: Vec<Vec<usize>> = vec![vec![spec.decimate]];
-    if spec.allow_cascade {
-        for r1 in 2..=spec.decimate {
-            if r1 * r1 > spec.decimate && r1 * r1 != spec.decimate {
-                // Both orders are enumerated below; stop once past the
-                // square root to avoid designing each pair twice.
-                if r1 > spec.decimate / r1 {
-                    break;
-                }
-            }
-            if spec.decimate % r1 == 0 {
-                let r2 = spec.decimate / r1;
-                if r2 >= 2 {
-                    splits.push(vec![r1, r2]);
-                    if r1 != r2 {
-                        splits.push(vec![r2, r1]);
-                    }
-                }
-            }
-        }
-    }
+    // Every ordered way to write the decimation as up to
+    // `max_chain_stages` factors, each at least two.
+    //
+    // Ordered, because the order matters: a cascade's stages see
+    // different fractions of their own output band, so `8 x 61` and
+    // `61 x 8` are different filters with different costs. The previous
+    // version enumerated pairs with a square-root break that was both
+    // convoluted and capped at two factors.
+    let splits = ordered_factorisations(spec.decimate, spec.max_chain_stages.max(1));
 
     let mut feasible: Vec<ChainDesign> = Vec::new();
     let mut first_error: Option<Unmet> = None;
@@ -942,7 +972,7 @@ mod tests {
         // Forcing a single stage must still work, and cost more by the
         // rate-weighted model -- that is the whole claim.
         let single = design(ChainSpec {
-            allow_cascade: false,
+            max_chain_stages: 1,
             ..ChainSpec::default()
         })
         .expect("a single stage is feasible, just dearer");
@@ -1133,7 +1163,7 @@ mod tests {
             alias_free_bw_hz: 12e6, // almost all of the output band
             min_alias_rejection_db: 120.0,
             max_stages: 4,
-            allow_cascade: false,
+            max_chain_stages: 1,
             ..base()
         })
         .expect_err("120 dB with the band at Nyquist is not available");
@@ -1184,6 +1214,171 @@ mod tests {
         // And the model itself must return a number at an absurd width.
         let v = snr_db(16, 88, 8, 244, 2, 40);
         assert!(v.is_finite(), "snr_db returned {v} at an 88-bit width");
+    }
+
+    /// Exploratory: does a third stage ever win?
+    #[test]
+    #[ignore = "exploratory; run with --ignored to survey"]
+    fn survey_whether_three_stages_ever_win() {
+        for decimate in [64usize, 128, 256, 488, 512, 1024, 1920, 4096] {
+            for bw in [16e3f64, 64e3, 200e3] {
+                let base = ChainSpec {
+                    decimate,
+                    alias_free_bw_hz: bw,
+                    ..ChainSpec::default()
+                };
+                let two = design(ChainSpec {
+                    max_chain_stages: 2,
+                    ..base
+                });
+                let three = design(ChainSpec {
+                    max_chain_stages: 3,
+                    ..base
+                });
+                match (two, three) {
+                    (Ok(a), Ok(b)) => {
+                        let better = b.cost < a.cost - 1e-9;
+                        if better {
+                            println!(
+                                "WIN  /{decimate} bw {bw:.0}: {:?} {:.1} -> {:?} {:.1}",
+                                a.split(),
+                                a.cost,
+                                b.split(),
+                                b.cost
+                            );
+                        } else {
+                            println!("same /{decimate} bw {bw:.0}: {:?} {:.1}", a.split(), a.cost);
+                        }
+                    }
+                    (Err(_), Ok(b)) => println!(
+                        "WIN  /{decimate} bw {bw:.0}: two infeasible, three {:?} {:.1}",
+                        b.split(),
+                        b.cost
+                    ),
+                    _ => println!("none /{decimate} bw {bw:.0}"),
+                }
+            }
+        }
+    }
+
+    /// Enumeration is ordered, complete, and bounded.
+    #[test]
+    fn factorisations_are_ordered_and_bounded() {
+        // Two factors of 12, both orders, plus 12 itself.
+        let two = ordered_factorisations(12, 2);
+        assert!(two.contains(&vec![12]));
+        assert!(two.contains(&vec![2, 6]) && two.contains(&vec![6, 2]));
+        assert!(two.contains(&vec![3, 4]) && two.contains(&vec![4, 3]));
+        assert!(
+            two.iter().all(|f| f.len() <= 2),
+            "budget of 2 exceeded: {two:?}"
+        );
+
+        // Three unlocks the triples.
+        let three = ordered_factorisations(12, 3);
+        assert!(three.contains(&vec![2, 2, 3]));
+        assert!(three.contains(&vec![3, 2, 2]));
+        assert!(three.iter().all(|f| f.len() <= 3));
+
+        // Every factorisation multiplies back, and no factor is < 2.
+        for f in &three {
+            assert_eq!(f.iter().product::<usize>(), 12, "{f:?}");
+            assert!(f.iter().all(|d| *d >= 2), "{f:?}");
+        }
+        // A budget of one is the single stage only.
+        assert_eq!(ordered_factorisations(12, 1), vec![vec![12]]);
+        // A prime cannot be split.
+        assert_eq!(ordered_factorisations(61, 3), vec![vec![61]]);
+    }
+
+    /// **A third stage earns its search.**
+    ///
+    /// Not a tautology: a larger budget cannot cost *more*, since the
+    /// two-stage options are a subset of what the three-stage search
+    /// considers. So this asserts a *strict* win on a case where the
+    /// third stage genuinely helps.
+    ///
+    /// Finding such a case took a survey. The first configuration I
+    /// checked — the worked example at `/488` with a 64 kHz band —
+    /// gives the same answer either way, which looked like evidence
+    /// that a third stage was pointless. It is not: at `/1024` with a
+    /// 16 kHz band the cost falls from 65.0 to 49.0.
+    ///
+    /// The pattern is deep decimation with a *narrow* band: the band
+    /// then occupies little of each intermediate stage's output
+    /// Nyquist, so every stage has room to be shallow, and only the
+    /// last carries full width. A wide band leaves no such room and the
+    /// third stage buys nothing. `survey_whether_three_stages_ever_win`
+    /// maps that boundary.
+    #[test]
+    fn a_third_stage_earns_its_search() {
+        let deep_and_narrow = ChainSpec {
+            decimate: 1024,
+            alias_free_bw_hz: 16e3,
+            ..ChainSpec::default()
+        };
+        let two = design(ChainSpec {
+            max_chain_stages: 2,
+            ..deep_and_narrow
+        })
+        .expect("two stages must design");
+        let three = design(ChainSpec {
+            max_chain_stages: 3,
+            ..deep_and_narrow
+        })
+        .expect("three stages must design");
+        println!(
+            "2: {:?} cost {:.1}   3: {:?} cost {:.1}",
+            two.split(),
+            two.cost,
+            three.split(),
+            three.cost
+        );
+        assert_eq!(
+            three.cics.len(),
+            3,
+            "expected three stages: {:?}",
+            three.split()
+        );
+        assert!(
+            three.cost < two.cost * 0.9,
+            "a third stage should be clearly cheaper here: {:.1} vs {:.1}",
+            three.cost,
+            two.cost
+        );
+        // And it is still a correct design, not merely a cheap one.
+        assert!(three.achieved_ripple_db <= three.spec.max_ripple_db);
+        assert!(three.achieved_alias_db >= three.spec.min_alias_rejection_db);
+        assert!(three.achieved_snr_db >= three.spec.min_snr_db - 1e-9);
+        assert_eq!(three.split().iter().product::<usize>(), 1024);
+    }
+
+    /// A larger budget never costs more, at any configuration.
+    #[test]
+    fn a_larger_budget_never_costs_more() {
+        for (decimate, bw) in [(64usize, 64e3f64), (256, 16e3), (488, 64e3), (512, 64e3)] {
+            let base = ChainSpec {
+                decimate,
+                alias_free_bw_hz: bw,
+                ..ChainSpec::default()
+            };
+            let two = design(ChainSpec {
+                max_chain_stages: 2,
+                ..base
+            });
+            let three = design(ChainSpec {
+                max_chain_stages: 3,
+                ..base
+            });
+            if let (Ok(a), Ok(b)) = (two, three) {
+                assert!(
+                    b.cost <= a.cost + 1e-9,
+                    "/{decimate} bw {bw}: three-stage {:.3} worse than two-stage {:.3}",
+                    b.cost,
+                    a.cost
+                );
+            }
+        }
     }
 
     #[test]

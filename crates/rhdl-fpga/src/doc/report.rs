@@ -140,7 +140,7 @@ pub fn as_design(cfg: CicReport) -> Option<chain::ChainDesign> {
             coeff_width: cfg.coeff_width,
             max_stages: n,
             max_taps: cfg.taps,
-            allow_cascade: false,
+            max_chain_stages: 1,
             stopband_edge: 1.0,
             min_stopband_db: 0.0,
             method: compensator::Method::LeastSquares,
@@ -359,6 +359,60 @@ fn chain_page_one(d: &chain::ChainDesign, provenance: &str) -> Page {
     p
 }
 
+/// Point size the figures block is set in.
+const FIGURE_SIZE: f64 = 8.0;
+
+/// Width available to the figures block, in points.
+///
+/// A4 is 595 wide and the block starts at x=60, so this leaves the same
+/// 60 points on the right.
+const TEXT_WIDTH: f64 = 475.0;
+
+/// A labelled list of numbers, broken across as many lines as it needs.
+///
+/// A tap list is the one figure a reader copies out of the report, and a
+/// long one used to run off the right edge of the page with the last few
+/// coefficients simply absent — the report looked complete and was not.
+/// An equiripple design with a stopband requirement routinely needs
+/// forty-plus taps, so this stopped being a corner case.
+///
+/// Continuation lines are indented under the first value rather than to
+/// the margin, so the block still reads as one field.
+fn wrap_values<T: std::fmt::Display>(
+    label: &str,
+    values: &[T],
+    max_width: f64,
+    size: f64,
+) -> Vec<String> {
+    let f = Font::Regular;
+    let indent = " ".repeat(label.chars().count());
+    let mut out = Vec::new();
+    let mut line = format!("{label}[");
+    let mut first = true;
+    for v in values {
+        let piece = if first {
+            v.to_string()
+        } else {
+            format!(", {v}")
+        };
+        if !first && f.width_of(&format!("{line}{piece}"), size) > max_width {
+            // The separator goes at the end of the broken line, not the
+            // start of the next: a list split as `..., 3975` / `-17439,
+            // ...` has no comma between those two values at all, and
+            // copying it out of the report silently merges them.
+            line.push(',');
+            out.push(line);
+            line = format!("{indent} {v}");
+        } else {
+            line.push_str(&piece);
+        }
+        first = false;
+    }
+    line.push(']');
+    out.push(line);
+    out
+}
+
 fn chain_page_two(d: &chain::ChainDesign) -> Page {
     let mut p = Page::a4();
     p.fill_style((0.0, 0.0, 0.0));
@@ -393,45 +447,110 @@ fn chain_page_two(d: &chain::ChainDesign) -> Page {
         .iter()
         .map(|t| *t as f64 / scale)
         .collect();
-    let at = |k: usize| edge * k as f64 / 599.0;
+    // The three curves over `0 .. x_hi`, sampled uniformly.
+    let curves = |x_hi: f64| {
+        let at = |k: usize| x_hi * k as f64 / 599.0;
+        let mut cic = Vec::with_capacity(600);
+        let mut fir = Vec::with_capacity(600);
+        let mut both = Vec::with_capacity(600);
+        for k in 0..600 {
+            let f = at(k);
+            let c = compensator::cascade_magnitude(&sh, f);
+            let h = compensator::fir_amplitude(&real, f).abs();
+            cic.push((f, 20.0 * c.log10()));
+            fir.push((f, 20.0 * h.log10()));
+            both.push((f, 20.0 * (c * h).log10()));
+        }
+        (cic, fir, both)
+    };
 
-    let cic: Vec<(f64, f64)> = (0..600)
-        .map(|k| {
-            (
-                at(k),
-                20.0 * compensator::cascade_magnitude(&sh, at(k)).log10(),
-            )
-        })
-        .collect();
-    let fir: Vec<(f64, f64)> = (0..600)
-        .map(|k| {
-            (
-                at(k),
-                20.0 * compensator::fir_amplitude(&real, at(k)).abs().log10(),
-            )
-        })
-        .collect();
-    let both: Vec<(f64, f64)> = (0..600)
-        .map(|k| {
-            let m = compensator::cascade_magnitude(&sh, at(k))
-                * compensator::fir_amplitude(&real, at(k)).abs();
-            (at(k), 20.0 * m.log10())
-        })
-        .collect();
+    // A requested stopband is the entire reason an equiripple design
+    // differs from a droop-inverting one, and it lives *above* the
+    // passband. Plotting only `0 .. edge` therefore renders a Remez
+    // design and a least-squares design as the same picture, with the
+    // achieved attenuation appearing nowhere but a line of text. When a
+    // stopband was asked for, this plot spans the full output Nyquist so
+    // that the transition, the floor, and whether the floor was actually
+    // met are all visible. The zoomed plot below still covers the
+    // passband, so nothing is lost by widening this one.
+    let band = response::passband_edge_out(d.spec.stopband_edge);
+    // An empty stopband is not a stopband: with `stopband_edge` at
+    // Nyquist there is no band above it to measure, `stopband_db`
+    // reports infinity, and the marker rendered as "compensator inf dB".
+    // A finite achieved level is required for the same reason.
+    let stop = (d.spec.min_stopband_db > 0.0 && band < 0.5 && d.achieved_stopband_db.is_finite())
+        .then_some((band, d.spec.min_stopband_db));
+    let x_hi = if stop.is_some() { 0.5 } else { edge };
+    // Round the floor down to a decade tick so the deepest line drawn is
+    // not sitting on the frame. It has to clear the *achieved* level as
+    // well as the asked-for one: a design that overshoots badly -- asked
+    // 40 dB, got 90 -- would otherwise have its achieved line clamped
+    // onto the frame floor, which reads as "off the bottom of the plot"
+    // rather than as the 90 dB it is.
+    let y_lo = match stop {
+        Some((_, db)) => {
+            let deepest = db.max(d.achieved_stopband_db.min(200.0));
+            -(((deepest + 25.0) / 10.0).ceil() * 10.0)
+        }
+        None => -15.0,
+    };
 
+    let (cic, fir, wide) = curves(x_hi);
     let axes = Axes::new(
-        "Cascade, compensator, and the two together",
+        if stop.is_some() {
+            "Cascade, compensator, and the two together - full output band"
+        } else {
+            "Cascade, compensator, and the two together"
+        },
         "frequency / output rate",
         "dB",
-        (0.0, edge),
-        (-15.0, 15.0),
+        (0.0, x_hi),
+        (y_lo, 15.0),
     );
-    let s = vec![
+    let mut s = vec![
         Series::new("cascade", cic, PALETTE[0]),
         Series::new("compensator", fir, PALETTE[4]),
-        Series::new("composite", both.clone(), PALETTE[2]),
-        Series::new("flat", vec![(0.0, 0.0), (edge, 0.0)], (0.6, 0.6, 0.6)).dashed(),
+        Series::new("composite", wide, PALETTE[2]),
+        Series::new("flat", vec![(0.0, 0.0), (x_hi, 0.0)], (0.6, 0.6, 0.6)).dashed(),
     ];
+    if let Some((band, db)) = stop {
+        // Both levels are properties of the *compensator*, not of the
+        // composite: `stopband_db` measures the filter alone. The
+        // composite is better than either, because the cascade
+        // contributes its own rolloff on top — so the achieved line
+        // reads as a floor the design guarantees, not as a description
+        // of the green curve. Drawing the achieved line in the
+        // compensator's own colour is what says which curve it belongs
+        // to; a reader matching it to the composite would conclude the
+        // report was wrong by 20 dB or more.
+        s.push(
+            Series::new(
+                "stopband edge",
+                vec![(band, y_lo), (band, 15.0)],
+                (0.45, 0.45, 0.45),
+            )
+            .dashed(),
+        );
+        s.push(
+            Series::new(
+                format!("asked >= {db:.0} dB"),
+                vec![(band, -db), (x_hi, -db)],
+                (0.45, 0.45, 0.45),
+            )
+            .dashed(),
+        );
+        s.push(
+            Series::new(
+                format!("compensator {:.1} dB", d.achieved_stopband_db),
+                vec![
+                    (band, -d.achieved_stopband_db),
+                    (x_hi, -d.achieved_stopband_db),
+                ],
+                PALETTE[4],
+            )
+            .dashed(),
+        );
+    }
     draw(
         &mut p,
         Frame {
@@ -451,6 +570,7 @@ fn chain_page_two(d: &chain::ChainDesign) -> Page {
         (0.0, edge),
         (-0.3, 0.3),
     );
+    let (_, _, both) = curves(edge);
     let s = vec![
         Series::new("composite", both, PALETTE[2]),
         Series::new("flat", vec![(0.0, 0.0), (edge, 0.0)], (0.6, 0.6, 0.6)).dashed(),
@@ -482,17 +602,41 @@ fn chain_page_two(d: &chain::ChainDesign) -> Page {
         ),
     ];
     if d.spec.min_stopband_db > 0.0 {
-        lines.push(format!(
-            "stopband .......... {:.1} dB above {:.2} Nyquist (asked >= {:.1})",
-            d.achieved_stopband_db, d.spec.stopband_edge, d.spec.min_stopband_db
-        ));
+        if d.achieved_stopband_db.is_finite() {
+            lines.push(format!(
+                "stopband .......... {:.1} dB above {:.2} Nyquist (asked >= {:.1})",
+                d.achieved_stopband_db, d.spec.stopband_edge, d.spec.min_stopband_db
+            ));
+            // Say which filter the number describes. The composite sits
+            // well below it, and a reader comparing this figure to the
+            // green curve on the plot would otherwise think one of them
+            // is wrong.
+            lines.push(
+                "                    compensator alone; the composite is lower by the cascade's rolloff"
+                    .to_string(),
+            );
+        } else {
+            // `stopband_db` reports infinity when the edge leaves no
+            // band above it. Printing that with `{:.1}` gave
+            // "stopband .......... inf dB", which reads as a spectacular
+            // result rather than as a requirement that measured nothing.
+            lines.push(format!(
+                "stopband .......... no band above {:.2} Nyquist to measure (asked >= {:.1})",
+                d.spec.stopband_edge, d.spec.min_stopband_db
+            ));
+        }
     }
     lines.push(String::new());
     lines.push(format!(
         "register bits ..... {} (rate-weighted cost {:.1})",
         d.register_bits, d.cost
     ));
-    lines.push(format!("taps .............. {:?}", d.compensator.taps));
+    lines.extend(wrap_values(
+        "taps .............. ",
+        &d.compensator.taps,
+        TEXT_WIDTH,
+        FIGURE_SIZE,
+    ));
     lines.push(format!(
         "DC gain ........... {:.6} (exact by construction)",
         d.compensator.dc_gain
@@ -532,4 +676,153 @@ fn chain_page_two(d: &chain::ChainDesign) -> Page {
         "they are clocked. It captures that a wide adder at the converter rate is the hard part.",
     );
     p
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A design whose stopband figures can be set without re-running the
+    /// search, because what is under test is the *rendering* decision.
+    fn design_with_stopband(asked: f64, achieved: f64) -> chain::ChainDesign {
+        let mut d = as_design(CicReport::default()).expect("the default must design");
+        d.spec.stopband_edge = 0.75;
+        d.spec.min_stopband_db = asked;
+        d.achieved_stopband_db = achieved;
+        d
+    }
+
+    fn rendered(d: &chain::ChainDesign) -> String {
+        String::from_utf8_lossy(&render(d, "Test").to_bytes()).to_string()
+    }
+
+    /// The stopband markers appear when a stopband was asked for.
+    ///
+    /// This is the whole point of the change: without them an equiripple
+    /// design and a least-squares one render identically, and the only
+    /// evidence of the attenuation is a line of text.
+    #[test]
+    fn a_requested_stopband_is_drawn() {
+        let out = rendered(&design_with_stopband(60.0, 66.0));
+        assert!(out.contains("stopband edge"), "no stopband edge marker");
+        assert!(out.contains("asked >= 60 dB"), "no requested level");
+        assert!(
+            out.contains("compensator 66.0 dB"),
+            "no achieved level, or it does not name the compensator"
+        );
+    }
+
+    /// And not otherwise. The default asks for no attenuation, so the
+    /// markers would be three meaningless lines and a wider axis.
+    #[test]
+    fn an_unrequested_stopband_is_not_drawn() {
+        let d = as_design(CicReport::default()).expect("the default must design");
+        assert_eq!(d.spec.min_stopband_db, 0.0, "premise of the test");
+        let out = rendered(&d);
+        assert!(!out.contains("stopband edge"));
+        assert!(
+            !out.contains("full output band"),
+            "axis widened for nothing"
+        );
+    }
+
+    /// The achieved level must be inside the frame even when it far
+    /// overshoots what was asked, or it clamps onto the frame floor and
+    /// reads as "off the bottom of the plot".
+    #[test]
+    fn a_wildly_overshot_stopband_still_fits_the_frame() {
+        let out = rendered(&design_with_stopband(40.0, 90.0));
+        assert!(out.contains("compensator 90.0 dB"));
+        // The y axis is labelled in round steps; asking for 40 but
+        // achieving 90 must push the floor past -90.
+        assert!(
+            out.contains("-120") || out.contains("-100"),
+            "axis did not extend to hold the achieved level"
+        );
+    }
+
+    /// An infinite achieved attenuation means there was no stopband to
+    /// measure, so there is nothing to mark.
+    ///
+    /// `stopband_db` returns infinity when `stopband_edge` sits at
+    /// Nyquist, which `chain::design` accepts — it satisfies any
+    /// requested level. The marker used to render "compensator inf dB".
+    #[test]
+    fn an_empty_stopband_is_not_drawn() {
+        let out = rendered(&design_with_stopband(60.0, f64::INFINITY));
+        assert!(!out.contains("inf"), "an infinity reached the page");
+        assert!(!out.contains("NaN"), "NaN reached the page");
+        assert!(!out.contains("stopband edge"), "marked an empty band");
+    }
+
+    /// A stopband edge at Nyquist leaves no band, whatever the achieved
+    /// figure says.
+    #[test]
+    fn a_stopband_edge_at_nyquist_is_not_drawn() {
+        let mut d = design_with_stopband(60.0, 66.0);
+        d.spec.stopband_edge = 1.0;
+        let out = rendered(&d);
+        assert!(!out.contains("stopband edge"));
+    }
+
+    /// A tap list short enough to fit is left on one line.
+    #[test]
+    fn a_short_list_is_not_wrapped() {
+        let out = wrap_values("taps ... ", &[1, -2, 3], TEXT_WIDTH, FIGURE_SIZE);
+        assert_eq!(out, vec!["taps ... [1, -2, 3]".to_string()]);
+    }
+
+    /// A long one is wrapped, and nothing is lost doing it.
+    ///
+    /// The bug this guards is silent truncation: the list used to be
+    /// formatted with `{:?}` and simply ran off the right edge of the
+    /// page, so the report looked complete with its last coefficients
+    /// missing.
+    #[test]
+    fn a_long_list_wraps_without_losing_values() {
+        let values: Vec<i32> = (0..47).map(|i| (i * 977) % 30011 - 15000).collect();
+        let out = wrap_values("taps .............. ", &values, TEXT_WIDTH, FIGURE_SIZE);
+        assert!(out.len() > 1, "a 47-tap list should not fit on one line");
+        for line in &out {
+            assert!(
+                Font::Regular.width_of(line, FIGURE_SIZE) <= TEXT_WIDTH,
+                "line overflows the text width: {line:?}"
+            );
+        }
+        // Every value survives, in order.
+        let joined = out.join(" ");
+        let recovered: Vec<i32> = joined
+            .trim_start_matches(|c: char| c != '[')
+            .trim_start_matches('[')
+            .trim_end_matches(']')
+            .split(',')
+            .map(|t| t.trim().parse().expect("a value"))
+            .collect();
+        assert_eq!(recovered, values);
+    }
+
+    /// Continuation lines line up under the first value, so the block
+    /// still reads as one field rather than as free text.
+    #[test]
+    fn wrapped_lines_are_indented_under_the_first_value() {
+        let values: Vec<i32> = (0..60).collect();
+        let label = "taps .............. ";
+        let out = wrap_values(label, &values, TEXT_WIDTH, FIGURE_SIZE);
+        assert!(out.len() > 1);
+        for line in &out[1..] {
+            let lead = line.len() - line.trim_start().len();
+            assert_eq!(
+                lead,
+                label.len() + 1,
+                "continuation not aligned under the first value: {line:?}"
+            );
+        }
+    }
+
+    /// An empty list is not a crash.
+    #[test]
+    fn an_empty_list_renders_as_empty_brackets() {
+        let out = wrap_values("taps ... ", &[0i32; 0], TEXT_WIDTH, FIGURE_SIZE);
+        assert_eq!(out, vec!["taps ... []".to_string()]);
+    }
 }

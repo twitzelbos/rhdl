@@ -86,11 +86,15 @@ impl Parse for ChainArgs {
                 "max_taps" => spec.max_taps = number(input)? as usize,
                 "stopband_edge" => spec.stopband_edge = number(input)?,
                 "stopband_db" => spec.min_stopband_db = number(input)?,
+                "max_chain_stages" => spec.max_chain_stages = number(input)? as usize,
                 "cascade" => {
                     let v: Ident = input.parse()?;
-                    spec.allow_cascade = match v.to_string().as_str() {
-                        "true" | "yes" => true,
-                        "false" | "no" => false,
+                    // `cascade = no` pins the chain to one stage; `yes`
+                    // restores the default budget. `max_chain_stages`
+                    // is the finer control.
+                    spec.max_chain_stages = match v.to_string().as_str() {
+                        "true" | "yes" => 3,
+                        "false" | "no" => 1,
                         other => {
                             return Err(syn::Error::new(
                                 v.span(),
@@ -119,7 +123,7 @@ impl Parse for ChainArgs {
                             "unknown parameter `{other}`. Expected one of: fs, decimate, \
                              alias_free_bw, in_w, out_w, ripple_db, alias_db, snr_db, \
                              coeff_w, max_stages, max_taps, stopband_edge, stopband_db, \
-                             cascade, method"
+                             cascade, max_chain_stages, method"
                         ),
                     ));
                 }

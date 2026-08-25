@@ -25,7 +25,7 @@ pub fn narrowband() -> ChainSpec {
         coeff_width: 16,
         max_stages: 8,
         max_taps: 31,
-        allow_cascade: true,
+        max_chain_stages: 3,
         stopband_edge: 1.0,
         min_stopband_db: 0.0,
         method: Method::LeastSquares,
