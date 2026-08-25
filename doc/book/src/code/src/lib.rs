@@ -21,6 +21,7 @@ pub mod bits;
 pub mod circuits;
 pub mod count_ones;
 pub mod digital;
+pub mod dsp;
 pub mod fixturing;
 pub mod half_adder;
 pub mod kernels;

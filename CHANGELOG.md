@@ -31,6 +31,98 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-24 — The DSP Chain book part, and a derived-design report
+
+**Paths:** `doc/book/src/dsp/*.md` (new, 9 pages), `doc/book/src/SUMMARY.md`, `doc/book/src/code/src/dsp/design.rs` (new), `crates/rhdl-fpga/src/doc/report.rs`, `examples/cic_report.rs`, `doc/cic_chain_report.pdf` (new).
+
+**Why this, why now:** requested alongside the design work — the DSP chain needed documentation, covering the chain overview, a widget-by-widget tour, and the spec-driven design flow.
+
+**Design decisions:**
+
+- **Book snippets are compiled, not quoted.** The chapters use `{{#rustdoc_include ../code/src/dsp/design.rs:anchor}}` against the book's `code` crate, which already depends on `rhdl-fpga`. The claims a chapter makes about what a design produces are asserted in tests next to the snippet — including that the narrowband example *chooses a cascade*, which the chapter states as fact. A chapter that drifts from the library fails the build.
+- **The tour pages lead with what is counter-intuitive**, not with the interface. `rhdl_fpga`'s rustdoc already carries every widget's schematic, block diagram, runnable example and trace; duplicating that in the book would create two things to keep in step. So each page explains the decisions instead: why the accumulator is never reset, why two's-complement wrap is load-bearing, why the fold is an identity, why compensation must invert the whole cascade.
+- **`chain_report` is additive, not a replacement.** `cic_report` renders a single CIC from parameters you chose; `chain_report` renders a `ChainDesign` that was *derived*, with the cascade's combined response, per-stage detail, and the alternative the designer rejected. Two use cases — exploring versus specifying — so two entry points rather than one with a mode flag.
+- **Rustdoc-style `[`path`]` links became plain code spans.** mdbook has no intra-doc link resolution and the rest of the book does not use them, so they would have rendered as literal broken text.
+
+**Surprises and gotchas:**
+
+- **A book example found a panic no test here had.** `snr_db` computed full scale as `1u64 << (output_width - 1)`, and it is called with *intermediate* stage widths as well as the chain's output width — a deep cascade's accumulator is easily wider than 64 bits, 88 at `N = 8, R = 244`. The shift overflowed and panicked on a demanding but perfectly legitimate spec, where the right behaviour is to compute the number and let the caller refuse the design. Fixed with `2f64.powi`, and there is now a regression test at an 88-bit width.
+
+  That is an argument for compiling the documentation that no amount of asserting would have made: the book reached a corner the library's own tests had not, because it was written from the *user's* direction rather than the implementer's.
+- **Two more silent `str.replace` no-ops**, both after `cargo fmt` had reordered an import. This has now happened four times in this work. Every scripted edit asserts on its match; the ones that bit me were the ones where I asserted on a *different* string in the same script and assumed the rest had landed.
+
+**Validation:** four compiled book tests, covering the narrowband spec designing to a cascade, the report rendering, the infeasible spec being refused for a nameable reason, and the anti-alias variant designing. Seven report tests, including a derived chain rendering to two pages, a *single-stage* design rendering (so the cascade case is not the only one that works), and byte-level determinism of both reports. Every `rustdoc_include` anchor and `SUMMARY` link checked to resolve.
+
+**Follow-ups:**
+
+- `mdbook` is not installed here, so the book's rendering was verified by checking anchors and links rather than by building it. Worth a real build in CI.
+- The widget tour links to rustdoc by name rather than by URL; once the docs are published those could become real links.
+
+## 2026-08-24 — `dsp::cic::compensator`: equiripple design by Remez exchange
+
+**Paths:** `crates/rhdl-fpga/src/dsp/cic/{compensator,chain}.rs`.
+
+**Why this, why now:** the previous entry closed by naming least squares as the binding limitation once the compensator is asked to do anti-aliasing. Least squares minimises the *average* squared error; a stopband requirement is a statement about the *maximum*, so the method optimises a quantity the specification is not written in. `Method::{LeastSquares, Remez}` now selects, and least squares stays the default because pure compensation has no worst-case requirement to miss.
+
+**Design decisions:**
+
+- **The weight is analytic, not searched.** Weighting the passband by `|H(u)|` makes the weighted error exactly the *relative* deviation `|A(u)·H(u) − 1|`, which is what ripple means; weighting by 1 would equalise absolute error and make the band edge look far worse than it is, since that is where `1/H` is largest. With a constant `k` across the stopband, both bands reach the same `δ` at the optimum, so `δ_target = Rp/17.372` and `k = δ_target·10^(As/20)`. Two dB targets, one closed-form weight — against the least-squares path, which has to bisect because its weight-to-attenuation relationship is empirical.
+- **The test establishes optimality rather than comparing.** By Chebyshev's alternation theorem a length-`2M+1` linear-phase filter whose weighted error attains its maximum at `M+2` alternating points *is* the optimal filter. So the test asserts that condition, which certifies the result without a reference implementation. Alternation and extremum count are asserted exactly; magnitude equality is asserted to the design grid's resolution.
+
+**Surprises and gotchas:**
+
+- **Three bugs, and the last one was not a bug.** First, my extremum detection compared band-edge points against their grid neighbour *across the transition gap* — a different band — so edge extrema were dropped and the helper reported 7 extrema for a filter that has 9. Second, the same flaw in the exchange loop was worked around by forcing gap-adjacent points into the candidate set unconditionally, which injected *non-extremal* points into the interpolation. Third, the convergence peak was measured over the *selected* extrema rather than the whole grid, so convergence could be declared while a larger error sat at a discarded point.
+
+  After fixing those the numbers did not move at all, which looked like a stale build and was not. Tracing the exchange showed it converging perfectly — ratio 1.0000 at iteration 5, exactly `M+2` extrema. The residual spread was **grid coarseness**: at the textbook 32 points per extremum the continuous error overshoots the on-grid `δ` by 12%, because the weighted error curves sharply near the band edge. At 256 it is 0.7–4.1%.
+
+  Worth stating because the instinct was wrong twice over: the first two were real defects found by a test that *looked* like it was failing for the same reason throughout, and the third symptom was not a defect at all. Measuring beat reasoning — the trace took one run and settled what three rounds of inference had not.
+- **The tolerance is stated, not tuned.** Magnitude equality is asserted to 5% with the measured figures printed, and the docs say why it is not zero: closing the last few percent means local refinement of each extremum, which is a larger piece of machinery than the gap justifies.
+- **The improvement in the chain is real but modest — 57 taps to 55.** In a direct comparison at equal taps Remez is clearly better on both axes (31 taps: 53.1 dB against 50.1 dB stopband, 0.067 dB against 0.154 dB ripple). Inside the chain designer the win shrinks, because the tap count there is set by the ripple requirement as much as by the stopband — Remez overshoots to 65.8 dB, which shows the stopband was not what was binding. The previous entry's "an equiripple design would want far fewer" was too strong for that spec.
+
+**Validation:** 21 compensator tests, including the alternation certification at three tap counts, Remez beating least squares on worst-case attenuation at equal taps, the analytic weight matching its closed form to 1e-12, monotonic stopband depth in taps, and a cascade target staying symmetric (hence linear phase). Chain-level: Remez reaching the same stopband in fewer taps. `REMEZ_TRACE=1` prints per-iteration delta, peak and ratio, which is how the grid-coarseness diagnosis was made and is kept for the next person.
+
+**Follow-ups:**
+
+- Local refinement of the converged extrema would close the last few percent of grid overshoot.
+- The exchange can fail to converge on a badly conditioned spec; it reports `converged: false` rather than pretending, but nothing yet retries with a denser grid or a different initial set.
+
+## 2026-08-24 — `dsp::cic::chain`: say what the filter must do, derive what it must be
+
+**Paths:** `crates/rhdl-fpga/src/dsp/cic/{chain,compensator,prune}.rs`.
+
+**Why this, why now:** requested — the high-level story for the Rust side of RHDL is that you specify DSP *requirements* and they lower into HDL. A CIC and its compensator take a dozen numbers before you can instantiate one, and none of them is a requirement. The requirements are the converter rate, the total decimation, the bandwidth that must come out alias-free, and how flat, how quiet and how well rejected it has to be.
+
+`ChainSpec` → `Result<ChainDesign, Unmet>` does that derivation. The worked case: **125 Msps, /488, a 128 kHz complex channel** yields a `8 × 61` cascade — stage 1 `N=2` at 125 MHz in 16-bit registers, stage 2 `N=5` at 15.6 MHz, an 11-tap compensator, achieving 0.069 dB ripple, 67.3 dB alias rejection, 84.6 dB SNR.
+
+**Design decisions:**
+
+- **Total decimation is an input, not a derived quantity.** Because the output rate you want is frequently unreachable: from 125 MHz an exact 256 kHz needs `R = 488.28125`; 488 gives 256.148 kHz and 512 gives 244.14 kHz. Which you can live with is a system decision, and a designer that quietly rounded it would be hiding the most consequential choice in the chain.
+- **Bandwidth is the one-sided edge**, documented as such, because "128 kHz of bandwidth" on a complex stream means ±64 kHz. Read the other way it is exactly the output Nyquist, which no CIC can deliver — the two readings differ between comfortable and impossible, so the convention is spelled out rather than inferred.
+- **Two budgets, not one.** Ripple is a systematic gain error across frequency and is bought with **taps**; noise is additive and broadband and is bought with **register width**. An earlier plan for this work claimed they shared an error budget. That was wrong, and building it that way would have produced a designer trading them against each other incoherently. There is a test asserting each is independent of the other.
+- **Cascading is searched, not assumed either way.** A single CIC at /488 needs 66-bit accumulators clocked at the full 125 MHz. Split `8 × 61`, nothing wider than 16 bits runs at 125 MHz and the wide registers run at 15.6. Both are designed and the cheaper wins; the loser is reported in `alternative`, because "a cascade would have been better" should be visible rather than implied.
+- **The cost model is rate-weighted register bits, and says it is a proxy.** By *plain area the single stage often wins* — 240 bits against the cascade's 269. Flops cost the same however slowly they are clocked; what the weighting captures is that a 66-bit adder at 125 MHz is a different proposition from the same adder at 15 MHz. Both numbers are reported so the caller can judge by whichever binds.
+- **Rejection cannot be shared between stages; noise can.** Once energy folds into the band no later stage removes it, so every decimation gets the *full* rejection requirement. Noise contributions add in power, so each stage is held to `min_snr + 10*log10(n)`.
+- **The compensator inverts the whole cascade, not just the last stage.** `compensator::Spec` now carries a list of `CicShape`, and `cascade_magnitude` evaluates each at *its own* input rate. Inverting only the final CIC was measurably worse — 0.0204 dB against 0.0017 dB on a `4 × 16` chain, a factor of twelve. The earlier "the first stage's droop is negligible" reasoning was an argument, not a measurement, and the measurement disagreed.
+- **The compensator can double as an anti-alias filter.** `stopband_edge` and `min_stopband_db` give it a real attenuation requirement, so it earns its keep twice: a CIC's own stopband is whatever `sinc^N` gives, and if that is not enough — or if something downstream decimates again — the compensator is the natural place to put the attenuation, since it is already there and already running at the low rate.
+- **The stopband weight is searched, not chosen.** It used to be a magic `0.05`. The right value depends on tap count, passband width and stopband depth, so the *smallest* weight meeting the requirement is found by bisection — every increment beyond sufficiency is ripple given away for nothing.
+- **`prune::predicted_sigma` was promoted out of the test file.** It is the schedule's own variance accounting and belongs with the schedule, now that the designer reads it too.
+
+**Surprises and gotchas:**
+
+- **`output_width` was nearly decorative.** The first SNR model counted only pruning noise, so an 8-bit output could "achieve" infinite SNR by declining to prune — no pruning, no pruning noise. Truncating a 40-bit datapath to 8 bits is the *dominant* noise in that design. Adding the output quantisation floor (variance `1/12` of an output LSB, which no schedule can go below) made the width load-bearing and the constraint meaningful.
+- **The pruning search was capped at the accumulator width, which is arbitrary**, and it was silently leaving pruning unspent. `prune_bits` subtracts `ceil_log4(2N*S_j)`, and `S_j` is enormous for the early integrators, so the budget must climb well past the full width before they give up a bit. Caught by a test asking whether the budget was actually maximal, which is a better question than whether it was legal.
+- **The search had to become joint.** Choosing the shallowest depth that rejects well enough and *then* trying to flatten it reports "ripple unreachable" when the real problem is that rejection and flatness pull against each other: more stages deepen the nulls and steepen the droop by the same expression. `Unmet::Incompatible` now names the tension and points at the bandwidth, the knob that helps.
+- **That also proved a default of mine wrong.** 60 dB of alias rejection across 0.8 of the output Nyquist is not available from a CIC at *any* depth.
+- **A linear weight ladder made one exploratory test take 70 seconds** — 33 least-squares fits per tap count, across a dozen tap counts and several splits. Bisecting on the weight took the whole `dsp::cic` suite to 6.65 s. Monotonicity of attenuation in the weight is empirical rather than a theorem, so the bisected result is verified against the requirement before being returned.
+
+**Validation:** 13 tests on the designer and 15 on the compensator. The load-bearing one sweeps `(decimation, bandwidth, rejection, ripple, SNR)` and asserts that **every accepted design meets every constraint it was given**, that the split multiplies back to the requested decimation, that the band lands where it was asked to, and that each pruning schedule is monotonic — plus that the sweep exercises both acceptance and refusal, so it cannot pass by refusing everything. Separate tests pin that a cascade's stage order changes its response away from DC (the classic scaling error), that each budget is maximal, that ripple buys taps while SNR buys width, and that every `Unmet` variant is reachable with a usable report.
+
+**Follow-ups:**
+
+- **The compensator is least-squares, and for deep stopbands that is the wrong method.** 60 dB across a 0.5→0.7 transition needs 57 taps here; an equiripple (Remez) design would want far fewer, because least squares minimises average error while a stopband requirement is about the worst case. This is now the binding limitation rather than a theoretical one.
+- Only two-stage cascades are searched. Three would help at very deep decimations.
+- Nothing yet lowers a `ChainDesign` into widget parameters automatically — that is the `cic_chain!` proc macro, which needs the design math in a crate the macro layer may depend on.
+
 ## 2026-08-24 — `dsp::ddc`: two real paths, split and recombined — and a mark bug it exposed
 
 **Paths:** `crates/rhdl-fpga/src/dsp/ddc.rs`, `crates/rhdl-fpga/src/dsp/cic/stream.rs` (new), `examples/cic_stream.rs`, `doc/cic_stream.md`.

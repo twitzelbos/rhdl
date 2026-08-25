@@ -39,6 +39,7 @@
 
 use rhdl::prelude::*;
 
+pub mod chain;
 pub mod compensated;
 pub mod compensator;
 pub mod decimator;
