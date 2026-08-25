@@ -31,6 +31,27 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-25 — The PDF reports, made fit to read
+
+**Paths:** `crates/rhdl-fpga/src/doc/{pdf,plot,report}.rs`, `examples/cic_report.rs`, `doc/{cic_report,cic_chain_report}.pdf`.
+
+**Why this, why now:** the reports were about to be reviewed, and I listed their known weaknesses first. Fixing them before the review was the better order — and looking properly found two problems worse than any I had listed, while one of the listed ones turned out not to exist.
+
+**Design decisions:**
+
+- **Real Adobe Helvetica metrics** replace an averaged 0.52 em per character. The average put centred and right-aligned labels a few percent off true, which shows on a tick label beside its gridline and makes a plot look approximate even when the data is not.
+- **The y-axis label is rotated** with a text matrix rather than parked above the plot. The earlier note called that "one fewer PDF operator to get wrong", which was a reasonable trade before there was anything to review and a poor one after.
+- **Ticks land on round numbers.** `nice_ticks` picks a step from `{1, 2, 2.5, 5} × 10^k`; even division of a `-140..5` dB axis over six divisions gives `-19.1667` and `-43.3333`, which nobody reads. Values are snapped to the step so no floating-point tail reaches the label.
+- **The legend sits on an opaque panel, in whichever corner the data avoids.** Occupancy is counted in each corner and the emptiest wins; the panel is filled either way, so even a bad choice stays legible.
+- **One renderer, two entry points.** `cic_report` now synthesises the single-stage `ChainDesign` its parameters describe and hands it to the same page builders `chain_report` uses. That deleted about 300 lines of duplicate builders — two things to keep in step, and two places for a plot fix to land in only one of them.
+- **The heading states provenance.** "Derived Design" versus "Specified Parameters", because it changes how the numbers should be read: a derived design met requirements someone stated, while hand-chosen parameters met nothing in particular and the report's "asked for" column is just the achieved value restated. Labelling a hand-picked configuration "Derived Design" claims an authority it does not have — and the unified renderer did exactly that until the title became a parameter.
+
+**Surprises and gotchas:**
+
+- **One of the defects I listed was not real.** I claimed tick labels collide on the zoomed composite plot. At the report's 470pt plot width, ten divisions give 47pt per label and `"0.0001"` in real Helvetica at 7pt is 19.5pt — nothing collided. The apparent crowding came from reading a `pdftotext` dump, which puts each label on its own line. The thinning logic is kept as insurance for a narrow frame, and its test now checks it fires at 120pt and *does not* at 470pt, so the insurance cannot silently start dropping labels that fit.
+- **Two worse problems were not on the list**, and both were visible in the output I had already looked at: non-round tick values, and — after unifying the renderers — a hand-specified configuration titled "Derived Design". Listing known weaknesses from memory is not the same as looking at the artifact.
+
+**Validation:** 51 tests across `pdf`, `plot` and `report`. New ones cover the published metrics at 1000pt, proportionality, that characters `escape` drops contribute no width, the rotation matrix, tick roundness and range containment, degenerate ranges not looping, thinning firing only when warranted, and legend placement moving away from occupied corners. Both reports verified byte-identical across runs, and the axis values checked by extraction rather than by eye.
 ## 2026-08-24 — `cic_chain!`: requirements in, hardware out
 
 **Paths:** `crates/rhdl-macro-core/src/cic_chain.rs` (new), `crates/rhdl-macro/src/lib.rs`, `crates/rhdl/src/prelude.rs`, `crates/rhdl-macro-core/Cargo.toml`, `crates/rhdl-fpga/tests/cic_chain_macro.rs` (new), `architecture.md` §2, `doc/book/src/dsp/design.md`, `doc/book/src/code/src/dsp/design.rs`.

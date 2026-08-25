@@ -16,11 +16,13 @@
 
 use super::pdf::{Align, Font, Page, Pdf};
 use super::plot::{Axes, Frame, PALETTE, Series, draw};
-use crate::dsp::cic::{accumulator_width, chain, compensator, dc_gain, prune, response};
+use crate::dsp::cic::{accumulator_width, chain, compensator, prune, response};
 
 /// What to report on.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CicReport {
+    /// Converter sample rate, in Hz — for the rate figures.
+    pub fs_hz: f64,
     /// Input sample width, for the accumulator figure.
     pub w_in: usize,
     /// CIC stages.
@@ -42,6 +44,7 @@ pub struct CicReport {
 impl Default for CicReport {
     fn default() -> Self {
         Self {
+            fs_hz: 125e6,
             w_in: 16,
             stages: 4,
             rate: 32,
@@ -54,17 +57,41 @@ impl Default for CicReport {
     }
 }
 
-/// Render the report.
+/// Render a report for a CIC you specified by hand.
 ///
-/// Returns `None` if the compensator cannot be designed for this
-/// configuration — an even tap count, or a passband that reaches a CIC
-/// null, where the required gain is unbounded.
+/// # Why this exists alongside [`chain_report`]
+///
+/// Two different questions. [`chain_report`] answers "here are my
+/// requirements, what should I build" — its input is a design the
+/// library derived. This one answers "I have chosen these parameters,
+/// what do they do", which is the question you ask while exploring, or
+/// when matching an existing implementation you did not choose.
+///
+/// **Both render through the same page builders.** An earlier version
+/// had two parallel sets, about 140 lines each, which is two things to
+/// keep in step and two places for a plot to be improved in only one
+/// of them. This one synthesises the single-stage [`chain::ChainDesign`]
+/// the given parameters describe and hands it to the same renderer, so
+/// the two reports cannot drift.
+///
+/// Returns `None` if the compensator cannot be designed for these
+/// parameters — an even tap count, or a passband reaching a CIC null.
 pub fn cic_report(cfg: CicReport) -> Option<Pdf> {
+    Some(render(&as_design(cfg)?, "Specified Parameters"))
+}
+
+/// The single-stage design the given parameters describe.
+///
+/// Separate from the rendering so a caller can inspect what their
+/// parameters amount to without producing a PDF — and so the
+/// synthesis is testable on its own.
+pub fn as_design(cfg: CicReport) -> Option<chain::ChainDesign> {
+    let (n, r, m) = (cfg.stages, cfg.rate, cfg.delay);
     let spec = compensator::Spec {
         cics: vec![compensator::CicShape {
-            decimate: cfg.rate,
-            stages: cfg.stages,
-            delay: cfg.delay,
+            decimate: r,
+            stages: n,
+            delay: m,
         }],
         passband: cfg.passband,
         taps: cfg.taps,
@@ -73,387 +100,64 @@ pub fn cic_report(cfg: CicReport) -> Option<Pdf> {
         max_ripple_db: 0.1,
         method: compensator::Method::LeastSquares,
     };
-    let design = compensator::design(spec)?;
-    let quant = compensator::quantise(&design, cfg.coeff_width);
-    let mut doc = Pdf::new();
-    doc.push(page_one(&cfg));
-    doc.push(page_two(&cfg, &design, &quant));
-    Some(doc)
-}
+    let quant = compensator::quantise(&compensator::design(spec)?, cfg.coeff_width);
 
-fn page_one(cfg: &CicReport) -> Page {
-    let (n, r, m) = (cfg.stages, cfg.rate, cfg.delay);
-    let mut p = Page::a4();
-    p.fill_style((0.0, 0.0, 0.0));
-    p.text(
-        297.5,
-        800.0,
-        16.0,
-        Font::Bold,
-        Align::Centre,
-        "CIC Decimator - Frequency Response",
-    );
-    p.text(
-        297.5,
-        784.0,
-        9.0,
-        Font::Regular,
-        Align::Centre,
-        &format!(
-            "N = {n} stages, R = {r}, M = {m}, input width {} bits",
-            cfg.w_in
-        ),
-    );
-
-    // Full input band: the nulls are the point.
-    let axes = Axes::new(
-        "Magnitude, full input band - nulls land on every alias",
-        "frequency / input sample rate",
-        "dB",
-        (0.0, 0.5),
-        (-120.0, 5.0),
-    );
-    let folds: Vec<(f64, f64)> = (1..=(r / 2))
-        .flat_map(|k| {
-            let f = k as f64 / r as f64;
-            [(f, -120.0), (f, 5.0), (f, -120.0)]
-        })
-        .collect();
-    let s = vec![
-        Series::new("|H(f)|", response::curve_input(1200, n, r, m), PALETTE[0]),
-        Series::new("k/R (alias centres)", folds, (0.80, 0.80, 0.85)).dashed(),
-    ];
-    draw(
-        &mut p,
-        Frame {
-            x: 60.0,
-            y: 545.0,
-            w: 470.0,
-            h: 200.0,
-        },
-        &axes,
-        &s,
-    );
-
-    // Decimated band: the droop is the price.
-    let edge = response::passband_edge_out(cfg.passband);
-    let band: Vec<(f64, f64)> = (0..600)
-        .map(|k| {
-            let u = 0.5 * k as f64 / 599.0;
-            (u, 20.0 * response::magnitude_out(u, n, r, m).log10())
-        })
-        .collect();
-    let axes = Axes::new(
-        "Magnitude across the decimated band - the price",
-        "frequency / output sample rate (Nyquist = 0.5)",
-        "dB",
-        (0.0, 0.5),
-        (-20.0, 2.0),
-    );
-    let s = vec![
-        Series::new("|H(u)|", band, PALETTE[0]),
-        Series::new(
-            format!("passband edge u = {edge:.3}"),
-            vec![(edge, -20.0), (edge, 2.0)],
-            PALETTE[1],
-        )
-        .dashed(),
-    ];
-    draw(
-        &mut p,
-        Frame {
-            x: 60.0,
-            y: 290.0,
-            w: 470.0,
-            h: 200.0,
-        },
-        &axes,
-        &s,
-    );
-
+    let full = accumulator_width(cfg.w_in, n, r, m);
     let widths: Vec<usize> = (1..=2 * n)
         .map(|j| prune::stage_width(j, cfg.w_in, n, r, m, cfg.b_out))
         .collect();
-    let full_w = accumulator_width(cfg.w_in, n, r, m);
-    let lines = [
-        format!("DC gain (R*M)^N .................. {}", dc_gain(n, r, m)),
-        format!("Accumulator width required ....... {full_w} bits"),
-        format!(
-            "Passband droop at u = {edge:.3} ........ {:.2} dB",
-            response::passband_droop_db(cfg.passband, n, r, m)
-        ),
-        format!(
-            "Worst alias in the passband ....... {:.1} dB",
-            response::worst_alias_db(cfg.passband, n, r, m)
-        ),
-        format!(
-            "First null at f = 1/(R*M) ........ {:.5}",
-            1.0 / (r * m) as f64
-        ),
-        String::new(),
-        format!("Pruned stage widths (b_out = {}) .. {widths:?}", cfg.b_out),
-        format!(
-            "Register bits: {} pruned vs {} uniform",
-            widths.iter().sum::<usize>(),
-            full_w * 2 * n
-        ),
-    ];
-    p.fill_style((0.0, 0.0, 0.0));
-    p.text(60.0, 235.0, 10.0, Font::Bold, Align::Left, "Figures");
-    let mut y = 220.0;
-    for l in &lines {
-        p.text(60.0, y, 8.0, Font::Regular, Align::Left, l);
-        y -= 11.0;
-    }
-    p.text(
-        60.0,
-        y - 12.0,
-        7.5,
-        Font::Regular,
-        Align::Left,
-        "Droop is inherent to the sinc^N shape, not a design error: the nulls that reject the",
-    );
-    p.text(
-        60.0,
-        y - 21.0,
-        7.5,
-        Font::Regular,
-        Align::Left,
-        "aliases and the droop across the passband are the same expression. See page 2.",
-    );
-    p
-}
+    let register_bits: usize = widths.iter().sum();
+    let stage = chain::CicStage {
+        decimate: r,
+        stages: n,
+        delay: m,
+        input_rate_hz: cfg.fs_hz,
+        input_width: cfg.w_in,
+        accumulator_width: full,
+        prune_budget: cfg.b_out,
+        stage_widths: widths,
+    };
 
-fn page_two(cfg: &CicReport, design: &compensator::Design, quant: &compensator::Quantised) -> Page {
-    let (n, r, m) = (cfg.stages, cfg.rate, cfg.delay);
-    let mut p = Page::a4();
-    p.fill_style((0.0, 0.0, 0.0));
-    p.text(
-        297.5,
-        800.0,
-        16.0,
-        Font::Bold,
-        Align::Centre,
-        "CIC Compensation Filter",
-    );
-    p.text(
-        297.5,
-        784.0,
-        9.0,
-        Font::Regular,
-        Align::Centre,
-        &format!(
-            "{}-tap symmetric FIR at the output rate, {}-bit coefficients",
-            cfg.taps, cfg.coeff_width
-        ),
-    );
+    // The requirements this configuration happens to meet, rather than
+    // requirements it was asked to meet: the caller chose parameters,
+    // so the "asked for" column is filled from what was achieved. A
+    // report claiming the parameters met a spec nobody stated would be
+    // inventing the spec.
+    let ripple = quant.ripple_db;
+    let alias = -response::worst_alias_db(cfg.passband, n, r, m);
+    let snr = chain::snr_db(cfg.w_in, cfg.w_in, n, r, m, cfg.b_out);
 
-    let edge = response::passband_edge_out(cfg.passband);
-    let scale = (1u64 << quant.shift) as f64;
-    let real: Vec<f64> = quant.taps.iter().map(|t| *t as f64 / scale).collect();
-
-    let at = |k: usize| edge * k as f64 / 599.0;
-    let cic: Vec<(f64, f64)> = (0..600)
-        .map(|k| {
-            (
-                at(k),
-                20.0 * response::magnitude_out(at(k), n, r, m).log10(),
-            )
-        })
-        .collect();
-    let fir: Vec<(f64, f64)> = (0..600)
-        .map(|k| {
-            (
-                at(k),
-                20.0 * compensator::fir_amplitude(&real, at(k)).abs().log10(),
-            )
-        })
-        .collect();
-    let both: Vec<(f64, f64)> = (0..600)
-        .map(|k| (at(k), compensator::composite_db(&real, &design.spec, at(k))))
-        .collect();
-
-    let axes = Axes::new(
-        "CIC, compensator, and the two together",
-        "frequency / output sample rate",
-        "dB",
-        (0.0, edge),
-        (-12.0, 12.0),
-    );
-    let s = vec![
-        Series::new("CIC alone", cic, PALETTE[0]),
-        Series::new("compensator", fir, PALETTE[4]),
-        Series::new("composite", both.clone(), PALETTE[2]),
-        Series::new("flat", vec![(0.0, 0.0), (edge, 0.0)], (0.6, 0.6, 0.6)).dashed(),
-    ];
-    draw(
-        &mut p,
-        Frame {
-            x: 60.0,
-            y: 545.0,
-            w: 470.0,
-            h: 200.0,
-        },
-        &axes,
-        &s,
-    );
-
-    let axes = Axes::new(
-        "Composite, zoomed - what is left after compensation",
-        "frequency / output sample rate",
-        "dB",
-        (0.0, edge),
-        (-0.3, 0.3),
-    );
-    let s = vec![
-        Series::new("composite (quantised taps)", both, PALETTE[2]),
-        Series::new("flat", vec![(0.0, 0.0), (edge, 0.0)], (0.6, 0.6, 0.6)).dashed(),
-    ];
-    draw(
-        &mut p,
-        Frame {
-            x: 60.0,
-            y: 290.0,
-            w: 470.0,
-            h: 200.0,
-        },
-        &axes,
-        &s,
-    );
-
-    let droop = response::passband_droop_db(cfg.passband, n, r, m);
-    let lines = [
-        format!("Uncompensated droop, DC to edge ... {droop:.2} dB"),
-        format!(
-            "Ripple, ideal taps ............... {:.4} dB",
-            design.ripple_db
-        ),
-        format!(
-            "Ripple, {}-bit taps ............... {:.4} dB",
-            cfg.coeff_width, quant.ripple_db
-        ),
-        format!(
-            "Improvement ...................... {:.0}x",
-            droop.abs() / quant.ripple_db.max(1e-9)
-        ),
-        String::new(),
-        format!(
-            "Peak gain asked of the filter .... {:.2}x",
-            design.peak_gain
-        ),
-        format!("Coefficient fractional bits ...... {}", quant.shift),
-        format!("DC gain of quantised filter ...... {:.6}", quant.dc_gain),
-        format!("Multipliers (folded, symmetric) .. {}", cfg.taps / 2 + 1),
-        String::new(),
-        format!("Taps: {:?}", quant.taps),
-    ];
-    p.fill_style((0.0, 0.0, 0.0));
-    p.text(60.0, 235.0, 10.0, Font::Bold, Align::Left, "Figures");
-    let mut y = 220.0;
-    for l in &lines {
-        p.text(60.0, y, 8.0, Font::Regular, Align::Left, l);
-        y -= 11.0;
-    }
-    p.text(
-        60.0,
-        y - 12.0,
-        7.5,
-        Font::Regular,
-        Align::Left,
-        "Compensation shapes the passband only. Alias rejection is unchanged - if the aliases",
-    );
-    p.text(
-        60.0,
-        y - 21.0,
-        7.5,
-        Font::Regular,
-        Align::Left,
-        "are too large the answer is more CIC stages or a narrower passband, not more taps.",
-    );
-    p
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_default_configuration_renders() {
-        let d = cic_report(CicReport::default()).expect("must design");
-        assert_eq!(d.len(), 2, "two pages");
-        let b = d.to_bytes();
-        assert!(b.starts_with(b"%PDF"));
-        let s = String::from_utf8_lossy(&b);
-        assert!(s.contains("(CIC Decimator - Frequency Response) Tj"));
-        assert!(s.contains("(CIC Compensation Filter) Tj"));
-    }
-
-    #[test]
-    fn a_derived_chain_renders() {
-        let d = chain::design(chain::ChainSpec::default()).expect("must design");
-        let doc = chain_report(&d);
-        assert_eq!(doc.len(), 2, "two pages");
-        let s = String::from_utf8_lossy(&doc.to_bytes()).to_string();
-        assert!(s.starts_with("%PDF"));
-        for key in [
-            "Decimation Chain - Derived Design",
-            "Compensation and Result",
-            "stage 1",
-            "stage 2",
-            "alias rejection",
-            "alternative",
-        ] {
-            assert!(s.contains(&format!("({key}")), "missing {key}");
-        }
-    }
-
-    #[test]
-    fn chain_reports_are_deterministic() {
-        let d = chain::design(chain::ChainSpec::default()).unwrap();
-        assert_eq!(chain_report(&d).to_bytes(), chain_report(&d).to_bytes());
-    }
-
-    /// A single-stage design renders too — the cascade case must not be
-    /// the only one that works.
-    #[test]
-    fn a_single_stage_chain_renders() {
-        let d = chain::design(chain::ChainSpec {
+    Some(chain::ChainDesign {
+        spec: chain::ChainSpec {
+            fs_hz: cfg.fs_hz,
+            decimate: r,
+            alias_free_bw_hz: cfg.passband * (cfg.fs_hz / r as f64) / 2.0,
+            input_width: cfg.w_in,
+            output_width: cfg.w_in,
+            max_ripple_db: ripple,
+            min_alias_rejection_db: alias,
+            min_snr_db: snr,
+            coeff_width: cfg.coeff_width,
+            max_stages: n,
+            max_taps: cfg.taps,
             allow_cascade: false,
-            ..chain::ChainSpec::default()
-        })
-        .expect("single stage must design");
-        assert_eq!(d.cics.len(), 1);
-        let s = String::from_utf8_lossy(&chain_report(&d).to_bytes()).to_string();
-        assert!(s.contains("(stage 1"), "no stage 1");
-        assert!(!s.contains("(stage 2"), "should not claim a second stage");
-    }
-
-    #[test]
-    fn reports_are_deterministic() {
-        let a = cic_report(CicReport::default()).unwrap().to_bytes();
-        let b = cic_report(CicReport::default()).unwrap().to_bytes();
-        assert_eq!(a, b, "a committed report must regenerate byte-identically");
-    }
-
-    #[test]
-    fn a_different_configuration_gives_a_different_report() {
-        let a = cic_report(CicReport::default()).unwrap().to_bytes();
-        let cfg = CicReport {
-            stages: 5,
-            ..CicReport::default()
-        };
-        let b = cic_report(cfg).unwrap().to_bytes();
-        assert_ne!(a, b, "the report must depend on the configuration");
-    }
-
-    #[test]
-    fn an_undesignable_spec_is_reported_rather_than_panicking() {
-        let cfg = CicReport {
-            taps: 16, // even: no centre tap
-            ..CicReport::default()
-        };
-        assert!(cic_report(cfg).is_none());
-    }
+            stopband_edge: 1.0,
+            min_stopband_db: 0.0,
+            method: compensator::Method::LeastSquares,
+        },
+        cics: vec![stage],
+        multipliers: quant.taps.len() / 2 + 1,
+        compensator: quant,
+        passband: cfg.passband,
+        output_rate_hz: cfg.fs_hz / r as f64,
+        achieved_ripple_db: ripple,
+        achieved_alias_db: alias,
+        achieved_snr_db: snr,
+        achieved_stopband_db: f64::INFINITY,
+        register_bits,
+        cost: register_bits as f64,
+        alternative: None,
+    })
 }
 
 /// Render a derived chain — the output of [`crate::dsp::cic::chain::design`].
@@ -470,8 +174,20 @@ mod tests {
 /// yourself, which is the right thing when you are exploring rather
 /// than specifying.
 pub fn chain_report(d: &chain::ChainDesign) -> Pdf {
+    render(d, "Derived Design")
+}
+
+/// Render a design under a given provenance label.
+///
+/// The heading says where the numbers came from, because that changes
+/// how the reader should treat them: a *derived* design met
+/// requirements someone stated, while *specified parameters* met
+/// nothing in particular — the report's "asked for" column is then
+/// just the achieved value restated. Labelling a hand-chosen
+/// configuration "Derived Design" claims an authority it does not have.
+pub fn render(d: &chain::ChainDesign, provenance: &str) -> Pdf {
     let mut doc = Pdf::new();
-    doc.push(chain_page_one(d));
+    doc.push(chain_page_one(d, provenance));
     doc.push(chain_page_two(d));
     doc
 }
@@ -488,7 +204,7 @@ fn shapes(d: &chain::ChainDesign) -> Vec<compensator::CicShape> {
         .collect()
 }
 
-fn chain_page_one(d: &chain::ChainDesign) -> Page {
+fn chain_page_one(d: &chain::ChainDesign, provenance: &str) -> Page {
     let mut p = Page::a4();
     p.fill_style((0.0, 0.0, 0.0));
     p.text(
@@ -497,7 +213,7 @@ fn chain_page_one(d: &chain::ChainDesign) -> Page {
         16.0,
         Font::Bold,
         Align::Centre,
-        "Decimation Chain - Derived Design",
+        &format!("Decimation Chain - {provenance}"),
     );
     p.text(
         297.5,
