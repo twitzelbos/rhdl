@@ -138,11 +138,6 @@ where
 {
     /// The framed input sample, or `None` for an idle cycle.
     pub stream: Option<Item<Real<W_IN>, SyncMark>>,
-    /// Restart the window on this sample, independently of its mark.
-    ///
-    /// A marked sample restarts anyway; this is for a restart that
-    /// does not come from the stream.
-    pub restart: bool,
     /// Downstream's ready.
     pub downstream_ready: bool,
 }
@@ -205,7 +200,12 @@ where
     // mark is built only from post-trigger samples.
     d.cic = super::decimator::In::<W_IN> {
         sample,
-        restart: i.restart || marked_now,
+        // **The mark is the only restart.** There is deliberately no
+        // out-of-band restart input: widgets connect through the
+        // stream and its framing, and a second mechanism for the same
+        // thing is a second mechanism to keep consistent. A host that
+        // wants to restart marks a sample.
+        restart: marked_now,
         downstream_ready: i.downstream_ready,
     };
 
@@ -288,7 +288,6 @@ mod tests {
                 data: Real::<WI> { v: signed::<WI>(v) },
                 frame: SyncMark { sync },
             }),
-            restart: false,
             downstream_ready: true,
         }
     }
@@ -296,7 +295,6 @@ mod tests {
     fn idle() -> In<WI> {
         In::<WI> {
             stream: None,
-            restart: false,
             downstream_ready: true,
         }
     }
@@ -480,7 +478,7 @@ mod tests {
             .join("vcd")
             .join("cic_stream");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["07c5e703eca02a8cf136ef2bc893fc52da8bbb695ef74a0940d391dc0abfb68f"];
+        let expect = expect!["be7bb4c1db08658cea162c4fa5697d616517aca05e685e93fee7af2f6f905d98"];
         let digest = vcd.dump_to_file(root.join("cic_stream.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

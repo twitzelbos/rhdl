@@ -458,7 +458,6 @@ where
     // the stream.
     d.dec_i = super::cic::stream::In::<W> {
         stream: q.split.real.data,
-        restart: false,
         downstream_ready: i.downstream_ready,
     };
 
@@ -477,7 +476,6 @@ where
     }
     d.dec_q = super::cic::stream::In::<W> {
         stream: q_in,
-        restart: false,
         downstream_ready: i.downstream_ready,
     };
 
@@ -883,7 +881,7 @@ mod tests {
             .join("vcd")
             .join("ddc");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["e21ce85dc1367882eb05dadfb5b062f5bb2994c5e8f2804564728dc10a33aeac"];
+        let expect = expect!["dcff8134511fc394c6c75aa6b2329786a1c5dc5fbccbe85f54fb5675f4ac7d50"];
         let digest = vcd.dump_to_file(root.join("ddc.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

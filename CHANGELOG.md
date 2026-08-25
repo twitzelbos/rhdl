@@ -31,6 +31,35 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-24 — `dsp::cic::cascaded`: composing decimators through framing, not internals
+
+**Paths:** `crates/rhdl-fpga/src/dsp/cic/{cascaded.rs (new),stream.rs}`, `crates/rhdl-fpga/src/dsp/ddc.rs`, `examples/{cic_cascaded.rs (new),cic_stream.rs}`, `doc/cic_cascaded.md`.
+
+**Why this, why now:** `chain::design` already recommends splitting a deep decimation — an `8 × 61` split keeps everything at the converter rate down to 16 bits, where a single `/488` needs 66-bit accumulators there — but nothing composed the result.
+
+**Design decisions:**
+
+- **Widgets compose through the stream and its framing. Nothing else.** `CascadedDecimator` chains two `StreamDecimator`s and its entire kernel is three assignments: first gets the input, second gets whatever first emitted, out gets whatever second emitted. No restart wiring, no latch, no state of its own. The second stage restarts because *its own input carries a mark* — it has no idea there is a stage in front of it, and does not need one.
+- **The out-of-band `restart` input is gone from `StreamDecimator`.** Nothing used it; the DDC wired it false. A host that wants to restart marks a sample, which is the same mechanism — and a second mechanism for the same thing is a second mechanism to keep consistent.
+
+**Surprises and gotchas:**
+
+- **The first version of this widget was wrong at the interface, not in its details, and I was busy fixing the details.** It composed the *bare* `decimator` primitives and wired their internal `restart` between them. That forced the cascade to work out which upstream output was the first post-restart one — and get it wrong for one restart in `R1`, because on the cycle a restart arrives the upstream output register still holds the *previous* window's sample.
+
+  I found that, called it a subtler version of a trap I had claimed to avoid, and fixed it with a latch. Then it was pointed out that a second decimator has no way to know there is one in front of it and should not need to: a CIC responds to a mark in the framing and emits a mark, so the composition is already available through the only channel widgets share. The restart wiring should never have existed.
+
+  Passing framing instead of internals **deleted** the problem rather than fixing it, and the widget shrank from a latch plus a `pending` register to three assignments. The rule, written into the module docs because I evidently had not internalised it: **an internal is not an interface.** If two widgets must coordinate, the coordination belongs in the framing they already exchange.
+
+  Worth recording the shape of the mistake too. I had a working example of the right design already in the tree — `StreamDecimator`, which carries framing through precisely so a decimator can be composed — and built the wrong thing next to it anyway, because I reached for the primitive rather than the composable widget. Then I spent two rounds improving the wrong thing. Neither round was wasted effort exactly, but both were effort spent below the level the problem was at.
+
+- **The offset sweeps stay even though there is no longer an offset to be wrong at.** With framing there is no coordination for the cascade to get wrong, so `a_mark_reaches_the_output_from_any_offset` and its pre-trigger sibling cannot fail by construction. They are kept because that is how the earlier bug was found, and because "cannot fail by construction" is a claim about the current implementation rather than a permanent property.
+
+**Validation:** all five tiers, 10 tests. The load-bearing ones: a mark survives both stages discarding 31 of every 32 frames, and does so from *every* offset in the composite period; the marked output excludes pre-trigger history at every offset; the cascade equals its two stages run separately; DC gain is the product of the stages'. Tier 3 asserts both stages appear as separate modules; Tier 4 runs `iverilog` on RTL and NTL. Removing `restart` moved the DDC's snapshot and digest, audited and re-blessed.
+
+**Follow-ups:**
+
+- Only two-stage cascades are composed. Three nest without changes — a `CascadedDecimator` *is* a framed decimator — but `chain::design` searches two-factor splits only.
+
 ## 2026-08-24 — `rhdl-dsp-design`: the filter mathematics moves to a leaf crate
 
 **Paths:** `crates/rhdl-dsp-design/**` (new crate), `crates/rhdl-fpga/src/dsp/{cic/mod.rs,fir/mod.rs}`, `architecture.md` §2 and §5, `CLAUDE.md` §1, `Cargo.toml`.
