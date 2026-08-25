@@ -58,7 +58,7 @@ It was also creating a perverse incentive. A deeper CIC droops harder, so the co
 
 **Follow-ups:**
 
-- The composite figure is measured, not guaranteed. Nothing stops a *quantised* design from missing the requirement the ideal one met; `Quantised::stopband_db` reports it but `chain::design` does not re-verify against it. Worth closing, since the hardware runs the quantised taps.
+- ~~The composite figure is measured, not guaranteed — nothing stops a quantised design from missing the requirement the ideal one met.~~ **Withdrawn: this was wrong.** `chain::design`'s tap search already accepts a candidate only when `q.stopband_db >= spec.min_stopband_db`, evaluated on the quantised taps, and `achieved_stopband_db` reports that same quantised figure. Checked across eight specs at 10-, 12- and 16-bit coefficients: the reported and independently recomputed quantised figures agree to the digit in every case. The gap was in my reading of the code, not in the code.
 - `min_stopband_db` and `min_alias_rejection_db` are different questions about different bands and are easy to confuse. The book now says so explicitly; the API could say it too, or the two could be unified into one statement about what reaches the output.
 - The pinning test for the chapter's tap counts costs 35 seconds, because it runs eight full chain designs. Worth it against silent drift, but a cheaper formulation would be welcome.
 
