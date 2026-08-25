@@ -52,12 +52,10 @@ fn main() -> Result<(), RHDLError> {
             data: Real::<WI> { v: signed::<WI>(v) },
             frame: SyncMark { sync },
         }),
-        restart: false,
         downstream_ready: true,
     };
     let idle = In::<WI> {
         stream: None,
-        restart: false,
         downstream_ready: true,
     };
 
