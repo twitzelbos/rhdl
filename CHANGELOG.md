@@ -31,6 +31,47 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-24 — `cic_chain!`: requirements in, hardware out
+
+**Paths:** `crates/rhdl-macro-core/src/cic_chain.rs` (new), `crates/rhdl-macro/src/lib.rs`, `crates/rhdl/src/prelude.rs`, `crates/rhdl-macro-core/Cargo.toml`, `crates/rhdl-fpga/tests/cic_chain_macro.rs` (new), `architecture.md` §2, `doc/book/src/dsp/design.md`, `doc/book/src/code/src/dsp/design.rs`.
+
+**Why this, why now:** the point of the whole DSP track. A CIC and its compensator take a dozen numbers before you can instantiate one and none of them is a requirement; `chain::design` turns requirements into those numbers, and this closes the last gap by emitting the widgets they describe.
+
+```rust
+cic_chain!(NarrowbandChain,
+    fs = 125e6, decimate = 488, alias_free_bw = 64e3,
+    in_w = 16, out_w = 24,
+    ripple_db = 0.1, alias_db = 60, snr_db = 80);
+```
+
+expands to a pruned CIC per stage, cascaded through their framing — `[8, 61]` for that spec, 269 register bits — plus the derived taps and the compensating FIR *beside* it, not inside it.
+
+**What guarantee changed:** none. The macro adds no IR, no opcode, no kernel construct, and no escape hatch. Everything it emits is what a caller could have written by hand — `cic_pruned!`, `SymmetricFir`, `CompensatedCic`, `StreamDecimator`, `CascadedDecimator` — and every one of those is type-checked, DRC-checked and `iverilog`-verified exactly as if it had been. What the macro removes is the arithmetic, not the checking.
+
+**Design decisions:**
+
+- **The design runs at expansion time, because it cannot run in a `const fn`.** Choosing a split needs a least-squares fit per candidate tap count, which needs floating point, which `const fn` does not have on stable. So it runs in the compiler's own process and the results are substituted as literals — precisely what a const-generic widget parameter needs.
+- **`rhdl-macro-core` gains a dependency on `rhdl-dsp-design`.** A new L0 → L2 edge, recorded in §2's table. No cycle, and it does not weaken the `rhdl-macro-core` → `rhdl-core` prohibition — that rule is why the design math was extracted to a leaf crate in the first place.
+- **It emits its working, not just its answer.** Every derived number is a `pub const` and the design report becomes rustdoc on the generated module. A macro that silently picked five stages and a 51-bit accumulator would be doing something a hardware engineer needs to audit; the convenience is in not having to *compute* the numbers, not in not being allowed to see them.
+- **It composes through framing.** The emitted chain is `CascadedDecimator` over two `StreamDecimator`s. An earlier sketch had it wiring bare primitives together; that was wrong for the reasons in the entry below.
+- **`Chain` is the decimation alone; the compensator is emitted beside it.** A compensator does not have to sit immediately behind the decimator, and does not have to exist in hardware at all — the taps may be applied further down the fabric, or off the FPGA entirely. So the macro emits `Chain` (decimation), `Fir` + `compensator()` (the filter, unplaced), and `Compensated` (the opt-in composition for when it does go right behind). Baking it in would have made a placement decision on the caller's behalf.
+- **Both figures are reported.** `DROOP_DB` is what the chain does to the band unaided; `RIPPLE_DB` is what remains *if* the taps are applied somewhere. Skipping the compensator is a real choice, so the cost of skipping it has to be visible: at the worked spec that is **−19.6 dB against 0.069 dB**.
+- **Diagnostics carry the designer's reasoning.** An infeasible spec is a compile error naming the requirement, the shortfall and the knob. The designer already knows which constraint it missed; losing that on the way to the compiler would turn a solvable problem into a mystery.
+- **One pruned CIC per stage, each in its own module.** `cic_pruned!` puts `Q`, `D`, `CicStages` and its kernel at module scope, so two invocations cannot share one — and a proc macro can synthesise the module names `macro_rules!` cannot.
+
+**Surprises and gotchas:**
+
+- **`quote!` renders a `usize` as `2usize`, and `cic_pruned!` discriminates its arms on a bare literal.** The error was `no rules expected \`2usize\`` pointing at the whole invocation, which names the token and not the cause. Everything numeric that reaches a `macro_rules!` arm has to be `Literal::usize_unsuffixed`. Applied to the generated constants too — `[usize ; 2usize]` compiles, but the module is meant to be read.
+- **I fabricated an error message in the book chapter**, quoting an `AliasRejection` diagnostic with an invented shortfall figure. The real diagnostic for that spec is `Incompatible`, with 138.8 dB of residual ripple. Caught by running the case rather than by reading what I had written. The chapter now quotes the actual output.
+- **The first attempt at the emission left a dead scaffold block** — a `quote!` built and then discarded with `let _ =` — which compiled and would have confused the next reader.
+
+**Validation:** eight macro-level tests in `rhdl-macro-core`, covering the expansion for a cascade and for a single stage, and every diagnostic path: infeasible rejection, an impossible bandwidth, an unknown parameter listing the valid ones, a repeated parameter, a bad method naming the alternatives. Seven kernel-level tests in `rhdl-fpga`: the derived constants match the spec, taps are symmetric (so the folded filter it feeds computes the filter the design describes), both chains elaborate, the shallow chain decimates by what was asked and carries its mark exactly once, and an `iverilog` RTL and NTL round-trip. Two more in the book's `code` crate, which matters because they exercise the macro from a **different crate** than `rhdl-fpga` — that is what validates the `rhdl_fpga::cic_pruned!` path resolution and the prelude export. Full workspace suite green.
+
+**Follow-ups:**
+
+- Two-stage cascades only, following `chain::design`.
+- The macro emits a decimation chain. A whole down-converter — oscillator, mixer, both quadrature arms — would be a `ddc_chain!` on the same footing.
+
 ## 2026-08-24 — `dsp::cic::cascaded`: composing decimators through framing, not internals
 
 **Paths:** `crates/rhdl-fpga/src/dsp/cic/{cascaded.rs (new),stream.rs}`, `crates/rhdl-fpga/src/dsp/ddc.rs`, `examples/{cic_cascaded.rs (new),cic_stream.rs}`, `doc/cic_cascaded.md`.

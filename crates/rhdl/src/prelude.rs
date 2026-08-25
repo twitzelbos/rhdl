@@ -67,6 +67,7 @@ pub use rhdl_macro::FsmWidget;
 pub use rhdl_macro::Synchronous;
 pub use rhdl_macro::SynchronousDQ;
 pub use rhdl_macro::Timed;
+pub use rhdl_macro::cic_chain;
 pub use rhdl_macro::fsm_doc;
 pub use rhdl_macro::fsm_properties;
 pub use rhdl_macro::kernel;

@@ -118,7 +118,7 @@ Verified dependency edges (from `crates/*/Cargo.toml`):
 | `rhdl-vlog` | — | L0 |
 | `rhdl-dsp-design` | — | L0 |
 | `rhdl-core` | `rhdl-bits`, `rhdl-span`, `rhdl-trace-type`, `rhdl-vlog` | L2 |
-| `rhdl-macro-core` | `rhdl-span`, `rhdl-vlog` | L2 (proc-macro support) |
+| `rhdl-macro-core` | `rhdl-span`, `rhdl-vlog`, `rhdl-dsp-design` | L2 (proc-macro support) |
 | `rhdl-macro` | `rhdl-macro-core` | L2 (proc-macro entry) |
 | `rhdl-toolchains` | `rhdl-core`, `rhdl-vlog` | L2 |
 | `rhdl` | `rhdl-bits`, `rhdl-core`, `rhdl-macro`, `rhdl-trace-type`, `rhdl-vlog` | L3 (meta-crate) |

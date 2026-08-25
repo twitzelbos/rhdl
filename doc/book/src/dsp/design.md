@@ -149,13 +149,95 @@ Attenuation is not free. It is bought with taps, and the transition
 width dominates: 50 dB across a wide transition costs 29 taps, and the
 same 50 dB across a narrow one costs 67.
 
-## What is not automatic yet
+## Lowering it to hardware
 
-Nothing here writes the widget declaration for you. `ChainDesign` gives
-you the numbers; instantiating `cic_pruned!` and `SymmetricFir` with
-them is still a manual step, because RHDL widgets are const-generic and
-those numbers have to exist at compile time.
+Everything above computes the parameters. `cic_chain!` goes the rest of
+the way:
 
-Closing that gap is a `cic_chain!` proc macro, which needs the design
-math to live somewhere the macro layer is allowed to depend on. Until
-then, run the designer, read the report, and paste.
+```rust,ignore
+{{#rustdoc_include ../code/src/dsp/design.rs:macro}}
+```
+
+That expands to a module containing a pruned CIC per stage, cascaded
+through their framing — `[8, 61]` here, so two framed stages — plus the
+derived taps and the compensating FIR. Build the decimation chain with
+`narrowband_chain::new()`.
+
+### The compensator is emitted beside the chain, not inside it
+
+`Chain` is the decimation alone. A compensator does not have to sit
+immediately behind the decimator, and does not have to be in the FPGA
+at all — you may apply the taps further down the fabric, or on a host
+after capture. So the macro gives you the pieces and lets you place
+them:
+
+| | what it is |
+|---|---|
+| `Chain` / `new()` | decimation only |
+| `Fir` / `compensator()` | the filter, unplaced |
+| `Compensated` / `compensated()` | the opt-in, compensator right behind the decimator |
+| `TAPS`, `TAP_SHIFT` | the coefficients as plain integers, for a compensator this type cannot reach |
+
+Because skipping the compensator is a real choice, the cost of skipping
+it is reported too:
+
+```rust,ignore
+narrowband_chain::DROOP_DB   // -19.586  — the chain unaided
+narrowband_chain::RIPPLE_DB  //   0.0689 — if the taps are applied
+```
+
+Nineteen decibels of droop across the band is not a rounding error, so
+for that spec the compensation matters a great deal — but *where* it
+happens is a system decision, and the macro does not make it for you.
+
+**The design runs during compilation.** Not in a `const fn`: choosing a
+split needs a least-squares fit per candidate tap count, which needs
+floating point, which `const fn` does not have on stable. So it happens
+in the compiler's own process at macro-expansion time, and the results
+are substituted as literals — which is exactly what a const-generic
+widget parameter needs.
+
+### It emits its working, not just its answer
+
+Every derived number is a `pub const`:
+
+```rust,ignore
+narrowband_chain::SPLIT              // [8, 61]
+narrowband_chain::TAPS               // the eleven coefficients
+narrowband_chain::TAP_SHIFT          // their fractional bits
+narrowband_chain::REGISTER_BITS      // 269
+narrowband_chain::RIPPLE_DB          // 0.0689
+narrowband_chain::ALIAS_REJECTION_DB // 67.3
+narrowband_chain::SNR_DB             // 84.6
+```
+
+and the design report becomes rustdoc on the generated module.
+
+This is deliberate. A macro that silently picked five stages and a
+51-bit accumulator would be doing something a hardware engineer needs
+to audit. The convenience is in not having to *compute* the numbers,
+not in not being allowed to see them.
+
+### It fails at compile time, with the reason
+
+An infeasible specification is a compile error naming the requirement,
+the shortfall and the knob:
+
+```text
+error: cic_chain! cannot satisfy this specification.
+
+       rejection and flatness are jointly infeasible here: every depth
+       that rejects well enough droops more than the compensator can
+       invert. Best ripple 138.8363 dB against the 0.1000 dB asked for.
+       The knob is `alias_free_bw`: a band further from the first null
+       both rejects better and droops less.
+```
+
+(That is the message for `alias_free_bw = 120e3, alias_db = 90` at
+`/488` — asking for 90 dB of rejection across almost the whole output
+band. The 138 dB of residual ripple is not a typo: the depth needed for
+that rejection droops so steeply that no tap count within the budget
+comes close to inverting it.)
+
+A macro that said only "could not design" would turn a solvable problem
+into a mystery.

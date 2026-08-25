@@ -96,6 +96,19 @@ pub fn export(input: TokenStream) -> TokenStream {
     }
 }
 
+/// Declare a decimation chain from its requirements.
+///
+/// Runs the filter design at expansion time and emits the widgets it
+/// describes, with every derived number as an inspectable `pub const`.
+/// See `rhdl_macro_core::cic_chain` for the reasoning.
+#[proc_macro]
+pub fn cic_chain(input: TokenStream) -> TokenStream {
+    match rhdl_macro_core::cic_chain::cic_chain(input.into()) {
+        Ok(output) => output.into(),
+        Err(err) => err.to_compile_error().into(),
+    }
+}
+
 #[proc_macro]
 pub fn path(input: TokenStream) -> TokenStream {
     match rhdl_macro_core::path_macro(input.into()) {
