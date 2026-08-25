@@ -153,13 +153,12 @@ where
 
 #[kernel]
 /// Kernel for [RegisterFile].
-pub fn register_file<T: Digital, const N: usize, const W: usize>(
+pub fn register_file<T: Digital + Default, const N: usize, const W: usize>(
     cr: ClockReset,
     i: In<T, W>,
     q: Q<T, N, W>,
 ) -> (Out<T, N>, D<T, N, W>)
 where
-    T: Default,
     rhdl::bits::W<W>: BitWidth,
 {
     let mut d = D::<T, N, W>::dont_care();

@@ -52,7 +52,6 @@ bool |                       | B<16>
 //!
 //! And the auto-generated FSM diagram for the read transaction:
 #![doc = include_str!("../../doc/dht22_fsm.md")]
-use rhdl::core::fsm::analysis::Transition;
 use rhdl::prelude::*;
 
 use crate::core::{constant::Constant, dff};

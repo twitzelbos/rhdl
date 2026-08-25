@@ -50,7 +50,6 @@ bool |                           | Option<B<8>>
 //!
 //! And the auto-generated FSM diagram:
 #![doc = include_str!("../../doc/rs485_master_fsm.md")]
-use rhdl::core::fsm::analysis::Transition;
 use rhdl::prelude::*;
 
 use super::uart::Uart;

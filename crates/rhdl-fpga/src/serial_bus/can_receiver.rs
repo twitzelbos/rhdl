@@ -429,7 +429,7 @@ where
                 // Advance to Id; the CRC needs SOF=dominant folded in.
                 let crc_top0 = (q.extras.crc_reg >> bits::<15>(14)) & bits::<15>(1);
                 let crc_top0_set = crc_top0 != bits::<15>(0);
-                let crc_feedback0 = crc_top0_set != false; // SOF is false (dominant)
+                let crc_feedback0 = crc_top0_set; // SOF is false (dominant)
                 let crc_shifted0 = q.extras.crc_reg << 1;
                 next.crc_reg = if crc_feedback0 {
                     (crc_shifted0 ^ bits::<15>(0x4599)) & bits::<15>(0x7FFF)
@@ -705,11 +705,7 @@ where
 
     // Output: drive ACK dominant during AckSlot iff drive_ack is set.
     let mut o = Out::dont_care();
-    o.tx = if q.field == CanRxField::AckSlot && i.drive_ack {
-        false
-    } else {
-        true
-    };
+    o.tx = !(q.field == CanRxField::AckSlot && i.drive_ack);
     o.frame_valid = q.extras.frame_pulse;
     o.id = q.extras.id_reg;
     o.dlc = q.extras.dlc_reg;

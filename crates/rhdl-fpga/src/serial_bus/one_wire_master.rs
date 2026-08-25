@@ -94,7 +94,6 @@ bool |                             | bool
 //!
 //! And the auto-generated FSM diagram for the slot-walking machine:
 #![doc = include_str!("../../doc/one_wire_master_fsm.md")]
-use rhdl::core::fsm::analysis::Transition;
 use rhdl::prelude::*;
 
 use crate::core::{constant::Constant, dff};

@@ -204,27 +204,27 @@ where
                 // bit 6 = X overflow (we never set), bit 7 = Y overflow.
                 let mut b0: Bits<8> = bits::<8>(0x08);
                 if i.btn_left {
-                    b0 = b0 | bits::<8>(0x01);
+                    b0 |= bits::<8>(0x01);
                 }
                 if i.btn_right {
-                    b0 = b0 | bits::<8>(0x02);
+                    b0 |= bits::<8>(0x02);
                 }
                 if i.btn_middle {
-                    b0 = b0 | bits::<8>(0x04);
+                    b0 |= bits::<8>(0x04);
                 }
                 if x_sign {
-                    b0 = b0 | bits::<8>(0x10);
+                    b0 |= bits::<8>(0x10);
                 }
                 if y_sign {
-                    b0 = b0 | bits::<8>(0x20);
+                    b0 |= bits::<8>(0x20);
                 }
                 // Byte 3: low nibble = Z (signed 4 bits), bits 4/5 = btn 4/5.
                 let mut b3: Bits<8> = dz_unsigned.resize::<8>();
                 if i.btn_4 {
-                    b3 = b3 | bits::<8>(0x10);
+                    b3 |= bits::<8>(0x10);
                 }
                 if i.btn_5 {
-                    b3 = b3 | bits::<8>(0x20);
+                    b3 |= bits::<8>(0x20);
                 }
                 d.b0_q = b0;
                 d.b1_q = x_byte;

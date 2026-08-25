@@ -675,10 +675,10 @@ pub fn alto_chip_kernel(_cr: ClockReset, i: ChipIn, q: Q) -> (ChipOut, D) {
     let disk_word_strobe = q.disk.word_strobe;
     let mut effective_wakeups = i.wakeups;
     if disk_sector_mark {
-        effective_wakeups = effective_wakeups | bits::<16>(0x0010);
+        effective_wakeups |= bits::<16>(0x0010);
     }
     if disk_word_strobe {
-        effective_wakeups = effective_wakeups | bits::<16>(0x4000);
+        effective_wakeups |= bits::<16>(0x4000);
     }
 
     // Build the next_mpc_per_task array for the arbiter: only the

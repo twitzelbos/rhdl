@@ -58,7 +58,6 @@ bool |                          | B<8>
 //!
 //! And the auto-generated FSM diagram for the packet assembler:
 #![doc = include_str!("../../doc/ps2_mouse_fsm.md")]
-use rhdl::core::fsm::analysis::Transition;
 use rhdl::prelude::*;
 
 use super::ps2_keyboard::{Ps2Keyboard, ps2_keyboard as ps2_keyboard_kernel};

@@ -39,15 +39,13 @@ impl Pass for LowerInferredCastsPass {
                         })
                     }
                 }
-                OpCode::Resize(cast) => {
-                    if cast.len.is_none() {
-                        let dest_width = input.kind(cast.lhs).bits();
-                        lop.op = OpCode::Resize(Cast {
-                            lhs: cast.lhs,
-                            arg: cast.arg,
-                            len: Some(dest_width),
-                        })
-                    }
+                OpCode::Resize(cast) if cast.len.is_none() => {
+                    let dest_width = input.kind(cast.lhs).bits();
+                    lop.op = OpCode::Resize(Cast {
+                        lhs: cast.lhs,
+                        arg: cast.arg,
+                        len: Some(dest_width),
+                    })
                 }
                 _ => {}
             }

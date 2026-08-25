@@ -38,7 +38,7 @@ pub fn r_alias(task: u8, index: usize) -> &'static str {
         0 => emulator_alias(index),
         4 | 14 => disk_alias(index),
         // Display tasks share the display R-slots (R[16..24] octal 20..30).
-        9 | 10 | 11 | 12 => display_alias(index),
+        9..=12 => display_alias(index),
         _ => fallback(index),
     }
 }

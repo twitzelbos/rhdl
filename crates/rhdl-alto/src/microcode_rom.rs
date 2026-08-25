@@ -44,16 +44,9 @@ pub struct UromOut {
 /// 2048-word × 32-bit microcode RAM.
 #[derive(Clone, Debug, Synchronous, SynchronousDQ)]
 #[rhdl(dq_no_prefix)]
+#[derive(Default)]
 pub struct MicrocodeRom {
     bram: SyncBRAM<Bits<32>, 11>,
-}
-
-impl Default for MicrocodeRom {
-    fn default() -> Self {
-        Self {
-            bram: SyncBRAM::default(),
-        }
-    }
 }
 
 impl MicrocodeRom {

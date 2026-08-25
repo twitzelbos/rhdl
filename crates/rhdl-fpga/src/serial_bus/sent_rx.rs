@@ -92,7 +92,6 @@ bool |                      | B<T_W>
 //!
 //! And the auto-generated FSM diagram for the sync-detect / collect cycle:
 #![doc = include_str!("../../doc/sent_rx_fsm.md")]
-use rhdl::core::fsm::analysis::Transition;
 use rhdl::prelude::*;
 
 use crate::core::{constant::Constant, dff};

@@ -54,21 +54,19 @@ where
     fn next(&mut self) -> Option<TracedSample<S, U>> {
         loop {
             if !self.initialized {
-                if let Some(sample) = self.iter.next() {
+                {
+                    let sample = self.iter.next()?;
                     self.prev_val = (self.func)(&sample);
                     self.initialized = true;
-                } else {
-                    return None;
                 }
             }
-            if let Some(sample) = self.iter.next() {
+            {
+                let sample = self.iter.next()?;
                 let val = (self.func)(&sample);
                 if val != self.prev_val {
                     self.prev_val = val;
                     return Some(sample);
                 }
-            } else {
-                return None;
             }
         }
     }

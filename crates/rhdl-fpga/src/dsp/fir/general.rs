@@ -190,7 +190,7 @@ where
         // symmetric, so no two of them share a multiplier.
         let mut acc = signed::<W_ACC>(0);
         for k in 0..TAPS {
-            acc = acc + sign_extend::<W_IN, W_ACC>(line[k]) * sign_extend::<W_C, W_ACC>(q.coeff[k]);
+            acc += sign_extend::<W_IN, W_ACC>(line[k]) * sign_extend::<W_C, W_ACC>(q.coeff[k]);
         }
 
         let scaled = acc >> bits::<8>(SHIFT as u128);

@@ -40,8 +40,8 @@
 
 use rhdl::prelude::*;
 
-use crate::lid::carloni::{self, Carloni};
-use crate::rcstream::bus::{Item, RCStream};
+use crate::lid::carloni::Carloni;
+use crate::rcstream::bus::Item;
 
 /// AXI4-Stream → RCStream translation widget.
 ///
@@ -127,7 +127,11 @@ pub fn axi_to_rcstream_kernel<T: Digital, F: Digital>(
 
 #[cfg(test)]
 mod tests {
+    // `carloni` is referenced only from these tests, so the
+    // import is scoped to them -- at file level it reads as
+    // unused when the crate is checked without test targets.
     use super::*;
+    use crate::lid::carloni;
 
     #[test]
     fn default_construction() {

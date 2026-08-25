@@ -403,24 +403,24 @@ pub fn check_no_literal_writes(obj: &Object) -> Vec<Violation> {
 pub fn check_no_nested_signal(obj: &Object) -> Vec<Violation> {
     let mut violations = Vec::new();
     for (rid, (kind, _)) in obj.symtab.iter_reg() {
-        if let Some(inner_kind) = kind.signal_kind() {
-            if inner_kind.is_signal() {
-                violations.push(Violation::NestedSignal {
-                    slot: Slot::Register(rid),
-                    kind: *kind,
-                });
-            }
+        if let Some(inner_kind) = kind.signal_kind()
+            && inner_kind.is_signal()
+        {
+            violations.push(Violation::NestedSignal {
+                slot: Slot::Register(rid),
+                kind: *kind,
+            });
         }
     }
     for (lid, (tb, _)) in obj.symtab.iter_lit() {
         let kind = tb.kind();
-        if let Some(inner_kind) = kind.signal_kind() {
-            if inner_kind.is_signal() {
-                violations.push(Violation::NestedSignal {
-                    slot: Slot::Literal(lid),
-                    kind,
-                });
-            }
+        if let Some(inner_kind) = kind.signal_kind()
+            && inner_kind.is_signal()
+        {
+            violations.push(Violation::NestedSignal {
+                slot: Slot::Literal(lid),
+                kind,
+            });
         }
     }
     violations

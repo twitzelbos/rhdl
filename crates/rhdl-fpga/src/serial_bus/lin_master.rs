@@ -55,7 +55,6 @@ bool |                     | bool
 //!
 //! And the auto-generated FSM diagram for the LIN frame walk:
 #![doc = include_str!("../../doc/lin_master_fsm.md")]
-use rhdl::core::fsm::analysis::Transition;
 use rhdl::prelude::*;
 
 use super::uart_tx::UartTx;

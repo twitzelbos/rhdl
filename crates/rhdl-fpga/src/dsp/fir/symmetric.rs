@@ -223,11 +223,10 @@ where
         for k in 0..HALF {
             let a = sign_extend::<W_IN, W_ACC>(line[k])
                 + sign_extend::<W_IN, W_ACC>(line[TAPS - 1 - k]);
-            acc = acc + a * sign_extend::<W_C, W_ACC>(q.coeff[k]);
+            acc += a * sign_extend::<W_C, W_ACC>(q.coeff[k]);
         }
         // The centre tap has no partner.
-        acc =
-            acc + sign_extend::<W_IN, W_ACC>(line[HALF]) * sign_extend::<W_C, W_ACC>(q.coeff[HALF]);
+        acc += sign_extend::<W_IN, W_ACC>(line[HALF]) * sign_extend::<W_C, W_ACC>(q.coeff[HALF]);
 
         // Drop the coefficients' fractional bits.
         let scaled = acc >> bits::<8>(SHIFT as u128);
