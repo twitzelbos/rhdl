@@ -203,10 +203,21 @@ pub struct Design {
     pub peak_gain: f64,
     /// Worst-case stopband attenuation achieved, in dB, positive.
     ///
-    /// The filter alone, not the CIC-plus-filter: the CIC's own
-    /// stopband is reported by
-    /// [`super::response::worst_alias_db`], and confusing the two
-    /// flatters the result.
+    /// The **composite** — cascade and filter together, relative to DC.
+    /// This is what decides whether out-of-band content survives into
+    /// the output, so it is what the requirement is stated against.
+    ///
+    /// It used to be the filter alone. That was conservative rather than
+    /// wrong, but it charged the compensator for rolloff the cascade
+    /// already provides, and it created a perverse incentive: a deeper
+    /// CIC needs more passband boost, that boost spills past the
+    /// passband edge, and so *adding* CIC stages made this figure worse
+    /// and the requirement harder to meet.
+    ///
+    /// Not to be confused with [`super::response::worst_alias_db`],
+    /// which is the cascade's own worst-case gain at the frequencies
+    /// decimation folds onto the passband — a different question about a
+    /// different band.
     pub stopband_db: f64,
     /// Weight the search settled on for the stopband term. Reported
     /// because it is the knob, and a large value means flatness was
@@ -404,10 +415,24 @@ fn design_at_weight(spec: &Spec, weight: f64) -> Option<Design> {
     if weight > 0.0 && stop_lo < 0.5 {
         for g in 0..GRID {
             let u = stop_lo + (0.5 - stop_lo) * g as f64 / (GRID - 1) as f64;
+            // Weighting by `|H|^2` makes the quantity being minimised
+            // the *composite* stopband energy rather than the filter's
+            // own: the residual is `|H(u) * fir(u)|`, so the fit stops
+            // paying to attenuate frequencies the cascade has already
+            // dealt with. Squared, because this is a squared-error
+            // normal-equation accumulation.
+            //
+            // No floor is needed here. Where the cascade nulls, the
+            // weight vanishes and the frequency simply drops out of the
+            // objective, which is the correct answer -- there is nothing
+            // left to attenuate. The passband terms keep the system
+            // non-singular.
+            let h = cascade_magnitude(&spec.cics, u);
+            let w = weight * h * h;
             for i in 0..nb {
                 let pi_ = basis(u, i);
                 for j in 0..nb {
-                    ata[i][j] += weight * pi_ * basis(u, j);
+                    ata[i][j] += w * pi_ * basis(u, j);
                 }
                 // target is zero, so `atb` gets nothing
             }
@@ -436,7 +461,26 @@ fn design_at_weight(spec: &Spec, weight: f64) -> Option<Design> {
     })
 }
 
-/// Worst-case stopband attenuation of the filter alone, in dB positive.
+/// Worst-case stopband attenuation of the **composite**, in dB positive.
+///
+/// The cascade and the compensator together, relative to DC — which is
+/// the number that decides whether out-of-band content survives into
+/// the output, and therefore the one worth specifying against.
+///
+/// This used to measure the filter alone. That was a conservative
+/// figure rather than a wrong one, but it made the requirement harder
+/// than the physics: the cascade contributes tens of dB of its own
+/// rolloff above the stopband edge, and charging the compensator for
+/// all of it spends taps on attenuation that already exists. It also
+/// meant the reported figure described a filter nobody listens to on
+/// its own — the composite sits well below it, so a reader comparing
+/// the number to a plot of the composite concluded one of them was
+/// wrong.
+///
+/// The reference is unity, not the composite's measured DC gain: the
+/// passband target is `1/|H|`, so the composite is 1.0 at DC by
+/// construction, and [`quantise`] trims the centre tap to keep it there
+/// exactly.
 fn stopband_db(taps: &[f64], spec: &Spec) -> f64 {
     let lo = 0.5 * spec.stopband_edge;
     if lo >= 0.5 {
@@ -446,7 +490,7 @@ fn stopband_db(taps: &[f64], spec: &Spec) -> f64 {
     const GRID: usize = 512;
     for g in 0..GRID {
         let u = lo + (0.5 - lo) * g as f64 / (GRID - 1) as f64;
-        worst = worst.max(fir_amplitude(taps, u).abs());
+        worst = worst.max(cascade_magnitude(&spec.cics, u) * fir_amplitude(taps, u).abs());
     }
     if worst <= 1e-15 {
         f64::INFINITY
@@ -501,12 +545,19 @@ pub struct Quantised {
     /// Passband ripple in dB of CIC-plus-quantised-filter — the number
     /// that actually ships, as opposed to the ideal-tap one.
     pub ripple_db: f64,
-    /// Stopband attenuation in dB of the quantised filter alone.
+    /// Composite stopband attenuation in dB, with the taps quantised.
     ///
     /// Quantisation raises a stopband floor: rounded taps cannot cancel
     /// as precisely as exact ones, and deep stopbands are where that
     /// shows first. If this is well short of the ideal design's figure,
     /// the coefficient width is the limit.
+    ///
+    /// Only while quantisation is what binds, though. Once it is not,
+    /// this figure stops improving with width and wobbles by about a dB
+    /// either way, because the composite's worst case sits in a narrow
+    /// region near the stopband edge where a coefficient perturbation
+    /// moves it at random. A width that scores slightly better than a
+    /// wider one is that noise, not a finding.
     pub stopband_db: f64,
 }
 
@@ -574,7 +625,8 @@ pub mod remez {
     /// above the transition" is a statement about the maximum, and a
     /// method that trades a deep notch here for a shallow one there
     /// satisfies the average while missing the specification. That is why
-    /// 60 dB across a 0.5-to-0.7 transition needed 57 least-squares taps.
+    /// 60 dB across a 0.5-to-0.7 transition needs 37 least-squares taps
+    /// where Remez needs 29.
     ///
     /// Remez minimises the maximum weighted error directly, which is the
     /// quantity the specification is written in.
@@ -622,6 +674,9 @@ pub mod remez {
         pass_hi: f64,
         stop_lo: f64,
         weight_stop: f64,
+        /// Lower bound on the cascade magnitude used as a stopband
+        /// weight. See [`Bands::at`].
+        h_floor: f64,
     }
 
     impl Bands {
@@ -640,12 +695,38 @@ pub mod remez {
                 // large `1/H`) look far worse than it is.
                 Some((1.0 / h, h))
             } else if u >= self.stop_lo {
-                Some((0.0, self.weight_stop))
+                // Weighted by `H` for the same reason the passband is:
+                // it makes the weighted error `|H(u) * fir(u)|`, the
+                // composite's own stopband level, so the equiripple
+                // property lands on the composite rather than on a
+                // filter nobody listens to alone. Uniform weighting
+                // spends taps flattening the filter across frequencies
+                // where the cascade is already 60 dB down.
+                //
+                // Floored, because the exchange solves with `delta / w`
+                // and a CIC's stopband contains exact nulls. An
+                // unfloored weight goes to zero there, the interpolation
+                // becomes singular, and the design is rejected outright.
+                // Once the cascade is `FLOOR_MARGIN_DB` past what was
+                // asked for, treating it as exactly that far past costs
+                // nothing real and keeps the system solvable.
+                Some((
+                    0.0,
+                    self.weight_stop * cascade_magnitude(cics, u).max(self.h_floor),
+                ))
             } else {
                 None
             }
         }
     }
+
+    /// How far past the requirement the cascade may be before its
+    /// contribution stops being counted, in dB.
+    ///
+    /// Only a numerical guard: at 12 dB past, the frequency contributes
+    /// 1/16th of the weight of one at the requirement, which is already
+    /// negligible against the ones that bind.
+    const FLOOR_MARGIN_DB: f64 = 12.0;
 
     /// Design an equiripple compensator.
     ///
@@ -675,6 +756,7 @@ pub mod remez {
             pass_hi: 0.25 * passband * 2.0, // passband edge in output-rate units
             stop_lo: 0.5 * stopband_edge,
             weight_stop,
+            h_floor: 10f64.powf(-(stopband_db + FLOOR_MARGIN_DB) / 20.0),
         };
 
         // Dense grid, restricted to the specified bands.
@@ -888,6 +970,7 @@ pub mod remez {
         let bands = Bands {
             pass_hi: 0.25 * spec.passband * 2.0,
             stop_lo: 0.5 * spec.stopband_edge,
+            h_floor: 10f64.powf(-(spec.min_stopband_db + FLOOR_MARGIN_DB) / 20.0),
             weight_stop: if spec.min_stopband_db > 0.0 {
                 (spec.max_ripple_db / 17.372) * 10f64.powf(spec.min_stopband_db / 20.0)
             } else {
@@ -1290,6 +1373,121 @@ mod cascade_and_stopband_tests {
     }
 
     /// Quantisation raises the stopband floor, and that is reported.
+    /// The reported figure is the composite's, measured independently.
+    ///
+    /// Guards the contract rather than the implementation: recompute the
+    /// worst-case cascade-times-filter magnitude above the edge on a
+    /// different grid and require it to agree.
+    #[test]
+    fn the_achieved_figure_is_the_composite() {
+        let spec = Spec {
+            cics: vec![shape(32, 4, 1)],
+            passband: 0.5,
+            taps: 31,
+            stopband_edge: 0.7,
+            max_ripple_db: 0.1,
+            method: Method::Remez,
+            min_stopband_db: 50.0,
+        };
+        let d = design(spec.clone()).unwrap();
+
+        let lo = 0.5 * spec.stopband_edge;
+        let mut worst_composite: f64 = 0.0;
+        let mut worst_filter: f64 = 0.0;
+        const N: usize = 3001; // deliberately not the design grid
+        for g in 0..N {
+            let u = lo + (0.5 - lo) * g as f64 / (N - 1) as f64;
+            let h = cascade_magnitude(&spec.cics, u);
+            let f = fir_amplitude(&d.taps, u).abs();
+            worst_composite = worst_composite.max(h * f);
+            worst_filter = worst_filter.max(f);
+        }
+        let composite_db = -20.0 * worst_composite.log10();
+        let filter_db = -20.0 * worst_filter.log10();
+        println!(
+            "reported {:.2} dB | composite {:.2} | filter alone {:.2}",
+            d.stopband_db, composite_db, filter_db
+        );
+        assert!(
+            (d.stopband_db - composite_db).abs() < 0.5,
+            "reported {:.2} is not the composite {:.2}",
+            d.stopband_db,
+            composite_db
+        );
+        // And the composite is the more generous of the two, always:
+        // the cascade only ever attenuates above its passband.
+        assert!(
+            composite_db > filter_db,
+            "the composite cannot be worse than the filter alone: {composite_db:.2} vs {filter_db:.2}"
+        );
+    }
+
+    /// Deepening the CIC must not make the stopband requirement harder.
+    ///
+    /// This is the reason the metric changed. Measured against the
+    /// filter alone, more CIC stages made the spec *harder*: the deeper
+    /// droop needs more passband boost, that boost spills past the
+    /// passband edge, and the filter's own stopband suffers for it --
+    /// N=5 needed 33 taps where N=4 needed 31, so the search was
+    /// punished for using the cheap resource. Measured on the composite,
+    /// the cascade's extra rolloff is credited against its own droop and
+    /// the two very nearly cancel.
+    ///
+    /// The assertion is "no worse", not "better", because they do only
+    /// cancel: extra CIC depth does not *buy* stopband, it stops costing
+    /// it. Claiming otherwise would be claiming a win the numbers do not
+    /// show.
+    #[test]
+    fn extra_cic_depth_does_not_cost_stopband() {
+        let at_stages = |n: usize| {
+            design(Spec {
+                cics: vec![shape(32, n, 1)],
+                passband: 0.5,
+                taps: 29,
+                stopband_edge: 0.7,
+                max_ripple_db: 0.1,
+                method: Method::Remez,
+                min_stopband_db: 50.0,
+            })
+            .map(|d| d.stopband_db)
+        };
+        let shallow = at_stages(4).expect("N=4 designs");
+        let deep = at_stages(6).expect("N=6 designs");
+        println!("N=4 {shallow:.2} dB, N=6 {deep:.2} dB");
+        assert!(
+            deep >= shallow - 1.0,
+            "extra depth cost {:.2} dB of stopband: {shallow:.2} -> {deep:.2}",
+            shallow - deep
+        );
+    }
+
+    /// The stopband weight is floored, so a CIC null cannot make the
+    /// equiripple exchange singular.
+    ///
+    /// The weight is `weight_stop * |H(u)|`, and a CIC's stopband
+    /// contains exact nulls where `|H|` is zero. The exchange solves
+    /// with `delta / w`, so an unfloored weight rejects the design
+    /// outright rather than returning a poor one. `stopband_edge` at 0.5
+    /// puts several nulls inside the band.
+    #[test]
+    fn a_cic_null_inside_the_stopband_still_designs() {
+        let d = design(Spec {
+            cics: vec![shape(32, 4, 1)],
+            passband: 0.4,
+            taps: 31,
+            stopband_edge: 0.5,
+            max_ripple_db: 0.1,
+            method: Method::Remez,
+            min_stopband_db: 40.0,
+        });
+        let d = d.expect("a null in the stopband must not reject the design");
+        assert!(
+            d.stopband_db.is_finite() && d.stopband_db > 0.0,
+            "nonsense stopband figure: {}",
+            d.stopband_db
+        );
+    }
+
     #[test]
     fn quantisation_limits_the_stopband() {
         let spec = Spec {
@@ -1302,16 +1500,52 @@ mod cascade_and_stopband_tests {
             min_stopband_db: 60.0,
         };
         let d = design(spec).unwrap();
-        let narrow = quantise(&d, 10);
-        let wide = quantise(&d, 20);
+        let at = |w: usize| quantise(&d, w).stopband_db;
         println!(
-            "ideal {:.1} dB, 10-bit {:.1} dB, 20-bit {:.1} dB",
-            d.stopband_db, narrow.stopband_db, wide.stopband_db
+            "ideal {:.1} dB | 6-bit {:.1} | 8-bit {:.1} | 10-bit {:.1} | 16-bit {:.1} | 24-bit {:.1}",
+            d.stopband_db,
+            at(6),
+            at(8),
+            at(10),
+            at(16),
+            at(24)
+        );
+
+        // While quantisation is what binds, bits buy attenuation, and
+        // steeply: 6 bits cannot hold a 50 dB stopband at all.
+        assert!(
+            at(6) < at(8) && at(8) < at(10),
+            "coarse quantisation must be the binding limit: {:.1}, {:.1}, {:.1}",
+            at(6),
+            at(8),
+            at(10)
         );
         assert!(
-            wide.stopband_db >= narrow.stopband_db,
-            "more coefficient bits must not reject less"
+            at(24) - at(6) > 15.0,
+            "24 bits should beat 6 by a wide margin: {:.1} vs {:.1}",
+            at(24),
+            at(6)
         );
+
+        // Past that the *design* binds, and more bits stop helping. This
+        // half used to be asserted as strict monotonicity across all
+        // widths, which held only while the metric was the filter alone:
+        // that figure is dominated by the quantisation noise floor
+        // across the whole stopband, so it improved with every bit. The
+        // composite's worst case sits in a narrow region near the
+        // stopband edge where the cascade has not yet rolled off, and
+        // there a coefficient perturbation moves the figure by a dB in
+        // either direction at random -- 10 bits scored 52.8 dB against
+        // 20 bits' 51.7. Asserting a trend through that noise was
+        // asserting luck.
+        for w in [12usize, 14, 16, 20, 24] {
+            assert!(
+                (at(w) - at(24)).abs() < 3.0,
+                "{w} bits should be design-limited like 24, not {:.1} against {:.1}",
+                at(w),
+                at(24)
+            );
+        }
     }
 }
 

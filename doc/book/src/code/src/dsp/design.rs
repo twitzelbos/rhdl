@@ -130,6 +130,47 @@ mod tests {
         assert!(!text.starts_with("unmet"), "{text}");
         assert!(text.contains("achieved stopband"), "{text}");
     }
+
+    /// The tap counts the chapter quotes are the tap counts you get.
+    ///
+    /// These drifted once already, silently: the chapter said 50 dB cost
+    /// 29 taps across a wide transition and 67 across a narrow one, and
+    /// when the stopband metric changed the real figures became 17 and
+    /// 53. Nothing failed, because prose is not compiled. Asserting the
+    /// claimed count meets the spec *and* that two fewer taps does not
+    /// pins the number from both sides, so a change to the design maths
+    /// fails here instead of quietly making the chapter wrong.
+    #[test]
+    fn the_chapters_tap_counts_are_real() {
+        let designs_with = |edge: f64, db: f64, method: Method, max_taps: usize| {
+            design(ChainSpec {
+                stopband_edge: edge,
+                min_stopband_db: db,
+                max_taps,
+                method,
+                ..narrowband()
+            })
+            .ok()
+            .map(|d| d.compensator.taps.len())
+        };
+
+        // "50 dB across a wide transition (0.9) costs 17 taps"
+        assert_eq!(designs_with(0.9, 50.0, Method::Remez, 17), Some(17));
+        assert_eq!(designs_with(0.9, 50.0, Method::Remez, 15), None);
+
+        // "the same 50 dB across a narrow one (0.6) costs 53"
+        assert_eq!(designs_with(0.6, 50.0, Method::Remez, 53), Some(53));
+        assert_eq!(designs_with(0.6, 50.0, Method::Remez, 51), None);
+
+        // And the rustdoc on `compensator::remez`: 60 dB across a
+        // 0.5-to-0.7 transition needs 37 least-squares taps where Remez
+        // needs 29 -- the whole argument for preferring Remez when a
+        // worst case is specified.
+        assert_eq!(designs_with(0.7, 60.0, Method::Remez, 29), Some(29));
+        assert_eq!(designs_with(0.7, 60.0, Method::Remez, 27), None);
+        assert_eq!(designs_with(0.7, 60.0, Method::LeastSquares, 37), Some(37));
+        assert_eq!(designs_with(0.7, 60.0, Method::LeastSquares, 35), None);
+    }
 }
 
 // ANCHOR: macro

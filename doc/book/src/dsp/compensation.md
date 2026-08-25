@@ -61,6 +61,15 @@ makes the weighted error exactly the relative deviation
 form. Least squares has to bisect, because there the relationship
 between weight and achieved attenuation is empirical.
 
+The stopband is weighted by `|H(u)|` for the same reason, which makes
+the weighted error there `|A(u)·H(u)|` — the composite's own stopband
+level. Both bands therefore measure the composite, and the equiripple
+property lands on the response that actually reaches the output rather
+than on the compensator considered alone. The weight is floored once the
+cascade is 12 dB past what was asked for: a CIC's stopband contains
+exact nulls, the exchange solves with `δ/W`, and an unfloored weight
+goes to zero there and takes the whole design with it.
+
 ```admonish note title="Remez is self-certifying"
 By Chebyshev's alternation theorem, a length-`2M+1` linear-phase filter
 whose weighted error attains its maximum at `M+2` points with
@@ -77,9 +86,16 @@ grid-based Parks-McClellan rather than a defect.
 
 ## What compensation does not do
 
-It does not extend the CIC's stopband. Compensation shapes the
-passband; alias rejection remains whatever `response::worst_alias_db`
-says. If the aliases are too big the answer is more CIC stages or a
-narrower band, not a longer compensator — unless you deliberately ask
-the compensator to attenuate as well, which
-[Specifying a chain](design.md) covers.
+It does not improve alias rejection. Compensation shapes the passband;
+rejection at the frequencies decimation *folds onto* the passband
+remains whatever `response::worst_alias_db` says. If the aliases are too
+big the answer is more CIC stages or a narrower band, not a longer
+compensator — unless you deliberately ask the compensator to attenuate
+as well, which [Specifying a chain](design.md) covers.
+
+Note that this is a different question from `min_stopband_db`, even
+though both are about unwanted signal. Alias rejection is about content
+folding onto the passband during decimation, and is the cascade's
+business alone. The stopband requirement is about content surviving
+*above* the stopband edge in the output, and is the composite's. A chain
+can be excellent at one and poor at the other.
