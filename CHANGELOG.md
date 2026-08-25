@@ -31,6 +31,33 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-24 — The DSP Chain book part, and a derived-design report
+
+**Paths:** `doc/book/src/dsp/*.md` (new, 9 pages), `doc/book/src/SUMMARY.md`, `doc/book/src/code/src/dsp/design.rs` (new), `crates/rhdl-fpga/src/doc/report.rs`, `examples/cic_report.rs`, `doc/cic_chain_report.pdf` (new).
+
+**Why this, why now:** requested alongside the design work — the DSP chain needed documentation, covering the chain overview, a widget-by-widget tour, and the spec-driven design flow.
+
+**Design decisions:**
+
+- **Book snippets are compiled, not quoted.** The chapters use `{{#rustdoc_include ../code/src/dsp/design.rs:anchor}}` against the book's `code` crate, which already depends on `rhdl-fpga`. The claims a chapter makes about what a design produces are asserted in tests next to the snippet — including that the narrowband example *chooses a cascade*, which the chapter states as fact. A chapter that drifts from the library fails the build.
+- **The tour pages lead with what is counter-intuitive**, not with the interface. `rhdl_fpga`'s rustdoc already carries every widget's schematic, block diagram, runnable example and trace; duplicating that in the book would create two things to keep in step. So each page explains the decisions instead: why the accumulator is never reset, why two's-complement wrap is load-bearing, why the fold is an identity, why compensation must invert the whole cascade.
+- **`chain_report` is additive, not a replacement.** `cic_report` renders a single CIC from parameters you chose; `chain_report` renders a `ChainDesign` that was *derived*, with the cascade's combined response, per-stage detail, and the alternative the designer rejected. Two use cases — exploring versus specifying — so two entry points rather than one with a mode flag.
+- **Rustdoc-style `[`path`]` links became plain code spans.** mdbook has no intra-doc link resolution and the rest of the book does not use them, so they would have rendered as literal broken text.
+
+**Surprises and gotchas:**
+
+- **A book example found a panic no test here had.** `snr_db` computed full scale as `1u64 << (output_width - 1)`, and it is called with *intermediate* stage widths as well as the chain's output width — a deep cascade's accumulator is easily wider than 64 bits, 88 at `N = 8, R = 244`. The shift overflowed and panicked on a demanding but perfectly legitimate spec, where the right behaviour is to compute the number and let the caller refuse the design. Fixed with `2f64.powi`, and there is now a regression test at an 88-bit width.
+
+  That is an argument for compiling the documentation that no amount of asserting would have made: the book reached a corner the library's own tests had not, because it was written from the *user's* direction rather than the implementer's.
+- **Two more silent `str.replace` no-ops**, both after `cargo fmt` had reordered an import. This has now happened four times in this work. Every scripted edit asserts on its match; the ones that bit me were the ones where I asserted on a *different* string in the same script and assumed the rest had landed.
+
+**Validation:** four compiled book tests, covering the narrowband spec designing to a cascade, the report rendering, the infeasible spec being refused for a nameable reason, and the anti-alias variant designing. Seven report tests, including a derived chain rendering to two pages, a *single-stage* design rendering (so the cascade case is not the only one that works), and byte-level determinism of both reports. Every `rustdoc_include` anchor and `SUMMARY` link checked to resolve.
+
+**Follow-ups:**
+
+- `mdbook` is not installed here, so the book's rendering was verified by checking anchors and links rather than by building it. Worth a real build in CI.
+- The widget tour links to rustdoc by name rather than by URL; once the docs are published those could become real links.
+
 ## 2026-08-24 — `dsp::cic::compensator`: equiripple design by Remez exchange
 
 **Paths:** `crates/rhdl-fpga/src/dsp/cic/{compensator,chain}.rs`.

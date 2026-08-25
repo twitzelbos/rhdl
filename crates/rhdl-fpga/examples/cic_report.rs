@@ -21,8 +21,8 @@
 // byte-identically, so it is committed and a diff means something.
 
 use rhdl::prelude::*;
-use rhdl_fpga::doc::report::{CicReport, cic_report};
-use rhdl_fpga::dsp::cic::{accumulator_width, compensator, dc_gain, response};
+use rhdl_fpga::doc::report::{CicReport, chain_report, cic_report};
+use rhdl_fpga::dsp::cic::{accumulator_width, chain, compensator, dc_gain, response};
 
 fn main() -> Result<(), RHDLError> {
     let cfg = CicReport::default();
@@ -32,6 +32,19 @@ fn main() -> Result<(), RHDLError> {
         .join("doc")
         .join("cic_report.pdf");
     std::fs::write(&path, doc.to_bytes()).expect("write the report");
+
+    // And the derived-design report: the same machinery pointed at a
+    // chain that was *specified* rather than hand-parameterised.
+    let derived =
+        chain::design(chain::ChainSpec::default()).expect("the default chain spec must design");
+    let chain_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("doc")
+        .join("cic_chain_report.pdf");
+    std::fs::write(&chain_path, chain_report(&derived).to_bytes()).expect("write");
+    println!("--- derived chain ---");
+    println!("{derived}");
+    println!("wrote {}", chain_path.display());
+    println!();
 
     // Say it on stdout too, so running this is useful on its own.
     let (n, r, m) = (cfg.stages, cfg.rate, cfg.delay);

@@ -368,7 +368,14 @@ pub fn snr_db(
     let sigma_prune =
         prune::predicted_sigma(w_in, stages, rate, delay, b_out) / 2f64.powi(drop as i32);
     let var = sigma_prune * sigma_prune + 1.0 / 12.0;
-    let full_scale = (1u64 << (output_width - 1)) as f64;
+    // `2f64.powi`, not `1u64 << n`. This is called with *intermediate*
+    // stage widths as well as the chain's output width, and an
+    // intermediate accumulator is easily wider than 64 bits -- at
+    // `N = 8, R = 244` it is 88. The integer shift overflowed and
+    // panicked on a demanding but perfectly legitimate spec, where the
+    // right behaviour is to compute the number and let the caller
+    // refuse the design.
+    let full_scale = 2f64.powi((output_width - 1) as i32);
     20.0 * (full_scale / var.sqrt()).log10()
 }
 
@@ -1148,6 +1155,35 @@ mod tests {
         })
         .expect_err("8 bits cannot carry 120 dB");
         assert!(matches!(err, Unmet::Snr { .. }), "got {err:?}");
+    }
+
+    /// A spec whose intermediate accumulators exceed 64 bits must be
+    /// *designed or refused*, not panic.
+    ///
+    /// `snr_db` is called with intermediate stage widths as well as the
+    /// chain's output width, and a deep cascade's accumulator is easily
+    /// wider than 64 bits — at `N = 8, R = 244` it is 88. An integer
+    /// shift there overflowed. This spec reaches that path, and was
+    /// found by a *book* example rather than by any test here, which is
+    /// an argument for compiling the documentation.
+    #[test]
+    fn a_very_wide_accumulator_does_not_panic() {
+        let spec = ChainSpec {
+            fs_hz: 125e6,
+            decimate: 488,
+            alias_free_bw_hz: 120e3,
+            min_alias_rejection_db: 90.0,
+            max_stages: 8,
+            ..base()
+        };
+        // Either outcome is acceptable; panicking is not.
+        match design(spec) {
+            Ok(d) => assert!(d.achieved_snr_db.is_finite()),
+            Err(_) => {}
+        }
+        // And the model itself must return a number at an absurd width.
+        let v = snr_db(16, 88, 8, 244, 2, 40);
+        assert!(v.is_finite(), "snr_db returned {v} at an 88-bit width");
     }
 
     #[test]
