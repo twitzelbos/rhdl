@@ -595,6 +595,26 @@ fn trace_wrap_function(function: &syn::ItemFn) -> Result<TS> {
             #[allow(clippy::manual_map)]
             #[allow(clippy::redundant_pattern_matching)]
             #[allow(clippy::manual_memcpy)]
+            // Both of these suggest constructs the kernel subset
+            // rejects, so following either turns a working widget into a
+            // compile error. `matches!` is refused outright --
+            // "Unsupported expression type matches!" -- because the
+            // subset takes no macros; and `..Default::default()` does
+            // not even infer a type here, quite apart from CLAUDE.md
+            // §3 prescribing `dont_care()` plus explicit per-field
+            // assignment so that a field nobody assigned is visible.
+            //
+            // Suppressed here rather than at 38 call sites because the
+            // conflict is structural: it applies to every kernel written
+            // from now on, and an author who hits it has no way to know
+            // the lint is unfollowable without trying it.
+            #[allow(clippy::match_like_matches_macro)]
+            #[allow(clippy::field_reassign_with_default)]
+            // Same story: the suggestion is `for (i, x) in a.iter().
+            // enumerate()`, and the subset has neither iterators nor
+            // references, so it is refused. Indexing a constant range is
+            // the only form a kernel loop can take.
+            #[allow(clippy::needless_range_loop)]
             #[forbid(path_statements)]
             #[forbid(unused_variables)]
             #[allow(unused_doc_comments)]
