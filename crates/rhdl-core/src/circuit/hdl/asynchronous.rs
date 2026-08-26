@@ -197,7 +197,7 @@ pub fn build_asynchronous_descriptor<C: Circuit>(
             matrix: &c.combinational_reachability,
         })
         .collect::<Vec<_>>();
-    let combinational_reachability = reachability::compute_asynchronous(
+    let outcome = reachability::compute_asynchronous(
         Some(&kernel),
         circuit_input,
         circuit_output,
@@ -205,6 +205,15 @@ pub fn build_asynchronous_descriptor<C: Circuit>(
         q_kind,
         &child_reach,
     )?;
+    let d_paths = crate::circuit::reachability::ReachabilityMatrix::none(
+        circuit_input,
+        circuit_output,
+        d_kind,
+        q_kind,
+    )
+    .d_paths;
+    let combinational_reachability =
+        reachability::into_matrix(outcome, Some(&kernel), circuit_output, d_kind, &d_paths)?;
     Ok(Descriptor {
         combinational_reachability,
         name: scoped_name,

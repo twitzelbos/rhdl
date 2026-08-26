@@ -349,7 +349,7 @@ Deliverables:
 
 Acceptance: zero behavior change observable from outside the function.
 
-### Phase 3 — Composition-level cycle detection and diagnostic (2-3 weeks)
+### Phase 3 — Composition-level cycle detection and diagnostic — **SHIPPED**
 
 Add the new `CombinationalCycle` error and run the cycle check during descriptor finalization. Update `logic_loop.rs` test and others to expect the new diagnostic format.
 
@@ -360,6 +360,12 @@ Deliverables:
 - Updated `logic_loop.rs` expectation file showing the new (better) diagnostic.
 - New tests for cycles spanning 3, 4, and 5 widgets to validate diagnostic clarity.
 - Documentation update in CLAUDE.md §0 and `architecture.md` §3.
+
+**As shipped, with one correction to §5.1 above and two gaps left open:**
+
+- **§5.1 says the check is "a simple graph-cycle check on the augmented intra-kernel graph", and that wording is load-bearing.** The first implementation here read the cycle out of `q_to_d` instead — asking which child outputs reach which child inputs and looking for a ring. It reported nonsense (`left -> left -> left` on the two-widget case). The reason is worth writing down: **the matrix is a transitive closure computed by a fixpoint, and a fixpoint over a cyclic graph saturates.** On exactly the designs where a cycle exists, `q_to_d` goes dense and every pair of ports looks connected, so the matrix is structurally incapable of locating the cycle that makes it dense. The check must run on the edge graph, before the fixpoint. That is also cheaper: a cyclic design skips the fixpoint entirely, and its matrix would have been meaningless.
+- **The netlist-level backstop has lost its only test.** `crates/rhdl/tests/logic_loop.rs` was the sole thing exercising `ReorderInstructions`, and the composition-level check now reports first, so that route is gone. §7 above says the NTL pass "stays in place as backstop"; it does, but nothing tests it. A direct pass-level test needs a cyclic `ntl::Object`, and the only public constructor — `Builder::build` — runs the whole optimiser, so a hand-built netlist is transformed before the pass sees it. Open.
+- **`reorder_instructions.rs` panics rather than erroring on one malformed input.** Found while attempting that test: `write_regs_to_op[&failed]` is an unguarded map index, so a needed register with no writer panics. Two lines below, the analogous case returns an ICE properly. Hard to reach through the normal pipeline, but it is a compiler panic. Open.
 
 Acceptance: the existing `logic_loop.rs` test fails with the new diagnostic, the new diagnostic is materially clearer than the old NTL-level one, and the NTL-level `ReorderInstructions` continues to fire as a safety net for any cycle that escapes the new check (which should be zero for well-formed user code).
 

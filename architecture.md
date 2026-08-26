@@ -190,6 +190,7 @@ crates/rhdl-core/src/
 │   ├── chain.rs                        # composition of sub-circuits
 │   ├── fixture.rs                      # top-level simulation/synthesis fixture
 │   ├── drc.rs                          # design-rule checks
+│   ├── error.rs                        # descriptor-finalization errors (CombinationalCycle)
 │   ├── scoped_name.rs                  # hierarchical name plumbing
 │   ├── phantom.rs                      # phantom-marker types
 │   ├── reachability.rs                 # per-widget combinational reachability matrix

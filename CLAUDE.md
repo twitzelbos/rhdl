@@ -741,6 +741,9 @@ These are the rules whose violation will get a PR rejected without further discu
 
     **Rationale:** the diagram is the load-bearing artifact for FSM-aware code review and LLM-assisted refactor. A future contributor (or agent) reading the widget's rustdoc should see the state-transition graph alongside the source — that's what makes structural changes reviewable at a glance. Skipping the diagram defeats the entire FSM track. **No `#[derive(FsmWidget)]` widget ships without it.**
 
+
+15. **A combinational cycle among a widget's children is a `descriptor()` error now, not a netlist error.** `Descriptor` carries a `combinational_reachability` matrix, and building one checks the children for a cycle before any netlist exists. Compose widgets into a ring with no register on it and the error names the widgets and the order — `right -> left -> right` — instead of pointing at flattened opcodes. Break the ring by registering a hop: a `dff::DFF` on any edge is enough. The netlist-level detector stays as a backstop for anything this cannot see, which today means a combinational black box, whose feedthrough is assumed rather than declared.
+
 ---
 
 ## 13 — When You're Stuck

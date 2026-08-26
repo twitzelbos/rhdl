@@ -46,6 +46,8 @@
 //! parent needs to compose; the extra precision is spent during the
 //! computation and aggregated away at the end.
 
+use crate::ast::SourcePool;
+use miette::SourceSpan;
 use std::collections::HashMap;
 
 use crate::{
@@ -214,6 +216,184 @@ impl ReachabilityMatrix {
     }
 }
 
+/// Spans for a cycle's hops, looked up only when there is a cycle.
+///
+/// Rebuilds and re-optimises the kernel's netlist, which is wasteful and
+/// entirely fine: this runs once, on the way to returning an error, and
+/// keeping it off the common path means the analysis itself carries no
+/// span bookkeeping.
+///
+/// The span for a hop into a child is the location of the opcode that
+/// writes that child's input register — which is the kernel statement
+/// that wired the hop, the span §6.1 of the design plan asks for.
+pub(crate) fn cycle_spans(
+    kernel: &rtl::Object,
+    output_kind: Kind,
+    d_kind: Kind,
+    d_paths: &[Path],
+    cycle: &[CyclePort],
+) -> (Option<SourcePool>, Vec<(Option<String>, SourceSpan)>) {
+    let Ok(ntl) = optimize_ntl(build_ntl_from_rtl(kernel)) else {
+        return (None, Vec::new());
+    };
+    let d_bits: Vec<Option<RegisterId<WireKind>>> = ntl
+        .outputs
+        .iter()
+        .skip(output_kind.bits())
+        .map(|w| w.reg())
+        .collect();
+    let span_for = |path: &Path| -> Option<SourceSpan> {
+        let (range, _) = bit_range(d_kind, path).ok()?;
+        let reg = d_bits.get(range.start).copied().flatten()?;
+        let ndx = ntl.ops.iter().position(|lop| {
+            let mut writes_it = false;
+            visit_wires(&lop.op, |sense, wire| {
+                if sense.is_write() && wire.reg() == Some(reg) {
+                    writes_it = true;
+                }
+            });
+            writes_it
+        })?;
+        Some(SourceSpan::from(ntl.code.span(ntl.ops[ndx].loc?)))
+    };
+
+    let mut elements = Vec::new();
+    let last = cycle.len().saturating_sub(1);
+    for (n, port) in cycle.iter().enumerate() {
+        // The walk is closed, so entry 0 is the same port as the last
+        // one. Labelling both would print the closing hop twice.
+        if port.side != PortSide::Input || n == 0 {
+            continue;
+        }
+        // Which port fed this one -- the previous step in the walk.
+        let Some(prev) = n.checked_sub(1).and_then(|i| cycle.get(i)) else {
+            continue;
+        };
+        let label = if n == last {
+            format!("{prev} -> {port} (closes the cycle)")
+        } else {
+            format!("{prev} -> {port}")
+        };
+        let full = Path::default().field(&port.widget).join(&port.port);
+        if let Some(idx) = d_paths.iter().position(|p| *p == full)
+            && let Some(span) = span_for(&d_paths[idx])
+        {
+            elements.push((Some(label), span));
+        }
+    }
+    (Some(ntl.code.source()), elements)
+}
+
+/// Which side of a child instance a cycle passes through.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PortSide {
+    /// The signal entering the child.
+    Input,
+    /// The signal leaving it.
+    Output,
+}
+
+/// One port on one child instance, as a step in a cycle.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CyclePort {
+    /// The child's field name in the parent — the name a user wrote.
+    pub widget: String,
+    /// The port's path inside that child.
+    pub port: Path,
+    /// Whether the signal is arriving or leaving.
+    pub side: PortSide,
+}
+
+impl std::fmt::Display for CyclePort {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // `Path`'s `Debug` renders as `.field[0]`, which is what the
+        // existing loop diagnostic uses, so labels read the same way.
+        let port = format!("{:?}", self.port);
+        // `Path`'s Display leads with a `.` for a field, which reads
+        // oddly after the widget name only when the path is empty.
+        if port.is_empty() {
+            write!(f, "{}", self.widget)
+        } else {
+            write!(f, "{}{}", self.widget, port)
+        }
+    }
+}
+
+/// Find a cycle in an edge list, returned in traversal order.
+///
+/// # Why this cannot use the matrix
+///
+/// The obvious implementation asks `q_to_d` which child outputs reach
+/// which child inputs and looks for a ring. That does not work, and the
+/// way it fails is instructive: the matrix is a *transitive closure*
+/// computed by a fixpoint, and a fixpoint run over a graph with a cycle
+/// saturates — every node on the cycle ends up holding every source that
+/// can reach any of them. So on exactly the designs where a cycle exists,
+/// `q_to_d` goes dense and every pair of ports looks connected. Asking it
+/// which ports form the cycle yields a ring of length two through
+/// whichever port was visited first.
+///
+/// So the check runs on the edge graph, before the fixpoint, which is
+/// also what the design plan specifies — "a graph-cycle check on the
+/// augmented intra-kernel graph". Running it first is a bonus: a design
+/// with a loop skips the fixpoint entirely, and its matrix would have
+/// been meaningless anyway.
+fn find_cycle_in(edges: &[(usize, Vec<usize>)], node_count: usize) -> Option<Vec<usize>> {
+    // `edges` is (written, [read]) — the dataflow direction is read to
+    // written, so that is the direction traversed.
+    let mut adj: Vec<Vec<usize>> = vec![Vec::new(); node_count];
+    for (w, reads) in edges {
+        for r in reads {
+            if *r < node_count && *w < node_count {
+                adj[*r].push(*w);
+            }
+        }
+    }
+
+    #[derive(Clone, Copy, PartialEq)]
+    enum Mark {
+        Unseen,
+        OnPath,
+        Done,
+    }
+    let mut mark = vec![Mark::Unseen; node_count];
+    // Iterative rather than recursive: a wide kernel has thousands of
+    // netlist registers and this would otherwise be a stack overflow
+    // rather than a diagnostic.
+    for start in 0..node_count {
+        if mark[start] != Mark::Unseen {
+            continue;
+        }
+        let mut path: Vec<usize> = vec![start];
+        let mut stack: Vec<(usize, usize)> = vec![(start, 0)];
+        mark[start] = Mark::OnPath;
+        while let Some((node, edge)) = stack.pop() {
+            if edge < adj[node].len() {
+                stack.push((node, edge + 1));
+                let next = adj[node][edge];
+                match mark[next] {
+                    Mark::OnPath => {
+                        let at = path.iter().position(|n| *n == next)?;
+                        let mut cycle = path[at..].to_vec();
+                        cycle.push(next);
+                        return Some(cycle);
+                    }
+                    Mark::Unseen => {
+                        mark[next] = Mark::OnPath;
+                        path.push(next);
+                        stack.push((next, 0));
+                    }
+                    Mark::Done => {}
+                }
+            } else {
+                mark[node] = Mark::Done;
+                path.pop();
+            }
+        }
+    }
+    None
+}
+
 /// Reachability for `N` copies of one widget, wired element-wise.
 ///
 /// `[T; N]` has `I = [T::I; N]` and `O = [T::O; N]`, and element `k`
@@ -307,6 +487,54 @@ pub(crate) fn passthrough(
     Ok(out)
 }
 
+/// What the analysis found.
+///
+/// A cycle and a matrix are mutually exclusive rather than merely
+/// unlikely together: the matrix is a transitive closure, and a closure
+/// over a cyclic graph saturates into uselessness. So a design with a
+/// combinational loop has no meaningful matrix, and reporting the loop is
+/// the only thing left to do with it.
+// The two variants differ a lot in size, and boxing the big one would
+// add an allocation per widget to save nothing: an `Outcome` is returned
+// once per descriptor and consumed immediately by `into_matrix`, never
+// stored or collected.
+#[allow(clippy::large_enum_variant)]
+pub(crate) enum Outcome {
+    /// No cycle; here is the reachability.
+    Acyclic(ReachabilityMatrix),
+    /// A combinational cycle, in traversal order, closing on itself.
+    Cycle(Vec<CyclePort>),
+}
+
+/// Turn an [`Outcome`] into a matrix, or into the error a cycle deserves.
+///
+/// One place, so that every descriptor builder reports a cycle the same
+/// way and none of them can quietly treat one as "no reachability".
+pub(crate) fn into_matrix(
+    outcome: Outcome,
+    kernel: Option<&rtl::Object>,
+    output_kind: Kind,
+    d_kind: Kind,
+    d_paths: &[Path],
+) -> Result<ReachabilityMatrix, RHDLError> {
+    match outcome {
+        Outcome::Acyclic(matrix) => Ok(matrix),
+        Outcome::Cycle(ports) => {
+            let (src, elements) = match kernel {
+                Some(k) => cycle_spans(k, output_kind, d_kind, d_paths, &ports),
+                None => (None, Vec::new()),
+            };
+            Err(RHDLError::CombinationalCycle(Box::new(
+                crate::circuit::error::CombinationalCycle {
+                    src: src.unwrap_or_default(),
+                    ports,
+                    elements,
+                },
+            )))
+        }
+    }
+}
+
 /// A child's contribution to its parent's analysis.
 pub struct ChildReach<'a> {
     /// The field name the child occupies in the parent's `D` and `Q`.
@@ -343,7 +571,7 @@ pub(crate) fn compute_synchronous(
     d_kind: Kind,
     q_kind: Kind,
     children: &[ChildReach<'_>],
-) -> Result<ReachabilityMatrix, RHDLError> {
+) -> Result<Outcome, RHDLError> {
     // A synchronous kernel is `fn(clock_reset, i, q)`, so `i` is the
     // second port.
     compute(kernel, 1, input_kind, output_kind, d_kind, q_kind, children)
@@ -362,7 +590,7 @@ pub(crate) fn compute_asynchronous(
     d_kind: Kind,
     q_kind: Kind,
     children: &[ChildReach<'_>],
-) -> Result<ReachabilityMatrix, RHDLError> {
+) -> Result<Outcome, RHDLError> {
     compute(kernel, 0, input_kind, output_kind, d_kind, q_kind, children)
 }
 
@@ -376,10 +604,10 @@ fn compute(
     d_kind: Kind,
     q_kind: Kind,
     children: &[ChildReach<'_>],
-) -> Result<ReachabilityMatrix, RHDLError> {
+) -> Result<Outcome, RHDLError> {
     let mut out = ReachabilityMatrix::none(input_kind, output_kind, d_kind, q_kind);
     let Some(kernel) = kernel else {
-        return Ok(out);
+        return Ok(Outcome::Acyclic(out));
     };
     // Optimised, not raw. This matters for correctness, not speed: the
     // raw lowering keeps every dataflow dependence the kernel's source
@@ -489,6 +717,49 @@ fn compute(
         }
     }
 
+    // Before the fixpoint, because the fixpoint saturates over a cycle
+    // and would destroy the very structure being looked for. See
+    // `find_cycle_in`.
+    //
+    // Any cycle found here necessarily crosses at least one child, which
+    // is what makes the reported walk nameable: `optimize_ntl` above runs
+    // `ReorderInstructions`, so a kernel whose own dataflow were cyclic
+    // would already have failed. Every cycle reaching this point must
+    // therefore use one of the child edges added just now, and so has at
+    // least one `d` and one `q` boundary register on it.
+    if let Some(cycle) = find_cycle_in(&edges, reg_idx.len()) {
+        // Name the hops. Only the boundary registers -- a child's input
+        // or output bit -- have names a user would recognise; interior
+        // kernel registers are dropped, which is what turns a walk over
+        // netlist registers into a walk over widget ports.
+        let port_of = |interned: usize| -> Option<CyclePort> {
+            let named = |bits: &[Option<RegisterId<WireKind>>],
+                         paths: &[Path],
+                         kind: Kind,
+                         side: PortSide|
+             -> Option<CyclePort> {
+                let off = bits
+                    .iter()
+                    .position(|b| b.and_then(|r| reg_idx.get(&r).copied()) == Some(interned))?;
+                let path = paths
+                    .iter()
+                    .find(|p| bit_range(kind, p).is_ok_and(|(r, _)| r.contains(&off)))?;
+                let (widget, port) = children.iter().find_map(|c| {
+                    let prefix = Path::default().field(&c.field);
+                    Some((c.field.clone(), path.strip_prefix(&prefix).ok()?))
+                })?;
+                Some(CyclePort { widget, port, side })
+            };
+            named(&d_bits, &out.d_paths, d_kind, PortSide::Input).or_else(|| {
+                let q_as_opt: Vec<Option<RegisterId<WireKind>>> =
+                    q_bits.iter().map(|r| Some(*r)).collect();
+                named(&q_as_opt, &out.q_paths, q_kind, PortSide::Output)
+            })
+        };
+        let ports: Vec<CyclePort> = cycle.iter().filter_map(|n| port_of(*n)).collect();
+        return Ok(Outcome::Cycle(ports));
+    }
+
     // Seed: each boundary bit is its own source. Interned after the edges
     // so that a boundary bit the kernel never reads still gets an index.
     let mut seeds: Vec<(usize, usize)> = Vec::new();
@@ -590,7 +861,7 @@ fn compute(
     out.i_to_d = fold_rows(&i_to_d_bits, &out.inputs, input_kind)?;
     out.q_to_o = fold_rows(&q_to_o_bits, &out.q_paths, q_kind)?;
     out.q_to_d = fold_rows(&q_to_d_bits, &out.q_paths, q_kind)?;
-    Ok(out)
+    Ok(Outcome::Acyclic(out))
 }
 
 /// Turn a bit-indexed row space into a field-path-indexed one.

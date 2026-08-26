@@ -61,6 +61,46 @@ No book chapter: Phase 1 changes no user-visible behaviour, so there is nothing 
 - Phase 3: composition-level cycle detection and the `CombinationalCycle` diagnostic.
 - Black-box feedthrough needs declaring rather than assuming before any combinational vendor primitive ships.
 
+### Phase 3, same PR — a combinational cycle is a `descriptor()` error that names the widgets
+
+**Paths:** `crates/rhdl-core/src/circuit/error.rs` (new), `circuit/reachability.rs`, `circuit/hdl/{synchronous,asynchronous}.rs`, `error.rs`, `crates/rhdl/tests/{logic_loop.rs,combinational_cycles.rs}`, `CLAUDE.md` §12 rule 15, `architecture.md` §3.
+
+**Why this, why now:** the payoff for Phases 1 and 2. A ring of combinational widgets was already caught, by the netlist-level topological sort, and reported as `Design contains a logic loop` with the offending paths labelled. That is a correct answer to a question the user did not ask: a user wires *widgets* together and wants to know which widgets they wired into a ring. The new error is raised while the parent's descriptor is being built, before its netlist exists, and reads:
+
+```
+× Combinational Cycle
+╰─▶ Combinational cycle through 2 widgets: right -> left -> right
+ 60 │           d.left = q.right;
+ 61 │           d.right = q.left;
+    · ╰───── right -> left
+    · ╰───── left -> right (closes the cycle)
+help: Every widget on this path passes its input to its output combinationally, so the
+      signal has no register to wait at and the loop has no start.  Break it by
+      registering one of the hops -- a `dff::DFF` on any edge is enough -- ...
+```
+
+**Design decisions:**
+
+- **The check runs on the edge graph, not on the matrix — and this is the whole lesson of Phase 3.** The obvious implementation asks `q_to_d` which child outputs reach which child inputs and looks for a ring. It does not work, and the way it fails is worth internalising: **the matrix is a transitive closure computed by a fixpoint, and a fixpoint over a cyclic graph saturates.** Every node on a cycle ends up holding every source that can reach any of them. So on exactly the designs where a cycle exists, `q_to_d` goes dense and every pair of ports looks connected — the matrix is structurally incapable of locating the cycle that makes it dense. The first version duly reported `left -> left -> left` on a two-widget ring. Checking the edge graph before the fixpoint is both correct and cheaper: a cyclic design skips the fixpoint entirely, and its matrix would have been meaningless.
+- **Before the netlist is built.** A combinational cycle makes the netlist untopologisable, so building it first means the netlist pass speaks and this check never gets to. It also skips lowering work for a design that cannot be lowered.
+- **The walk is collapsed to widget granularity.** The port walk visits each widget twice, entering and leaving, so rendering it verbatim reads as a stutter — `right -> right -> left -> left` — that says nothing the labelled spans do not.
+- **Spans come from a second pass on the error path only.** The matrix records which fields are connected, not which opcodes connected them, and spans live on opcodes. So `cycle_spans` rebuilds the kernel's netlist to find the op that writes each hop's destination register — wasteful, and irrelevant, because it runs once on the way to returning an error. Same split as Phase 2: the cheap structure decides, an expensive walk explains.
+
+**Surprises and gotchas:**
+
+- **`Debug` for an empty `Path` renders as nothing**, so a `Vec` holding one empty path prints as `[]`. That cost a debugging detour: the inverter's matrix looked like it had no inputs at all when it had exactly one, whose path is the empty path because the widget's `I` is a bare `bool`.
+- **The netlist-level backstop has lost its only test.** `logic_loop.rs` was the sole thing exercising `ReorderInstructions`, and the new check reports first. The design plan says that pass "stays in place as backstop" — it does, and nothing tests it. A direct pass-level test needs a cyclic `ntl::Object`, and the only public constructor (`Builder::build`) runs the whole optimiser, so a hand-built netlist is transformed before the pass sees it. Recorded rather than papered over: an untested backstop is a backstop in name.
+- **And that attempt found a compiler panic.** `reorder_instructions.rs` does `write_regs_to_op[&failed]`, an unguarded map index, so a needed register with no writer panics instead of erroring — two lines below, the analogous case returns an ICE properly. Hard to reach through the normal pipeline. Still a panic.
+- **Inserting a rule in the middle of CLAUDE.md §12 renumbers everything after it**, invalidating every reference to "rule 14" — including two in this file. Appended at the end instead.
+
+**Validation:** the `logic_loop` diagnostic is re-blessed and read line by line rather than accepted. Four new tests build three-, four- and five-widget rings and assert the reported walk names the right number of widgets in a closed loop, plus that every hop carries a labelled span and exactly one is marked as closing. `cargo test --all --no-fail-fast` green, `cargo clippy --all -- -D warnings` passes, tree clean.
+
+**Follow-ups:**
+
+- A direct test for `ReorderInstructions`, which now has none.
+- `write_regs_to_op[&failed]` panics where it should raise an ICE.
+- Black-box feedthrough still assumed rather than declared — the one class of cycle this check cannot see.
+
 ### Phase 2, same PR — the DRC now takes its verdict from the matrix
 
 **Two things had to be fixed before that was sound, and neither was in the plan.**
