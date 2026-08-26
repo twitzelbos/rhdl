@@ -546,8 +546,24 @@ impl BlackBoxConnectivity {
             BlackBoxConnectivity::Paths(pairs) => {
                 let mut bits = Vec::new();
                 for (from, to) in pairs {
-                    let (from_range, _) = bit_range(input_kind, from)?;
-                    let (to_range, _) = bit_range(output_kind, to)?;
+                    // The named error rather than whatever `bit_range`
+                    // says. This runs before `to_matrix`, so without the
+                    // mapping here the caller sees a bare "RHDL Path
+                    // Error" and the diagnostic that exists to name the
+                    // offending port never fires -- which was the case
+                    // until a test asked for it.
+                    let (from_range, _) = bit_range(input_kind, from).map_err(|_| {
+                        RHDLError::BlackBoxPortNotFound {
+                            port: format!("{from:?}"),
+                            side: "input",
+                        }
+                    })?;
+                    let (to_range, _) = bit_range(output_kind, to).map_err(|_| {
+                        RHDLError::BlackBoxPortNotFound {
+                            port: format!("{to:?}"),
+                            side: "output",
+                        }
+                    })?;
                     for i in from_range.clone() {
                         for o in to_range.clone() {
                             bits.push((i, o));
