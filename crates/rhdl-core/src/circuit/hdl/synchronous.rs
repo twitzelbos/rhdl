@@ -12,6 +12,7 @@ use crate::{
     CompilationMode, HDLDescriptor, Kind, RHDLError, Synchronous, SynchronousDQ, SynchronousIO,
     circuit::{
         descriptor::{Descriptor, SyncKind},
+        reachability::{self, ChildReach},
         scoped_name::ScopedName,
     },
     compile_design,
@@ -213,13 +214,47 @@ pub fn build_synchronous_descriptor<C: Synchronous>(
     let children = circuit
         .children(&scoped_name)
         .collect::<Result<Vec<Descriptor<SyncKind>>, RHDLError>>()?;
-    let hdl = build_synchronous_hdl::<C>(&scoped_name, &kernel, &children)?;
-    let netlist = build_synchronous_netlist::<C>(&scoped_name, &kernel, &children)?;
     let circuit_output = <C as SynchronousIO>::O::static_kind();
     let circuit_input = <C as SynchronousIO>::I::static_kind();
     let d_kind = <C as SynchronousDQ>::D::static_kind();
     let q_kind = <C as SynchronousDQ>::Q::static_kind();
+    // Each child hands up its own matrix, so this is one level of work
+    // per widget rather than a walk of the whole tree per widget.
+    let child_reach = children
+        .iter()
+        .map(|c| ChildReach {
+            field: c.name.last().cloned().unwrap_or_default(),
+            input_kind: c.input_kind,
+            output_kind: c.output_kind,
+            matrix: &c.combinational_reachability,
+        })
+        .collect::<Vec<_>>();
+    // Before the netlist is built. A combinational cycle makes the
+    // netlist untopologisable, so building it first means the netlist
+    // pass reports the fault in terms of flattened opcodes and this check
+    // never gets to speak. It also skips the lowering work for a design
+    // that cannot be lowered.
+    let outcome = reachability::compute_synchronous(
+        Some(&kernel),
+        circuit_input,
+        circuit_output,
+        d_kind,
+        q_kind,
+        &child_reach,
+    )?;
+    let d_paths = crate::circuit::reachability::ReachabilityMatrix::none(
+        circuit_input,
+        circuit_output,
+        d_kind,
+        q_kind,
+    )
+    .d_paths;
+    let combinational_reachability =
+        reachability::into_matrix(outcome, Some(&kernel), circuit_output, d_kind, &d_paths)?;
+    let hdl = build_synchronous_hdl::<C>(&scoped_name, &kernel, &children)?;
+    let netlist = build_synchronous_netlist::<C>(&scoped_name, &kernel, &children)?;
     Ok(Descriptor {
+        combinational_reachability,
         name: scoped_name,
         input_kind: circuit_input,
         output_kind: circuit_output,

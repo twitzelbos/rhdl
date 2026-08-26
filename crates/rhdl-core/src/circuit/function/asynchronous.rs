@@ -23,6 +23,7 @@ use crate::{
     RHDLError, Timed,
     circuit::{
         descriptor::{AsyncKind, Descriptor},
+        reachability,
         scoped_name::ScopedName,
     },
     compile_design,
@@ -93,7 +94,28 @@ impl<I: Timed, O: Timed> Circuit for AsyncFunc<I, O> {
                 #function_def
             endmodule
         };
+        // `Func` is a bare kernel wearing a circuit: no children, no
+        // registers, so it is exactly the leaf case the analysis handles
+        // and its feedthrough is whatever the kernel's dataflow says.
+        // A leaf cannot cycle -- no children means no child edges, and
+        // kernel SSA is acyclic -- but it goes through the same helper so
+        // there is one path for reporting one.
+        let combinational_reachability = reachability::into_matrix(
+            reachability::compute_asynchronous(
+                Some(&self.kernel),
+                Self::I::static_kind(),
+                Self::O::static_kind(),
+                Kind::Empty,
+                Kind::Empty,
+                &[],
+            )?,
+            Some(&self.kernel),
+            Self::O::static_kind(),
+            Kind::Empty,
+            &[],
+        )?;
         Ok(Descriptor {
+            combinational_reachability,
             name: scoped_name,
             input_kind: <Self::I as Digital>::static_kind(),
             output_kind: <Self::O as Digital>::static_kind(),

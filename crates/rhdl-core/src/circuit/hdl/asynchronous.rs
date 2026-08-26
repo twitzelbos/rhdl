@@ -11,6 +11,7 @@ use crate::{
     Circuit, CircuitDQ, CircuitIO, CompilationMode, HDLDescriptor, Kind, RHDLError,
     circuit::{
         descriptor::{AsyncKind, Descriptor},
+        reachability::{self, ChildReach},
         scoped_name::ScopedName,
     },
     compile_design,
@@ -187,7 +188,34 @@ pub fn build_asynchronous_descriptor<C: Circuit>(
     let circuit_input = <C as CircuitIO>::I::static_kind();
     let d_kind = <C as CircuitDQ>::D::static_kind();
     let q_kind = <C as CircuitDQ>::Q::static_kind();
+    let child_reach = children
+        .iter()
+        .map(|c| ChildReach {
+            field: c.name.last().cloned().unwrap_or_default(),
+            input_kind: c.input_kind,
+            output_kind: c.output_kind,
+            matrix: &c.combinational_reachability,
+        })
+        .collect::<Vec<_>>();
+    let outcome = reachability::compute_asynchronous(
+        Some(&kernel),
+        circuit_input,
+        circuit_output,
+        d_kind,
+        q_kind,
+        &child_reach,
+    )?;
+    let d_paths = crate::circuit::reachability::ReachabilityMatrix::none(
+        circuit_input,
+        circuit_output,
+        d_kind,
+        q_kind,
+    )
+    .d_paths;
+    let combinational_reachability =
+        reachability::into_matrix(outcome, Some(&kernel), circuit_output, d_kind, &d_paths)?;
     Ok(Descriptor {
+        combinational_reachability,
         name: scoped_name,
         input_kind: circuit_input,
         output_kind: circuit_output,

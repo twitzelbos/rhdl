@@ -69,6 +69,9 @@ pub enum RHDLError {
     #[error("Logic Loop")]
     #[diagnostic(transparent)]
     NetLoopError(#[from] Box<crate::ntl::error::NetLoopError>),
+    #[error("Combinational Cycle")]
+    #[diagnostic(transparent)]
+    CombinationalCycle(#[from] Box<crate::circuit::error::CombinationalCycle>),
     #[error("Type Inference Error")]
     #[diagnostic(transparent)]
     TypeInferenceError(#[from] Box<UnifyError>),

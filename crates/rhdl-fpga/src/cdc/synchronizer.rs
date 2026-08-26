@@ -250,6 +250,7 @@ impl<W: Domain, R: Domain> Circuit for Sync1Bit<W, R> {
     fn descriptor(&self, scoped_name: ScopedName) -> Result<Descriptor<AsyncKind>, RHDLError> {
         let name = scoped_name.to_string();
         Descriptor::<AsyncKind> {
+            combinational_reachability: Default::default(),
             name: scoped_name,
             input_kind: <<Self as CircuitIO>::I as Digital>::static_kind(),
             output_kind: <<Self as CircuitIO>::O as Digital>::static_kind(),

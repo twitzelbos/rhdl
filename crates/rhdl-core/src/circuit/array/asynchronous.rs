@@ -80,7 +80,20 @@ impl<T: Circuit, const N: usize> Circuit for [T; N] {
             .children(&scoped_name)
             .collect::<Result<Vec<_>, RHDLError>>()?;
         let name = scoped_name.to_string();
+        // Every element is the same widget, so one lane's matrix is
+        // every lane's. An empty array reaches nothing, which the
+        // all-false default already says.
+        let combinational_reachability = match children.first() {
+            Some(first) => crate::circuit::reachability::array_of(
+                &first.combinational_reachability,
+                N,
+                Self::I::static_kind(),
+                Self::O::static_kind(),
+            )?,
+            None => Default::default(),
+        };
         Ok(Descriptor {
+            combinational_reachability,
             name: scoped_name,
             input_kind: Self::I::static_kind(),
             output_kind: Self::O::static_kind(),

@@ -31,6 +31,91 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-25 — The per-widget combinational reachability matrix (Phase 1)
+
+**Paths:** `crates/rhdl-core/src/circuit/reachability.rs` (new), `circuit/descriptor.rs`, `circuit/hdl/{synchronous,asynchronous}.rs`, `circuit/mod.rs`, ~19 files with a `Descriptor` literal, `crates/rhdl-fpga/tests/reachability_corpus.rs` (new), `architecture.md` §3, `combinational-reachability-and-loop-detection.md` §8.
+
+**Why this, why now:** it is the sequencing prerequisite CLAUDE.md names — the matrix must land before auto-pipelining and before Package Manager Phase 2, or the auto-pipeliner re-derives matrix-equivalent information and the two analyses drift. Nothing of it existed. Phase 1 is data-gathering only: every widget now computes a matrix, and nothing yet reads it.
+
+**Design decisions:**
+
+- **Four relations, not one.** `i_to_o` (feedthrough), `i_to_d`, `q_to_o`, `q_to_d`. The last is the load-bearing one: it is the only channel through which two children of the same parent can form a combinational loop between them, and it is invisible to any analysis that looks at one widget at a time.
+- **The graph comes from RTL, not RHIF, and that is a simplification rather than a compromise.** The design doc specifies a use-def walk over the RHIF `Object` with one edge rule per opcode, "exhaustive over the 19 opcodes". But RHIF is not retained past stage 1 — `Descriptor::kernel` is an `rtl::Object` — and lowering that with `build_ntl_from_rtl` gives a netlist whose ports are exactly `[clock_reset, i, q]` in and `[o, d]` out. The four relations then fall out of *one* reachability computation over a graph that `visit_wires` already knows how to walk, with no opcode table to write or keep in step.
+- **Bit-level analysis, field-level storage.** The doc lists bit-level as a v2 stretch; it was the easier option, because the netlist is already bit-level and `leaf_paths` + `bit_range` already exist to aggregate. Storage stays per field path because that is what a diagnostic can name.
+- **No cache, and the measurement is the argument.** §4.4 specifies one. Measured overhead is 0.6%, so it would be optimising nothing. Deferred with the number written down rather than built with a hit-rate metric attached to justify it.
+- **Black boxes get an explicitly-shaped empty matrix**, set by `with_netlist_black_box()` so the assumption lives at the point where black-boxness is decided rather than being implicit in a default.
+
+**Surprises and gotchas:**
+
+- **The obvious data structure more than doubled the workspace's test time.** A `HashSet<usize>` per netlist register cost 31% on `rhdl-fpga`'s suite — 390s against 297.9s — because a large widget has thousands of registers and every fixpoint round walked every set element individually. Dense register indices plus packed `Vec<u64>` bitsets, so a union is a few `|=` operations, brought it to 299.8s: **0.6%**. Worth knowing before Phase 3, where the same convenient structure will be just as tempting.
+- **`leaf_paths` treats `Kind::Empty` as a leaf**, so a widget with no children — `D = ()`, `Q = ()` — reported one `d_path` and one `q_path` addressing no bits. Caught while auditing the committed snapshot: `DFF` showed `d=1 q=1` when a DFF has no children at all. It made "does this widget have children" unanswerable from the matrix, and had already made one of my own assertions (`!d_paths.is_empty()`) silently vacuous. Zero-width paths are now filtered, and the test asserts `> 1` on a widget known to have several children.
+- **`make_net_graph` skips every `BlackBox` op unconditionally**, which is how `DFF` breaks a combinational path — and it is an assumption about the black boxes that exist rather than about black boxes in general. `reset::negation` *is* combinational (`assign o = ~i`) and escapes being a counterexample only because it carries a reset, and reset is excluded from this analysis anyway. Not exploitable today. It will be: `vendor-primitive-architecture.md` plans black boxes that carry data, and a combinational one would make a real loop invisible to both the old DRC and this matrix. Documented at the point where the assumption is made.
+- **The `Descriptor` literal appears in 19 files**, nine of them widgets. Adding one field touched all of them. The value is defaulted at each site and filled in properly by the two paths that know better — `build_*_descriptor` computes it, `with_netlist_black_box` shapes it — so the widget-side churn is one line each.
+
+**Validation:** 11 tests in `reachability_corpus`. The two that carry the weight: the matrix and `no_combinatorial_paths` agree on both signs — `faulty_reducer`, which exists in the tree precisely because it has a combinational path, is reported by both, and `DFF`/`Counter` by neither, reached by completely different routes (flatten-and-ask versus compose-per-widget). And all four relations are pinned on `Counter<4>`, whose shape is known exactly: no feedthrough, `enable` reaches the register input, the output *is* the register output, and the next count comes from the current one. A matrix that got any of those backwards would still pass a feedthrough-only assertion. Plus a committed-expectation snapshot over four widgets, which is what caught the `Kind::Empty` defect. `cargo test --all --no-fail-fast` green, `cargo clippy --all -- -D warnings` still passes, tree clean.
+
+No book chapter: Phase 1 changes no user-visible behaviour, so there is nothing a user could write that exercises it. That changes at Phase 3, when the new diagnostic lands.
+
+**Follow-ups:**
+
+- Phase 3: composition-level cycle detection and the `CombinationalCycle` diagnostic.
+- Black-box feedthrough needs declaring rather than assuming before any combinational vendor primitive ships.
+
+### Phase 3, same PR — a combinational cycle is a `descriptor()` error that names the widgets
+
+**Paths:** `crates/rhdl-core/src/circuit/error.rs` (new), `circuit/reachability.rs`, `circuit/hdl/{synchronous,asynchronous}.rs`, `error.rs`, `crates/rhdl/tests/{logic_loop.rs,combinational_cycles.rs}`, `CLAUDE.md` §12 rule 15, `architecture.md` §3.
+
+**Why this, why now:** the payoff for Phases 1 and 2. A ring of combinational widgets was already caught, by the netlist-level topological sort, and reported as `Design contains a logic loop` with the offending paths labelled. That is a correct answer to a question the user did not ask: a user wires *widgets* together and wants to know which widgets they wired into a ring. The new error is raised while the parent's descriptor is being built, before its netlist exists, and reads:
+
+```
+× Combinational Cycle
+╰─▶ Combinational cycle through 2 widgets: right -> left -> right
+ 60 │           d.left = q.right;
+ 61 │           d.right = q.left;
+    · ╰───── right -> left
+    · ╰───── left -> right (closes the cycle)
+help: Every widget on this path passes its input to its output combinationally, so the
+      signal has no register to wait at and the loop has no start.  Break it by
+      registering one of the hops -- a `dff::DFF` on any edge is enough -- ...
+```
+
+**Design decisions:**
+
+- **The check runs on the edge graph, not on the matrix — and this is the whole lesson of Phase 3.** The obvious implementation asks `q_to_d` which child outputs reach which child inputs and looks for a ring. It does not work, and the way it fails is worth internalising: **the matrix is a transitive closure computed by a fixpoint, and a fixpoint over a cyclic graph saturates.** Every node on a cycle ends up holding every source that can reach any of them. So on exactly the designs where a cycle exists, `q_to_d` goes dense and every pair of ports looks connected — the matrix is structurally incapable of locating the cycle that makes it dense. The first version duly reported `left -> left -> left` on a two-widget ring. Checking the edge graph before the fixpoint is both correct and cheaper: a cyclic design skips the fixpoint entirely, and its matrix would have been meaningless.
+- **Before the netlist is built.** A combinational cycle makes the netlist untopologisable, so building it first means the netlist pass speaks and this check never gets to. It also skips lowering work for a design that cannot be lowered.
+- **The walk is collapsed to widget granularity.** The port walk visits each widget twice, entering and leaving, so rendering it verbatim reads as a stutter — `right -> right -> left -> left` — that says nothing the labelled spans do not.
+- **Spans come from a second pass on the error path only.** The matrix records which fields are connected, not which opcodes connected them, and spans live on opcodes. So `cycle_spans` rebuilds the kernel's netlist to find the op that writes each hop's destination register — wasteful, and irrelevant, because it runs once on the way to returning an error. Same split as Phase 2: the cheap structure decides, an expensive walk explains.
+
+**Surprises and gotchas:**
+
+- **`Debug` for an empty `Path` renders as nothing**, so a `Vec` holding one empty path prints as `[]`. That cost a debugging detour: the inverter's matrix looked like it had no inputs at all when it had exactly one, whose path is the empty path because the widget's `I` is a bare `bool`.
+- **The netlist-level backstop has lost its only test.** `logic_loop.rs` was the sole thing exercising `ReorderInstructions`, and the new check reports first. The design plan says that pass "stays in place as backstop" — it does, and nothing tests it. A direct pass-level test needs a cyclic `ntl::Object`, and the only public constructor (`Builder::build`) runs the whole optimiser, so a hand-built netlist is transformed before the pass sees it. Recorded rather than papered over: an untested backstop is a backstop in name.
+- **And that attempt found a compiler panic.** `reorder_instructions.rs` does `write_regs_to_op[&failed]`, an unguarded map index, so a needed register with no writer panics instead of erroring — two lines below, the analogous case returns an ICE properly. Hard to reach through the normal pipeline. Still a panic.
+- **Inserting a rule in the middle of CLAUDE.md §12 renumbers everything after it**, invalidating every reference to "rule 14" — including two in this file. Appended at the end instead.
+
+**Validation:** the `logic_loop` diagnostic is re-blessed and read line by line rather than accepted. Four new tests build three-, four- and five-widget rings and assert the reported walk names the right number of widgets in a closed loop, plus that every hop carries a labelled span and exactly one is marked as closing. `cargo test --all --no-fail-fast` green, `cargo clippy --all -- -D warnings` passes, tree clean.
+
+**Follow-ups:**
+
+- A direct test for `ReorderInstructions`, which now has none.
+- `write_regs_to_op[&failed]` panics where it should raise an ICE.
+- Black-box feedthrough still assumed rather than declared — the one class of cycle this check cannot see.
+
+### Phase 2, same PR — the DRC now takes its verdict from the matrix
+
+**Two things had to be fixed before that was sound, and neither was in the plan.**
+
+**Five descriptor builders had a defaulted matrix, and an empty matrix reads as "no feedthrough".** Phase 1 wired `build_synchronous_descriptor` and `build_asynchronous_descriptor` and defaulted the rest — `function`, `array`, `chain`, `adapter`, `phantom`. Harmless while nothing read the field; the moment the DRC trusts it they become *false negatives*, the check passing silently on a widget that has a path. `phantom` is genuinely empty (all four kinds are `Kind::Empty`) and `constant` has no input dependence, but the other four needed work, and three needed composition logic of their own because they have no kernel and empty `D`/`Q`: an array is the block diagonal of its element's matrix, a chain is a boolean matrix product over the shared middle type, an adapter passes the inner matrix through.
+
+**The matrix has to be computed on optimised NTL, and this is correctness rather than tuning.** Found by the corpus cross-check, which is the test that exists for exactly this: it disagreed with the netlist walk on `RCStreamRelay`, matrix saying feedthrough and walk saying none. The walk was right. A Carloni relay assigns `stop_out = true` in *both* arms of `if i.stop_in`, so the raw lowering has `stop_in` selecting between two constants — a dataflow dependence with no hardware behind it. The existing DRC never saw it because `Builder::build` optimises; my analysis used the raw `build_ntl_from_rtl` output. On `SyncFIFO<b8, 4>` optimising removed 6 of 11 `i_to_o` entries and 4 of 12 `i_to_d`.
+
+Over-approximation would not have been harmlessly conservative. Phase 3 turns these relations into loop *errors*, so a path that does not exist in the hardware would reject a valid design — and the failure would have looked like a compiler bug to whoever hit it.
+
+**Design decision: the netlist walk survives, for spans only.** The matrix records which fields are connected, not which opcodes connected them, and spans live on opcodes. So the verdict comes from `i_to_o` and the walk runs only when the verdict is "there is a path", to say where. That keeps the diagnostic byte-identical — the committed `faulty_reducer` expectation file is unchanged, which is Phase 2's stated acceptance criterion — while the clean case, which is what dozens of widget tests assert, stops building a graph over the flattened netlist entirely.
+
+**Validation:** the corpus cross-check runs both implementations over seven widgets spanning the structural shapes and asserts they agree, with an assertion that the corpus contains both verdicts so the agreement is not agreement on a constant. `faulty_reducer`'s committed diagnostic is unchanged. Overhead 1.6% on the workspace suite (302.6s against 297.9s), up from 0.6% for the unsound raw version.
+
+
 ## 2026-08-25 — The clippy gate actually passes now
 
 **Paths:** 14 `serial_bus` widgets, `video/mipi_dpi.rs`, `stream/testing/{mod,double}.rs`.

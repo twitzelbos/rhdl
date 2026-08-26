@@ -49,6 +49,7 @@ impl<T: Digital + 'static> Synchronous for std::marker::PhantomData<T> {
         // the synchronous mode so that the inputs have at least place holders
         // for the clock reset and input vecs (both empty)
         Ok(Descriptor::<SyncKind> {
+            combinational_reachability: Default::default(),
             name: scoped_name,
             input_kind: Kind::Empty,
             output_kind: Kind::Empty,
@@ -102,6 +103,7 @@ impl<T: Digital + 'static> Circuit for std::marker::PhantomData<T> {
             endmodule
         };
         Ok(Descriptor::<AsyncKind> {
+            combinational_reachability: Default::default(),
             name: scoped_name,
             input_kind: Kind::Empty,
             output_kind: Kind::Empty,
