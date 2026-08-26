@@ -224,6 +224,8 @@ pub enum ICE {
     IncompleteSymbolTable,
     #[error("Loop Isolation Algorithm Failed")]
     LoopIsolationAlgorithmFailed,
+    #[error("A needed register has no writer, so the netlist is undriven rather than cyclic")]
+    NeededRegisterHasNoWriter,
     #[error("Netlist contains an incomplete symbol table")]
     IncompleteSymbolTableInNetList,
     #[error("Cannot coerce empty to an integer")]

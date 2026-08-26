@@ -45,7 +45,13 @@ pub fn optimize_ntl(mut input: Object) -> Result<Object, RHDLError> {
     }
     input = wrap_pass::<SymbolTableIsComplete>(input)?;
     input = wrap_pass::<SingleRegisterWrite>(input)?;
-    input = wrap_pass::<ReorderInstructions>(input)?;
+    // Before `ReorderInstructions`, not after. The optimisation loop can
+    // leave a needed register undriven -- deleting the ops that drove it
+    // once nothing else depends on them -- and the loop detector's
+    // `needed` set is built from the outputs, so it reaches that state
+    // first and has no loop to isolate. Checking here means the user gets
+    // "undriven node" instead of an internal compiler error.
     input = wrap_pass::<CheckForUndriven>(input)?;
+    input = wrap_pass::<ReorderInstructions>(input)?;
     Ok(input)
 }

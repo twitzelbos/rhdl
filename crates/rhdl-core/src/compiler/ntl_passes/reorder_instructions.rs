@@ -133,8 +133,23 @@ impl Pass for ReorderInstructions {
             loop {
                 regs.push_back(failed);
                 visited.insert(failed);
-                // This is the opcode that writes the missing reg
-                let opc = write_regs_to_op[&failed];
+                // This is the opcode that writes the missing reg.
+                //
+                // Checked, not indexed. `needed` holds the outputs and
+                // the black-box arguments, so a needed register with no
+                // writer means the netlist is *undriven* there rather
+                // than cyclic -- and this loop-isolation code has no loop
+                // to isolate. Indexing panicked, which is reachable:
+                // `optimize_ntl` can eliminate the ops that drove a
+                // needed register, and `CheckForUndriven` runs before
+                // that rather than after.
+                let Some(&opc) = write_regs_to_op.get(&failed) else {
+                    return Err(Self::raise_ice(
+                        &input,
+                        ICE::NeededRegisterHasNoWriter,
+                        None,
+                    ));
+                };
                 // That opcode must be missing an argument (or it would have been scheduled already)
                 let Some(&next) = op_to_read_regs[&opc].iter().next() else {
                     // This is an error, since if the op had no unsatisfied inputs
@@ -208,5 +223,114 @@ impl Pass for ReorderInstructions {
 
     fn description() -> &'static str {
         "Reorder instructions to create legal dataflow"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[allow(unused_imports)]
+    use super::*;
+    use crate::{
+        ClockReset, Kind,
+        compiler::mir::error::ICE,
+        error::RHDLError,
+        ntl::builder::{Builder, BuilderMode},
+        types::digital::Digital,
+    };
+
+    /// Two output bits, each assigned from the other.
+    ///
+    /// A textbook cycle, and also *dead*: nothing outside the pair
+    /// depends on either half, so `optimize_ntl` deletes both ops. Which
+    /// of the two faults a given test sees therefore depends entirely on
+    /// whether the optimiser has run.
+    fn cross_assigned_outputs() -> Builder {
+        let mut builder = Builder::new("cyclic");
+        // A synchronous netlist's first input is the clock and reset.
+        let _cr = builder.add_input(ClockReset::static_kind());
+        let out = builder.allocate_outputs(Kind::Bits(2));
+        builder.copy_from_to(out[0], out[1]);
+        builder.copy_from_to(out[1], out[0]);
+        builder
+    }
+
+    /// The netlist-level loop detector still fires.
+    ///
+    /// This exists because the pass had no test at all. Until the
+    /// composition-level check in `circuit::reachability` landed,
+    /// `crates/rhdl/tests/logic_loop.rs` was the only thing exercising it
+    /// — and that check now reports a cycle first, from the widget's
+    /// descriptor, so the end-to-end route is gone. The pass remains the
+    /// backstop for any cycle the composition check cannot see, such as
+    /// one through a combinational black box whose feedthrough is assumed
+    /// rather than declared, and a backstop with no test is a backstop in
+    /// name only.
+    ///
+    /// It runs on the *unoptimised* netlist because the optimiser would
+    /// otherwise delete the cycle before this pass could find it.
+    #[test]
+    fn a_cyclic_netlist_is_reported_as_a_loop() {
+        let obj = cross_assigned_outputs().into_unoptimized(BuilderMode::Synchronous);
+        let result = ReorderInstructions::run(obj);
+        assert!(
+            matches!(result, Err(RHDLError::NetLoopError(_))),
+            "expected a netlist loop error, got {:?}",
+            result.map(|o| o.name)
+        );
+    }
+
+    /// Through the full optimiser, the same netlist is reported as
+    /// undriven — with a diagnostic, not an internal compiler error.
+    ///
+    /// This is the user-visible half of the fix. `optimize_ntl` deletes
+    /// the two ops as dead, which leaves the outputs with no driver.
+    /// `CheckForUndriven` used to check only registers that some op
+    /// *read*, so an undriven *output* was invisible to it, and
+    /// `ReorderInstructions` — whose `needed` set is built from the
+    /// outputs — hit that state first and panicked. Now the checker knows
+    /// about outputs and runs first.
+    #[test]
+    fn an_undriven_output_is_reported_as_undriven_not_as_an_ice() {
+        let result = cross_assigned_outputs().build(BuilderMode::Synchronous);
+        let Err(RHDLError::NetListError(err)) = result else {
+            panic!(
+                "expected an undriven-netlist error, got {:?}",
+                result.map(|o| o.name)
+            );
+        };
+        assert!(
+            matches!(
+                err.cause,
+                crate::ntl::error::NetListICE::UndrivenNetlistNode
+            ),
+            "wrong cause: {:?}",
+            err.cause
+        );
+    }
+
+    /// And the guard behind it still holds.
+    ///
+    /// With the checker in front, `ReorderInstructions` should never meet
+    /// a needed register that has no writer. It used to index
+    /// `write_regs_to_op` directly and panic if it did. Reaching the guard
+    /// now means driving the pass without the checker ahead of it, which
+    /// is what this does — an ICE that nothing can reach is still worth
+    /// keeping, and worth keeping tested, because the alternative if the
+    /// ordering ever changes back is a crash.
+    #[test]
+    fn a_needed_register_with_no_writer_is_an_ice_not_a_panic() {
+        let mut builder = Builder::new("undriven");
+        let _cr = builder.add_input(ClockReset::static_kind());
+        // An output with no driver at all, and no ops to delete.
+        let _out = builder.allocate_outputs(Kind::Bits(1));
+        let obj = builder.into_unoptimized(BuilderMode::Synchronous);
+        let Err(RHDLError::RHDLInternalCompilerError(err)) = ReorderInstructions::run(obj) else {
+            panic!("expected an internal compiler error");
+        };
+        assert!(
+            matches!(err.cause, ICE::NeededRegisterHasNoWriter),
+            "wrong cause: {:?}",
+            err.cause
+        );
     }
 }
