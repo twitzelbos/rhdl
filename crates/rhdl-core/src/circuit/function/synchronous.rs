@@ -25,6 +25,7 @@ use crate::{
     SynchronousDQ, SynchronousIO,
     circuit::{
         descriptor::{Descriptor, SyncKind},
+        reachability,
         scoped_name::ScopedName,
     },
     compile_design,
@@ -106,8 +107,19 @@ impl<I: Digital, O: Digital> Synchronous for Func<I, O> {
                 #function_def
             endmodule
         };
+        // `Func` is a bare kernel wearing a circuit: no children, no
+        // registers, so it is exactly the leaf case the analysis handles
+        // and its feedthrough is whatever the kernel's dataflow says.
+        let combinational_reachability = reachability::compute_synchronous(
+            Some(&self.kernel),
+            Self::I::static_kind(),
+            Self::O::static_kind(),
+            Kind::Empty,
+            Kind::Empty,
+            &[],
+        )?;
         Ok(Descriptor {
-            combinational_reachability: Default::default(),
+            combinational_reachability,
             name: scoped_name,
             input_kind: Self::I::static_kind(),
             output_kind: Self::O::static_kind(),

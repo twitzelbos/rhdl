@@ -51,6 +51,7 @@ use std::collections::HashMap;
 use crate::{
     Kind, RHDLError,
     common::symtab::RegisterId,
+    compiler::optimize_ntl,
     ntl::{from_rtl::build_ntl_from_rtl, spec::WireKind, visit::visit_wires},
     rtl,
     types::path::{Path, bit_range, leaf_paths},
@@ -213,6 +214,99 @@ impl ReachabilityMatrix {
     }
 }
 
+/// Reachability for `N` copies of one widget, wired element-wise.
+///
+/// `[T; N]` has `I = [T::I; N]` and `O = [T::O; N]`, and element `k`
+/// sees only `i[k]` and drives only `o[k]`. So the matrix is block
+/// diagonal: whatever the element passes through, it passes through in
+/// its own lane, and no lane reaches another.
+///
+/// The array has no kernel and empty `D`/`Q` -- it is pure wiring, and
+/// the elements are addressed positionally rather than by field name --
+/// so the generic path cannot derive this and it is spelled out here.
+pub(crate) fn array_of(
+    element: &ReachabilityMatrix,
+    n: usize,
+    input_kind: Kind,
+    output_kind: Kind,
+) -> Result<ReachabilityMatrix, RHDLError> {
+    let mut out = ReachabilityMatrix::none(input_kind, output_kind, Kind::Empty, Kind::Empty);
+    let index_of = |paths: &[Path], p: &Path| paths.iter().position(|q| q == p);
+    for k in 0..n {
+        let lane = Path::default().index(k);
+        for (ei, e_in) in element.inputs.iter().enumerate() {
+            let Some(row) = index_of(&out.inputs, &lane.clone().join(e_in)) else {
+                continue;
+            };
+            for (eo, e_out) in element.outputs.iter().enumerate() {
+                if !element.i_to_o.get(ei, eo) {
+                    continue;
+                }
+                if let Some(col) = index_of(&out.outputs, &lane.clone().join(e_out)) {
+                    out.i_to_o.set(row, col);
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Reachability for two widgets in series.
+///
+/// `Chain<A, B>` feeds `A`'s output straight into `B`'s input, so a path
+/// from the chain's input to its output has to cross both: a boolean
+/// matrix product. A register anywhere in either half breaks it, which is
+/// why chaining two registered widgets is not a feedthrough even though
+/// each half is wired to the next.
+///
+/// `A::O` and `B::I` are the same type, so their leaf paths are the same
+/// list and the product needs no bit-level translation.
+pub(crate) fn series(
+    a: &ReachabilityMatrix,
+    b: &ReachabilityMatrix,
+    input_kind: Kind,
+    output_kind: Kind,
+) -> Result<ReachabilityMatrix, RHDLError> {
+    let mut out = ReachabilityMatrix::none(input_kind, output_kind, Kind::Empty, Kind::Empty);
+    for ai in 0..a.i_to_o.rows() {
+        for mid in a.i_to_o.row_iter(ai) {
+            // `mid` indexes A's outputs, which are B's inputs. The two
+            // lists are the same because the types are.
+            let Some(b_row) = b.inputs.iter().position(|p| Some(p) == a.outputs.get(mid)) else {
+                continue;
+            };
+            for bo in b.i_to_o.row_iter(b_row) {
+                out.i_to_o.set(ai, bo);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Reachability for a widget that only re-types its interface.
+///
+/// An `Adapter` moves a synchronous circuit into an asynchronous
+/// context: the bits are the same bits, so whatever the inner widget
+/// passes through, the wrapper passes through.
+pub(crate) fn passthrough(
+    inner: &ReachabilityMatrix,
+    input_kind: Kind,
+    output_kind: Kind,
+    d_kind: Kind,
+    q_kind: Kind,
+) -> Result<ReachabilityMatrix, RHDLError> {
+    let mut out = ReachabilityMatrix::none(input_kind, output_kind, d_kind, q_kind);
+    // Indices are positional rather than by path, because the wrapper's
+    // paths carry a `Signal` step the inner's do not. The leaf order is
+    // the bit order in both, so position is the correspondence.
+    for r in 0..inner.i_to_o.rows().min(out.i_to_o.rows()) {
+        for c in inner.i_to_o.row_iter(r) {
+            out.i_to_o.set(r, c);
+        }
+    }
+    Ok(out)
+}
+
 /// A child's contribution to its parent's analysis.
 pub struct ChildReach<'a> {
     /// The field name the child occupies in the parent's `D` and `Q`.
@@ -287,7 +381,20 @@ fn compute(
     let Some(kernel) = kernel else {
         return Ok(out);
     };
-    let ntl = build_ntl_from_rtl(kernel);
+    // Optimised, not raw. This matters for correctness, not speed: the
+    // raw lowering keeps every dataflow dependence the kernel's source
+    // has, including the semantically vacuous ones. A Carloni relay
+    // assigns `stop_out = true` in both arms of `if i.stop_in`, so the
+    // raw netlist has `stop_in` selecting between two constants -- a
+    // dataflow dependence with no hardware behind it. `optimize_ntl`
+    // collapses it, and the existing DRC has always seen the collapsed
+    // form because `Builder::build` optimises.
+    //
+    // Analysing the raw form makes the matrix an over-approximation, and
+    // an over-approximation is not harmlessly conservative here: Phase 3
+    // turns these relations into loop *errors*, so a path that does not
+    // exist in the hardware would reject a valid design.
+    let ntl = optimize_ntl(build_ntl_from_rtl(kernel))?;
 
     // The kernel's netlist ports are `[clock_reset, i, q]` in for a
     // synchronous widget and `[i, q]` for an asynchronous one, with

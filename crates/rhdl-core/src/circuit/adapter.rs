@@ -67,6 +67,7 @@ use crate::{
     bitx::BitX,
     circuit::{
         descriptor::{AsyncKind, Descriptor, SyncKind},
+        reachability,
         scoped_name::ScopedName,
     },
     digital_fn::NoCircuitKernel,
@@ -180,8 +181,18 @@ impl<C: Synchronous, D: Domain> Circuit for Adapter<C, D> {
     fn descriptor(&self, scoped_name: ScopedName) -> Result<Descriptor<AsyncKind>, RHDLError> {
         let child_descriptor = self.circuit.descriptor(scoped_name.with("inner"))?;
         let name = scoped_name.to_string();
+        // The adapter only re-types the interface -- `Signal<T, D>`
+        // around the same bits -- so it passes through whatever the
+        // inner circuit does.
+        let combinational_reachability = reachability::passthrough(
+            &child_descriptor.combinational_reachability,
+            <<Self as CircuitIO>::I as Digital>::static_kind(),
+            <<Self as CircuitIO>::O as Digital>::static_kind(),
+            <<Self as CircuitDQ>::D as Digital>::static_kind(),
+            <<Self as CircuitDQ>::Q as Digital>::static_kind(),
+        )?;
         Ok(Descriptor::<AsyncKind> {
-            combinational_reachability: Default::default(),
+            combinational_reachability,
             name: scoped_name,
             input_kind: <<Self as CircuitIO>::I as Digital>::static_kind(),
             output_kind: <<Self as CircuitIO>::O as Digital>::static_kind(),
@@ -202,7 +213,9 @@ impl<C: Synchronous, D: Domain> Circuit for Adapter<C, D> {
             .circuit
             .descriptor(scoped_name.with("inner"))
             .map(|inner| Descriptor::<AsyncKind> {
-                combinational_reachability: Default::default(),
+                // Re-typing the marker, not the circuit: the matrix is
+                // the inner one unchanged.
+                combinational_reachability: inner.combinational_reachability,
                 name: scoped_name.with("inner"),
                 input_kind: inner.input_kind,
                 output_kind: inner.output_kind,

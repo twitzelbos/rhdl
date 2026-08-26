@@ -331,9 +331,16 @@ Deliverables:
 
 Acceptance: every widget in `crates/rhdl-fpga/src/` has a computed matrix that round-trips through the existing test suite without behavior change.
 
-### Phase 2 — Subsume `no_combinatorial_paths` (1 week)
+### Phase 2 — Subsume `no_combinatorial_paths` — **SHIPPED**
 
 Refactor `circuit::drc::no_combinatorial_paths` to query the matrix instead of doing its own NTL graph traversal. Public API unchanged; behavior unchanged; implementation simplified.
+
+**As shipped, with two departures from the sketch above:**
+
+- **The netlist walk is retained, for spans only.** The matrix records which *fields* are connected, not which opcodes connected them, and spans live on opcodes — so the matrix cannot reproduce the diagnostic, and the diagnostic has a committed expectation file. The verdict now comes from `i_to_o`; the walk runs only when the verdict is "there is a path", to say where. The clean case — overwhelmingly the common one, since dozens of widget tests assert it as a property — no longer builds a graph over the flattened netlist at all.
+- **The matrix must be computed on *optimised* NTL.** This was not in the plan and is a correctness requirement rather than a tuning choice. The raw `build_ntl_from_rtl` lowering keeps every dataflow dependence the kernel's source has, including the vacuous ones: a Carloni relay assigns `stop_out = true` in *both* arms of `if i.stop_in`, so the raw netlist has `stop_in` selecting between two constants. The existing DRC never saw that, because `ntl::builder::Builder::build` optimises. Analysed raw, the matrix over-approximated — and over-approximation is not harmlessly conservative here, because Phase 3 turns these relations into loop *errors*, so a path with no hardware behind it would reject a valid design. On `SyncFIFO<b8, 4>` optimising removed 6 of 11 `i_to_o` entries and 4 of 12 `i_to_d` entries. Cost: 1.6% on the workspace suite, against 0.6% for the raw version.
+
+Phase 1 also left five descriptor builders with a defaulted matrix — `function`, `array`, `chain`, `adapter`, `phantom`. An empty matrix reads as "no feedthrough", so once the DRC trusts it those become *false negatives*: the check passes silently on a widget that has a path. Four needed wiring before Phase 2 was sound (`phantom` is genuinely empty — all four of its kinds are `Kind::Empty`), and `array`, `chain` and `adapter` needed composition logic of their own because they have no kernel and empty `D`/`Q`: an array is the block diagonal of its element, a chain is a boolean matrix product, an adapter is a passthrough.
 
 Deliverables:
 - New implementation that queries `descriptor.combinational_reachability.i_to_o`.

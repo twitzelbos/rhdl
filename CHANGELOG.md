@@ -58,9 +58,23 @@ No book chapter: Phase 1 changes no user-visible behaviour, so there is nothing 
 
 **Follow-ups:**
 
-- Phase 2: refactor `no_combinatorial_paths` to query `i_to_o` instead of walking the flattened netlist itself. The corpus test already asserts the two agree, so the refactor has its acceptance criterion waiting.
 - Phase 3: composition-level cycle detection and the `CombinationalCycle` diagnostic.
 - Black-box feedthrough needs declaring rather than assuming before any combinational vendor primitive ships.
+
+### Phase 2, same PR — the DRC now takes its verdict from the matrix
+
+**Two things had to be fixed before that was sound, and neither was in the plan.**
+
+**Five descriptor builders had a defaulted matrix, and an empty matrix reads as "no feedthrough".** Phase 1 wired `build_synchronous_descriptor` and `build_asynchronous_descriptor` and defaulted the rest — `function`, `array`, `chain`, `adapter`, `phantom`. Harmless while nothing read the field; the moment the DRC trusts it they become *false negatives*, the check passing silently on a widget that has a path. `phantom` is genuinely empty (all four kinds are `Kind::Empty`) and `constant` has no input dependence, but the other four needed work, and three needed composition logic of their own because they have no kernel and empty `D`/`Q`: an array is the block diagonal of its element's matrix, a chain is a boolean matrix product over the shared middle type, an adapter passes the inner matrix through.
+
+**The matrix has to be computed on optimised NTL, and this is correctness rather than tuning.** Found by the corpus cross-check, which is the test that exists for exactly this: it disagreed with the netlist walk on `RCStreamRelay`, matrix saying feedthrough and walk saying none. The walk was right. A Carloni relay assigns `stop_out = true` in *both* arms of `if i.stop_in`, so the raw lowering has `stop_in` selecting between two constants — a dataflow dependence with no hardware behind it. The existing DRC never saw it because `Builder::build` optimises; my analysis used the raw `build_ntl_from_rtl` output. On `SyncFIFO<b8, 4>` optimising removed 6 of 11 `i_to_o` entries and 4 of 12 `i_to_d`.
+
+Over-approximation would not have been harmlessly conservative. Phase 3 turns these relations into loop *errors*, so a path that does not exist in the hardware would reject a valid design — and the failure would have looked like a compiler bug to whoever hit it.
+
+**Design decision: the netlist walk survives, for spans only.** The matrix records which fields are connected, not which opcodes connected them, and spans live on opcodes. So the verdict comes from `i_to_o` and the walk runs only when the verdict is "there is a path", to say where. That keeps the diagnostic byte-identical — the committed `faulty_reducer` expectation file is unchanged, which is Phase 2's stated acceptance criterion — while the clean case, which is what dozens of widget tests assert, stops building a graph over the flattened netlist entirely.
+
+**Validation:** the corpus cross-check runs both implementations over seven widgets spanning the structural shapes and asserts they agree, with an assertion that the corpus contains both verdicts so the agreement is not agreement on a constant. `faulty_reducer`'s committed diagnostic is unchanged. Overhead 1.6% on the workspace suite (302.6s against 297.9s), up from 0.6% for the unsound raw version.
+
 
 ## 2026-08-25 — The clippy gate actually passes now
 

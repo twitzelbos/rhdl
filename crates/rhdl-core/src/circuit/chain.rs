@@ -86,8 +86,16 @@ where
         let a_descriptor = self.a.descriptor(scoped_name.with("a"))?;
         let b_descriptor = self.b.descriptor(scoped_name.with("b"))?;
         let name = scoped_name.to_string();
+        // A path across the chain has to cross both halves, so a
+        // register in either one breaks it.
+        let combinational_reachability = crate::circuit::reachability::series(
+            &a_descriptor.combinational_reachability,
+            &b_descriptor.combinational_reachability,
+            a_descriptor.input_kind,
+            b_descriptor.output_kind,
+        )?;
         Ok(Descriptor::<SyncKind> {
-            combinational_reachability: Default::default(),
+            combinational_reachability,
             name: scoped_name,
             input_kind: a_descriptor.input_kind,
             output_kind: b_descriptor.output_kind,

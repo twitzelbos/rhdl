@@ -60,9 +60,44 @@ impl Diagnostic for CombinatorialPath {
 ///
 pub fn no_combinatorial_paths<T: Synchronous>(uut: &T) -> miette::Result<()> {
     let descriptor = uut.descriptor(ScopedName::top())?;
-    let ntl = descriptor.netlist()?;
+    // The verdict comes from the reachability matrix, which was computed
+    // when the descriptor was built. The netlist walk below runs only to
+    // say *where* the path is, because the matrix records which fields
+    // are connected and not which opcodes connected them.
+    //
+    // So the clean case -- overwhelmingly the common one, since this is
+    // asserted as a property in dozens of widget tests -- no longer
+    // builds a graph over the flattened netlist and searches it.
+    if !descriptor.combinational_reachability.has_feedthrough() {
+        return Ok(());
+    }
+    Err(locate_combinatorial_path(&descriptor))
+}
+
+/// Walk the flattened netlist to find a concrete input-to-output path and
+/// report it with source spans.
+///
+/// This is the pre-matrix implementation of the whole check, kept because
+/// the diagnostic it produces is the user-facing contract -- there is a
+/// committed expectation file for it -- and the matrix cannot reproduce
+/// it. Field-level connectivity does not say which opcodes formed the
+/// connection, and spans live on opcodes.
+///
+/// Also used by tests to cross-check the matrix: two implementations that
+/// agree by different routes is the only evidence that replacing one with
+/// the other changed nothing.
+pub(crate) fn locate_combinatorial_path(
+    descriptor: &crate::circuit::descriptor::Descriptor<crate::circuit::descriptor::SyncKind>,
+) -> miette::Report {
+    let Ok(ntl) = descriptor.netlist() else {
+        // No netlist to walk. The matrix already said there is a path, so
+        // report it without the spans rather than claiming there is none.
+        return miette::Report::new(CombinatorialPath {
+            src: SourcePool::default(),
+            elements: Vec::new(),
+        });
+    };
     let dep = make_net_graph(ntl, GraphMode::Synchronous);
-    // Get the graph node that represents the inputs for the device
     let input_node = dep.input_node;
     let mut space = DfsSpace::new(&dep.graph);
     let code = &ntl.code;
@@ -71,14 +106,12 @@ pub fn no_combinatorial_paths<T: Synchronous>(uut: &T) -> miette::Result<()> {
         match source {
             WriteSource::ClockReset => {}
             WriteSource::Input => {
-                return Err(miette::Report::new(CombinatorialPath {
+                return miette::Report::new(CombinatorialPath {
                     src: code.source(),
                     elements: Vec::new(),
-                }));
+                });
             }
             WriteSource::OpCode(ndx) => {
-                // The output is written by the opcode ndx.
-                // Get the node from the graph
                 let op_node = dep.op_nodes[ndx];
                 if petgraph::algo::has_path_connecting(
                     &dep.graph,
@@ -101,13 +134,50 @@ pub fn no_combinatorial_paths<T: Synchronous>(uut: &T) -> miette::Result<()> {
                         .flat_map(|x| ntl.ops[x].loc)
                         .map(|loc| SourceSpan::from(code.span(loc)))
                         .collect();
-                    return Err(miette::Report::new(CombinatorialPath {
+                    return miette::Report::new(CombinatorialPath {
                         src: code.source(),
                         elements,
-                    }));
+                    });
                 }
             }
         }
     }
-    Ok(())
+    // The matrix found a path the netlist walk did not. That is a bug in
+    // one of them, and reporting the path without spans is better than
+    // reporting success.
+    miette::Report::new(CombinatorialPath {
+        src: code.source(),
+        elements: Vec::new(),
+    })
+}
+
+/// Does the flattened netlist contain an input-to-output path?
+///
+/// The matrix-free answer. Public so that tests outside this crate can
+/// check the matrix against something other than itself: this is the
+/// implementation [`no_combinatorial_paths`] used before it queried the
+/// matrix, and the two agreeing across a corpus is the evidence that the
+/// change was inert.
+pub fn feedthrough_by_netlist_walk<T: Synchronous>(uut: &T) -> miette::Result<bool> {
+    let descriptor = uut.descriptor(ScopedName::top())?;
+    let ntl = descriptor.netlist()?;
+    let dep = make_net_graph(ntl, GraphMode::Synchronous);
+    let mut space = DfsSpace::new(&dep.graph);
+    for output in ntl.outputs.iter().copied().flat_map(Wire::reg) {
+        match dep.reg_map[&output] {
+            WriteSource::ClockReset => {}
+            WriteSource::Input => return Ok(true),
+            WriteSource::OpCode(ndx) => {
+                if petgraph::algo::has_path_connecting(
+                    &dep.graph,
+                    dep.input_node,
+                    dep.op_nodes[ndx],
+                    Some(&mut space),
+                ) {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+    Ok(false)
 }

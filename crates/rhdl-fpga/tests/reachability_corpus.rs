@@ -253,8 +253,8 @@ fn the_corpus_matrices_are_as_expected() {
           q_to_d 1x1 set=1
         SyncFIFO<b8, 4>
           i=3 o=7 d=8 q=11
-          i_to_o 3x7 set=11
-          i_to_d 3x8 set=12
+          i_to_o 3x7 set=5
+          i_to_d 3x8 set=8
           q_to_o 11x7 set=18
           q_to_d 11x8 set=6
         faulty::U<4, 2>
@@ -265,4 +265,68 @@ fn the_corpus_matrices_are_as_expected() {
           q_to_d 2x2 set=3
     "#]];
     expected.assert_eq(&out);
+}
+
+/// Phase 2's acceptance criterion: the matrix and the netlist walk agree
+/// on every widget in a spread of the library.
+///
+/// `no_combinatorial_paths` now takes its verdict from the matrix. That
+/// is only safe if the matrix says what the netlist walk said, and the
+/// dangerous direction is the quiet one: a widget whose matrix is empty
+/// because nobody wired its descriptor builder reads as "no feedthrough"
+/// and the check silently passes. Phase 1 left five such builders
+/// defaulted -- `function`, `array`, `chain`, `adapter`, `phantom` -- and
+/// four of them needed real composition logic before this test could
+/// pass.
+///
+/// The spread is deliberately wide rather than deep: one widget per
+/// structural shape, because what is being tested is the *composition*,
+/// not any one widget's logic.
+#[test]
+fn the_matrix_and_the_netlist_walk_agree_across_the_corpus() {
+    use rhdl::core::circuit::drc::feedthrough_by_netlist_walk;
+
+    macro_rules! check {
+        ($label:expr, $uut:expr) => {{
+            let uut = $uut;
+            let matrix = feeds_through(&uut);
+            let walk = feedthrough_by_netlist_walk(&uut).expect("netlist walk");
+            assert_eq!(
+                matrix, walk,
+                "{}: matrix says {matrix}, netlist walk says {walk}",
+                $label
+            );
+            (($label), matrix)
+        }};
+    }
+
+    let verdicts = vec![
+        check!("dff", dff::DFF::<b8>::default()),
+        check!("counter", counter::Counter::<4>::default()),
+        check!("faulty_reducer", faulty::U::<4, 2>::default()),
+        check!(
+            "sync_fifo",
+            rhdl_fpga::fifo::synchronous::SyncFIFO::<b8, 4>::default()
+        ),
+        check!("delay", rhdl_fpga::core::delay::Delay::<b8, 3>::default()),
+        check!(
+            "constant",
+            rhdl_fpga::core::constant::Constant::<b8>::new(bits(3))
+        ),
+        check!(
+            "rcstream_map",
+            rhdl_fpga::rcstream::relay::RCStreamRelay::<b8, ()>::default()
+        ),
+    ];
+
+    // And the corpus must contain at least one of each verdict, or the
+    // agreement above is agreement on a constant.
+    assert!(
+        verdicts.iter().any(|(_, v)| *v),
+        "no widget in the corpus feeds through; the test proves nothing"
+    );
+    assert!(
+        verdicts.iter().any(|(_, v)| !*v),
+        "every widget feeds through; the test proves nothing"
+    );
 }
