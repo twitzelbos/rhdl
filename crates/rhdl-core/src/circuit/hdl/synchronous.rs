@@ -12,6 +12,7 @@ use crate::{
     CompilationMode, HDLDescriptor, Kind, RHDLError, Synchronous, SynchronousDQ, SynchronousIO,
     circuit::{
         descriptor::{Descriptor, SyncKind},
+        reachability::{self, ChildReach},
         scoped_name::ScopedName,
     },
     compile_design,
@@ -219,7 +220,27 @@ pub fn build_synchronous_descriptor<C: Synchronous>(
     let circuit_input = <C as SynchronousIO>::I::static_kind();
     let d_kind = <C as SynchronousDQ>::D::static_kind();
     let q_kind = <C as SynchronousDQ>::Q::static_kind();
+    // Each child hands up its own matrix, so this is one level of work
+    // per widget rather than a walk of the whole tree per widget.
+    let child_reach = children
+        .iter()
+        .map(|c| ChildReach {
+            field: c.name.last().cloned().unwrap_or_default(),
+            input_kind: c.input_kind,
+            output_kind: c.output_kind,
+            matrix: &c.combinational_reachability,
+        })
+        .collect::<Vec<_>>();
+    let combinational_reachability = reachability::compute_synchronous(
+        Some(&kernel),
+        circuit_input,
+        circuit_output,
+        d_kind,
+        q_kind,
+        &child_reach,
+    )?;
     Ok(Descriptor {
+        combinational_reachability,
         name: scoped_name,
         input_kind: circuit_input,
         output_kind: circuit_output,

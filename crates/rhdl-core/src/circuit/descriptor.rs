@@ -23,7 +23,11 @@
 //! kinds of circuits.
 use std::marker::PhantomData;
 
-use crate::{HDLDescriptor, Kind, RHDLError, circuit::scoped_name::ScopedName, ntl, rtl};
+use crate::{
+    HDLDescriptor, Kind, RHDLError,
+    circuit::{reachability::ReachabilityMatrix, scoped_name::ScopedName},
+    ntl, rtl,
+};
 
 /// Marker type for asynchronous circuits.
 pub struct AsyncKind;
@@ -49,6 +53,12 @@ pub struct Descriptor<T> {
     pub netlist: Option<ntl::Object>,
     /// The HDL (Verilog) description of the circuit, if available.
     pub hdl: Option<HDLDescriptor>,
+    /// Which inputs combinationally reach which outputs.
+    ///
+    /// See [`ReachabilityMatrix`]. Defaults to the empty matrix, which
+    /// reads as "nothing reaches anything" — correct for a widget that
+    /// registers everything, and the value a black box keeps.
+    pub combinational_reachability: ReachabilityMatrix,
     /// Phantom data for the marker type.
     pub _phantom: PhantomData<T>,
 }
@@ -62,6 +72,17 @@ impl<T> Descriptor<T> {
         hdl.modules.checked()?;
         Ok(hdl)
     }
+    /// A correctly-shaped matrix in which nothing reaches anything.
+    ///
+    /// Every black box in the tree today registers what it carries --
+    /// `DFF`, the RAMs, the CDC primitives -- so no feedthrough is the
+    /// right answer as well as the safe-looking one. It is not safe in
+    /// general: a combinational black box would need its feedthrough
+    /// declared. See [`crate::circuit::reachability`].
+    fn empty_reachability(&self) -> ReachabilityMatrix {
+        ReachabilityMatrix::none(self.input_kind, self.output_kind, self.d_kind, self.q_kind)
+    }
+
     /// Get a reference to the netlist representation of the circuit, if available.
     pub fn netlist(&self) -> Result<&ntl::Object, RHDLError> {
         self.netlist.as_ref().ok_or(RHDLError::NetlistNotAvailable {
@@ -74,6 +95,7 @@ impl Descriptor<AsyncKind> {
     /// Create a black box (asynchronous) netlist for this descriptor.
     pub fn with_netlist_black_box(mut self) -> Result<Descriptor<AsyncKind>, RHDLError> {
         self.netlist = Some(ntl::builder::circuit_black_box(&self)?);
+        self.combinational_reachability = self.empty_reachability();
         Ok(self)
     }
 }
@@ -82,6 +104,7 @@ impl Descriptor<SyncKind> {
     /// Create a black box (synchronous) netlist for this descriptor.
     pub fn with_netlist_black_box(mut self) -> Result<Descriptor<SyncKind>, RHDLError> {
         self.netlist = Some(ntl::builder::synchronous_black_box(&self)?);
+        self.combinational_reachability = self.empty_reachability();
         Ok(self)
     }
 }

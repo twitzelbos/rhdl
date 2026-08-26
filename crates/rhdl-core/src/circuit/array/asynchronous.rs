@@ -81,6 +81,7 @@ impl<T: Circuit, const N: usize> Circuit for [T; N] {
             .collect::<Result<Vec<_>, RHDLError>>()?;
         let name = scoped_name.to_string();
         Ok(Descriptor {
+            combinational_reachability: Default::default(),
             name: scoped_name,
             input_kind: Self::I::static_kind(),
             output_kind: Self::O::static_kind(),

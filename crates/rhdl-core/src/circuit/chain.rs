@@ -87,6 +87,7 @@ where
         let b_descriptor = self.b.descriptor(scoped_name.with("b"))?;
         let name = scoped_name.to_string();
         Ok(Descriptor::<SyncKind> {
+            combinational_reachability: Default::default(),
             name: scoped_name,
             input_kind: a_descriptor.input_kind,
             output_kind: b_descriptor.output_kind,

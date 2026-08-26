@@ -181,6 +181,7 @@ impl<C: Synchronous, D: Domain> Circuit for Adapter<C, D> {
         let child_descriptor = self.circuit.descriptor(scoped_name.with("inner"))?;
         let name = scoped_name.to_string();
         Ok(Descriptor::<AsyncKind> {
+            combinational_reachability: Default::default(),
             name: scoped_name,
             input_kind: <<Self as CircuitIO>::I as Digital>::static_kind(),
             output_kind: <<Self as CircuitIO>::O as Digital>::static_kind(),
@@ -201,6 +202,7 @@ impl<C: Synchronous, D: Domain> Circuit for Adapter<C, D> {
             .circuit
             .descriptor(scoped_name.with("inner"))
             .map(|inner| Descriptor::<AsyncKind> {
+                combinational_reachability: Default::default(),
                 name: scoped_name.with("inner"),
                 input_kind: inner.input_kind,
                 output_kind: inner.output_kind,

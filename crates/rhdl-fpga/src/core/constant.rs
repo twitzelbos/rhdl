@@ -73,6 +73,7 @@ impl<T: Digital> Synchronous for Constant<T> {
     fn descriptor(&self, scoped_name: ScopedName) -> Result<Descriptor<SyncKind>, RHDLError> {
         let name = scoped_name.to_string();
         Ok(Descriptor {
+            combinational_reachability: Default::default(),
             name: scoped_name,
             input_kind: Kind::Empty,
             output_kind: Self::O::static_kind(),

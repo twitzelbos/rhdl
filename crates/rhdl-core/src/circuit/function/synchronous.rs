@@ -107,6 +107,7 @@ impl<I: Digital, O: Digital> Synchronous for Func<I, O> {
             endmodule
         };
         Ok(Descriptor {
+            combinational_reachability: Default::default(),
             name: scoped_name,
             input_kind: Self::I::static_kind(),
             output_kind: Self::O::static_kind(),

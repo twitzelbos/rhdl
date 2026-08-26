@@ -192,6 +192,7 @@ crates/rhdl-core/src/
 │   ├── drc.rs                          # design-rule checks
 │   ├── scoped_name.rs                  # hierarchical name plumbing
 │   ├── phantom.rs                      # phantom-marker types
+│   ├── reachability.rs                 # per-widget combinational reachability matrix
 │   ├── array/                          # array-of-circuits helper
 │   ├── function/                       # Func wrapper for kernel-as-circuit
 │   └── hdl/                            # HDL emission helpers per circuit family

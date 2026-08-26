@@ -94,6 +94,7 @@ impl<I: Timed, O: Timed> Circuit for AsyncFunc<I, O> {
             endmodule
         };
         Ok(Descriptor {
+            combinational_reachability: Default::default(),
             name: scoped_name,
             input_kind: <Self::I as Digital>::static_kind(),
             output_kind: <Self::O as Digital>::static_kind(),

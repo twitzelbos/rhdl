@@ -31,6 +31,37 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-25 — The per-widget combinational reachability matrix (Phase 1)
+
+**Paths:** `crates/rhdl-core/src/circuit/reachability.rs` (new), `circuit/descriptor.rs`, `circuit/hdl/{synchronous,asynchronous}.rs`, `circuit/mod.rs`, ~19 files with a `Descriptor` literal, `crates/rhdl-fpga/tests/reachability_corpus.rs` (new), `architecture.md` §3, `combinational-reachability-and-loop-detection.md` §8.
+
+**Why this, why now:** it is the sequencing prerequisite CLAUDE.md names — the matrix must land before auto-pipelining and before Package Manager Phase 2, or the auto-pipeliner re-derives matrix-equivalent information and the two analyses drift. Nothing of it existed. Phase 1 is data-gathering only: every widget now computes a matrix, and nothing yet reads it.
+
+**Design decisions:**
+
+- **Four relations, not one.** `i_to_o` (feedthrough), `i_to_d`, `q_to_o`, `q_to_d`. The last is the load-bearing one: it is the only channel through which two children of the same parent can form a combinational loop between them, and it is invisible to any analysis that looks at one widget at a time.
+- **The graph comes from RTL, not RHIF, and that is a simplification rather than a compromise.** The design doc specifies a use-def walk over the RHIF `Object` with one edge rule per opcode, "exhaustive over the 19 opcodes". But RHIF is not retained past stage 1 — `Descriptor::kernel` is an `rtl::Object` — and lowering that with `build_ntl_from_rtl` gives a netlist whose ports are exactly `[clock_reset, i, q]` in and `[o, d]` out. The four relations then fall out of *one* reachability computation over a graph that `visit_wires` already knows how to walk, with no opcode table to write or keep in step.
+- **Bit-level analysis, field-level storage.** The doc lists bit-level as a v2 stretch; it was the easier option, because the netlist is already bit-level and `leaf_paths` + `bit_range` already exist to aggregate. Storage stays per field path because that is what a diagnostic can name.
+- **No cache, and the measurement is the argument.** §4.4 specifies one. Measured overhead is 0.6%, so it would be optimising nothing. Deferred with the number written down rather than built with a hit-rate metric attached to justify it.
+- **Black boxes get an explicitly-shaped empty matrix**, set by `with_netlist_black_box()` so the assumption lives at the point where black-boxness is decided rather than being implicit in a default.
+
+**Surprises and gotchas:**
+
+- **The obvious data structure more than doubled the workspace's test time.** A `HashSet<usize>` per netlist register cost 31% on `rhdl-fpga`'s suite — 390s against 297.9s — because a large widget has thousands of registers and every fixpoint round walked every set element individually. Dense register indices plus packed `Vec<u64>` bitsets, so a union is a few `|=` operations, brought it to 299.8s: **0.6%**. Worth knowing before Phase 3, where the same convenient structure will be just as tempting.
+- **`leaf_paths` treats `Kind::Empty` as a leaf**, so a widget with no children — `D = ()`, `Q = ()` — reported one `d_path` and one `q_path` addressing no bits. Caught while auditing the committed snapshot: `DFF` showed `d=1 q=1` when a DFF has no children at all. It made "does this widget have children" unanswerable from the matrix, and had already made one of my own assertions (`!d_paths.is_empty()`) silently vacuous. Zero-width paths are now filtered, and the test asserts `> 1` on a widget known to have several children.
+- **`make_net_graph` skips every `BlackBox` op unconditionally**, which is how `DFF` breaks a combinational path — and it is an assumption about the black boxes that exist rather than about black boxes in general. `reset::negation` *is* combinational (`assign o = ~i`) and escapes being a counterexample only because it carries a reset, and reset is excluded from this analysis anyway. Not exploitable today. It will be: `vendor-primitive-architecture.md` plans black boxes that carry data, and a combinational one would make a real loop invisible to both the old DRC and this matrix. Documented at the point where the assumption is made.
+- **The `Descriptor` literal appears in 19 files**, nine of them widgets. Adding one field touched all of them. The value is defaulted at each site and filled in properly by the two paths that know better — `build_*_descriptor` computes it, `with_netlist_black_box` shapes it — so the widget-side churn is one line each.
+
+**Validation:** 11 tests in `reachability_corpus`. The two that carry the weight: the matrix and `no_combinatorial_paths` agree on both signs — `faulty_reducer`, which exists in the tree precisely because it has a combinational path, is reported by both, and `DFF`/`Counter` by neither, reached by completely different routes (flatten-and-ask versus compose-per-widget). And all four relations are pinned on `Counter<4>`, whose shape is known exactly: no feedthrough, `enable` reaches the register input, the output *is* the register output, and the next count comes from the current one. A matrix that got any of those backwards would still pass a feedthrough-only assertion. Plus a committed-expectation snapshot over four widgets, which is what caught the `Kind::Empty` defect. `cargo test --all --no-fail-fast` green, `cargo clippy --all -- -D warnings` still passes, tree clean.
+
+No book chapter: Phase 1 changes no user-visible behaviour, so there is nothing a user could write that exercises it. That changes at Phase 3, when the new diagnostic lands.
+
+**Follow-ups:**
+
+- Phase 2: refactor `no_combinatorial_paths` to query `i_to_o` instead of walking the flattened netlist itself. The corpus test already asserts the two agree, so the refactor has its acceptance criterion waiting.
+- Phase 3: composition-level cycle detection and the `CombinationalCycle` diagnostic.
+- Black-box feedthrough needs declaring rather than assuming before any combinational vendor primitive ships.
+
 ## 2026-08-25 — The clippy gate actually passes now
 
 **Paths:** 14 `serial_bus` widgets, `video/mipi_dpi.rs`, `stream/testing/{mod,double}.rs`.

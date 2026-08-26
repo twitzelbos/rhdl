@@ -310,9 +310,17 @@ The three checks operate at different IR levels and on different graph structure
 
 ## 8 — Phasing
 
-### Phase 1 — Per-widget reachability matrix (2-3 weeks)
+### Phase 1 — Per-widget reachability matrix — **SHIPPED**
 
 Compute the `ReachabilityMatrix` for every widget at descriptor finalization. Expose it on `Descriptor`. No behavior change for users yet; this is data-gathering work.
+
+**As shipped, with three deviations from §4 above:**
+
+- **The graph is built from RTL, not RHIF.** §4.2 specifies a use-def walk over the RHIF `Object`, but RHIF is not retained past stage 1 — `Descriptor::kernel` is an `rtl::Object`. Lowering it with `build_ntl_from_rtl` yields a netlist whose ports are exactly `[clock_reset, i, q]` in and `[o, d]` out for a synchronous widget (`[i, q]` for an asynchronous one, whose clocks travel inside `I`), so all four relations fall out of a single reachability computation. This also removes the need to transcribe the operand senses of nineteen RHIF opcodes by hand, which §4.2 lists as the bulk of the work.
+- **The analysis is bit-level; only the storage is field-level.** §9 lists bit-level as a v2 stretch. It turned out to be the *easier* option rather than the harder one, because the netlist is already bit-level and `leaf_paths` + `bit_range` already exist to aggregate. The matrices are still stored per field path, which is what a diagnostic can name.
+- **No cache, and the measurement is why.** §4.4 specifies one, and Phase 1 lists a hit-rate measurement as a deliverable. Measured overhead on the full workspace suite is 0.6% (299.8s against a 297.9s baseline for `rhdl-fpga`'s 1377 tests), so a cache would be optimising something that is not costing anything. Worth revisiting if Phase 3's cycle detection is more expensive, or when a design appears whose widget count makes it matter — but building it now would be speculative machinery with a hit-rate metric attached to justify itself.
+
+The first version *did* cost 31% (390s against the same baseline) because it kept a `HashSet<usize>` per netlist register. Packed bitsets over dense register indices removed it. Recorded because the naive shape of this analysis is genuinely slow, and anyone extending it in Phase 3 will be tempted by the same convenient data structure.
 
 Deliverables:
 - `ReachabilityMatrix` struct in `rhdl-core/src/circuit/reachability.rs`.

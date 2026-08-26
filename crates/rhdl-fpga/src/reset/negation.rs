@@ -85,6 +85,7 @@ impl<C: Domain> Circuit for ResetNegation<C> {
     fn descriptor(&self, scoped_name: ScopedName) -> Result<Descriptor<AsyncKind>, RHDLError> {
         let name = scoped_name.to_string();
         Descriptor::<AsyncKind> {
+            combinational_reachability: Default::default(),
             name: scoped_name,
             input_kind: <Self::I as Digital>::static_kind(),
             output_kind: <Self::O as Digital>::static_kind(),

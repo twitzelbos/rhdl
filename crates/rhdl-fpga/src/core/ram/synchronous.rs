@@ -216,6 +216,7 @@ where
     fn descriptor(&self, scoped_name: ScopedName) -> Result<Descriptor<SyncKind>, RHDLError> {
         let name = scoped_name.to_string();
         Descriptor::<SyncKind> {
+            combinational_reachability: Default::default(),
             name: scoped_name,
             input_kind: <<Self as SynchronousIO>::I as Digital>::static_kind(),
             output_kind: <<Self as SynchronousIO>::O as Digital>::static_kind(),
