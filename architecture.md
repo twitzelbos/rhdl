@@ -244,7 +244,7 @@ crates/rhdl-core/src/
 │   └── symbols.rs                      # symbol-table extension for RTL
 │
 ├── ntl/                                # Net-Transfer Layer (netlist IR)
-│   ├── spec.rs                         # PrimitiveRequest, BlackBox, Wire ops
+│   ├── spec.rs                         # BlackBox, Wire ops
 │   ├── object.rs / from_rtl.rs / hdl.rs / graph.rs
 │   ├── builder.rs                      # constant, circuit_black_box, etc.
 │   └── error.rs
@@ -440,6 +440,7 @@ When new structural needs arise, follow these patterns rather than improvising.
 | `auto-pipelining-plan.md` | Future auto-pipelining feature | Updated as the feature is built |
 | `kernel-language-extensions.md` | Future kernel-language extensions | Updated as extensions ship |
 | `vendor-primitive-architecture.md` | Future target-provider system | Updated as primitives are added |
+| `black-box-connectivity.md` | How a module RHDL did not author declares its combinational connectivity | Updated as phases ship |
 | `fsm-architecture.md` | Future FSM ergonomics + analysis + formal verification | Updated as phases ship |
 | `stream-bus-architecture.md` | Future typed LID streaming bus + AXI Stream interop | Updated as phases ship |
 | `rule-architecture.md` | Future Bluespec-style guarded atomic rules (rhdl-rule) | Updated as phases ship |
