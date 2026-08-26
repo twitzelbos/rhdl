@@ -84,12 +84,12 @@ pub enum BclkPhase {
 /// Bundled internal state for the I²S transmitter (CLAUDE.md §3.1).
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
 pub struct I2sTxExtras {
-    pub bit_idx: Bits<6>,
-    pub lrck_reg: bool,
-    pub shift: Bits<16>,
-    pub l_latched: Bits<16>,
-    pub r_latched: Bits<16>,
-    pub sample_taken_pulse: bool,
+    bit_idx: Bits<6>,
+    lrck_reg: bool,
+    shift: Bits<16>,
+    l_latched: Bits<16>,
+    r_latched: Bits<16>,
+    sample_taken_pulse: bool,
 }
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]

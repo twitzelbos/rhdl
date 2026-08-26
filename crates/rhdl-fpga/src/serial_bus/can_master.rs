@@ -226,41 +226,41 @@ pub struct CanState<const DIV_W: usize>
 where
     rhdl::bits::W<DIV_W>: BitWidth,
 {
-    pub bit_phase_counter: Bits<DIV_W>,
-    pub field_bit_idx: Bits<7>,
-    pub last_rx: bool,
-    pub last_bit: bool,
-    pub stuff_run: Bits<3>,
-    pub expecting_stuff: bool,
-    pub is_transmitting: bool,
-    pub tx_pending: bool,
-    pub tx_id_latched: Bits<29>,
-    pub tx_extended_latched: bool,
-    pub tx_rtr_latched: bool,
-    pub tx_dlc_latched: Bits<4>,
-    pub tx_data_latched: Bits<64>,
-    pub id_accum: Bits<29>,
-    pub extended_rx: bool,
-    pub rtr_rx: bool,
-    pub srr_or_rtr_bit: bool,
-    pub dlc_accum: Bits<4>,
-    pub data_accum: Bits<64>,
-    pub rx_crc_accum: Bits<15>,
-    pub crc_reg: Bits<15>,
-    pub crc_ok: bool,
-    pub tec: Bits<9>,
-    pub rec: Bits<9>,
-    pub error_passive: bool,
-    pub bus_off: bool,
-    pub error_pending: bool,
-    pub bus_off_groups: Bits<8>,
-    pub tx_done_pulse: bool,
-    pub frame_pulse: bool,
-    pub last_rx_id: Bits<29>,
-    pub last_rx_extended: bool,
-    pub last_rx_rtr: bool,
-    pub last_rx_dlc: Bits<4>,
-    pub last_rx_data: Bits<64>,
+    bit_phase_counter: Bits<DIV_W>,
+    field_bit_idx: Bits<7>,
+    last_rx: bool,
+    last_bit: bool,
+    stuff_run: Bits<3>,
+    expecting_stuff: bool,
+    is_transmitting: bool,
+    tx_pending: bool,
+    tx_id_latched: Bits<29>,
+    tx_extended_latched: bool,
+    tx_rtr_latched: bool,
+    tx_dlc_latched: Bits<4>,
+    tx_data_latched: Bits<64>,
+    id_accum: Bits<29>,
+    extended_rx: bool,
+    rtr_rx: bool,
+    srr_or_rtr_bit: bool,
+    dlc_accum: Bits<4>,
+    data_accum: Bits<64>,
+    rx_crc_accum: Bits<15>,
+    crc_reg: Bits<15>,
+    crc_ok: bool,
+    tec: Bits<9>,
+    rec: Bits<9>,
+    error_passive: bool,
+    bus_off: bool,
+    error_pending: bool,
+    bus_off_groups: Bits<8>,
+    tx_done_pulse: bool,
+    frame_pulse: bool,
+    last_rx_id: Bits<29>,
+    last_rx_extended: bool,
+    last_rx_rtr: bool,
+    last_rx_dlc: Bits<4>,
+    last_rx_data: Bits<64>,
 }
 
 impl<const DIV_W: usize> Default for CanState<DIV_W>
@@ -375,6 +375,8 @@ pub struct In {
 /// Outputs from [CanMaster].
 pub struct Out {
     /// Bus drive (logical sense): `false` = dominant, `true` = recessive.
+    /// Bus value to drive, same logical sense as `rx`: `false` =
+    /// dominant, `true` = recessive. The transceiver inverts.
     pub tx_out: bool,
     /// High while a frame is being transmitted.
     pub tx_busy: bool,
@@ -382,15 +384,36 @@ pub struct Out {
     pub tx_done: bool,
     /// Pulses for one cycle when a received frame passes CRC + acceptance filter.
     pub frame_valid: bool,
+    /// ID of the frame just accepted. Lower 11 bits when `rx_extended`
+    /// is false. Valid from the `frame_valid` pulse onward.
     pub rx_id: Bits<29>,
+    /// The accepted frame used a 29-bit extended ID.
     pub rx_extended: bool,
+    /// The accepted frame was a remote-transmission request, so
+    /// `rx_data` carries nothing.
     pub rx_rtr: bool,
+    /// Data length code of the accepted frame, 0..=8.
     pub rx_dlc: Bits<4>,
+    /// Payload of the accepted frame, MSB-first packed: byte 0 in
+    /// `rx_data[63..56]`, matching `tx_data`.
     pub rx_data: Bits<64>,
+    /// The received CRC matched. `frame_valid` already implies this, so
+    /// this is the signal to watch when you want to see frames that
+    /// failed rather than only those that passed.
     pub crc_ok: bool,
+    /// Transmit error counter, per ISO 11898-1 §11.6. Nine bits wide so
+    /// the bus-off threshold of 256 is representable rather than
+    /// wrapping.
     pub tec: Bits<9>,
+    /// Receive error counter, per ISO 11898-1 §11.6.
     pub rec: Bits<9>,
+    /// `tec` reached 256: the node has removed itself from the bus and
+    /// transmits nothing until it sees 128 occurrences of 11 recessive
+    /// bits.
     pub bus_off: bool,
+    /// Either counter passed 128. The node still communicates but sends
+    /// passive error flags, so it can no longer destroy other nodes'
+    /// frames -- which is the point of the state.
     pub error_passive: bool,
 }
 

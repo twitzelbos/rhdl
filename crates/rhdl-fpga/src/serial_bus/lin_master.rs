@@ -96,12 +96,12 @@ pub struct LinMasterExtras<const CW: usize>
 where
     rhdl::bits::W<CW>: BitWidth,
 {
-    pub break_counter: Bits<CW>,
-    pub id_reg: Bits<6>,
-    pub data_reg: Bits<8>,
-    pub pid_reg: Bits<8>,
-    pub checksum_reg: Bits<8>,
-    pub done_pulse: bool,
+    break_counter: Bits<CW>,
+    id_reg: Bits<6>,
+    data_reg: Bits<8>,
+    pid_reg: Bits<8>,
+    checksum_reg: Bits<8>,
+    done_pulse: bool,
 }
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]

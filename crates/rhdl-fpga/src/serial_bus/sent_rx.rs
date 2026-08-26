@@ -141,13 +141,13 @@ pub struct SentRxExtras<const T_W: usize>
 where
     rhdl::bits::W<T_W>: BitWidth,
 {
-    pub tick: Bits<T_W>,
-    pub prev_in: bool,
-    pub nibble_idx: Bits<4>,
-    pub last_period: Bits<T_W>,
-    pub frame_strobe: bool,
-    pub nibble_strobe: bool,
-    pub valid_pulse: bool,
+    tick: Bits<T_W>,
+    prev_in: bool,
+    nibble_idx: Bits<4>,
+    last_period: Bits<T_W>,
+    frame_strobe: bool,
+    nibble_strobe: bool,
+    valid_pulse: bool,
 }
 
 impl<const T_W: usize> Default for SentRxExtras<T_W>

@@ -90,6 +90,7 @@ pub enum EppOp {
 pub enum EppState {
     #[default]
     #[fsm_state(label = "idle")]
+    /// No EPP cycle in progress, waiting for a read or write request.
     Idle,
     /// Drive D bus (for writes) + nWRITE; assert appropriate strobe low.
     #[fsm_state(label = "assert strobe")]
@@ -128,12 +129,12 @@ pub struct ParallelPortEppExtras<const T_W: usize>
 where
     rhdl::bits::W<T_W>: BitWidth,
 {
-    pub tick: Bits<T_W>,
-    pub op_reg: EppOp,
-    pub data_reg: Bits<8>,
-    pub data_out_reg: Bits<8>,
-    pub done_pulse: bool,
-    pub timeout_pulse: bool,
+    tick: Bits<T_W>,
+    op_reg: EppOp,
+    data_reg: Bits<8>,
+    data_out_reg: Bits<8>,
+    done_pulse: bool,
+    timeout_pulse: bool,
 }
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
@@ -194,6 +195,7 @@ pub struct Out {
     pub d_out: Bits<8>,
     /// Latched byte from the most-recent successful read cycle.
     pub data_out: Bits<8>,
+    /// An EPP cycle is in progress; the host must hold its request.
     pub busy: bool,
     /// Pulses when the cycle completes (whether via successful handshake or timeout).
     pub done: bool,

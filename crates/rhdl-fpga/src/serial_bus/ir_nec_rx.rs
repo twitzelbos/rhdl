@@ -88,6 +88,7 @@ use crate::core::{constant::Constant, dff};
 pub enum NecState {
     #[default]
     #[fsm_state(label = "idle")]
+    /// Waiting for the leading 9 ms mark that opens an NEC frame.
     Idle,
     /// Line is low; we're measuring the leading-burst duration.
     #[fsm_state(label = "lead burst")]
@@ -151,12 +152,12 @@ pub struct IrNecRxExtras<const T_W: usize>
 where
     rhdl::bits::W<T_W>: BitWidth,
 {
-    pub tick: Bits<T_W>,
-    pub prev_ir: bool,
-    pub code_reg: Bits<32>,
-    pub bit_idx: Bits<6>,
-    pub valid_pulse: bool,
-    pub repeat_pulse: bool,
+    tick: Bits<T_W>,
+    prev_ir: bool,
+    code_reg: Bits<32>,
+    bit_idx: Bits<6>,
+    valid_pulse: bool,
+    repeat_pulse: bool,
 }
 
 impl<const T_W: usize> Default for IrNecRxExtras<T_W>
