@@ -31,6 +31,49 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-26 — `ReorderInstructions`: a panic becomes an error, and the backstop gets a test
+
+**Paths:** `crates/rhdl-core/src/compiler/ntl_passes/reorder_instructions.rs`, `compiler/mir/error.rs`, `ntl/builder.rs`.
+
+**Why this, why now:** the two follow-ups left open by the reachability work. The netlist-level loop detector is the backstop for any combinational cycle the composition-level check cannot see, and after that check landed it had no test at all — `crates/rhdl/tests/logic_loop.rs` had been its only coverage, and the new check reports first. Separately, trying to write that test found a panic.
+
+**Design decisions:**
+
+- **The panic becomes a precise ICE, not the nearest existing one.** `write_regs_to_op[&failed]` was an unguarded index. `needed` holds the outputs and the black-box arguments, so a needed register with no writer means the netlist is *undriven* there — and the loop-isolation code it lands in has no loop to isolate. `ICE::LoopIsolationAlgorithmFailed` was two lines away and would have compiled, but it says the isolation failed when in fact there was nothing to isolate. New variant `NeededRegisterHasNoWriter` says the actual condition.
+- **The backstop's test drives the pass on the *unoptimised* netlist.** It cannot go through `Builder::build`, and the reason is the interesting part: a cycle built from cross-assignments alone is *dead* — nothing outside the pair depends on either half — so `optimize_ntl` deletes it and hands the loop detector an undriven register instead of a cycle. A new `Builder::into_unoptimized`, `#[cfg(test)]` only, returns the netlist as assembled so one pass can be driven in isolation.
+- **The test lives in `rhdl-core`, not in `crates/rhdl/tests/`.** The integration-test route needs `compiler::ntl_passes` to be public, and it is deliberately private. Widening the compiler's public API to reach a pass from outside is not a trade worth making for test access.
+
+**Surprises and gotchas:**
+
+- **The panic was more reachable than the previous entry claimed.** That entry called it "hard to reach through the normal pipeline". It is reachable straight from `Builder::build`: `optimize_ntl` eliminates the ops driving a needed register, and `CheckForUndriven` runs *before* that loop rather than after, so nothing re-checks the condition the loop creates. The regression test is exactly that path.
+- **A dead cycle and a live one behave completely differently**, which is why the first attempt at this test failed three times. Cross-assigned outputs look like a textbook cycle and are gone by the time the detector runs. The detector is only reachable with the optimiser out of the way.
+- **`Debug`-formatting the pass's internal state was what settled it.** Printing `needed`, `finished`, the writer map and the op list showed `ops=[]` — the netlist had no instructions at all by then. Three rounds of reasoning about which pass was at fault had produced two wrong hypotheses first: that the netlist lacked a `clock_reset` input, and that `SingleRegisterWrite` was rejecting it.
+
+**Validation:** two tests in the pass's own module — one asserting a cyclic netlist yields `NetLoopError`, one asserting an undriven needed register yields the new ICE rather than panicking. The cycle test asserts the untampered netlist is acyclic first, so it cannot pass by rejecting everything. `cargo test --all --no-fail-fast` green, `cargo clippy --all -- -D warnings` passes, tree clean.
+
+### And the fix for it, same PR — `CheckForUndriven` never checked the outputs
+
+**Why:** the entry above left this as an open question — "which pass should re-check, and whether `CheckForUndriven` belongs inside the optimisation loop rather than before it". Both framings were wrong, and the real answer is smaller and more embarrassing.
+
+`CheckForUndriven` **already runs after the optimisation loop**. It builds a set of every register some op writes, adds the inputs, and then verifies that every register some op *reads* is in that set. It never looks at `input.outputs`. So an output register that nothing writes and nothing reads was invisible to it — and that is precisely the state `ReorderInstructions` cannot survive, because its `needed` set is built *from the outputs*. The one condition the checker missed was the one condition that made the next pass fail.
+
+**Design decisions:**
+
+- **The checker now checks outputs**, skipping constant ones (`Wire::reg` is `None` for a literal, which needs no driver). The fault has no op to point at — its absence *is* the fault — so the diagnostic carries no span, which is honest rather than ideal.
+- **And it runs before `ReorderInstructions`, not after.** Sequencing alone would not have been enough without the output check, and the output check alone would not have been enough while the loop detector still ran first. Both were needed.
+- **The `NeededRegisterHasNoWriter` ICE stays**, and changes role: from "the only thing that notices" to a guard that should now be unreachable. That is the right job for an ICE, and it keeps a direct test so it cannot rot — the alternative, if the ordering is ever changed back, is a crash rather than a diagnostic.
+
+**Surprises and gotchas:**
+
+- **Whether the same netlist is a cycle or an undriven net depends entirely on whether the optimiser has run.** Cross-assigned outputs are a textbook combinational loop *and* dead code. Run the loop detector directly and it reports a loop; run the full optimiser first and both ops are gone, leaving undriven outputs. Three tests now pin exactly that: the same builder function feeds two of them, and they assert different errors.
+- **My own diagnosis in the entry above was wrong twice** — first that the panic was hard to reach, then that the question was about where in the pipeline the check belongs. Reading the pass rather than reasoning about the pipeline is what found it.
+
+**Validation:** three tests in the pass's module — cycle on the unoptimised netlist, undriven diagnostic through the full optimiser, and the ICE guard driven directly. The output check is the change with real blast radius: every widget in the workspace lowers through `optimize_ntl`, so a design with a legitimately undriven output register would now fail. `cargo test --all --no-fail-fast` green.
+
+**Follow-ups:**
+
+- Black-box feedthrough is still assumed rather than declared, which remains the one class of cycle the composition-level check cannot see — and therefore the reason this backstop exists.
+
 ## 2026-08-25 — The per-widget combinational reachability matrix (Phase 1)
 
 **Paths:** `crates/rhdl-core/src/circuit/reachability.rs` (new), `circuit/descriptor.rs`, `circuit/hdl/{synchronous,asynchronous}.rs`, `circuit/mod.rs`, ~19 files with a `Descriptor` literal, `crates/rhdl-fpga/tests/reachability_corpus.rs` (new), `architecture.md` §3, `combinational-reachability-and-loop-detection.md` §8.

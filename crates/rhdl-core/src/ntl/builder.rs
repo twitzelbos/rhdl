@@ -63,7 +63,22 @@ impl Builder {
         self.object.outputs = ret.clone();
         ret.into_iter().flat_map(Wire::reg).collect()
     }
-    pub fn build(mut self, mode: BuilderMode) -> Result<Object, RHDLError> {
+    /// The netlist as assembled, without running `optimize_ntl`.
+    ///
+    /// For tests that need to drive one NTL pass in isolation. Going
+    /// through [`Builder::build`] cannot do that: it runs the whole
+    /// optimiser, and several of those passes will have transformed the
+    /// netlist -- or deleted the very structure under test -- before the
+    /// pass in question sees it.
+    #[cfg(test)]
+    pub(crate) fn into_unoptimized(mut self, mode: BuilderMode) -> Object {
+        self.pad_inputs(mode);
+        self.object
+    }
+
+    /// Give the object the argument slots its circuit family expects, so
+    /// that a pass reading `inputs[0]` finds something there.
+    fn pad_inputs(&mut self, mode: BuilderMode) {
         match mode {
             BuilderMode::Asynchronous => {
                 if self.object.inputs.is_empty() {
@@ -77,6 +92,10 @@ impl Builder {
                 }
             }
         }
+    }
+
+    pub fn build(mut self, mode: BuilderMode) -> Result<Object, RHDLError> {
+        self.pad_inputs(mode);
         optimize_ntl(self.object)
     }
     pub fn import(&mut self, other: &Object) -> impl Fn(Wire) -> Wire + use<> {
