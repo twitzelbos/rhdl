@@ -84,13 +84,13 @@ pub struct UartRxExtras<const DIV_W: usize>
 where
     rhdl::bits::W<DIV_W>: BitWidth,
 {
-    pub prev_rx: bool,
-    pub receiving: bool,
-    pub bit_counter: Bits<4>,
-    pub baud_counter: Bits<DIV_W>,
-    pub shift_reg: Bits<8>,
-    pub received_byte: Bits<8>,
-    pub received_valid: bool,
+    prev_rx: bool,
+    receiving: bool,
+    bit_counter: Bits<4>,
+    baud_counter: Bits<DIV_W>,
+    shift_reg: Bits<8>,
+    received_byte: Bits<8>,
+    received_valid: bool,
 }
 
 impl<const DIV_W: usize> Default for UartRxExtras<DIV_W>

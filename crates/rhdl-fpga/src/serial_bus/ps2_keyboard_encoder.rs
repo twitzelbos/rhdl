@@ -101,12 +101,12 @@ pub enum KbdEncState {
 /// sibling-level.  Everything else lives here.
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
 pub struct Ps2KeyboardEncoderExtras {
-    pub scancode_q: Bits<8>,
-    pub is_break: bool,
-    pub is_extended: bool,
-    pub sent_e0: bool,
-    pub sent_f0: bool,
-    pub pending_state: KbdEncState,
+    scancode_q: Bits<8>,
+    is_break: bool,
+    is_extended: bool,
+    sent_e0: bool,
+    sent_f0: bool,
+    pending_state: KbdEncState,
 }
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]

@@ -142,12 +142,18 @@ pub struct In {
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
 /// Outputs from [BatteryMonitor].
 pub struct Out {
+    /// Pull the bus low. Open-drain; the line idles high through an
+    /// external pull-up.
     pub bus_oe: bool,
+    /// Level driven when `bus_oe` is set. Always `false` on an
+    /// open-drain bus, and present so the pad wires up without a
+    /// special case.
     pub bus_out: bool,
     /// Latched 8-bit register value (refreshed every poll cycle).
     pub data_out: Bits<8>,
     /// Pulses for one cycle when `data_out` is freshly captured.
     pub valid: bool,
+    /// A transaction is in flight. `start` is ignored while set.
     pub busy: bool,
 }
 

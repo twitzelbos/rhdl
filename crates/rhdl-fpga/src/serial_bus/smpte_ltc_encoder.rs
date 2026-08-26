@@ -67,6 +67,7 @@ use crate::core::dff;
 pub enum LtcState {
     #[default]
     #[fsm_state(label = "idle")]
+    /// Not encoding, waiting for a frame to be loaded.
     Idle,
     /// First half of a cell — line was toggled at the start of this phase.
     #[fsm_state(label = "phase A")]

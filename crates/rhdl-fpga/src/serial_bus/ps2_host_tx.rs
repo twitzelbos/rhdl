@@ -135,12 +135,12 @@ pub struct Ps2HostTxExtras<const INH_W: usize>
 where
     rhdl::bits::W<INH_W>: BitWidth,
 {
-    pub inhibit_ctr: Bits<INH_W>,
-    pub shifter: Bits<9>,
-    pub bit_idx: Bits<4>,
-    pub prev_clk: bool,
-    pub ack_seen_q: bool,
-    pub ack_error_q: bool,
+    inhibit_ctr: Bits<INH_W>,
+    shifter: Bits<9>,
+    bit_idx: Bits<4>,
+    prev_clk: bool,
+    ack_seen_q: bool,
+    ack_error_q: bool,
 }
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]

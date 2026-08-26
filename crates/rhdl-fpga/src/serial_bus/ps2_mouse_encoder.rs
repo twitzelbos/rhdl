@@ -76,19 +76,35 @@ use super::ps2_device_tx::Ps2DeviceTx;
 use crate::core::dff;
 
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default, Fsm)]
+/// Where the encoder is in the four-byte packet.
+///
+/// The four `SendByte*` states each hand one byte to the wrapped
+/// [Ps2DeviceTx] and wait for it to accept; `WaitTxDone` waits for the
+/// last byte to finish on the wire before reporting ready again. The
+/// packet is not restartable partway through -- a `send` arriving
+/// mid-packet is ignored, because a host that received two and a half
+/// packets cannot resynchronise.
 pub enum MouseEncState {
     #[default]
     #[fsm_state(label = "idle")]
+    /// No packet in flight; `send` is accepted here and nowhere else.
     Idle,
     #[fsm_state(label = "send byte 0")]
+    /// Handing over the flags byte: overflow, sign, and the three
+    /// primary buttons.
     SendByte0,
     #[fsm_state(label = "send byte 1")]
+    /// Handing over the X displacement.
     SendByte1,
     #[fsm_state(label = "send byte 2")]
+    /// Handing over the Y displacement.
     SendByte2,
     #[fsm_state(label = "send byte 3")]
+    /// Handing over the Z displacement plus buttons 4 and 5.
     SendByte3,
     #[fsm_state(label = "wait tx done")]
+    /// Byte 3 is accepted but still clocking out; the packet is not
+    /// complete until the wire is idle.
     WaitTxDone,
 }
 
@@ -116,6 +132,11 @@ impl<const DIV_W: usize> Ps2MouseEncoder<DIV_W>
 where
     rhdl::bits::W<DIV_W>: BitWidth,
 {
+    /// An encoder clocking the wire at `half_period` cycles per half
+    /// bit-period.
+    ///
+    /// PS/2 wants 10-16.7 kHz, so at 100 MHz `half_period` lands around
+    /// 3000-5000.
     pub fn new(half_period: Bits<DIV_W>) -> Self {
         Self {
             state: dff::DFF::default(),
@@ -138,10 +159,15 @@ pub struct In {
     pub dy: SignedBits<9>,
     /// Z (scroll wheel) displacement (signed 4 bits).
     pub dz: SignedBits<4>,
+    /// Left button, byte 0 bit 0.
     pub btn_left: bool,
+    /// Right button, byte 0 bit 1.
     pub btn_right: bool,
+    /// Middle (wheel) button, byte 0 bit 2.
     pub btn_middle: bool,
+    /// Button 4, byte 3 bit 4. IntelliMouse extension.
     pub btn_4: bool,
+    /// Button 5, byte 3 bit 5. IntelliMouse extension.
     pub btn_5: bool,
     /// Pulse for one cycle to start the packet sequence.
     pub send: bool,
@@ -152,9 +178,14 @@ pub struct In {
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
 /// Outputs from [Ps2MouseEncoder].
 pub struct Out {
+    /// Drive the CLK line low. Open-collector: assert to pull dominant,
+    /// release to let the bus float high.
     pub clk_oe: bool,
+    /// Drive the DATA line low, same open-collector sense as `clk_oe`.
     pub data_oe: bool,
+    /// A packet is in flight. `send` is ignored while this is set.
     pub tx_busy: bool,
+    /// Idle and able to accept `send`. The complement of `tx_busy`.
     pub ready: bool,
 }
 

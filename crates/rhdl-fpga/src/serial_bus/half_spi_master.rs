@@ -97,12 +97,18 @@ use crate::core::dff;
 pub enum HalfSpiState {
     #[default]
     #[fsm_state(label = "idle")]
+    /// Chip deselected, waiting for `start`.
     Idle,
     #[fsm_state(label = "write")]
+    /// Clocking the command out on the shared data line.
     Write,
     #[fsm_state(label = "turnaround")]
+    /// The line is released and neither side drives it. Half-duplex SPI
+    /// shares one wire between master and slave, so a dead cycle here is
+    /// what stops the two overlapping when direction reverses.
     Turnaround,
     #[fsm_state(label = "read")]
+    /// Clocking the reply in, with the master driving only the clock.
     Read,
 }
 

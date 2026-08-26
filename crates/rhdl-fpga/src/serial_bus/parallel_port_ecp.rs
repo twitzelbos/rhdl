@@ -96,6 +96,7 @@ use rle_encoder_kernel as _;
 pub enum EcpState {
     #[default]
     #[fsm_state(label = "idle")]
+    /// Forward idle: no ECP transfer in progress.
     Idle,
     /// Forward — driving D + HostClk + nStrobe low.
     #[fsm_state(label = "fwd: drive")]
@@ -120,12 +121,12 @@ pub enum EcpState {
 /// Bundled internal state for the ECP master (CLAUDE.md §3.1).
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
 pub struct ParallelPortEcpExtras {
-    pub fwd_beat_data: Bits<8>,
-    pub fwd_beat_is_count: bool,
-    pub rev_sample: Bits<8>,
-    pub rev_is_count: bool,
-    pub rev_byte_valid_pulse: bool,
-    pub done_pulse: bool,
+    fwd_beat_data: Bits<8>,
+    fwd_beat_is_count: bool,
+    rev_sample: Bits<8>,
+    rev_is_count: bool,
+    rev_byte_valid_pulse: bool,
+    done_pulse: bool,
 }
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]

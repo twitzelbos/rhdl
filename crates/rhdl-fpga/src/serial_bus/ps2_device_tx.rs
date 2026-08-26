@@ -112,12 +112,12 @@ pub struct Ps2DeviceTxExtras<const DIV_W: usize>
 where
     rhdl::bits::W<DIV_W>: BitWidth,
 {
-    pub shifter: Bits<11>,
-    pub bit_idx: Bits<4>,
-    pub div_ctr: Bits<DIV_W>,
-    pub clk_out: bool,
-    pub done_pulse: bool,
-    pub aborted_q: bool,
+    shifter: Bits<11>,
+    bit_idx: Bits<4>,
+    div_ctr: Bits<DIV_W>,
+    clk_out: bool,
+    done_pulse: bool,
+    aborted_q: bool,
 }
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]

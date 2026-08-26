@@ -62,6 +62,7 @@ use crate::core::{constant::Constant, dff};
 pub enum CentronicsState {
     #[default]
     #[fsm_state(label = "idle")]
+    /// No byte in flight, waiting for `strobe`.
     Idle,
     /// Data driven on D[7:0]; STROBE_n still high.
     #[fsm_state(label = "setup")]

@@ -91,12 +91,12 @@ pub enum Ps2State {
 /// (CLAUDE.md §3.1).
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
 pub struct Ps2KeyboardExtras {
-    pub shift: Bits<11>,
-    pub bit_idx: Bits<4>,
-    pub clk_prev: bool,
-    pub scan_code: Bits<8>,
-    pub valid_pulse: bool,
-    pub err_pulse: bool,
+    shift: Bits<11>,
+    bit_idx: Bits<4>,
+    clk_prev: bool,
+    scan_code: Bits<8>,
+    valid_pulse: bool,
+    err_pulse: bool,
 }
 
 impl Default for Ps2KeyboardExtras {
@@ -134,7 +134,9 @@ impl Default for Ps2Keyboard {
 /// Inputs to [Ps2Keyboard].  Both signals must already be in the FPGA's
 /// clock domain (wrap raw pads with `cdc::synchronizer_chain` first).
 pub struct In {
+    /// Sampled CLK level from the wire.
     pub clk_in: bool,
+    /// Sampled DATA level from the wire.
     pub data_in: bool,
 }
 

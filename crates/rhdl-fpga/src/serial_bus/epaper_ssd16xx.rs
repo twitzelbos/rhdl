@@ -71,8 +71,14 @@ where
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
 /// Inputs to [EpaperSsd16xx].
 pub struct In {
+    /// Byte to send: a command opcode when `is_command`, otherwise a
+    /// data byte.
     pub data: Bits<8>,
+    /// Selects which the byte is, by driving D/C# low for a command and
+    /// high for data. Latched with the byte, so it stays correct for the
+    /// whole transfer.
     pub is_command: bool,
+    /// One-cycle strobe to send `data`. Ignored while `busy`.
     pub send: bool,
     /// BUSY# pin from the controller.  `false` ⇒ controller is busy
     /// and the host must wait.
@@ -84,16 +90,27 @@ pub struct In {
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
 /// Outputs from [EpaperSsd16xx].
 pub struct Out {
+    /// SPI clock to the panel.
     pub sclk: bool,
+    /// SPI data to the panel, MSB first.
     pub mosi: bool,
+    /// Chip select, active low.
     pub cs_n: bool,
+    /// Data/command select: low for a command byte, high for data.
     pub dc_n: bool,
+    /// RESET# to the panel. Passed straight through from
+    /// `reset_n_in` -- panel reset timing is the host's business, not
+    /// this widget's, because the SSD16xx power-on sequence differs per
+    /// module.
     pub reset_n: bool,
     /// `true` while the controller's BUSY# is asserted (low) — i.e.,
     /// it's refreshing.  The host should not strobe `send` while
     /// this is set.
     pub ctrl_busy: bool,
+    /// A byte is being clocked out. Distinct from `ctrl_busy`, which is
+    /// the panel refreshing: this one is the SPI shift register.
     pub busy: bool,
+    /// One-cycle pulse as a byte finishes on the wire.
     pub done: bool,
 }
 

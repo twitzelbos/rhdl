@@ -112,14 +112,14 @@ pub struct I2cMasterExtras<const DIV_W: usize>
 where
     rhdl::bits::W<DIV_W>: BitWidth,
 {
-    pub phase_sub: Bits<DIV_W>,
-    pub phase: Bits<2>,
-    pub bit_idx: Bits<4>,
-    pub addr_reg: Bits<8>,
-    pub data_reg: Bits<8>,
-    pub ack_addr_ok: bool,
-    pub ack_data_ok: bool,
-    pub done_pulse: bool,
+    phase_sub: Bits<DIV_W>,
+    phase: Bits<2>,
+    bit_idx: Bits<4>,
+    addr_reg: Bits<8>,
+    data_reg: Bits<8>,
+    ack_addr_ok: bool,
+    ack_data_ok: bool,
+    done_pulse: bool,
 }
 
 impl<const DIV_W: usize> Default for I2cMasterExtras<DIV_W>

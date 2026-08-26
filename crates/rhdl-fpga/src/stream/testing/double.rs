@@ -4,6 +4,11 @@ use crate::stream::ready;
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ)]
 #[rhdl(dq_no_prefix)]
+/// Filler → relay → relay → drainer, closed into one testable widget.
+///
+/// `N` is the data width. The output is a single `bool`: whether the
+/// drainer has seen the sequence it expected, which is the whole
+/// assertion this harness exists to make.
 pub struct U<const N: usize>
 where
     rhdl::bits::W<N>: BitWidth,
@@ -46,6 +51,8 @@ where
 //  data  q  -> d       q ->  d     q ->  d
 //  ready d <-  q       d <-  q     d <-  q
 #[kernel]
+/// Kernel for [U]: wires the four stages together and reports whether
+/// the drainer is still satisfied.
 pub fn double_kernel<const N: usize>(_cr: ClockReset, _i: (), q: Q<N>) -> (bool, D<N>)
 where
     rhdl::bits::W<N>: BitWidth,

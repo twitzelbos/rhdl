@@ -58,6 +58,7 @@ use crate::core::{constant::Constant, dff};
 pub enum DbiBState {
     #[default]
     #[fsm_state(label = "idle")]
+    /// Bus parked, waiting for `start`.
     Idle,
     /// Data + D/C# + /CS set up; /WR still high.
     #[fsm_state(label = "setup")]
@@ -141,7 +142,9 @@ pub struct Out {
     pub wr_n: bool,
     /// `/RD` (active-low read strobe — held high in v1).
     pub rd_n: bool,
+    /// A transfer is in flight. `start` is ignored while set.
     pub busy: bool,
+    /// One-cycle pulse as the transfer completes.
     pub done: bool,
 }
 

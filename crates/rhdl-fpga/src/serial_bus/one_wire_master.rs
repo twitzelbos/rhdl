@@ -115,6 +115,7 @@ pub enum OneWireOp {
 pub enum OneWireState {
     #[default]
     #[fsm_state(label = "idle")]
+    /// Line released to the pull-up, waiting for `start`.
     Idle,
     /// Driving the bus low for the reset pulse.
     #[fsm_state(label = "Reset (low)")]
@@ -186,12 +187,12 @@ pub struct OneWireMasterExtras<const T_W: usize>
 where
     rhdl::bits::W<T_W>: BitWidth,
 {
-    pub tick: Bits<T_W>,
-    pub op_reg: OneWireOp,
-    pub data_reg: Bits<8>,
-    pub bit_idx: Bits<4>,
-    pub presence_ok: bool,
-    pub done_pulse: bool,
+    tick: Bits<T_W>,
+    op_reg: OneWireOp,
+    data_reg: Bits<8>,
+    bit_idx: Bits<4>,
+    presence_ok: bool,
+    done_pulse: bool,
 }
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, FsmWidget)]
