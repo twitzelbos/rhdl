@@ -31,6 +31,41 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-26 — `black-box-connectivity.md`: what an external module has to tell us, and how
+
+**Paths:** `black-box-connectivity.md` (new), `architecture.md` §3 and §8, `CLAUDE.md` §1.
+
+**Why this, why now:** the reachability work shipped with a hole it could not close, flagged in three consecutive PRs and never addressed: every analysis in the compiler assumes a black box has no combinational feedthrough, and nothing checks that assumption. The question that prompted the document was also a fair one — *how are external modules such as Xilinx IP incorporated today?* — and the honest answer turned out to need research rather than recall.
+
+**What the research found**, since none of it was written down anywhere:
+
+- **Three unrelated mechanisms, none of which declares connectivity.** `Driver<T>` at the fixture boundary emits a raw Verilog *instantiation* plus constraints, and is not a circuit at all — no descriptor, no matrix, assembled after the widget tree, invisible to every analysis. `with_netlist_black_box` is for circuits whose Verilog RHDL writes itself via `parse_quote!` (`DFF`, the RAMs, the CDC primitives). And Vivado IP exists **only** as TCL in `rhdl-toolchains` — `create_ip`/`configure_ip`/`generate_target` — with no circuit-level representation whatsoever. A user asking how to instantiate a Xilinx FFT core has no answer in the type system.
+- **The largest external IP in the tree is the least analysed thing in it.** `ok/drivers/xem7010/host.rs` mounts eleven circuit inputs and seven circuit outputs, routing them through the external `okHost` module. `MountPoint` has both `Input` and `Output` variants and `mounts` is a `Vec`, so a driver can close a path from an output back to an input — outside the circuit tree, outside every check. Whether okHost is combinational is unknowable from here and unchecked.
+- **`vendor-primitive-architecture.md` is entirely unimplemented.** No `trait Target`, no `Descriptor::hdl_for`, no `primitive!`. And `architecture.md` §3 listed a `PrimitiveRequest` opcode in `ntl/spec.rs` that does not exist — corrected in this change, because a module listing is exactly the kind of thing a reader trusts without checking.
+- **`rhdl-vlog` parses Verilog *text*, not just macro tokens.** `syn::parse_str::<ModuleDef>` yields the module name and `Vec<Port>` with directions and widths. That makes mechanically cross-checking a declaration's *interface* against a vendor's own model feasible, which is worth having: ports are what silently change between tool versions.
+
+**Design decisions:**
+
+- **Declared, never inferred.** The interface can be extracted from Verilog; the paths cannot. Inferring connectivity from behavioural models means understanding `always` blocks, and being subtly wrong there produces a confident unsound answer, which is worse than requiring a human to write the entry.
+- **The default inverts, and that is the change with teeth.** Today an undeclared black box is assumed to have no feedthrough — the optimistic assumption, inherited from a `continue` in `make_net_graph` that skips every `BlackBox` op. It becomes "every input reaches every output". Deliberately unpleasant: a widget accepting it gets reported as a feedthrough, and a ring containing it as a loop. Both conservative rather than wrong, and both fixed by declaring the truth.
+- **Compile time, not run time.** RHDL compiles at run time, so a file path in a descriptor would resolve against whatever binary called `descriptor()` — a test, an example, a synthesis driver — and a stale file would surface as a runtime error inside descriptor construction. A build script reads it instead: `ron` lives in `[build-dependencies]` of the crate that owns the primitives, so it never enters the runtime dependency graph or raises the `architecture.md` §2 question about what the macro layer may depend on.
+- **RON over JSON**, because the file is written and reviewed by humans and read in diffs, at the cost of one build-dependency line. Stated as a trade rather than picked silently; `rhdl-macro-core` already carries `serde_json` if that matters more.
+- **`Opaque` is spelled out rather than achieved by omission.** A module absent from the library and one present with `Opaque` behave identically to the analysis and read completely differently to a maintainer: one is a gap, the other is a decision.
+
+**Surprises and gotchas:**
+
+- **`reset::negation` has always been a combinational black box** — `assign o = ~i;` — and the analysis has always treated it as a path breaker. It has never mattered because it carries a `Reset` and `GraphMode::Synchronous` excludes reset from the graph. That is luck rather than design, and it is the one widget in the migration table that declares a path rather than `None`.
+- **The migration's acceptance criterion is that nothing changes.** All nine existing black boxes declare what the analysis already assumed, so no snapshot, digest or diagnostic should move. If one does, something was not what it appeared — and that is the finding rather than a nuisance.
+- **The obvious ingestion design was wrong for this codebase**, and for a reason specific to it: reading the file at descriptor-build time is the instinctive answer everywhere else, and here it puts file I/O inside runtime compilation.
+
+**Validation:** none — this is a design document. Every claim about the current state carries a file reference and was read rather than recalled; the two claims worth re-checking before implementing are that `make_net_graph` skips black boxes unconditionally (`ntl/graph.rs`) and that the okHost driver mounts inputs and outputs both (`ok/drivers/xem7010/host.rs`).
+
+**Follow-ups:**
+
+- Phase 1 — `BlackBoxConnectivity` and the inverted default — is the piece that closes the soundness hole, and is scoped at 1-2 weeks.
+- Drivers and the fixture remain outside every analysis. Bringing them in means giving the fixture a reachability matrix, which is coherent and separate.
+- IP cores as circuits wants its own document: it has to answer what an IP core's Rust type is and who owns the TCL that creates it, which is a bigger question than connectivity.
+
 ## 2026-08-26 — `ReorderInstructions`: a panic becomes an error, and the backstop gets a test
 
 **Paths:** `crates/rhdl-core/src/compiler/ntl_passes/reorder_instructions.rs`, `compiler/mir/error.rs`, `ntl/builder.rs`.
