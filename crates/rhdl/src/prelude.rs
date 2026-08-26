@@ -5,6 +5,8 @@ pub use rhdl_bits::alias::*;
 pub use rhdl_bits::bits;
 pub use rhdl_bits::signed;
 pub use rhdl_core::CircuitDQ;
+// Required at every `with_netlist_black_box` call site, so it belongs
+// where widget authors already look.
 pub use rhdl_core::ClockReset;
 pub use rhdl_core::CompilationMode;
 pub use rhdl_core::TraceKey;
@@ -14,6 +16,7 @@ pub use rhdl_core::circuit::circuit_impl::CircuitIO;
 pub use rhdl_core::circuit::function::asynchronous::AsyncFunc;
 pub use rhdl_core::circuit::function::synchronous::Func;
 pub use rhdl_core::circuit::hdl_descriptor::HDLDescriptor;
+pub use rhdl_core::circuit::reachability::BlackBoxConnectivity;
 pub use rhdl_core::circuit::synchronous::Synchronous;
 pub use rhdl_core::circuit::synchronous::SynchronousDQ;
 pub use rhdl_core::circuit::synchronous::SynchronousIO;

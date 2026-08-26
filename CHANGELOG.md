@@ -31,6 +31,35 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-26 — Black-box connectivity, Phase 1: declared, not assumed
+
+**Paths:** `crates/rhdl-core/src/{circuit/reachability.rs,circuit/descriptor.rs,circuit/drc.rs,ntl/object.rs,ntl/builder.rs,ntl/graph.rs,error.rs}`, `crates/rhdl/src/prelude.rs`, eight widgets under `crates/rhdl-fpga/src/`, `crates/rhdl-fpga/tests/black_box_connectivity.rs` (new).
+
+**Why this, why now:** closes the hole flagged in four consecutive PRs. `ntl::graph::make_net_graph` skipped every `BlackBox` op when adding edges — one `continue` statement, which is what made a `DFF` break a combinational path and what made a *combinational* black box invisible to every path and loop check in the compiler. `black-box-connectivity.md` §4.1 specifies the fix; this is it.
+
+**Design decisions:**
+
+- **The declaration is required, so there is no default to be wrong about.** `with_netlist_black_box` takes a `BlackBoxConnectivity` — `None`, `Opaque`, or explicit `Paths` — and every existing call site had to state its answer. That is the whole point: the assumption moves from a `continue` in a graph builder to eight places a reviewer can read.
+- **Two representations, one meaning.** `BlackBoxConnectivity` is field paths, which is what a datasheet describes and a widget author writes; `ntl::object::BlackBoxPaths` is bit indices, which is what the netlist can act on. Lowering happens in `with_netlist_black_box`, the last point where the widget's `I` and `O` kinds are in scope. The alternative — one type used at both levels — puts `Path` into the NTL, which does not otherwise know about field paths.
+- **Only the data argument carries connectivity.** A synchronous black box's `arg` is `[clock_reset, i]` and an asynchronous one's is `[i]`, so the data input is always `arg.last()`. Clock and reset are excluded for the reason they are excluded everywhere in this analysis: a reset reaches every output by construction, so an edge from it says nothing.
+- **An absent declaration is treated as `Opaque`, not as transparent.** If the netlist has no record for a `BlackBoxId`, the graph connects everything. That case should be impossible; treating it optimistically is how the original bug worked.
+- **`BlackBoxConnectivity` is in the prelude.** Every black-box author needs it at the call site.
+
+**Surprises and gotchas:**
+
+- **A third unguarded `unwrap` fired the moment its assumption changed.** `drc::locate_combinatorial_path` asked `petgraph::all_simple_paths` for a path with at least *one* intermediate node, then `unwrap`ped the iterator. A black box declaring a combinational path produces a *direct* edge from the inputs to the writing op — no intermediate node — so the iterator is empty and the `unwrap` panicked. Unreachable while every path had an op in the middle. Now `0` intermediate nodes and `unwrap_or_default`, so the worst case is a diagnostic without spans. Together with the two in `ReorderInstructions` last week, that is three panics in this area from the same shape of mistake: an invariant held, so nobody guarded it, and then the invariant changed.
+- **I nearly dropped every edge from an op feeding a black box.** The helper resolving a register to its graph node returned `None` for `WriteSource::OpCode`, which would have silently connected only black boxes fed *directly* from the top-level inputs. Caught while re-reading the diff rather than by a test, which is worth admitting: the corpus would not have caught it either, because the black boxes in the tree all declare `None` and add no edges at all.
+- **Eight call sites, not the nine the design predicted.** `reset::negating_conditioner` shares a file with `conditioner` and does not call the helper itself.
+- **`reset::negation` declared its path exactly as predicted**, and nothing changed — because it carries a `Reset` and the analysis excludes reset from the graph. Predicted in the design document and confirmed here, which is the most reassuring kind of non-event.
+
+**Validation:** the acceptance criterion had two halves and both are met. Nothing moved: 1377 `rhdl-fpga` tests pass with no HDL snapshot, VCD digest or diagnostic re-blessed, so the eight declarations state what the analysis already assumed. And the thing that could not be caught before now is: four new tests use one black-box inverter whose Verilog is `assign o = ~i;`, parameterised on what it *claims*, so the same module is tested as an honest combinational box and as one claiming to be registered. The honest one is reported as a feedthrough by `no_combinatorial_paths`; a ring of two is reported as a two-widget combinational cycle; the claiming-registered versions of both are accepted. Before this change the ring built without complaint.
+
+**Follow-ups:**
+
+- Phase 2 — `Opaque` as the default for a module that has not declared — needs something that *can* be undeclared, which means Phase 3's library or a user's own primitive.
+- Drivers and the fixture are still outside every analysis. `ok/drivers/xem7010/host.rs` mounts eleven circuit inputs and seven outputs through external IP, unchecked.
+- Vivado IP cores still have no circuit-level representation to attach a declaration to.
+
 ## 2026-08-26 — `black-box-connectivity.md`: what an external module has to tell us, and how
 
 **Paths:** `black-box-connectivity.md` (new), `architecture.md` §3 and §8, `CLAUDE.md` §1.

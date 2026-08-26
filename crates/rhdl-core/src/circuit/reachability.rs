@@ -487,6 +487,123 @@ pub(crate) fn passthrough(
     Ok(out)
 }
 
+/// Which inputs of a black box combinationally reach which outputs.
+///
+/// A black box is a module the compiler cannot see inside: a vendor
+/// primitive, an IP core, or a widget whose Verilog is written by hand.
+/// Every analysis that asks "is there a combinational path here" has to
+/// take that module's word for it, so the module has to give its word.
+///
+/// # Why there is no default
+///
+/// There used to be one, and it was wrong. Every black box was assumed to
+/// have no feedthrough, which is what made a `DFF` break a combinational
+/// path — and it was an assumption about the black boxes that happened to
+/// exist rather than a property any of them stated. `reset::negation` is
+/// `assign o = ~i;` and escaped notice only because it carries a `Reset`,
+/// which the analysis excludes anyway.
+///
+/// Optimism in a soundness analysis is how a real loop goes unreported,
+/// so the answer is now required at the point the black box is declared.
+/// See `black-box-connectivity.md`.
+#[derive(Clone, Debug, PartialEq)]
+pub enum BlackBoxConnectivity {
+    /// No input reaches any output: the module registers everything it
+    /// carries. What a flip-flop, a RAM, or a CDC synchroniser needs.
+    None,
+    /// Every input reaches every output.
+    ///
+    /// The honest answer for a module nobody has analysed. Deliberately
+    /// inconvenient: a widget declaring this is reported as having a
+    /// feedthrough, and a ring containing one as having a loop. Both are
+    /// conservative rather than wrong, and both are fixed by declaring
+    /// the truth instead.
+    Opaque,
+    /// Exactly these `(input, output)` field pairs and no others.
+    ///
+    /// Paths are resolved against the widget's `I` and `O` kinds when the
+    /// descriptor is built, so a port that does not exist is a named error
+    /// rather than a silently missing edge — which matters, because a
+    /// missing edge is precisely the failure this type exists to prevent.
+    Paths(Vec<(Path, Path)>),
+}
+
+impl BlackBoxConnectivity {
+    /// Lower to the bit-level form the netlist carries.
+    ///
+    /// Every bit of a declared input field is connected to every bit of
+    /// the paired output field. Field granularity is what a datasheet
+    /// describes, so that is what the pairs mean.
+    pub(crate) fn to_paths(
+        &self,
+        input_kind: Kind,
+        output_kind: Kind,
+    ) -> Result<crate::ntl::object::BlackBoxPaths, RHDLError> {
+        use crate::ntl::object::BlackBoxPaths;
+        match self {
+            BlackBoxConnectivity::None => Ok(BlackBoxPaths::None),
+            BlackBoxConnectivity::Opaque => Ok(BlackBoxPaths::Opaque),
+            BlackBoxConnectivity::Paths(pairs) => {
+                let mut bits = Vec::new();
+                for (from, to) in pairs {
+                    let (from_range, _) = bit_range(input_kind, from)?;
+                    let (to_range, _) = bit_range(output_kind, to)?;
+                    for i in from_range.clone() {
+                        for o in to_range.clone() {
+                            bits.push((i, o));
+                        }
+                    }
+                }
+                Ok(BlackBoxPaths::Bits(bits))
+            }
+        }
+    }
+
+    /// The matrix this connectivity describes.
+    ///
+    /// A black box has no children, so only `i_to_o` can be non-empty.
+    pub(crate) fn to_matrix(
+        &self,
+        input_kind: Kind,
+        output_kind: Kind,
+        d_kind: Kind,
+        q_kind: Kind,
+    ) -> Result<ReachabilityMatrix, RHDLError> {
+        let mut out = ReachabilityMatrix::none(input_kind, output_kind, d_kind, q_kind);
+        match self {
+            BlackBoxConnectivity::None => {}
+            BlackBoxConnectivity::Opaque => {
+                for r in 0..out.i_to_o.rows() {
+                    for c in 0..out.i_to_o.cols() {
+                        out.i_to_o.set(r, c);
+                    }
+                }
+            }
+            BlackBoxConnectivity::Paths(pairs) => {
+                for (from, to) in pairs {
+                    // Resolved by position in the leaf-path lists, so a
+                    // path that does not name a leaf field is an error
+                    // rather than a no-op.
+                    let row = out.inputs.iter().position(|p| p == from).ok_or_else(|| {
+                        RHDLError::BlackBoxPortNotFound {
+                            port: format!("{from:?}"),
+                            side: "input",
+                        }
+                    })?;
+                    let col = out.outputs.iter().position(|p| p == to).ok_or_else(|| {
+                        RHDLError::BlackBoxPortNotFound {
+                            port: format!("{to:?}"),
+                            side: "output",
+                        }
+                    })?;
+                    out.i_to_o.set(row, col);
+                }
+            }
+        }
+        Ok(out)
+    }
+}
+
 /// What the analysis found.
 ///
 /// A cycle and a matrix are mutually exclusive rather than merely

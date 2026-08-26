@@ -192,7 +192,8 @@ impl<W: Domain, R: Domain> Circuit for ResetConditioner<W, R> {
             _phantom: std::marker::PhantomData,
             netlist: None,
         }
-        .with_netlist_black_box()
+        // Nothing feeds through: registered.
+        .with_netlist_black_box(BlackBoxConnectivity::None)
     }
 }
 

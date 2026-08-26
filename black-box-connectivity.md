@@ -392,7 +392,7 @@ Naming the boundaries, because each of these is a place where someone will reaso
 
 ## 8 — Phasing
 
-### Phase 1 — `BlackBoxConnectivity`, and the default inverted (1-2 weeks)
+### Phase 1 — `BlackBoxConnectivity`, and the default inverted — **SHIPPED**
 
 - `BlackBoxConnectivity` in `rhdl-core/src/circuit/reachability.rs`, beside the matrix it produces.
 - `with_netlist_black_box` takes it; the nine call sites in §6 declare.
@@ -401,6 +401,12 @@ Naming the boundaries, because each of these is a place where someone will reaso
 - Tests: a combinational black box is reported as a feedthrough; a ring containing one is reported as a loop; `None` behaves exactly as today.
 
 **Acceptance:** no HDL snapshot, VCD digest or diagnostic changes for the nine existing black boxes, and a deliberately combinational black box is caught by both `no_combinatorial_paths` and the cycle detector — which it is not today.
+
+**As shipped**, with three notes:
+
+- **Eight call sites, not nine.** `reset::negating_conditioner` shares `conditioner.rs` and does not call `with_netlist_black_box` itself. Seven declare `None`; `reset::negation` declares its path, as predicted.
+- **`BlackBoxConnectivity` went into the prelude.** Every black-box author needs it at the call site, so it belongs where they already look rather than behind a `rhdl::core::circuit::reachability::` path.
+- **Two latent panics surfaced, both of the same kind.** `drc::locate_combinatorial_path` asked `all_simple_paths` for a path with at least *one* intermediate node and then `unwrap`ped it. A direct edge from the inputs to the writing op has none — impossible while every path had an op in the middle, and exactly what a black box declaring a combinational path produces. The `unwrap` panicked. Fixed to `0` intermediate nodes and `unwrap_or_default`, so the worst case is a diagnostic without spans. This is the third unguarded `unwrap` in this area to fire once the surrounding assumption changed; the other two were in `ReorderInstructions`.
 
 ### Phase 2 — `Opaque` as the default for an undeclared module (1 week)
 

@@ -351,7 +351,8 @@ impl<T: Digital, W: Domain, R: Domain> Circuit for SlowCrosser<T, W, R> {
             hdl: Some(self.hdl(&name)?),
             _phantom: std::marker::PhantomData,
         }
-        .with_netlist_black_box()
+        // Nothing feeds through: a registered handshake across the domain crossing.
+        .with_netlist_black_box(BlackBoxConnectivity::None)
     }
 }
 

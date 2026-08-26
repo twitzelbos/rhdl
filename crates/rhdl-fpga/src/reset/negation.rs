@@ -96,7 +96,17 @@ impl<C: Domain> Circuit for ResetNegation<C> {
             hdl: Some(self.hdl(&name)?),
             _phantom: std::marker::PhantomData,
         }
-        .with_netlist_black_box()
+        // `assign o = ~i;` -- this one really does feed through.
+        //
+        // It has always been a combinational black box, and the analysis
+        // has always treated it as a path breaker, because it carries a
+        // `Reset` and reset is excluded from the graph. That was luck
+        // rather than design; declaring it costs nothing and means the
+        // next reader learns the truth instead of inheriting it.
+        .with_netlist_black_box(BlackBoxConnectivity::Paths(vec![(
+            Path::default().signal_value(),
+            Path::default().signal_value(),
+        )]))
     }
 }
 

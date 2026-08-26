@@ -261,7 +261,8 @@ impl<W: Domain, R: Domain> Circuit for Sync1Bit<W, R> {
             hdl: Some(self.hdl(&name)?),
             _phantom: std::marker::PhantomData,
         }
-        .with_netlist_black_box()
+        // Nothing feeds through: two flops by construction.
+        .with_netlist_black_box(BlackBoxConnectivity::None)
     }
 }
 

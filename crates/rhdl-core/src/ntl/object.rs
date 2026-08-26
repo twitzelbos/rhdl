@@ -24,6 +24,35 @@ pub enum BlackBoxMode {
 pub struct BlackBox {
     pub code: HDLDescriptor,
     pub mode: BlackBoxMode,
+    /// Which input bits combinationally reach which output bits.
+    ///
+    /// Bit indices are into the op's *data* argument -- `arg.last()`,
+    /// since a synchronous black box's `arg` is `[clock_reset, i]` and an
+    /// asynchronous one's is `[i]` -- and into its `lhs`.
+    pub paths: BlackBoxPaths,
+}
+
+/// Combinational connectivity through a black box, at bit granularity.
+///
+/// The netlist-level form of
+/// [`crate::circuit::reachability::BlackBoxConnectivity`], which is what
+/// a widget author writes. Lowered from field paths to bit indices when
+/// the black box's netlist is built, because that is the last point at
+/// which the widget's `I` and `O` kinds are in scope.
+#[derive(Clone, Debug, PartialEq, Hash)]
+pub enum BlackBoxPaths {
+    /// No input bit reaches any output bit: the module registers
+    /// everything it carries.
+    None,
+    /// Every input bit reaches every output bit.
+    ///
+    /// The answer for a module whose connectivity nobody has declared.
+    /// Conservative, and deliberately inconvenient -- a design containing
+    /// one will be reported as having a feedthrough, and a ring
+    /// containing one as having a loop.
+    Opaque,
+    /// Exactly these `(input bit, output bit)` pairs and no others.
+    Bits(Vec<(usize, usize)>),
 }
 
 #[derive(Clone, Hash)]

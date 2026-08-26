@@ -4,7 +4,7 @@ use crate::common::symtab::RegisterId;
 use crate::ntl::object::WireDetails;
 use crate::ntl::spec::{self, Assign, BlackBoxId, WireKind};
 use crate::types::digital::Digital;
-use crate::{ClockReset, Descriptor, Kind, RHDLError};
+use crate::{ClockReset, Descriptor, Kind, RHDLError, ntl::object::BlackBoxPaths};
 use crate::{
     compiler::optimize_ntl,
     ntl::{
@@ -113,7 +113,10 @@ impl Builder {
     }
 }
 
-pub fn circuit_black_box(descriptor: &Descriptor<AsyncKind>) -> Result<Object, RHDLError> {
+pub fn circuit_black_box(
+    descriptor: &Descriptor<AsyncKind>,
+    paths: BlackBoxPaths,
+) -> Result<Object, RHDLError> {
     let flat_name = descriptor.name.to_string();
     let mut builder = Builder::new(&flat_name);
     let hdl = descriptor.hdl()?;
@@ -122,6 +125,7 @@ pub fn circuit_black_box(descriptor: &Descriptor<AsyncKind>) -> Result<Object, R
     builder.object.black_boxes.push(BlackBox {
         code: hdl.clone(),
         mode: BlackBoxMode::Asynchronous,
+        paths,
     });
     let arg0 = arg0.into_iter().map(Wire::Register).collect();
     let lhs = out.iter().copied().map(Wire::Register).collect();
@@ -136,7 +140,10 @@ pub fn circuit_black_box(descriptor: &Descriptor<AsyncKind>) -> Result<Object, R
     builder.build(BuilderMode::Asynchronous)
 }
 
-pub fn synchronous_black_box(descriptor: &Descriptor<SyncKind>) -> Result<Object, RHDLError> {
+pub fn synchronous_black_box(
+    descriptor: &Descriptor<SyncKind>,
+    paths: BlackBoxPaths,
+) -> Result<Object, RHDLError> {
     let flat_name = descriptor.name.to_string();
     let mut builder = Builder::new(&flat_name);
     let hdl = descriptor.hdl()?;
@@ -147,6 +154,7 @@ pub fn synchronous_black_box(descriptor: &Descriptor<SyncKind>) -> Result<Object
     builder.object.black_boxes.push(BlackBox {
         code: hdl.clone(),
         mode: BlackBoxMode::Synchronous,
+        paths,
     });
     let arg0 = arg0.into_iter().map(Wire::Register).collect();
     let arg1 = arg1.into_iter().map(Wire::Register).collect();

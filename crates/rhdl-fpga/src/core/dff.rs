@@ -155,7 +155,8 @@ impl<T: Digital> Synchronous for DFF<T> {
             netlist: None,
             _phantom: std::marker::PhantomData,
         }
-        .with_netlist_black_box()
+        // Nothing feeds through: the register everything else relies on to break paths.
+        .with_netlist_black_box(BlackBoxConnectivity::None)
     }
 }
 

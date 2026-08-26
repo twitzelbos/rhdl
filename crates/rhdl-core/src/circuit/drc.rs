@@ -119,11 +119,21 @@ pub(crate) fn locate_combinatorial_path(
                     op_node,
                     Some(&mut space),
                 ) {
+                    // `min_intermediate_nodes` of 0, and no `unwrap`.
+                    //
+                    // It was 1, which cannot match a *direct* edge from
+                    // the inputs to the writing op -- and then `unwrap`
+                    // panicked on the empty iterator. That was
+                    // unreachable while every path had an op in the
+                    // middle, and a black box declaring a combinational
+                    // path is exactly the direct case. An empty path
+                    // yields a diagnostic with no spans, which is worse
+                    // than one with spans and far better than a crash.
                     let path = petgraph::algo::all_simple_paths::<Vec<_>, _, RandomState>(
-                        &dep.graph, input_node, op_node, 1, None,
+                        &dep.graph, input_node, op_node, 0, None,
                     )
                     .next()
-                    .unwrap();
+                    .unwrap_or_default();
                     let elements = path
                         .iter()
                         .map(|ix| dep.graph[*ix])
