@@ -31,6 +31,31 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-25 — The clippy gate actually passes now
+
+**Paths:** 14 `serial_bus` widgets, `video/mipi_dpi.rs`, `stream/testing/{mod,double}.rs`.
+
+**Why this, why now:** the previous entry left 225 `missing_docs` and a gate that still failed, which meant CLAUDE.md §8 was still aspirational. `cargo clippy --all -- -D warnings` now reports **zero errors**.
+
+**Design decisions:**
+
+- **147 of the 225 were not a documentation gap at all.** They were `pub` fields on the bundled-state structs that §3.1 prescribes — `CanState`, `I2cMasterExtras`, `UartRxExtras` and eleven more. Grouping related state into one `Digital` struct behind a single DFF is the right way to build these widgets: it keeps the `Q`/`D` surface a list of meaningful parts instead of a flat pile of registers, and it puts state that changes together in one place. What those fields are *not* is an interface. Publishing a CAN node's stuff-bit run length invites a dependency nobody wants to support, so the fix was to stop publishing them, not to document them. Checked per type that nothing outside its own file refers to it; that is 117 struct fields gone from the public surface, with the crate still building and all 1377 `rhdl-fpga` tests passing.
+- **The remaining 108 got real prose, written from each widget's own module docs and kernel.** The CAN `Out` error counters are documented against ISO 11898-1 §11.6 with the thresholds the module header already states (bus-off at TEC 256, error-passive at 128); the half-duplex SPI `Turnaround` state says *why* a dead cycle exists (one wire shared between master and slave, so direction reversal needs a gap); `bus_out` on the open-drain single-wire masters says why it is always `false` and why it exists anyway.
+- **Formally this is a breaking change.** `package-manager-architecture.md` §4 counts removing a public field as MAJOR. Recorded here rather than glossed, even though every removed field was unreachable from outside its module.
+
+**Surprises and gotchas:**
+
+- **Eleven files had exactly one undocumented FSM state, and it was `Idle` every time.** Someone documented every other variant in each enum and stopped before the first. That is a recognisable shape — the first item in a list is the one you skip while setting up — and worth knowing because it means the *diagram* those states label was complete while its legend was not.
+- **`can_master.rs` looked like the worst file and was the easiest.** Its 45 warnings were 35 internal state fields plus 10 `Out` fields, and its public `In` struct was already documented to the bit. The count ranked it first; the actual work in it was mostly a visibility change.
+- **The measurement was worth more than the guess.** Before doing any of this I sampled the worst file and assumed the job needed protocol specs to hand. Classifying all 225 by whether their enclosing type is referenced outside its own file split them 147/78 and turned two thirds of a writing task into a one-line-per-file visibility fix. The heuristic — grep the type name across the tree, exclude its own file — took a few minutes and changed the shape of the work.
+
+**Validation:** `cargo clippy --all -- -D warnings` passes with zero errors, for the first time. `cargo test --all --no-fail-fast` green, tree clean. The de-publishing was verified against the full `rhdl-fpga` suite (1377 tests) before the documentation pass began, so the two halves are separable if either needs reverting.
+
+**Follow-ups:**
+
+- CLAUDE.md §12 rule 14 still describes the author-curated `FSM_TRANSITIONS` constant that the RHIF extraction pass replaced. No widget defines one.
+- §8 is now satisfiable, so it is worth deciding whether `--all-targets` should also be in the gate: test code carries a further ~150 lints that nothing currently checks.
+
 ## 2026-08-25 — The clippy gate, made true
 
 **Paths:** `crates/rhdl-macro-core/src/kernel.rs`, and ~60 files across `rhdl-core`, `rhdl-fpga`, `rhdl-alto`, `rhdl-rule-core`, `rhdl-rule`, `rhdl-rv32i`, `rhdl-dsp-design`, `rhdl-toolchains`, `rhdl-surfer-plugin`, `doc/book/src/code`.

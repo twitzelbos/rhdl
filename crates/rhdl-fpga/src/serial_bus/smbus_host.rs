@@ -108,19 +108,34 @@ where
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
 /// Inputs to [SmbusHost] (identical shape to [super::i2c_master::In]).
 pub struct In {
+    /// 7-bit target address, without the R/W bit.
     pub addr: Bits<7>,
+    /// Byte to write.
     pub data: Bits<8>,
+    /// One-cycle strobe to begin a transaction. Ignored while `busy`,
+    /// and it also clears a latched `timeout`.
     pub start: bool,
+    /// Sampled level of SDA.
     pub sda_in: bool,
 }
 
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
 /// Outputs from [SmbusHost].
 pub struct Out {
+    /// Pull SCL low. Open-drain, so the line rises through the bus
+    /// pull-up when this is clear and a slave may stretch the clock by
+    /// holding it down.
     pub scl_drive_low: bool,
+    /// Pull SDA low, same open-drain sense as `scl_drive_low`.
     pub sda_drive_low: bool,
+    /// A transaction is in flight, including the SMBus timeout watch
+    /// that outlives the underlying I²C transfer.
     pub busy: bool,
+    /// One-cycle pulse as the transaction settles, whether it succeeded,
+    /// was NACKed, or timed out. Check `ack_ok` and `timeout` to tell
+    /// which.
     pub done: bool,
+    /// The target acknowledged. Meaningful from the `done` pulse onward.
     pub ack_ok: bool,
     /// `true` (latched until next `start`) if the most-recent transaction
     /// exceeded `t_xact_max` cycles without producing an I²C `done`.

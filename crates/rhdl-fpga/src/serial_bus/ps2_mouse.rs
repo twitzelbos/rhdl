@@ -102,7 +102,9 @@ pub struct Ps2Mouse {
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
 /// Inputs to [Ps2Mouse] (same shape as [super::ps2_keyboard::In]).
 pub struct In {
+    /// Sampled CLK level from the wire.
     pub clk_in: bool,
+    /// Sampled DATA level from the wire.
     pub data_in: bool,
 }
 

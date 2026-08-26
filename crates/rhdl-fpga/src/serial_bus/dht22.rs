@@ -61,6 +61,7 @@ use crate::core::{constant::Constant, dff};
 pub enum Dht22State {
     #[default]
     #[fsm_state(label = "idle")]
+    /// Line released, waiting for `start` to begin the host trigger pulse.
     Idle,
     /// Master pulls line low to begin a read.
     #[fsm_state(label = "start (low)")]

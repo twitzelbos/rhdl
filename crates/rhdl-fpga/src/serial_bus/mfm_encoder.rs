@@ -77,6 +77,7 @@ use crate::core::dff;
 pub enum MfmState {
     #[default]
     #[fsm_state(label = "idle")]
+    /// No cell in progress, waiting for a bit to encode.
     Idle,
     /// About to emit the clock cell of the current bit.
     #[fsm_state(label = "emit clock")]
@@ -117,7 +118,9 @@ pub struct Out {
     pub cell_out: bool,
     /// Pulses high for one cycle per emitted cell.
     pub cell_valid: bool,
+    /// A cell is being emitted; the encoder cannot take another bit.
     pub busy: bool,
+    /// One-cycle pulse as a cell completes.
     pub done: bool,
 }
 

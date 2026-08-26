@@ -94,20 +94,35 @@ pub enum TiHdqOp {
 pub enum TiHdqState {
     #[default]
     #[fsm_state(label = "idle")]
+    /// Line released, waiting for `start`.
     Idle,
     #[fsm_state(label = "Break (low)")]
+    /// Driving the break pulse low for `t_break`.
     BreakLow,
     #[fsm_state(label = "Break (recover)")]
+    /// Line released after the break, waiting out `t_break_recovery`
+    /// before any bit may follow.
     BreakRecover,
     #[fsm_state(label = "Write (low)")]
+    /// Driving the low part of a write slot: `t_w0` for a zero bit,
+    /// `t_w1` for a one. The bit value is the pulse *width*, which is
+    /// what makes a stretched clock indistinguishable from a wrong bit
+    /// on this bus.
     WriteBitLow,
     #[fsm_state(label = "Write (wait)")]
+    /// Line released for the rest of the write slot, out to `t_slot`.
     WriteBitWait,
     #[fsm_state(label = "Read (low)")]
+    /// Driving `t_read_low` to open a read slot; the slave answers by
+    /// holding the line down for longer or letting it rise.
     ReadBitLow,
     #[fsm_state(label = "Read (sample)")]
+    /// Line released and being sampled at `t_read_sample`, then held to
+    /// the end of the slot.
     ReadBitSample,
     #[fsm_state(label = "stop")]
+    /// All eight bits done; raises `done` for one cycle and returns to
+    /// idle.
     Stop,
 }
 
@@ -171,6 +186,7 @@ where
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
 /// Inputs to [TiHdqMaster].
 pub struct In {
+    /// Which primitive to run when `start` is strobed.
     pub op: TiHdqOp,
     /// Byte to transmit (used only when `op == WriteByte`).
     pub data: Bits<8>,
@@ -183,11 +199,19 @@ pub struct In {
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
 /// Outputs from [TiHdqMaster].
 pub struct Out {
+    /// Pull the bus low. Open-drain: the line idles high through an
+    /// external pull-up, so the master only ever drives dominant.
     pub bus_oe: bool,
+    /// Level to drive when `bus_oe` is set. Always `false` -- the bus is
+    /// open-drain and there is nothing else to drive -- and present so
+    /// the pad can be wired without special-casing this widget.
     pub bus_out: bool,
     /// Result byte from the most-recent ReadByte (LSB-first).
     pub data_out: Bits<8>,
+    /// A transaction is in progress. `start` is ignored while set.
     pub busy: bool,
+    /// One-cycle pulse as the transaction completes; `data_out` is valid
+    /// from this cycle onward.
     pub done: bool,
 }
 

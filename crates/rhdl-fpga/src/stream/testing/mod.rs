@@ -7,6 +7,11 @@
 //! [`sinks::data_gated`] can.
 #[doc(hidden)]
 pub mod closed_loop;
+/// A filler, two relays and a drainer, wired end to end.
+///
+/// Exists to test that back-pressure propagates through *more than one*
+/// relay. A single relay can absorb a stall in its own skid buffer and
+/// look correct while getting the handshake wrong; two in series cannot.
 pub mod double;
 pub mod lazy_random;
 #[doc(hidden)]

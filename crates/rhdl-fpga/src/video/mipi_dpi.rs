@@ -99,8 +99,14 @@ where
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
 /// Inputs to [MipiDpi].
 pub struct In {
+    /// Red channel for the pixel at (`pixel_x`, `pixel_y`). Sampled
+    /// every cycle and gated to zero outside the active region, so a
+    /// source that does not track the timing still produces a clean
+    /// blanking interval.
     pub r_in: Bits<8>,
+    /// Green channel for the current pixel.
     pub g_in: Bits<8>,
+    /// Blue channel for the current pixel.
     pub b_in: Bits<8>,
 }
 
@@ -123,7 +129,10 @@ where
     pub vsync: bool,
     /// Data enable — `true` while the panel should latch the RGB bus.
     pub de: bool,
+    /// Column being requested this cycle. Drive `r_in`/`g_in`/`b_in`
+    /// from this and `pixel_y`.
     pub pixel_x: Bits<HW>,
+    /// Row being requested this cycle.
     pub pixel_y: Bits<VW>,
 }
 

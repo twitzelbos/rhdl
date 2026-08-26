@@ -100,6 +100,7 @@ pub enum NandOp {
 pub enum NandState {
     #[default]
     #[fsm_state(label = "idle")]
+    /// No command in flight; the control strobes are all deasserted.
     Idle,
     /// Data + CLE/ALE set up; WE_n still high.
     #[fsm_state(label = "setup write")]
@@ -204,7 +205,9 @@ pub struct Out {
     pub d_out: Bits<8>,
     /// Latched byte from the most-recent ReadData cycle.
     pub data_out: Bits<8>,
+    /// A command is in flight. `start` is ignored while set.
     pub busy: bool,
+    /// One-cycle pulse as the command completes.
     pub done: bool,
     /// Passthrough of `r_b_n_in` to the host.
     pub r_b_n: bool,

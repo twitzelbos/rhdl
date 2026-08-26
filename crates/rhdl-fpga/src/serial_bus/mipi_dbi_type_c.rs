@@ -82,12 +82,17 @@ pub struct In {
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
 /// Outputs from [MipiDbiTypeC].
 pub struct Out {
+    /// SPI clock to the display.
     pub sclk: bool,
+    /// SPI data to the display, MSB first.
     pub mosi: bool,
+    /// Chip select, active low.
     pub cs_n: bool,
     /// D/C# pin.  Active-low semantic: `false` ⇒ command, `true` ⇒ data.
     pub dc_n: bool,
+    /// A byte is being clocked out. `start` is ignored while set.
     pub busy: bool,
+    /// One-cycle pulse as the byte finishes on the wire.
     pub done: bool,
 }
 

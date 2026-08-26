@@ -113,23 +113,37 @@ where
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
 /// Inputs to [Rs485Master].
 pub struct In {
+    /// Byte to enqueue for transmission.
     pub tx_data: Bits<8>,
+    /// Strobe to enqueue `tx_data`. Check `tx_full` first; a push into a
+    /// full queue is dropped.
     pub tx_push: bool,
+    /// Strobe to consume the byte currently offered on `rx_data`.
     pub rx_pop: bool,
+    /// Sampled receive line from the transceiver.
     pub rx: bool,
 }
 
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
 /// Outputs from [Rs485Master].
 pub struct Out {
+    /// Transmit line to the transceiver.
     pub tx: bool,
     /// DE — driver enable to the external transceiver.  Active high.
     pub de: bool,
     /// RE — receiver enable, active low.  De-asserted (high) while
     /// DE is asserted; otherwise asserted (low).
     pub re_n: bool,
+    /// A received byte, if one is waiting. `None` when the receive
+    /// queue is empty, which is why this is an `Option` rather than a
+    /// byte plus a valid flag -- there is no way to read the data
+    /// without also handling the empty case.
     pub rx_data: Option<Bits<8>>,
+    /// The driver is enabled, i.e. this node is holding the bus. Equal
+    /// to `de`: on a half-duplex bus, transmitting and occupying the
+    /// medium are the same condition.
     pub busy: bool,
+    /// The transmit queue cannot accept another byte this cycle.
     pub tx_full: bool,
 }
 
