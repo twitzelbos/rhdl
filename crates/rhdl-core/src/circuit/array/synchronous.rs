@@ -104,7 +104,14 @@ impl<T: Synchronous, const N: usize> Synchronous for [T; N] {
                 Self::I::static_kind(),
                 Self::O::static_kind(),
             )?,
-            None => Default::default(),
+            // No elements is an answer -- nothing to pass through -- so
+            // it is shaped and known, not defaulted to unknown.
+            None => crate::circuit::reachability::ReachabilityMatrix::none(
+                Self::I::static_kind(),
+                Self::O::static_kind(),
+                Kind::Empty,
+                Kind::Empty,
+            ),
         };
         Ok(Descriptor {
             combinational_reachability,

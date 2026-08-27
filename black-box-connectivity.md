@@ -408,9 +408,23 @@ Naming the boundaries, because each of these is a place where someone will reaso
 - **`BlackBoxConnectivity` went into the prelude.** Every black-box author needs it at the call site, so it belongs where they already look rather than behind a `rhdl::core::circuit::reachability::` path.
 - **Two latent panics surfaced, both of the same kind.** `drc::locate_combinatorial_path` asked `all_simple_paths` for a path with at least *one* intermediate node and then `unwrap`ped it. A direct edge from the inputs to the writing op has none — impossible while every path had an op in the middle, and exactly what a black box declaring a combinational path produces. The `unwrap` panicked. Fixed to `0` intermediate nodes and `unwrap_or_default`, so the worst case is a diagnostic without spans. This is the third unguarded `unwrap` in this area to fire once the surrounding assumption changed; the other two were in `ReorderInstructions`.
 
-### Phase 2 — `Opaque` as the default for an undeclared module (1 week)
+### Phase 2 — the unknown case made conservative — **SHIPPED**, and not as specced
 
-Only meaningful once something can be undeclared, which needs Phase 3's file or a user's own primitive. Splitting it out keeps Phase 1's blast radius to the widgets in this tree.
+This phase was written as "`Opaque` as the default for an undeclared module", blocked until "something can be undeclared". Both halves turned out to be wrong.
+
+**There is no default to invert.** Phase 1 made the connectivity argument to `with_netlist_black_box` *mandatory*, which is strictly stronger: a declaration cannot be omitted, so no default is ever consulted. Phase 2 as written had nothing to act on.
+
+**But the optimistic assumption had not gone away — it had moved.** §4.1 says the point of this work is that an undeclared black box must be assumed to connect everything. Phase 1 removed that assumption from `ntl::graph::make_net_graph`, and it reappeared one level up: `ReachabilityMatrix::default()` is an empty matrix, `has_feedthrough()` reads `i_to_o.any()`, and so a descriptor whose matrix was never computed claimed to have no combinational paths. Eleven descriptor literals in the tree write that default.
+
+An *empty* matrix and an *unknown* matrix are opposite claims that look identical: neither has any bits set. So the matrix now records which it is, in a `known` flag that `Default` gives as `false`:
+
+- `has_feedthrough()` returns true when the matrix is unknown.
+- A child whose matrix is unknown contributes every possible edge, so the conservatism survives composition rather than stopping at one level.
+- `ReachabilityMatrix::none()` — a shaped, deliberately-empty matrix — is *known*, because it is an answer rather than the absence of one.
+
+Three descriptors were relying on the old meaning and now state their answers explicitly: `core::constant` (whose `I` is `Kind::Empty`), both `phantom` descriptors (every kind empty), and the empty-array case in both `array` builders.
+
+**What this does not do**, and what Phase 3 still owes: nothing in the *widget* API can yet be undeclared, so the conservative path is reachable only by building a descriptor by hand. A library that can omit a module is what makes it reachable in earnest.
 
 ### Phase 3 — the file format and the build script (2-3 weeks)
 
