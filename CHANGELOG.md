@@ -31,6 +31,35 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-26 — Black-box connectivity, Phase 2: the unknown case is conservative
+
+**Paths:** `crates/rhdl-core/src/circuit/{reachability.rs,phantom.rs,array/synchronous.rs,array/asynchronous.rs}`, `crates/rhdl-fpga/src/core/constant.rs`, `crates/rhdl-fpga/tests/black_box_connectivity.rs`, `black-box-connectivity.md` §8.
+
+**Why this, why now:** asked to unblock Phase 2. It was not blocked — it was mis-specified, and underneath the mis-specification was a real hole.
+
+**Phase 2 as written had nothing to act on.** It was "`Opaque` as the default for an undeclared module", to be done once "something can be undeclared". But Phase 1 made the connectivity argument *mandatory*, which is strictly stronger than any default: omission is impossible, so no default is consulted.
+
+**The optimistic assumption had not gone away, though. It had moved one level up.** Phase 1 removed it from `make_net_graph`'s `continue`, and it reappeared as `ReachabilityMatrix::default()`: an empty matrix, on which `has_feedthrough()` reads `i_to_o.any()` and returns false. So a descriptor whose matrix was never computed claimed to have no combinational paths — the exact claim §4.1 exists to prevent. Eleven descriptor literals write that default.
+
+**Design decisions:**
+
+- **The matrix records whether it is *known*, because empty and unknown are opposite claims that look identical.** Neither has any bits set, so no amount of inspecting the bits can distinguish "nothing reaches anything" from "nobody worked it out". A `known` flag that `Default` gives as `false` inverts the meaning of every defaulted matrix in one place.
+- **`none()` is known.** A shaped, deliberately-empty matrix is an answer. Only a defaulted one is an absence.
+- **Conservatism survives composition.** A child whose matrix is unknown contributes every possible edge, in the one place child edges are built — which feeds both the matrix and the cycle detector, so one rule covers both. Being conservative about a widget and then optimistic about it as somebody's child would leave the hole open one level up.
+- **Three descriptors now state their answers** rather than inheriting the old meaning: `core::constant`, both `phantom` descriptors, and the empty-array case in both `array` builders.
+
+**Surprises and gotchas:**
+
+- **The corpus cross-check caught `core::constant` immediately.** Its descriptor never computes a matrix, so it became honestly unknown and the matrix started disagreeing with the netlist walk. `Constant`'s output depends on nothing, which is a real answer — it had simply never been written down. That test has now caught three separate things it was not written for.
+- **I branched from the wrong base and lost twenty minutes to it.** `main` does not contain Phase 1, because that PR is still open, so the Phase 2 branch was missing everything it builds on. The symptom was silent: appending a test to `black_box_connectivity.rs` created a *new* 70-line file rather than appending to the 559-line one, because the file does not exist on `main`. Noticed only when a compile error pointed at line 52 of a file that should have been 500 lines long. Stacking a branch on an unmerged PR needs the unmerged branch as its base, and `cat >>` will not tell you the file was absent.
+
+**Validation:** 12 tests in `black_box_connectivity.rs`, including one asserting that a hand-built descriptor which never runs the analysis is reported as conceding a feedthrough. `cargo test --all --no-fail-fast` green; the acceptance criterion is again that nothing else moves, since every defaulted matrix in the tree was already being overwritten before anyone read it.
+
+**Follow-ups:**
+
+- The conservative path is reachable only by building a descriptor by hand: nothing in the widget API can yet be undeclared. Phase 3's library, which can omit a module, is what makes it reachable in earnest.
+- Still no feedthrough DRC for asynchronous circuits (`no_combinatorial_paths` is `<T: Synchronous>`).
+
 ## 2026-08-26 — Black-box connectivity, Phase 1: declared, not assumed
 
 **Paths:** `crates/rhdl-core/src/{circuit/reachability.rs,circuit/descriptor.rs,circuit/drc.rs,ntl/object.rs,ntl/builder.rs,ntl/graph.rs,error.rs}`, `crates/rhdl/src/prelude.rs`, eight widgets under `crates/rhdl-fpga/src/`, `crates/rhdl-fpga/tests/black_box_connectivity.rs` (new).

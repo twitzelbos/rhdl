@@ -73,7 +73,17 @@ impl<T: Digital> Synchronous for Constant<T> {
     fn descriptor(&self, scoped_name: ScopedName) -> Result<Descriptor<SyncKind>, RHDLError> {
         let name = scoped_name.to_string();
         Ok(Descriptor {
-            combinational_reachability: Default::default(),
+            // A constant depends on nothing, so nothing reaches its
+            // output. Stated rather than left unknown: `I` is `Kind::Empty`
+            // so the matrix is empty either way, but "empty because there
+            // are no inputs" and "empty because nobody looked" are
+            // different claims and only one of them is safe to act on.
+            combinational_reachability: rhdl::core::circuit::reachability::ReachabilityMatrix::none(
+                Kind::Empty,
+                Self::O::static_kind(),
+                Kind::Empty,
+                Kind::Empty,
+            ),
             name: scoped_name,
             input_kind: Kind::Empty,
             output_kind: Self::O::static_kind(),
