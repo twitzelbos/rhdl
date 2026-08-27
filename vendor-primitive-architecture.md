@@ -85,6 +85,10 @@ The Rustic core. Every method has a default that produces target-agnostic Verilo
 pub trait Target: Send + Sync + 'static {
     fn name(&self) -> &str;
 
+    /// The device family this target represents, used to check that a
+    /// design's named-primitive requirements can be met. See §3.6.
+    fn family(&self) -> Family;
+
     /// Signed multiplier. Default: emit `assign p = $signed(a) * $signed(b);`.
     fn signed_mul(&self, p: &MulParams) -> TargetEmit {
         TargetEmit::generic_signed_mul(p)
@@ -233,11 +237,28 @@ For the MAC widget, both patterns work. Pattern A is the natural starting point.
 
 ---
 
+### 3.6 What this trait deliberately does not cover: primitives asked for by name
+
+Every method above is a *capability* — a multiplier, a block RAM, a PLL. The widget says what it wants done and the target says how; a target that has no opinion inherits a default. That is the right shape for capabilities and it is the shape this whole document is about.
+
+It is the wrong shape for a primitive requested **by name**. A widget wrapping `MUXF7` or `ISERDESE2` or `PS7` is not asking for a capability — it wants that block, for its timing or its placement or its cascade port — and there is no abstraction to hide behind. Encoding those as trait methods would mean one method per primitive, and the Xilinx 7-series library alone has around two hundred. `Target` does not scale there and should not try.
+
+Named primitives are handled instead as *data*: a black-box declaration (`rhdl-core/src/circuit/blackbox_decl.rs`) names the module and the device families that provide it, and the requirement is discovered by walking the constructed widget tree rather than declared in a type signature. **The design is specified in `xilinx-primitive-library.md` §7**, which covers the `Requirement` type, where it is checked, the diagnostics, and how a widget offers different named primitives on different targets without the tree diverging from the Rust simulation.
+
+Two things in that design bear on this document directly:
+
+- It needs only `Target::name()` and `Target::family()` — a new method returning the device family the target represents. None of `PrimitiveRequest`, no NTL change, none of §3.2's capability surface. So it can land on a two-method trait skeleton well before Phase 1 has substance, and Phase 1 then fills the same trait in.
+- It makes `hdl_for(&target)` the enforcement point for *both* kinds of divergence: `UnsupportedPrimitive` for a capability the target lacks, and a portability error for a named primitive the target cannot provide. The two failures are different in origin and should stay different in the diagnostic, but they arrive at the same call, which is the property that matters.
+
+---
+
 ## 4 — Why this is the Rustic answer
 
 It mirrors the pattern Rust already uses for `Default`, `Iterator`, `Hasher`, `serde::Serializer` — a trait with default impls where most methods rarely need overriding. Adding a new primitive kind is one method on the trait. Adding a new target is one impl block. Adding a widget that wants a primitive doesn't change the trait or any target.
 
-The default-impl fallback means you *can always* compile to *any* target. At worst you pay area/timing cost for a missing primitive. No mutually-exclusive features. No source-level forking. The IR stays the single source of truth.
+The default-impl fallback means that for every primitive *this trait covers*, you can always compile to any target. At worst you pay area/timing cost for a missing primitive. No mutually-exclusive features. No source-level forking. The IR stays the single source of truth.
+
+That guarantee does not extend to primitives asked for by name (§3.6), and it cannot: nothing portable stands in for `PS7`. What replaces it there is not a fallback but an *error you get from RHDL* — a design that names Xilinx silicon fails at `hdl_for(&LatticeICE40)` with the instance path, rather than succeeding and failing later in someone else's toolchain. Different guarantee, same discipline: the constraint is stated where the compiler can check it.
 
 The `hdl_for(&target)` method on `Descriptor` is itself a Rust-idiomatic dispatcher — it doesn't move or restructure the design; it just chooses how to print it.
 
@@ -374,5 +395,7 @@ For the record (also reflected in `CLAUDE.md`):
 - **Default-impl trait fallback.** Every target inherits a portable-Verilog default for every primitive kind via the `Target` trait's default methods. No target needs to override every method.
 - **Two ways to request a primitive from a widget.** Implicit (compiler pattern recognition, deferred to Phase 2+) and explicit (`primitive!` macro, shipped in Phase 1).
 - **Cargo features are not the right tool for target selection.** Target choice is a runtime/codegen-time argument, not a compile-time feature flag.
+- **Capabilities go through the trait; named primitives go through data.** `Target` methods cover primitives RHDL can abstract (multiply, BRAM, PLL). A primitive requested by name is declared in a black-box library and carries the device families that provide it; the requirement is computed by walking the widget tree and checked at `hdl_for`. See §3.6 and `xilinx-primitive-library.md` §7.
+- **Target-dependent choice of a named primitive happens at construction, at a black-box leaf.** Not at emission: the Rust simulation has no target, so a widget holding both alternatives would model one branch while emitting the other. A leaf built for a target, with the portability check as the interlock, keeps descriptor, netlist and simulation describing the same silicon.
 - **Constraints flow with primitives.** A primitive's instantiation produces both Verilog and any required constraint fragments, both scoped to the instance's hierarchical name.
 - **BSPs supply concrete part details and simulation models.** The `Target` trait describes primitive availability; the BSP layer (`rhdl-bsp`) supplies part-specific details, pin-out constraints, and iverilog-compatible simulation stubs.

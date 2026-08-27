@@ -406,7 +406,7 @@ The following are *architectural decisions*. Changing any of them is a structura
 7. **The `Synchronous` / `Circuit` trait families dispatch sub-circuits through `D` and `Q` aggregates derived by macro.** Do not write custom sub-circuit composition that bypasses the auto-derived `D`/`Q`.
 8. **One widget per file, with the four artifacts** (source, example, doc/.md, vcd/.vcd). Per CLAUDE.md TL;DR.
 9. **Strategy and design documents at the workspace root.** Their location is part of the contract for new contributors.
-10. **The vendor-primitive architecture: target as a parameter to `Descriptor::hdl_for(&target)`, not as a generic on widgets.** Per `vendor-primitive-architecture.md`. Widgets stay target-agnostic.
+10. **The vendor-primitive architecture: target as a parameter to `Descriptor::hdl_for(&target)`, not as a generic on widgets.** Per `vendor-primitive-architecture.md`. Widgets stay target-agnostic. **One scoped exception:** a *black-box leaf* wrapping a vendor primitive by name may be constructed for a target (`ClockManager::for_target(&t, ..)`), because the Rust simulator has no target and a widget holding two alternatives would model one while emitting the other. The target is in the leaf's value, never in its type, so nothing above it becomes target-generic; and the leaf records a portability requirement that makes `hdl_for` refuse a mismatched target. See `xilinx-primitive-library.md` §7.5.
 
 ---
 
@@ -441,6 +441,7 @@ When new structural needs arise, follow these patterns rather than improvising.
 | `kernel-language-extensions.md` | Future kernel-language extensions | Updated as extensions ship |
 | `vendor-primitive-architecture.md` | Future target-provider system | Updated as primitives are added |
 | `black-box-connectivity.md` | How a module RHDL did not author declares its combinational connectivity | Updated as phases ship |
+| `xilinx-primitive-library.md` | Execution plan for a verified Xilinx 7-series primitive library, plus (§7) how a design declares the silicon it needs and how a widget picks primitives per target; needs a Vivado machine from phase C | Updated as phases ship |
 | `fsm-architecture.md` | Future FSM ergonomics + analysis + formal verification | Updated as phases ship |
 | `stream-bus-architecture.md` | Future typed LID streaming bus + AXI Stream interop | Updated as phases ship |
 | `rule-architecture.md` | Future Bluespec-style guarded atomic rules (rhdl-rule) | Updated as phases ship |
