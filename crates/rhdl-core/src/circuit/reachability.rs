@@ -160,6 +160,22 @@ pub struct ReachabilityMatrix {
     pub q_to_o: BitMatrix,
     /// `q_paths` × `d_paths`.
     pub q_to_d: BitMatrix,
+    /// Has this matrix actually been computed?
+    ///
+    /// `false` means nobody worked it out — a descriptor built by hand
+    /// that never ran the analysis, or a black box whose connectivity was
+    /// never declared. Every consumer must then assume the worst, because
+    /// an *empty* matrix and an *unknown* one are opposite claims that
+    /// look identical: both have no bits set.
+    ///
+    /// That distinction is why this field exists rather than relying on
+    /// emptiness. Phase 1 of `black-box-connectivity.md` removed the
+    /// optimistic assumption from `make_net_graph`, and it moved rather
+    /// than disappeared: `ReachabilityMatrix::default()` still read as
+    /// "nothing reaches anything", so a descriptor whose matrix was never
+    /// filled in claimed to be free of combinational paths. `Default`
+    /// gives `false` here, which turns that claim into the opposite.
+    known: bool,
 }
 
 /// Leaf field paths of `kind`, excluding the zero-width ones.
@@ -204,7 +220,18 @@ impl ReachabilityMatrix {
             i_to_d,
             q_to_o,
             q_to_d,
+            // A shaped, deliberately-empty matrix is an answer, not an
+            // absence of one.
+            known: true,
         }
+    }
+
+    /// Has this matrix been computed?
+    ///
+    /// A caller that treats an unknown matrix as empty is making the
+    /// optimistic assumption this type exists to prevent.
+    pub fn is_known(&self) -> bool {
+        self.known
     }
 
     /// Does any input reach any output?
@@ -212,7 +239,10 @@ impl ReachabilityMatrix {
     /// The question [`crate::circuit::drc::no_combinatorial_paths`] asks,
     /// answered from the matrix.
     pub fn has_feedthrough(&self) -> bool {
-        self.i_to_o.any()
+        // An unknown matrix concedes everything. Reporting a feedthrough
+        // that may not exist is conservative; reporting none because
+        // nobody looked is not.
+        !self.known || self.i_to_o.any()
     }
 }
 
@@ -826,10 +856,17 @@ fn compute(
         let field = Path::default().field(&child.field);
         let (d_range, _) = bit_range(d_kind, &field)?;
         let (q_range, _) = bit_range(q_kind, &field)?;
+        // An unknown child concedes every path. Being conservative about
+        // a widget and then optimistic about it as somebody's child would
+        // leave the hole open one level up.
+        //
+        // These edges feed both the matrix and the cycle detector, so one
+        // rule covers both.
+        let child_unknown = !child.matrix.is_known();
         for (ci, c_in) in child.matrix.inputs.iter().enumerate() {
             let (c_in_range, _) = bit_range(child.input_kind, c_in)?;
             for (co, c_out) in child.matrix.outputs.iter().enumerate() {
-                if !child.matrix.i_to_o.get(ci, co) {
+                if !child_unknown && !child.matrix.i_to_o.get(ci, co) {
                     continue;
                 }
                 let (c_out_range, _) = bit_range(child.output_kind, c_out)?;
