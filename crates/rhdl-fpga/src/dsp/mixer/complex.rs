@@ -215,7 +215,9 @@ where
         // Found while writing `super::real_part::RealPartMixer`, which
         // forms the same difference and now carries the same check.
         assert!(
-            PROD_W >= A_W + B_W + 1,
+            // `> A_W + B_W` rather than `>= A_W + B_W + 1`, which is the
+            // same condition and the one clippy::int_plus_one accepts.
+            PROD_W > A_W + B_W,
             "PROD_W must be at least A_W + B_W + 1: each output component is a \
              difference of two products, and `convergent` adds half an LSB on top"
         );

@@ -164,7 +164,9 @@ where
         // on the largest sample a transmitter can send. See the module
         // docs for the worked case.
         assert!(
-            PROD_W >= A_W + B_W + 1,
+            // `> A_W + B_W` rather than `>= A_W + B_W + 1`, which is the
+            // same condition and the one clippy::int_plus_one accepts.
+            PROD_W > A_W + B_W,
             "PROD_W must be at least A_W + B_W + 1: this mixer forms a difference \
              of two products, and `convergent` adds half an LSB on top of it"
         );
