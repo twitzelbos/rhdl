@@ -5,6 +5,7 @@ use rhdl::prelude::*;
 pub mod cic;
 pub mod cordic;
 pub mod ddc;
+pub mod duc;
 pub mod fir;
 pub mod iq;
 pub mod lerp;
