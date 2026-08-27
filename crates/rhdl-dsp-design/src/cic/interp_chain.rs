@@ -189,6 +189,13 @@ pub struct Alternative {
     pub split: Vec<usize>,
     /// Per-stage CIC depth.
     pub stages: Vec<usize>,
+    /// Per-stage differential delay.
+    ///
+    /// Recorded because without it the runner-up can print identically
+    /// to the winner: two candidates differing only in `M` are genuinely
+    /// different filters with different costs, and the example's output
+    /// read as "split [5, 25] N=[5, 2]" twice until this field existed.
+    pub delays: Vec<usize>,
     /// Rate-weighted cost.
     pub cost: f64,
     /// Register bits at the uniform width.
@@ -240,6 +247,11 @@ impl InterpDesign {
     /// Per-stage CIC depth, lowest rate first.
     pub fn depths(&self) -> Vec<usize> {
         self.cics.iter().map(|c| c.stages).collect()
+    }
+
+    /// Per-stage differential delay, lowest rate first.
+    pub fn delays(&self) -> Vec<usize> {
+        self.cics.iter().map(|c| c.delay).collect()
     }
 
     /// The cascade's shapes in **signal order**, lowest rate first.
@@ -680,6 +692,7 @@ pub fn design(spec: InterpSpec) -> Result<InterpDesign, Unmet> {
     let runner_up = feasible.get(1).map(|d| Alternative {
         split: d.split(),
         stages: d.depths(),
+        delays: d.delays(),
         cost: d.cost,
         register_bits: d.register_bits,
         why: "feasible, but costlier by the rate-weighted model",
@@ -840,6 +853,30 @@ mod tests {
             "a larger search must not return a costlier design: {} vs {}",
             b.cost,
             a.cost
+        );
+    }
+
+    /// **The runner-up is a different design from the winner.**
+    ///
+    /// It reported as identical until [`Alternative`] carried the
+    /// differential delay: two candidates differing only in `M` are
+    /// different filters, and the example's output printed
+    /// "split [5, 25] N=[5, 2]" twice. A runner-up that looks the same
+    /// as the winner is worse than no runner-up, because a reader
+    /// concludes the search is broken.
+    #[test]
+    fn the_runner_up_is_a_different_design() {
+        let d = design(InterpSpec::default()).expect("designable");
+        let a = d.alternative.as_ref().expect("there is a runner-up here");
+        assert!(
+            a.split != d.split() || a.stages != d.depths() || a.delays != d.delays(),
+            "runner-up {:?}/{:?}/{:?} is the winner {:?}/{:?}/{:?}",
+            a.split,
+            a.stages,
+            a.delays,
+            d.split(),
+            d.depths(),
+            d.delays()
         );
     }
 

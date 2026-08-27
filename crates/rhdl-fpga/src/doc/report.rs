@@ -378,7 +378,7 @@ const TEXT_WIDTH: f64 = 475.0;
 ///
 /// Continuation lines are indented under the first value rather than to
 /// the margin, so the block still reads as one field.
-fn wrap_values<T: std::fmt::Display>(
+pub(crate) fn wrap_values<T: std::fmt::Display>(
     label: &str,
     values: &[T],
     max_width: f64,
