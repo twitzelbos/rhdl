@@ -1,6 +1,6 @@
 # The Xilinx Primitive Library
 
-> **Status: an execution plan, to be carried out on a machine with Vivado installed.** This document specifies how to build a complete black-box declaration library for the Xilinx 7-series — the primitives a Zynq-7020 provides — how to *verify* the connectivity claims by simulation rather than merely asserting them, and what has to exist in `rhdl-core` first.
+> **Status: an execution plan, to be carried out on a machine with Vivado installed.** This document specifies how to build a complete black-box declaration library for the Xilinx 7-series — the primitives a Zynq-7020 provides — how to *verify* the connectivity claims by simulation rather than merely asserting them, what has to exist in `rhdl-core` first, and how a design that uses any of it declares the silicon it needs (§7) so that building it for the wrong device is an error rather than a surprise from someone else's toolchain.
 >
 > It is written to be executed by someone (or something) sitting at a machine with `$XILINX_VIVADO` populated. Every step that needs the vendor tools is marked **[VIVADO]**. Everything else can be done anywhere.
 >
@@ -244,7 +244,182 @@ Three, in increasing order of what they demonstrate. All need §2; the third nee
 
 ---
 
-## 7 — Validation matrix
+## 7 — Device-specific code, and circuits that span devices
+
+This library manufactures a problem the tree does not have today. Two hundred widgets, each of which wraps a module that exists only in Xilinx silicon, and nothing anywhere records that fact. A design containing a `MuxF7` cannot be synthesised for an ECP5, and the way you would find that out is a Lattice tool complaining about an unknown module — after RHDL had reported success.
+
+So the library needs a companion mechanism: a way for a widget to say which silicon it needs, a place that checks it, and a way for a widget to offer *different* primitives on different targets. `vendor-primitive-architecture.md` designs most of the answer already; this section says which part of it is missing, and fills it.
+
+### 7.1 — Three questions, usually conflated
+
+**"I want a multiplier."** A portable capability. Works everywhere; better on some targets. This is exactly what the `Target` trait with default impls solves (`vendor-primitive-architecture.md` §3.2): the default method emits `assign p = a * b`, `Xilinx7Series` overrides it with a DSP48E1. Nothing about the widget is device-specific and nothing needs to be declared. **No addition needed.**
+
+**"I want a clock manager."** A capability with no portable equivalent — there is no Verilog that synthesises into an MMCM. Also already designed: those trait methods return `Result<TargetEmit, UnsupportedPrimitive>` with a default of `Err`. The important property is *where* it fails. The widget compiles as Rust for any target; the failure arrives at `hdl_for(&target)`, structured, naming the primitive and the target. **No addition needed.**
+
+**"I want `MUXF7`."** Not a capability. The author asked for that specific block, by name, because they want its timing or its placement or its cascade port. There is no abstraction to hide behind and there should not be one — and a trait cannot express it, because the trait would need a method per primitive and this library has two hundred of them. `Target` is the wrong shape for a named primitive, and named primitives are exactly what §3–§5 produce, two hundred at a time.
+
+That third question is the gap, and it is the only one this section is about.
+
+### 7.2 — A requirement is data, and the declaration already carries it
+
+A named primitive belongs to a device family. `MUXF7` is Xilinx 7-series; `SB_MAC16` is iCE40. The declaration format already describes everything else known about a primitive, so this goes there too — and not per entry, because a library file is by construction a single family's worth of primitives. One line at the top of `xilinx-7series.ron`, stamped by the build script onto every entry it emits:
+
+```ron
+(
+    source: "Vivado 2024.1 unisims",
+    families: ["xilinx-7series"],
+    generated_by: "tools/extract-unisim-connectivity",
+    modules: [ ... ],
+)
+```
+
+`Family` is a newtype over `&'static str` rather than an enum, so a third-party BSP can name its own silicon without patching `rhdl-core`:
+
+```rust
+/// A family of devices, named by the string a BSP and a target agree on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Family(pub &'static str);
+
+impl Family {
+    pub const XILINX_7SERIES: Family = Family("xilinx-7series");
+    pub const LATTICE_ICE40: Family = Family("lattice-ice40");
+}
+```
+
+A design's requirement is then the intersection of its parts'. The temptation is to store the intersection — a `&[Family]` that narrows as the tree is walked — and it is worth resisting, because the moment it is empty the diagnostic has nothing to say about *why*. Store the constraints instead and derive the intersection:
+
+```rust
+/// What silicon a design needs, as the list of things that decided it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Requirement {
+    /// One entry per primitive that narrowed the requirement, in tree
+    /// order. Empty means portable.
+    constraints: Vec<Constraint>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Constraint {
+    /// Hierarchical instance name, which is what the user needs to see.
+    pub instance: String,
+    /// The Verilog module that carries the requirement.
+    pub module: &'static str,
+    /// The families that provide it.
+    pub families: &'static [Family],
+}
+
+impl Requirement {
+    pub fn is_portable(&self) -> bool { self.constraints.is_empty() }
+    pub fn permits(&self, f: Family) -> bool {
+        self.constraints.iter().all(|c| c.families.contains(&f))
+    }
+    /// True when no family satisfies every constraint: a design no device
+    /// can build, independent of which one was asked for.
+    pub fn is_impossible(&self) -> bool { ... }
+    /// Absorb a child's requirement, prefixing its instance names.
+    pub fn absorb(&mut self, child: &Requirement, at: &ScopedName) { ... }
+}
+```
+
+This is the same bottom-up-over-children shape as `combinational_reachability`, computed at the same point in descriptor finalisation, and it should reuse that traversal rather than adding a second one. It lives in `rhdl-core/src/circuit/portability.rs` and becomes a `Descriptor` field.
+
+Note what it does *not* need: a generic parameter on the widget. The requirement is a property of the constructed tree, discovered by walking it, which is precisely what `architecture.md` §6 decision 10 asks for.
+
+### 7.3 — Where it is checked
+
+**At descriptor finalisation.** `is_impossible()` is an error immediately, with no target in hand. A design containing both a `MUXF7` and an `SB_MAC16` is wrong on its own terms and the earliest possible report is the right one.
+
+**At `hdl_for(&target)`.** `permits(target.family())` is the main gate, and it is the one that catches the ordinary mistake.
+
+**At `hdl()`.** Today there is no target and `hdl()` is the only emission path. It has to mean "emit for a portable target", which makes it an error for any design with a non-empty requirement — because there is no target to satisfy it, and silently emitting an instantiation nobody can elaborate is how this whole problem arises. That is a real migration cost and it has a concrete first casualty: `MuxF7`'s snapshot test calls `d.hdl()?`, and once §2 lets it instantiate a real `MUXF7` that call must become `d.hdl_for(&Xilinx7Series)?`. Every future primitive widget inherits the same shape, which is a good outcome — the test states the target the Verilog is for.
+
+**The minimum `Target` this needs is two methods**, `name()` and `family()`. Not the capability surface of `vendor-primitive-architecture.md` §3.2, none of `PrimitiveRequest`, no NTL change. So this work can land on a trait skeleton well before that document's Phase 1 has any substance, and Phase 1 then fills the same trait in. Worth stating plainly, because the alternative reading — that device-specific code has to wait for the whole target system — would park the library in an unsound state for months.
+
+### 7.4 — The diagnostic
+
+The instance path is the payload. A user who wired a Xilinx primitive into a design four levels down does not need to be told that `MUXF7` is a Xilinx primitive; they need to be told where they put it.
+
+```
+Error: this design needs silicon the target does not provide
+  target:    lattice-ice40
+  needs one of: xilinx-7series
+
+  because top.dut.mixer.sel instantiates MUXF7
+
+  help: MUXF7 is a hard 7-series multiplexer with no equivalent on this
+        target.  Either build for a 7-series part, or replace it with
+        portable logic -- an ordinary `if`/`else` in the kernel lowers to
+        a LUT mux on every target.
+```
+
+And the target-independent case, which names every witness because there is no single one to blame:
+
+```
+Error: no device can build this design
+  top.dut.pll instantiates MMCME2_ADV  (xilinx-7series)
+  top.dut.osc instantiates SB_HFOSC    (lattice-ice40)
+
+  help: these two primitives exist on different silicon.  A design that
+        needs both cannot be built at all; one of them has to become
+        portable logic or move behind a target-selected leaf (see the
+        book chapter on targets).
+```
+
+### 7.5 — Circuits that span devices
+
+Now the part the requirement machinery exists to make safe. A widget that wants an MMCM on Xilinx and an `EHXPLLL` on ECP5 runs into a real tension: **the widget tree is built before the target arrives.** Widgets are Rust values, constructed by the user's program; the target is an argument to `hdl_for`. A widget therefore cannot choose its own children based on the target, because by the time the target exists the children are already there.
+
+**Rejected: hold both children and let the emitter pick.** The descriptor tree, the netlist and the reachability matrix would all contain two clock managers, and — the fatal part — so would the Rust simulation, which has no target and so no basis for choosing. A `sim` that models one branch while `hdl_for` emits the other is exactly the Rust/Verilog divergence the whole five-tier stack exists to prevent.
+
+**Accepted: choose the target at construction.** Widget construction is ordinary Rust and may branch freely:
+
+```rust
+let clocking = ClockManager::for_target(&target, ClockSpec { in_mhz: 100.0, out_mhz: 200.0 })?;
+let dut = MyDesign { clocking, .. };
+let hdl = dut.descriptor(ScopedName::top())?.hdl_for(&target)?;
+```
+
+The descriptor, the netlist and the simulation now all describe the same silicon, because one target built them. And the safety of it rests entirely on §7.3: without the requirement check, building for Xilinx and emitting for Lattice is silently wrong hardware. *That* is why the requirement is not merely a nicer error message — it is the interlock that makes construction-time target selection sound.
+
+**Where the branch goes.** Not in a composed widget. A composed widget holding "either an MMCM child or an `EHXPLLL` child" needs an enum whose variants are different widget types, and since `Synchronous` has associated `I`/`O`/`D`/`Q`/`S`/`Kernel` types, that enum needs a hand-written `Synchronous` impl with enum `D`, `Q` and `S` types dispatching every method. Doable, tedious, and repeated per widget.
+
+Put the branch at a **black-box leaf** instead, where the descriptor is hand-written anyway. A `ClockManager` is one widget with one `I` and one `O`, no children, one shared behavioural `sim`, and a `descriptor()` that picks a declaration and a body from the target it was built with — which is exactly the shape `MuxF7` already has. Composed widgets then never branch on target; they instantiate a leaf that does. That is the rule to write into the book chapter:
+
+> Target-dependent primitive choice happens at a black-box leaf. Widgets above it are target-agnostic and stay that way.
+
+**Does this stretch `architecture.md` §6 decision 10?** Worth answering rather than asserting compliance. Decision 10 says the target is a parameter to `hdl_for`, not a generic on widgets, and that widgets stay target-agnostic. The requirement machinery of §7.2 complies exactly: no generic, no type-level target, the property is discovered by walking the tree. A leaf built by `for_target` does not comply quite as cleanly — the target is not in its *type*, but it is in its *value*, and the widget's emitted Verilog now depends on something it was constructed with.
+
+The type-level rule is the one with teeth, because it is what keeps target choice from propagating through every generic parameter of every composed widget, and it holds. The value-level exception is confined to black-box leaves, which are the only widgets that hand-write a descriptor anyway, and it is checked: the requirement the leaf records is what makes `hdl_for` refuse a mismatched target. Recording it as a scoped exception rather than pretending it is not one — and decision 10 gains a clause saying so.
+
+**And the third case, which is most real designs.** A project supporting two boards usually does not want one widget that spans them; it wants two top-level designs sharing a portable core. That is a `match` in `main`, needs nothing from RHDL, and should be said out loud in the documentation so nobody reaches for §7.5's machinery when ordinary Rust will do.
+
+### 7.6 — Why not Cargo features
+
+Features are the first thing a Rust programmer reaches for, and `vendor-primitive-architecture.md` §10 already records that they are not the tool. The reasons are worth having concretely, because this library is where the temptation becomes acute:
+
+- **Features are additive and unify across the graph.** If one dependency enables `xilinx` and another enables `lattice`, both are on. Mutual exclusion cannot be expressed, only detected and turned into a `compile_error!` — which is a feature system being used to emulate the enum it should have been.
+- **One build is one configuration.** A multi-target design would need a build per target, so no single `cargo test --all` run could cover both, and the corpus cross-check — which has already caught three things it was not written for — would only ever see one.
+- **RHDL compiles at run time.** The target is a value passed to `hdl_for`; a `#[cfg]` cannot be consulted there. This is the same reason the primitive library is ingested by a build script and then *carried as data*.
+
+What features *are* right for: whether the generated library is compiled in at all. Two hundred entries of `const` data is compile time and binary size that a project targeting Lattice has no use for, and `default-features = false` plus a per-vendor feature is the correct mechanism for that. A build-size knob, not a correctness one — and the distinction is the whole point.
+
+### 7.7 — What this costs the test contract
+
+A widget wrapping a vendor primitive cannot have a Tier-4 `iverilog` round-trip in the ordinary way, because iverilog has no behavioural model of the primitive. `MuxF7` already lives with this: `sim` is the only executable description RHDL has of it. The stubs from §2 make `checked()` pass, which is a structural check — ports and widths — and no more.
+
+There are three honest answers and the plan should use all three. `Target::sim_models` (`vendor-primitive-architecture.md` §3.2) is the designed hook for shipping hand-written iverilog-compatible models for the primitives RHDL actually lowers to, which restores Tier 4 for those. `xsim` against `unisims` (§6) restores it properly, on a Vivado machine, as an opt-in test. And for the rest, the widget's rustdoc says which tiers it has and why the missing one is missing — which is what CLAUDE.md §15 asks for anyway, and is better than a widget that quietly has four tiers where the contract says five.
+
+### 7.8 — Tests
+
+- A primitive widget reports the family its library declares, and the instance name in the constraint is its hierarchical name, not its module name.
+- The requirement propagates through a parent that has no requirement of its own, and through two levels.
+- Two conflicting primitives make `is_impossible()` true, and the diagnostic names both.
+- `hdl_for` with a permitted target succeeds; with any other target it fails, and the message contains the instance path.
+- `hdl()` on a design with a non-empty requirement fails rather than emitting.
+- **A corpus check over the entire existing widget library asserting every descriptor is portable.** This is the valuable one, and the same shape as the reachability corpus check: it does not test the new code so much as guard against a widget acquiring a device dependency by accident, which is how a portable library stops being portable.
+
+---
+
+## 8 — Validation matrix
 
 What is checked, by what, and what each check can and cannot establish.
 
@@ -256,33 +431,43 @@ What is checked, by what, and what each check can and cannot establish.
 | a declared `Paths` is complete | nothing | — | yes, and knowingly |
 | the primitive survives synthesis | **[VIVADO]** resource report | no | it may be inferred rather than instantiated |
 | the whole design is consistent | existing corpus cross-check | no | no |
+| a design names the silicon it needs | `Requirement` on the descriptor §7.2 | no | yes, if a library file's `families:` is wrong |
+| a portable widget stayed portable | corpus check §7.8 | no | no |
 
-Two rows are worth dwelling on. "A declared `Paths` is complete" is unchecked — a primitive with five real paths and four declared will under-report, and nothing catches it. And "the primitive survives synthesis" matters because Vivado may replace a hand-instantiated primitive with inferred logic; the resource report is the only way to know the instantiation had the effect intended.
+Three rows are worth dwelling on. "A declared `Paths` is complete" is unchecked — a primitive with five real paths and four declared will under-report, and nothing catches it. And "the primitive survives synthesis" matters because Vivado may replace a hand-instantiated primitive with inferred logic; the resource report is the only way to know the instantiation had the effect intended. And "a design names the silicon it needs" rests on one line per library file, which nothing downstream can second-guess — the same believed-data problem as connectivity itself (§1), at a coarser grain and with a correspondingly smaller blast radius: getting `families:` wrong misdirects an error message, whereas getting connectivity wrong asserts a path does not exist.
 
 ---
 
-## 8 — Phasing
+## 9 — Phasing
 
-Each of these is a PR. The first is the only one that blocks the others.
+Each of these is a PR. The first two block the others, and they block them for different reasons: A because nothing downstream can be built without it, B because everything downstream is unsound without it.
 
 **A. External-module capability.** §2. No Vivado needed. `checked_with_stubs`, `HDLDescriptor::externals`, propagation up the hierarchy, `MuxF7` switched to a real instantiation, and a test that an *undeclared* module still fails. Roughly a day; the prototype is in §2.1.
 
-**B. The extraction tool.** §3. **[VIVADO]** `tools/extract-unisim-connectivity/`, run by hand, output checked in. Emits every entry with proposed connectivity and marks anything attribute-dependent or unclassifiable as `Opaque` with a TODO note. The output of this stage is a complete but partly conservative library — which is already useful and already sound.
+**B. Portability requirements.** §7.2–§7.4. No Vivado needed. `Family`, `Requirement`, the `Descriptor` field computed alongside `combinational_reachability`, the two-method `Target` skeleton, `hdl_for`, both diagnostics, and the corpus check that every existing widget is portable. Must land immediately after A and before the library grows: the moment A ships, `MuxF7` instantiates real Xilinx silicon and claims nothing about it, and every entry stage C adds compounds that. Roughly two to three days.
 
-**C. The simulation harness.** §4.2. **[VIVADO]** Turns the conservative entries into verified ones, and — more importantly — can refute a wrong `None`. Run it over the whole library; every refutation is a bug in stage B's classifier and worth fixing there rather than patching the entry.
+**C. The extraction tool.** §3. **[VIVADO]** `tools/extract-unisim-connectivity/`, run by hand, output checked in. Emits every entry with proposed connectivity and marks anything attribute-dependent or unclassifiable as `Opaque` with a TODO note. The output of this stage is a complete but partly conservative library — which is already useful and already sound.
 
-**D. Driver connectivity and fixture reachability.** §5. No Vivado needed. Independent of B and C.
+**D. The simulation harness.** §4.2. **[VIVADO]** Turns the conservative entries into verified ones, and — more importantly — can refute a wrong `None`. Run it over the whole library; every refutation is a bug in stage C's classifier and worth fixing there rather than patching the entry.
 
-**E. Examples.** §6. Needs A, and D for the third.
+**E. Driver connectivity and fixture reachability.** §5. No Vivado needed. Independent of C and D.
 
-A pragmatic order if the Vivado machine is only available in bursts: do **A** and **D** anywhere, then **B** and **C** in one sitting at the Vivado machine, then **E**.
+**F. Examples.** §6, plus §7.5's target-selected leaf as a fourth. Needs A and B, and E for the third.
+
+A pragmatic order if the Vivado machine is only available in bursts: do **A**, **B** and **E** anywhere, then **C** and **D** in one sitting at the Vivado machine, then **F**.
+
+The multi-target machinery in §7.5 is deliberately *not* a phase. It needs no code beyond B — a constructor that takes a target is ordinary Rust — so it is a book chapter and an example, and it arrives with F. If it turns out to need a mechanism, that is a finding worth surfacing rather than a phase worth pre-planning.
 
 ---
 
-## 9 — Risks and open questions
+## 10 — Risks and open questions
 
 - **The extraction classifier will be wrong somewhere.** That is what §4.2 is for, and why C should run over the whole library rather than spot-checking. A classifier that is right for 190 primitives and wrong for 10 is not obviously distinguishable from one that is right for all 200, except by the harness.
 - **`unisims` models are not always faithful to the silicon** on timing, and occasionally on corner-case behaviour. For the question being asked — is there a combinational path — they are the best available answer and are what Vivado's own simulator believes.
 - **A Vivado version bump can change port lists.** The extraction output records the version; a bump means re-running B and diffing. The diff is the review.
 - **Do the declarations belong in `rhdl-bsp`?** They are vendor data, and `rhdl-bsp` is the vendor-facing crate, so yes for now. If a second vendor's library arrives, the shape to reach for is one file per vendor under the same build script, not a new crate.
+- **The `families:` line is believed the same way connectivity is.** A library file that claims 7-series when an entry is Ultrascale-only produces a design that passes the requirement check and fails in Vivado. Unlike connectivity there is no harness that can refute it, because the question is about a part RHDL cannot see. The mitigation is that it is one line per file rather than one per entry, reviewed once — and that stage C's extraction runs against a specific part, so the family is a property of the extraction rather than a judgement.
+- **Does a `Requirement` belong to a widget or to a build?** §7.2 says the widget tree, because that is where the primitive is. But a project could reasonably want to declare "this crate is 7-series only" once, at the crate level, and have every widget in it inherit that. Crate-level declaration is not designed here and probably should not be: it invites a `families` key in `Cargo.toml`, which is the Cargo-features mistake of §7.6 in a new costume. Left open, with a bias against.
+- **`hdl()` becoming fallible for primitive-wrapping widgets is a behaviour change** with a small blast radius today (one widget) and a large one after stage C. Landing B before C is what keeps it small; landing it after would mean touching every new primitive widget's tests twice.
+
 - **Should `Opaque` entries be a build warning?** An `Opaque` entry is honest but pessimistic, and a library where half the entries are `Opaque` invites people to ignore the analysis. Counting them and printing the count at build time would keep the number visible without failing anything. Cheap; worth doing when the count is real.
