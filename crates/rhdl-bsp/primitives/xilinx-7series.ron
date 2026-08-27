@@ -1,0 +1,80 @@
+// Combinational connectivity for Xilinx 7-series primitives.
+//
+// Each entry records only *whether* a path is combinational, never how
+// fast it is. Timing belongs to timing analysis; this file answers the
+// question the reachability analysis asks, which is whether a signal can
+// get from an input to an output without passing a register.
+//
+// Connectivity is declared, never inferred. The port lists here can be
+// checked mechanically against the vendor's own simulation models -- and
+// are, by `the_declarations_match_the_vendor_models` -- but the paths are
+// a judgement read out of the documentation. See
+// `black-box-connectivity.md` §4.4.
+BlackBoxLibrary(
+    // Where the claims come from. Six months after a wrong entry lands,
+    // this is the only question that matters about it.
+    source: "Xilinx UG953 (7 Series Libraries Guide) and the unisims simulation models",
+    generated_by: "hand-written; see black-box-connectivity.md §4.3",
+
+    modules: [
+        // A 2:1 multiplexer built from the dedicated F7 mux. Purely
+        // combinational, and exactly the shape that was invisible to
+        // every path and loop check before connectivity was declared: put
+        // two of these in a ring and nothing in the compiler noticed.
+        (
+            "MUXF7",
+            Module(
+                ports: [
+                    Port(name: "I0", dir: Input,  width: 1, role: Data),
+                    Port(name: "I1", dir: Input,  width: 1, role: Data),
+                    Port(name: "S",  dir: Input,  width: 1, role: Data),
+                    Port(name: "O",  dir: Output, width: 1, role: Data),
+                ],
+                // The select reaches the output as surely as the data
+                // does: a mux with a combinational select has a
+                // combinational path from it.
+                connectivity: Paths([("I0", "O"), ("I1", "O"), ("S", "O")]),
+                note: None,
+            ),
+        ),
+
+        // A flip-flop with clock enable and synchronous reset. Nothing
+        // feeds through -- which is the whole reason it exists, and the
+        // property everything else relies on to break a loop.
+        (
+            "FDRE",
+            Module(
+                ports: [
+                    Port(name: "C",  dir: Input,  width: 1, role: Clock),
+                    Port(name: "R",  dir: Input,  width: 1, role: Reset),
+                    Port(name: "CE", dir: Input,  width: 1, role: Data),
+                    Port(name: "D",  dir: Input,  width: 1, role: Data),
+                    Port(name: "Q",  dir: Output, width: 1, role: Data),
+                ],
+                connectivity: None,
+                note: None,
+            ),
+        ),
+
+        // A mixed-mode clock manager. Nobody has analysed it, and saying
+        // so explicitly is the point: a module absent from this file and
+        // one present with `Opaque` behave identically to the analysis
+        // and read completely differently to a maintainer. One is a gap;
+        // the other is a decision.
+        (
+            "MMCME2_ADV",
+            Module(
+                ports: [
+                    Port(name: "CLKIN1",  dir: Input,  width: 1, role: Clock),
+                    Port(name: "RST",     dir: Input,  width: 1, role: Reset),
+                    Port(name: "CLKOUT0", dir: Output, width: 1, role: Data),
+                    Port(name: "LOCKED",  dir: Output, width: 1, role: Data),
+                ],
+                connectivity: Opaque,
+                // One line: RON has no backslash line-continuation, and a
+                // note is short enough not to need one.
+                note: Some("Not analysed.  Treated as connecting everything, which is conservative: a design routing data through this is reported as having a combinational path until somebody works out which of its outputs are actually registered."),
+            ),
+        ),
+    ],
+)

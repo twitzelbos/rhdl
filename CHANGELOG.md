@@ -31,6 +31,63 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-27 — Black-box connectivity, Phase 3: a primitive library as data
+
+**Paths:** `crates/rhdl-core/src/circuit/blackbox_decl.rs` (new), `crates/rhdl-core/src/{error.rs,circuit/mod.rs}`, `crates/rhdl-bsp/{build.rs,Cargo.toml,primitives/xilinx-7series.ron,src/primitives.rs,src/drivers/xilinx/muxf7.rs,tests/primitive_library.rs}` (all new), `black-box-connectivity.md` §8.
+
+**Why this, why now:** Phase 1 made connectivity declarable in Rust, which is right for the handful of black boxes a project writes and wrong for a vendor primitive library. Xilinx alone has hundreds of primitives whose connectivity is a mechanical property of each, and those descriptions want to be generated, reviewed and diffed as data.
+
+**Design decisions:**
+
+- **§9's open question dissolves rather than being answered.** It asked where the serde types should live, since a build script cannot depend on the crate it is building, and offered a new leaf crate or duplicated definitions with a test asserting they agree. Neither is needed: the build script deserialises into its own private structs and emits *text*, and the text names the runtime types. Agreement is checked by the generated code having to compile against them, so a mismatch is a compile error in `OUT_DIR` rather than a silently wrong constant. `ron` and `serde` sit in `[build-dependencies]` and never enter the runtime graph.
+- **A build script rather than reading the file at run time**, because RHDL compiles at run time: a path held in a descriptor would resolve against whatever binary called `descriptor()`, and a stale file would surface from deep inside descriptor construction. Read at build time, a malformed library is a build failure naming the offending module — and the build script validates more than the schema, rejecting a zero-width port, a path naming a port that does not exist, and a path running output-to-input. Those are claims about silicon and the analysis will believe them.
+- **`resolve()` catches the two mistakes it can see** — a data port with no mapping, and a mapping naming a port the module lacks — and leaves the third to `to_paths`, which has the kinds to check a path against and already reports `BlackBoxPortNotFound`. Clock and reset ports need no mapping, being excluded from the analysis anyway.
+- **`Opaque` is in the file, not achieved by omission.** `MMCME2_ADV` declares it with a note saying nobody has analysed it. A module absent from the library and one present with `Opaque` behave identically to the analysis and read completely differently to a maintainer.
+
+**Surprises and gotchas:**
+
+- **The seed could not be what the plan specified.** Phase 3 said to seed with "`IBUFDS` and the open-collector pattern — the primitives the BSP already instantiates". Those are `Driver`s: no descriptor, no matrix, assembled into the fixture after the circuit tree, and therefore unable to consume a `BlackBoxConnectivity` at all. §1.1 of the same document says exactly that, and the phase plan forgot it. Seeding with them would have shipped a library nothing could instantiate. Seeded instead with `MUXF7`, `FDRE` and `MMCME2_ADV`, and `MUXF7` ships as a widget so the format is exercised end to end.
+- **RHDL cannot emit an instantiation of a module it does not define.** This is the finding. `Descriptor::hdl()` calls `ModuleList::checked()`, which runs `iverilog -t null` over the emitted text; iverilog rejects an unresolved instantiation with `Unknown module type: MUXF7`, so the descriptor cannot be built at all. That is why every black box in the tree *defines* its Verilog rather than instantiating someone else's — `core::dff` writes an `always` block, it does not instantiate `FDRE`. Same root cause as §1.3's note that Vivado IP has no circuit-level representation, and broader than that section implied: not just IP cores but any external module. `MUXF7` therefore emits a behavioural equivalent, which demonstrates the declaration path honestly and leaves the primitive to Phase 4.
+- **RON has no backslash line-continuation in strings.** A note wrapped Rust-style failed the build with `Unknown escape character`, which is at least a build failure that names the file and position.
+- **Phase 2 had to be restored by hand.** Its PR was merged into the Phase 1 *branch* seventeen seconds after that branch merged to `main`, so the work landed nowhere: `main` never received it. My PR body said "merge #112 first and this retargets cleanly", which is wrong — GitHub does not retarget a stacked PR when its base is merged rather than deleted; the base has to be changed explicitly first. The commit is cherry-picked here. Stacked PRs need the base retargeted before the parent merges, or they strand.
+
+**Validation:** 4 tests on the `MUXF7` widget (the declaration resolves and every input reaches the output, the DRC agrees by its own route, the emitted Verilog matches the field order, and the model muxes) and 7 on the library (both `resolve` errors, clock and reset needing no mapping, `Opaque` resolving to `Opaque`, notes surviving into the generated code, every entry well formed, and a declaration checked against parsed Verilog). That last one runs against a hand-written header rather than a vendor model, which is the honest limitation: whether `rhdl-vlog` accepts real `unisims` sources is untested and probably needs work, since it implements a subset. What it proves is that the comparison logic is right, so pointing it at real sources later is a parser problem rather than a logic one.
+
+**Follow-ups:**
+
+- **A descriptor needs a way to say "this module is defined elsewhere"** — the prerequisite for wrapping any vendor primitive, found here, and much smaller than the rest of Phase 4. Plausibly its own piece of work.
+- Pointing the interface cross-check at real vendor sources, which depends on the Verilog parser accepting them.
+- Drivers and the fixture remain outside every analysis.
+
+## 2026-08-26 — Black-box connectivity, Phase 2: the unknown case is conservative
+
+**Paths:** `crates/rhdl-core/src/circuit/{reachability.rs,phantom.rs,array/synchronous.rs,array/asynchronous.rs}`, `crates/rhdl-fpga/src/core/constant.rs`, `crates/rhdl-fpga/tests/black_box_connectivity.rs`, `black-box-connectivity.md` §8.
+
+**Why this, why now:** asked to unblock Phase 2. It was not blocked — it was mis-specified, and underneath the mis-specification was a real hole.
+
+**Phase 2 as written had nothing to act on.** It was "`Opaque` as the default for an undeclared module", to be done once "something can be undeclared". But Phase 1 made the connectivity argument *mandatory*, which is strictly stronger than any default: omission is impossible, so no default is consulted.
+
+**The optimistic assumption had not gone away, though. It had moved one level up.** Phase 1 removed it from `make_net_graph`'s `continue`, and it reappeared as `ReachabilityMatrix::default()`: an empty matrix, on which `has_feedthrough()` reads `i_to_o.any()` and returns false. So a descriptor whose matrix was never computed claimed to have no combinational paths — the exact claim §4.1 exists to prevent. Eleven descriptor literals write that default.
+
+**Design decisions:**
+
+- **The matrix records whether it is *known*, because empty and unknown are opposite claims that look identical.** Neither has any bits set, so no amount of inspecting the bits can distinguish "nothing reaches anything" from "nobody worked it out". A `known` flag that `Default` gives as `false` inverts the meaning of every defaulted matrix in one place.
+- **`none()` is known.** A shaped, deliberately-empty matrix is an answer. Only a defaulted one is an absence.
+- **Conservatism survives composition.** A child whose matrix is unknown contributes every possible edge, in the one place child edges are built — which feeds both the matrix and the cycle detector, so one rule covers both. Being conservative about a widget and then optimistic about it as somebody's child would leave the hole open one level up.
+- **Three descriptors now state their answers** rather than inheriting the old meaning: `core::constant`, both `phantom` descriptors, and the empty-array case in both `array` builders.
+
+**Surprises and gotchas:**
+
+- **The corpus cross-check caught `core::constant` immediately.** Its descriptor never computes a matrix, so it became honestly unknown and the matrix started disagreeing with the netlist walk. `Constant`'s output depends on nothing, which is a real answer — it had simply never been written down. That test has now caught three separate things it was not written for.
+- **I branched from the wrong base and lost twenty minutes to it.** `main` does not contain Phase 1, because that PR is still open, so the Phase 2 branch was missing everything it builds on. The symptom was silent: appending a test to `black_box_connectivity.rs` created a *new* 70-line file rather than appending to the 559-line one, because the file does not exist on `main`. Noticed only when a compile error pointed at line 52 of a file that should have been 500 lines long. Stacking a branch on an unmerged PR needs the unmerged branch as its base, and `cat >>` will not tell you the file was absent.
+
+**Validation:** 12 tests in `black_box_connectivity.rs`, including one asserting that a hand-built descriptor which never runs the analysis is reported as conceding a feedthrough. `cargo test --all --no-fail-fast` green; the acceptance criterion is again that nothing else moves, since every defaulted matrix in the tree was already being overwritten before anyone read it.
+
+**Follow-ups:**
+
+- The conservative path is reachable only by building a descriptor by hand: nothing in the widget API can yet be undeclared. Phase 3's library, which can omit a module, is what makes it reachable in earnest.
+- Still no feedthrough DRC for asynchronous circuits (`no_combinatorial_paths` is `<T: Synchronous>`).
+
 ## 2026-08-26 — Black-box connectivity, Phase 1: declared, not assumed
 
 **Paths:** `crates/rhdl-core/src/{circuit/reachability.rs,circuit/descriptor.rs,circuit/drc.rs,ntl/object.rs,ntl/builder.rs,ntl/graph.rs,error.rs}`, `crates/rhdl/src/prelude.rs`, eight widgets under `crates/rhdl-fpga/src/`, `crates/rhdl-fpga/tests/black_box_connectivity.rs` (new).

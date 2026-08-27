@@ -73,6 +73,14 @@ pub enum RHDLError {
         "Black box declares a combinational path through {side} port {port}, which it does not have"
     )]
     BlackBoxPortNotFound { port: String, side: &'static str },
+    #[error("Black box {module} has no port {port}, so it cannot be mapped")]
+    BlackBoxPortUnknown { module: String, port: String },
+    #[error("Black box {module} port {port} has no mapping to a field of the widget")]
+    BlackBoxPortUnmapped { module: String, port: String },
+    #[error(
+        "Black box {module} port {port} is `inout`, which connectivity declarations do not describe"
+    )]
+    BlackBoxPortIsInout { module: String, port: String },
     #[error("Combinational Cycle")]
     #[diagnostic(transparent)]
     CombinationalCycle(#[from] Box<crate::circuit::error::CombinationalCycle>),

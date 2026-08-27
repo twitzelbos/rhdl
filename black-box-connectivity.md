@@ -408,20 +408,48 @@ Naming the boundaries, because each of these is a place where someone will reaso
 - **`BlackBoxConnectivity` went into the prelude.** Every black-box author needs it at the call site, so it belongs where they already look rather than behind a `rhdl::core::circuit::reachability::` path.
 - **Two latent panics surfaced, both of the same kind.** `drc::locate_combinatorial_path` asked `all_simple_paths` for a path with at least *one* intermediate node and then `unwrap`ped it. A direct edge from the inputs to the writing op has none — impossible while every path had an op in the middle, and exactly what a black box declaring a combinational path produces. The `unwrap` panicked. Fixed to `0` intermediate nodes and `unwrap_or_default`, so the worst case is a diagnostic without spans. This is the third unguarded `unwrap` in this area to fire once the surrounding assumption changed; the other two were in `ReorderInstructions`.
 
-### Phase 2 — `Opaque` as the default for an undeclared module (1 week)
+### Phase 2 — the unknown case made conservative — **SHIPPED**, and not as specced
 
-Only meaningful once something can be undeclared, which needs Phase 3's file or a user's own primitive. Splitting it out keeps Phase 1's blast radius to the widgets in this tree.
+This phase was written as "`Opaque` as the default for an undeclared module", blocked until "something can be undeclared". Both halves turned out to be wrong.
 
-### Phase 3 — the file format and the build script (2-3 weeks)
+**There is no default to invert.** Phase 1 made the connectivity argument to `with_netlist_black_box` *mandatory*, which is strictly stronger: a declaration cannot be omitted, so no default is ever consulted. Phase 2 as written had nothing to act on.
+
+**But the optimistic assumption had not gone away — it had moved.** §4.1 says the point of this work is that an undeclared black box must be assumed to connect everything. Phase 1 removed that assumption from `ntl::graph::make_net_graph`, and it reappeared one level up: `ReachabilityMatrix::default()` is an empty matrix, `has_feedthrough()` reads `i_to_o.any()`, and so a descriptor whose matrix was never computed claimed to have no combinational paths. Eleven descriptor literals in the tree write that default.
+
+An *empty* matrix and an *unknown* matrix are opposite claims that look identical: neither has any bits set. So the matrix now records which it is, in a `known` flag that `Default` gives as `false`:
+
+- `has_feedthrough()` returns true when the matrix is unknown.
+- A child whose matrix is unknown contributes every possible edge, so the conservatism survives composition rather than stopping at one level.
+- `ReachabilityMatrix::none()` — a shaped, deliberately-empty matrix — is *known*, because it is an answer rather than the absence of one.
+
+Three descriptors were relying on the old meaning and now state their answers explicitly: `core::constant` (whose `I` is `Kind::Empty`), both `phantom` descriptors (every kind empty), and the empty-array case in both `array` builders.
+
+**What this does not do**, and what Phase 3 still owes: nothing in the *widget* API can yet be undeclared, so the conservative path is reachable only by building a descriptor by hand. A library that can omit a module is what makes it reachable in earnest.
+
+### Phase 3 — the file format and the build script — **SHIPPED**
 
 - The RON schema of §4.3, with serde types in a small crate or module shared between the build script and the runtime types.
-- A build script in `rhdl-bsp` reading a checked-in `xilinx-7series.ron`, seeded with the primitives the BSP already instantiates — `IBUFDS` and the open-collector pattern to begin with, which makes the format earn its place on real cases before it is asked to describe hundreds.
+- A build script in `rhdl-bsp` reading a checked-in `xilinx-7series.ron`.
 - `resolve()`, and its three error cases.
 - The interface cross-check of §5.3, skipped where the vendor source is absent.
 
-### Phase 4 — IP cores as circuits (unscoped)
+**As shipped, with §9's open question dissolved, the seed changed, and one blocker found.**
 
-Sketched in §7. Wants its own document; it is a bigger question than connectivity, because it also has to answer what an IP core's Rust type is and who owns the TCL that creates it.
+**§9 asked where the serde types should live**, since a build script cannot depend on the crate it is building, and offered a new leaf crate or duplicated definitions with a test asserting they agree. Neither is needed. The build script deserialises into its own private structs and emits *text*; the text names the runtime types. Agreement is checked by the generated code having to compile against them — a mismatch is a compile error in `OUT_DIR`, not a silently wrong constant, so there is nothing for a test to assert and no crate to add. `ron` and `serde` live in `[build-dependencies]` and never enter the runtime graph.
+
+**The seed could not be `IBUFDS` and the open-collector pattern.** Those are `Driver`s: they sit at the pin boundary, have no descriptor and no matrix, and therefore cannot consume a `BlackBoxConnectivity` at all — §1.1 says so and this phase's own plan forgot it. Seeding with them would have shipped a library nothing could instantiate. The seed is instead `MUXF7` (a purely combinational 2:1 mux, and exactly the shape that was invisible before this work), `FDRE` (a flop, declaring `None`), and `MMCME2_ADV` (declaring `Opaque`, so that "not analysed" is a decision in the file rather than an absence from it). `MUXF7` ships as a widget that resolves its connectivity from the library, so the format is exercised end to end.
+
+**And the blocker: RHDL cannot emit an instantiation of a module it does not define.** `Descriptor::hdl()` calls `ModuleList::checked()`, which runs `iverilog -t null` over the emitted text, and iverilog rejects an unresolved instantiation — `Unknown module type: MUXF7`. The descriptor cannot be built at all.
+
+That is why every black box in the tree *defines* its Verilog rather than instantiating someone else's: `core::dff` writes an `always` block, it does not instantiate `FDRE`. There is no way to say "this module is defined elsewhere".
+
+This is the same root cause as §1.3's observation that Vivado IP cores have no circuit-level representation, and it reaches further than that section suggested — not just IP cores, but **any** external module. The declaration machinery is complete and works; what is missing is the ability to reference a module RHDL did not write. `MUXF7` therefore ships emitting a behavioural equivalent, which demonstrates the library-driven declaration honestly while leaving the primitive itself to Phase 4.
+
+### Phase 4 — external modules, and IP cores as circuits (unscoped)
+
+Sketched in §7, and Phase 3 found its first and smallest requirement: **a descriptor needs a way to declare that a module it instantiates is defined elsewhere**, so that `ModuleList::checked()` does not reject the design and so that the toolchain knows what to link. That is a prerequisite for wrapping any vendor primitive, not only for IP cores, and it is much smaller than the rest of Phase 4 — plausibly its own piece of work.
+
+The rest still wants its own document: it has to answer what an IP core's Rust type is and who owns the TCL that creates it.
 
 ---
 

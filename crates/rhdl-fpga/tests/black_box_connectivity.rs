@@ -557,3 +557,61 @@ fn an_async_ring_of_combinational_black_boxes_is_a_cycle() {
         Err(other) => panic!("expected a combinational cycle, got: {other}"),
     }
 }
+/// widget to build a descriptor by hand would have inherited the claim.
+mod never_analysed {
+    use rhdl::core::circuit::descriptor::SyncKind;
+    use rhdl::prelude::*;
+
+    /// Deliberately skips `with_netlist_black_box`, so nothing ever fills
+    /// in the matrix.
+    #[derive(Clone, Debug, Default)]
+    pub struct U;
+
+    impl SynchronousIO for U {
+        type I = bool;
+        type O = bool;
+        type Kernel = NoSynchronousKernel<ClockReset, bool, (), (bool, ())>;
+    }
+    impl SynchronousDQ for U {
+        type D = ();
+        type Q = ();
+    }
+    impl Synchronous for U {
+        type S = ();
+        fn init(&self) -> Self::S {}
+        fn sim(&self, _cr: ClockReset, i: Self::I, _s: &mut Self::S) -> Self::O {
+            i
+        }
+        fn descriptor(&self, scoped_name: ScopedName) -> Result<Descriptor<SyncKind>, RHDLError> {
+            let name = scoped_name.to_string();
+            // No netlist: the assertion is about the matrix, and building
+            // one would mean going through the very helper this widget
+            // exists to skip.
+            Ok(Descriptor::<SyncKind> {
+                combinational_reachability: Default::default(),
+                name: scoped_name,
+                input_kind: Self::I::static_kind(),
+                output_kind: Self::O::static_kind(),
+                d_kind: Kind::Empty,
+                q_kind: Kind::Empty,
+                kernel: None,
+                netlist: None,
+                hdl: Some(super::inverter_hdl(&name)),
+                _phantom: std::marker::PhantomData,
+            })
+        }
+    }
+}
+
+#[test]
+fn an_uncomputed_matrix_is_treated_as_connecting_everything() {
+    let d = never_analysed::U
+        .descriptor(ScopedName::top())
+        .expect("descriptor");
+    let m = &d.combinational_reachability;
+    assert!(!m.is_known(), "premise: nothing computed this matrix");
+    assert!(
+        m.has_feedthrough(),
+        "an unknown matrix must concede a feedthrough rather than deny one"
+    );
+}

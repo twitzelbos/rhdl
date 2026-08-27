@@ -3,6 +3,13 @@ name = "rhdl-bsp"
 version = "0.1.0"
 edition = "2021"
 
+[build-dependencies]
+# Only the build script reads the primitive libraries, so `ron` never
+# enters the runtime dependency graph -- see build.rs for why the file is
+# read at compile time rather than when a descriptor is built.
+ron = "0.10.1"
+serde = { version = "1", features = ["derive"] }
+
 [dependencies]
 rhdl-fpga = { path = "../rhdl-fpga" }
 camino = "1.1.9"
