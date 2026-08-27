@@ -182,6 +182,61 @@ pub const fn stage_width(j: usize, w_in: usize, n: usize, r: usize, m: usize) ->
     w_in + stage_gain_bits(j, n, r, m)
 }
 
+/// Width of stage `j` as **built**, the running maximum of the exact
+/// bounds up to `j`.
+///
+/// # Why the hardware does not use [`stage_width`] directly
+///
+/// The exact taper is not monotonic: at the comb-to-integrator boundary
+/// it can *narrow*, because zero-stuffing divides the signal by `R`
+/// faster than one integrator re-grows it by `R·M`. At
+/// `w_in = 16, N = 3, R = 125` the widths are
+/// `17, 18, 19, 18, 24, 30` — note the 19 followed by an 18.
+///
+/// A generated datapath that followed those widths exactly would need
+/// transfers in *both* directions: sign-extension going up and
+/// truncation coming down. Two operations, two chances to get the
+/// scaling wrong, and the narrowing one is only exercised by some
+/// configurations — which is the shape of a bug that hides.
+///
+/// Taking the running maximum makes every transfer a widening. The cost
+/// is measured rather than assumed: **one bit** at every configuration
+/// tried, and three at the degenerate `R·M = 2`, where the comb section
+/// is the widest part of the filter anyway.
+/// `the_monotone_taper_costs_almost_nothing` pins it.
+///
+/// The taper remains lossless either way: a stage wider than its own
+/// bound still holds its value exactly.
+pub const fn implemented_stage_width(j: usize, w_in: usize, n: usize, r: usize, m: usize) -> usize {
+    let mut widest = 0;
+    let mut k = 1;
+    while k <= j {
+        let w = stage_width(k, w_in, n, r, m);
+        if w > widest {
+            widest = w;
+        }
+        k += 1;
+    }
+    widest
+}
+
+/// Bits of state the built datapath spends.
+///
+/// [`tapered_state_bits`] against the exact bounds;  this against the
+/// monotone widths a generated widget actually carries. Report the exact
+/// figure to describe the mathematics and this one to describe the
+/// hardware.
+pub const fn implemented_state_bits(w_in: usize, n: usize, r: usize, m: usize) -> usize {
+    let mut total = 0;
+    let mut j = 1;
+    while j <= 2 * n {
+        let w = implemented_stage_width(j, w_in, n, r, m);
+        total += if j <= n { m * w } else { w };
+        j += 1;
+    }
+    total
+}
+
 /// Bits of growth the *widest* stage needs.
 ///
 /// The maximum over every stage, not `G_2N`, because the two sections
@@ -407,6 +462,65 @@ mod tests {
             tapered_state_bits(w_in, n, r, m),
             uniform_state_bits(w_in, n, r, m)
         );
+    }
+
+    /// **The monotone taper is monotone, and costs almost nothing.**
+    ///
+    /// Both halves matter. Monotone is what makes every inter-stage
+    /// transfer a widening, which is the whole reason a generated
+    /// datapath uses these widths; and the overhead is what makes that
+    /// simplification free.
+    #[test]
+    fn the_monotone_taper_costs_almost_nothing() {
+        for &(w, n, r, m, overhead) in &[
+            (16usize, 3usize, 125usize, 1usize, 1usize),
+            (16, 5, 5, 1, 1),
+            (16, 2, 8, 1, 1),
+            (18, 4, 25, 1, 1),
+            (16, 5, 1024, 1, 1),
+            // The degenerate rate, where the comb section is the widest
+            // part of the filter and the dip is three bits deep.
+            (16, 3, 2, 1, 3),
+        ] {
+            let built: Vec<usize> = (1..=2 * n)
+                .map(|j| implemented_stage_width(j, w, n, r, m))
+                .collect();
+            for pair in built.windows(2) {
+                assert!(
+                    pair[1] >= pair[0],
+                    "w={w} N={n} R={r}: {built:?} is not monotone"
+                );
+            }
+            // Never below the exact bound, so still lossless.
+            for j in 1..=2 * n {
+                assert!(
+                    implemented_stage_width(j, w, n, r, m) >= stage_width(j, w, n, r, m),
+                    "w={w} N={n} R={r} j={j}"
+                );
+            }
+            assert_eq!(
+                implemented_state_bits(w, n, r, m) - tapered_state_bits(w, n, r, m),
+                overhead,
+                "w={w} N={n} R={r} M={m}"
+            );
+        }
+    }
+
+    /// And the built widths still beat the uniform ones, which is the
+    /// point of tapering at all.
+    #[test]
+    fn the_built_taper_is_still_a_real_saving() {
+        for &(w, n, r, m) in &[(16, 3, 125, 1), (16, 2, 8, 1), (18, 4, 25, 1)] {
+            let built = implemented_state_bits(w, n, r, m);
+            let uniform = uniform_state_bits(w, n, r, m);
+            assert!(
+                built < uniform,
+                "w={w} N={n} R={r}: built {built} vs uniform {uniform}"
+            );
+        }
+        // The worked configuration, as data: 127 against 180.
+        assert_eq!(implemented_state_bits(16, 3, 125, 1), 127);
+        assert_eq!(uniform_state_bits(16, 3, 125, 1), 180);
     }
 
     /// **Sizing for `R_MAX` covers every smaller rate.**
