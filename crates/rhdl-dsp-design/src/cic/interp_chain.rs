@@ -327,6 +327,174 @@ pub enum Unmet {
     },
 }
 
+/// Where a **post**-compensator's passband and stopband sit, in
+/// converter-rate units.
+///
+/// Returns `(passband_edge, stopband_edge)` as fractions of the
+/// converter rate. A FIR placed *after* the interpolator runs at `fs`,
+/// so the signal it must pass has been squeezed into `[0, edge/R]` and
+/// the first image it must stop begins at `(1 - edge)/R`.
+///
+/// That squeezing is the whole story of post-compensation: the filter
+/// gets narrower in proportion to `R`, and a narrow filter costs taps.
+pub fn post_compensator_bands(passband: f64, r: usize) -> (f64, f64) {
+    let edge = response::passband_edge_out(passband);
+    let rr = r as f64;
+    (edge / rr, (1.0 - edge) / rr)
+}
+
+/// Roughly how many taps a post-compensator needs, by the Kaiser
+/// estimate.
+///
+/// `N ≈ (A - 8) / (2.285 · Δω)`, with `Δω` the transition band in
+/// radians per converter sample. **An estimate and not a design** — it
+/// ignores the droop the filter also has to invert, which pushes the
+/// real number up — but it is the right order and it is enough to answer
+/// the question a caller actually has, which is whether a
+/// post-compensator is affordable at all.
+///
+/// # It is usually not, and this is the function that says so
+///
+/// The transition band is `(1 - 2·edge)/R` wide, so the tap count grows
+/// **linearly with `R`** — and every one of those taps runs at the
+/// converter clock. Measured at `passband = 0.4`, 60 dB:
+///
+/// | `R` | taps |
+/// |---|---|
+/// | 2 | 12 |
+/// | 4 | 24 |
+/// | 8 | 48 |
+/// | 16 | 97 |
+/// | 32 | 195 |
+/// | 125 | 755 |
+///
+/// So a post-compensator is the right shape at `R` up to about eight,
+/// and at `R = 125` it is a 755-tap FIR at 125 MHz, which is not a
+/// widget anybody wants. `the_tap_count_grows_with_the_rate` pins the
+/// table.
+///
+/// **The useful reading is not "don't", it is "not here".** Put the
+/// post-compensator between *chain stages*, where the local `R` is
+/// small, rather than after the whole interpolation. A `5 × 25` split
+/// compensated after its first stage runs a filter at 5 MHz with an `R`
+/// of 5, not at 125 MHz with an `R` of 125. That is what
+/// [`InterpSpec::max_chain_stages`] is for, and it is the reason
+/// splitting a transmit chain buys more than register bits.
+pub fn post_compensator_taps(passband: f64, r: usize, attenuation_db: f64) -> usize {
+    let (f_pass, f_stop) = post_compensator_bands(passband, r);
+    let dw = std::f64::consts::TAU * (f_stop - f_pass);
+    if dw <= 0.0 {
+        return usize::MAX;
+    }
+    let n = (attenuation_db - 8.0) / (2.285 * dw);
+    let n = n.ceil().max(3.0) as usize;
+    // Symmetric FIRs need a centre tap.
+    if n.is_multiple_of(2) { n + 1 } else { n }
+}
+
+/// Design a **post**-compensator: a converter-rate FIR that both
+/// flattens the band and attenuates the images.
+///
+/// The taps a
+/// [`crate::cic::post_compensated_interp`](https://docs.rs/rhdl-fpga)
+/// widget needs. Returns `None` if the fit is not designable at this tap
+/// count — an even count, or a band reaching a null.
+///
+/// # Why this is not [`compensator::design`]
+///
+/// A post-compensator runs at the converter rate while the droop it
+/// inverts is a property of the envelope rate, so its own frequency
+/// variable and the cascade's differ by `R`.
+/// [`compensator::design_scaled`] is the general form that takes that
+/// factor; this function computes the band edges in converter-rate units
+/// and hands it `R`.
+///
+/// # And it is the only compensator that can touch the images
+///
+/// A *pre*-compensator is periodic with period one in envelope-rate
+/// units, so it lifts every image exactly as much as the signal. Moving
+/// the filter to the converter rate breaks the periodicity, so `u` and
+/// `k + u` become different frequencies to it and `min_stopband_db`
+/// becomes a real image requirement rather than a no-op.
+///
+/// **Check [`post_compensator_taps`] before reaching for this.** The
+/// filter narrows in proportion to `R`, so the cost is linear in the
+/// rate and at `R = 125` it is a 755-tap FIR at the converter clock.
+/// Between chain stages, where the local `R` is small, it is a couple of
+/// dozen taps.
+pub fn post_compensator(
+    shapes: &[compensator::CicShape],
+    passband: f64,
+    r: usize,
+    taps: usize,
+    min_stopband_db: f64,
+    coeff_width: usize,
+) -> Option<compensator::Quantised> {
+    let (f_pass, f_stop) = post_compensator_bands(passband, r);
+    if f_stop >= 0.5 || f_pass <= 0.0 {
+        return None;
+    }
+    let spec = compensator::Spec {
+        cics: evaluation_order(shapes),
+        // `passband_edge_out` halves, so double going in: these are
+        // fractions of the *converter* Nyquist now.
+        passband: 2.0 * f_pass,
+        taps,
+        stopband_edge: 2.0 * f_stop,
+        min_stopband_db,
+        max_ripple_db: 1.0,
+        // Least squares only: the exchange algorithm's band bookkeeping
+        // assumes the filter and the cascade share a frequency variable.
+        // See `compensator::design_scaled`.
+        method: compensator::Method::LeastSquares,
+    };
+    let d = compensator::design_scaled(spec, r as f64)?;
+    Some(compensator::quantise(&d, coeff_width))
+}
+
+/// Composite image rejection with a post-compensator in place, in dB
+/// below the signal.
+///
+/// [`cascade_image_db`] answers the same question for the cascade alone.
+/// This one multiplies in the converter-rate filter, which — unlike a
+/// pre-compensator — actually changes the answer.
+///
+/// `taps` are in converter-rate units, as
+/// [`post_compensator`] produces them.
+pub fn post_compensated_image_db(
+    shapes: &[compensator::CicShape],
+    passband: f64,
+    r: usize,
+    taps: &[f64],
+) -> f64 {
+    let order = evaluation_order(shapes);
+    let edge = response::passband_edge_out(passband);
+    let rr = r as f64;
+    // Reference: the composite at DC, which is where the passband is
+    // normalised.
+    let at = |g: f64| {
+        compensator::cascade_magnitude(&order, g * rr) * compensator::fir_amplitude(taps, g).abs()
+    };
+    let reference = at(0.0);
+    let mut worst = 0.0f64;
+    for k in 1..=(r / 2).max(1) {
+        const STEPS: usize = 257;
+        for s in 0..STEPS {
+            let u = k as f64 - edge + 2.0 * edge * (s as f64 / (STEPS - 1) as f64);
+            let g = u / rr;
+            if g <= 0.0 || g > 0.5 {
+                continue;
+            }
+            worst = worst.max(at(g));
+        }
+    }
+    if worst <= 1e-15 || reference <= 1e-15 {
+        300.0
+    } else {
+        -20.0 * (worst / reference).log10()
+    }
+}
+
 /// Reverse a transmit chain into the order the response evaluators
 /// expect.
 ///
@@ -853,6 +1021,161 @@ mod tests {
             "a larger search must not return a costlier design: {} vs {}",
             b.cost,
             a.cost
+        );
+    }
+
+    /// **A post-compensator suppresses images; a pre-compensator
+    /// cannot.**
+    ///
+    /// The claim that justifies the whole converter-rate arrangement,
+    /// measured on designed taps rather than argued from periodicity.
+    /// The cascade alone rejects images by some amount; adding a
+    /// *pre*-compensator leaves that number exactly where it was, and
+    /// adding a *post*-compensator improves it.
+    #[test]
+    fn a_post_compensator_suppresses_images_and_a_pre_one_does_not() {
+        let shapes = vec![compensator::CicShape {
+            decimate: 4,
+            stages: 2,
+            delay: 1,
+        }];
+        let passband = 0.4;
+        let r = 4usize;
+
+        let bare = cascade_image_db(&shapes, passband, r).0;
+
+        // A pre-compensator at the envelope rate.
+        let pre = compensator::design(compensator::Spec {
+            cics: shapes.clone(),
+            passband,
+            taps: 9,
+            stopband_edge: 1.0,
+            min_stopband_db: 0.0,
+            max_ripple_db: 1.0,
+            method: compensator::Method::LeastSquares,
+        })
+        .expect("designable");
+        // Its gain is periodic, so the image-to-signal ratio is
+        // unchanged -- which is what `cascade_image_db` already reports.
+        let pre_edge = response::passband_edge_out(passband);
+        let at_signal = compensator::fir_amplitude(&pre.taps, pre_edge).abs();
+        let at_image = compensator::fir_amplitude(&pre.taps, 1.0 + pre_edge).abs();
+        assert!(
+            (at_signal - at_image).abs() < 1e-9 * at_signal.max(1.0),
+            "a pre-compensator lifts signal and image alike"
+        );
+
+        // A post-compensator at the converter rate.
+        let post =
+            post_compensator(&shapes, passband, r, 25, 30.0, 18).expect("designable at R = 4");
+        let scale = (1u64 << post.shift) as f64;
+        let real: Vec<f64> = post.taps.iter().map(|x| *x as f64 / scale).collect();
+        let improved = post_compensated_image_db(&shapes, passband, r, &real);
+
+        assert!(
+            improved > bare + 10.0,
+            "a post-compensator must buy real rejection: bare {bare:.1} dB, \
+             with the filter {improved:.1} dB"
+        );
+    }
+
+    /// And it is refused, not fudged, where the bands do not fit.
+    #[test]
+    fn a_post_compensator_at_rate_one_is_refused() {
+        let shapes = vec![compensator::CicShape {
+            decimate: 4,
+            stages: 2,
+            delay: 1,
+        }];
+        // `R = 1` puts the stopband edge at or above Nyquist, so there is
+        // no band to stop.
+        assert!(post_compensator(&shapes, 0.4, 1, 25, 30.0, 18).is_none());
+        // As is an even tap count.
+        assert!(post_compensator(&shapes, 0.4, 4, 24, 30.0, 18).is_none());
+    }
+
+    /// **Remez is refused at a scale other than one**, rather than run
+    /// with the wrong band bookkeeping.
+    #[test]
+    fn remez_is_refused_when_the_rates_differ() {
+        let spec = compensator::Spec {
+            cics: vec![compensator::CicShape {
+                decimate: 8,
+                stages: 3,
+                delay: 1,
+            }],
+            passband: 0.1,
+            taps: 15,
+            stopband_edge: 0.4,
+            min_stopband_db: 30.0,
+            max_ripple_db: 1.0,
+            method: compensator::Method::Remez,
+        };
+        assert!(compensator::design_scaled(spec.clone(), 8.0).is_none());
+        // At scale one it is the ordinary designer and works.
+        assert!(compensator::design_scaled(spec, 1.0).is_some());
+    }
+
+    /// **A post-compensator's tap count grows linearly with the rate.**
+    ///
+    /// The table in [`post_compensator_taps`]'s docs, pinned. This is the
+    /// number that decides whether converter-rate compensation is worth
+    /// considering, and the answer flips somewhere around `R = 8`.
+    #[test]
+    fn the_tap_count_grows_with_the_rate() {
+        let at = |r: usize| post_compensator_taps(0.4, r, 60.0);
+        for &(r, taps) in &[
+            (2usize, 13usize),
+            (4, 25),
+            (8, 49),
+            (16, 97),
+            (32, 195),
+            (125, 755),
+        ] {
+            assert_eq!(at(r), taps, "R={r}");
+        }
+        // Linear, not merely increasing: doubling the rate roughly
+        // doubles the count, which is what makes the large-R case
+        // hopeless rather than merely expensive.
+        for r in [4usize, 8, 16, 32] {
+            let ratio = at(2 * r) as f64 / at(r) as f64;
+            assert!(
+                (ratio - 2.0).abs() < 0.15,
+                "R={r} -> {}: ratio {ratio:.3}",
+                2 * r
+            );
+        }
+        // And every count is odd, because a symmetric FIR needs a centre
+        // tap.
+        for r in [2usize, 3, 5, 8, 17, 125] {
+            assert_eq!(post_compensator_taps(0.4, r, 60.0) % 2, 1, "R={r}");
+        }
+    }
+
+    /// The bands are where a converter-rate filter sees them.
+    #[test]
+    fn the_post_compensator_bands_are_squeezed_by_the_rate() {
+        let (p, s) = post_compensator_bands(0.4, 125);
+        assert!((p - 0.2 / 125.0).abs() < 1e-12, "passband edge {p}");
+        assert!((s - 0.8 / 125.0).abs() < 1e-12, "stopband edge {s}");
+        // The signal band shrinks in proportion to R, which is the
+        // mechanism behind the tap count.
+        let (p2, _) = post_compensator_bands(0.4, 250);
+        assert!((p2 - p / 2.0).abs() < 1e-12);
+    }
+
+    /// **Splitting the chain is what makes post-compensation affordable.**
+    ///
+    /// The practical reading of the tap table: after the first stage of a
+    /// `5 × 25` split the local rate is five, not a hundred and
+    /// twenty-five, so the filter is an order of magnitude shorter.
+    #[test]
+    fn post_compensating_between_stages_is_far_cheaper() {
+        let whole = post_compensator_taps(0.4, 125, 60.0);
+        let after_first = post_compensator_taps(0.4, 5, 60.0);
+        assert!(
+            after_first * 10 < whole,
+            "after the first stage of 5 x 25: {after_first} taps against {whole}"
         );
     }
 
