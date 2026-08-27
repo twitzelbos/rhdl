@@ -11,11 +11,19 @@
 //!
 //! Knowing an operand is real is worth real silicon:
 //!
-//! | A | B | multiplies |
-//! |---|---|---|
-//! | `Iq` | `Iq` | **4** |
-//! | `Iq` | `Real` | **2** |
-//! | `Real` | `Real` | **1** |
+//! | A | B | result | multiplies |
+//! |---|---|---|---|
+//! | `Iq` | `Iq` | `Iq` | **4** |
+//! | `Iq` | `Iq` | `Real` | **2** |
+//! | `Iq` | `Real` | `Iq` | **2** |
+//! | `Real` | `Real` | `Real` | **1** |
+//!
+//! The *result* type earns its column because of the second row.
+//! [`RealPartMixer`] multiplies two complex operands and keeps only the
+//! real part, which is what a transmitter driving a single DAC needs —
+//! two products, not four, because `ad + bc` is never formed. Reaching
+//! for `.re` on a [`ComplexMixer`] instead spends two DSP slices
+//! computing a value nothing reads.
 //!
 //! Two tidier-looking options were rejected, both for the same reason.
 //! Representing a real operand as an `Iq` with `im` tied to zero, or
@@ -71,7 +79,9 @@
 
 pub mod complex;
 pub mod complex_real;
+pub mod real_part;
 pub mod rounding;
 
 pub use complex::ComplexMixer;
 pub use complex_real::ComplexRealMixer;
+pub use real_part::RealPartMixer;
