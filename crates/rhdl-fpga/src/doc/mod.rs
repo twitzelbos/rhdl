@@ -1,3 +1,4 @@
+pub mod interp_report;
 pub mod pdf;
 pub mod plot;
 pub mod report;

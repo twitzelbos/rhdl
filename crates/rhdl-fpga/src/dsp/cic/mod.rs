@@ -39,11 +39,15 @@
 
 pub mod cascaded;
 pub mod compensated;
+pub mod compensated_interp;
 pub mod decimator;
+pub mod interp_stream;
+pub mod interpolator;
 pub mod pruned;
 pub mod stream;
 
 pub use decimator::CicDecimate;
+pub use interpolator::CicInterpolate;
 
 // The design mathematics lives in `rhdl-dsp-design`, a leaf crate with
 // no RHDL dependency, because a proc macro must be able to reach it and
@@ -52,5 +56,5 @@ pub use decimator::CicDecimate;
 // `$crate::dsp::cic::prune::stage_width` paths -- see no difference.
 pub use rhdl_dsp_design::cic::{
     accumulator_width, accumulator_width_is_sufficient, chain, compensator, counter_width, dc_gain,
-    gain_bits, prune, response,
+    gain_bits, interp, interp_chain, prune, response,
 };

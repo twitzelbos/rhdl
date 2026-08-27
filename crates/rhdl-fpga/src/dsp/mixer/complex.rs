@@ -199,6 +199,29 @@ where
     rhdl::bits::W<PROD_W>: BitWidth,
 {
     fn default() -> Self {
+        // Checked, not trusted.
+        //
+        // `convergent`'s second precondition -- that `v + half` must not
+        // overflow `PROD_W` -- was recorded in prose and enforced by
+        // nothing. Both output components here are a *difference of two*
+        // products, each of which can reach `2^(A+B-2)` with the same
+        // sign, so the difference reaches `2^(A+B-1)` and needs `A+B+1`
+        // bits before the half-LSB is added.
+        //
+        // Getting it wrong is silent and it bites the largest sample in
+        // the design: at `A_W = B_W = 8, PROD_W = 16` the case
+        // `(-128 - 128j)(-128 + 127j)` gives `+32640`, rounding pushes
+        // it to `32768`, and `SignedBits<16>` wraps that to `-32768`.
+        // Found while writing `super::real_part::RealPartMixer`, which
+        // forms the same difference and now carries the same check.
+        assert!(
+            // `> A_W + B_W` rather than `>= A_W + B_W + 1`, which is the
+            // same condition and the one clippy::int_plus_one accepts.
+            PROD_W > A_W + B_W,
+            "PROD_W must be at least A_W + B_W + 1: each output component is a \
+             difference of two products, and `convergent` adds half an LSB on top"
+        );
+        assert!(DROP >= 1, "DROP must be at least one to round at all");
         Self {
             out: dff::DFF::default(),
             starved: dff::DFF::default(),
@@ -823,6 +846,25 @@ mod tests {
 
     /// The resource claim: **four** multiplies for the general case,
     /// against two for `ComplexRealMixer`.
+    /// **An under-width product is refused at construction.**
+    ///
+    /// `convergent`'s precondition, now enforced. Each output component
+    /// is a difference of two products, so `PROD_W` needs `A+B+1` bits;
+    /// at `A+B` the largest sample in a design wraps sign, silently. See
+    /// the note in `Default`.
+    #[test]
+    #[should_panic(expected = "PROD_W must be at least")]
+    fn an_under_width_product_is_rejected() {
+        let _ = ComplexMixer::<(), A, B, O, { A + B }, DR>::default();
+    }
+
+    /// As is a `DROP` of zero, which cannot round.
+    #[test]
+    #[should_panic(expected = "DROP must be at least one")]
+    fn a_zero_drop_is_rejected() {
+        let _ = ComplexMixer::<(), A, B, O, P, 0>::default();
+    }
+
     #[test]
     fn multiplier_count_is_as_claimed() -> miette::Result<()> {
         let uut = Uut::default();
