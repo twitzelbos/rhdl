@@ -40,6 +40,7 @@
 pub mod cascaded;
 pub mod compensated;
 pub mod decimator;
+pub mod interp_stream;
 pub mod interpolator;
 pub mod pruned;
 pub mod stream;
