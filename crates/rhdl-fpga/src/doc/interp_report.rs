@@ -131,6 +131,10 @@ pub fn as_design(cfg: InterpReport) -> Option<interp_chain::InterpDesign> {
 
     let input_rate_hz = cfg.fs_hz / r as f64;
     let (image_db, at_u) = interp_chain::cascade_image_db(&shapes, cfg.passband, r);
+    let scale = 2f64.powi(quantised.shift as i32);
+    let real: Vec<f64> = quantised.taps.iter().map(|x| *x as f64 / scale).collect();
+    let (any_input, in_band, l1, peak) =
+        interp_chain::compensator_headroom_of(cfg.w_in, &real, cfg.passband);
     let widths: Vec<usize> = (1..=2 * n)
         .map(|j| interp::stage_width(j, cfg.w_in, n, r, m))
         .collect();
@@ -165,6 +169,10 @@ pub fn as_design(cfg: InterpReport) -> Option<interp_chain::InterpDesign> {
             stage_widths: widths,
             uniform_state_bits: interp::uniform_state_bits(cfg.w_in, n, r, m),
             tapered_state_bits: interp::tapered_state_bits(cfg.w_in, n, r, m),
+            built_state_bits: interp::implemented_state_bits(cfg.w_in, n, r, m),
+            built_widths: (1..=2 * n)
+                .map(|j| interp::implemented_stage_width(j, cfg.w_in, n, r, m))
+                .collect(),
         }],
         compensator: quantised.clone(),
         passband: cfg.passband,
@@ -176,6 +184,11 @@ pub fn as_design(cfg: InterpReport) -> Option<interp_chain::InterpDesign> {
         cost: 0.0,
         register_bits: interp::uniform_state_bits(cfg.w_in, n, r, m),
         tapered_register_bits: interp::tapered_state_bits(cfg.w_in, n, r, m),
+        built_register_bits: interp::implemented_state_bits(cfg.w_in, n, r, m),
+        mid_width_any_input: any_input,
+        mid_width_in_band: in_band,
+        compensator_l1: l1,
+        compensator_peak: peak,
         alternative: None,
     })
 }
@@ -369,9 +382,10 @@ fn page_one(d: &interp_chain::InterpDesign, provenance: &str) -> Page {
                 c.input_width, c.accumulator_width, c.stage_widths
             ),
             format!(
-                "   {} register bits uniform, {} tapered (lossless)",
-                c.uniform_state_bits, c.tapered_state_bits
+                "   {} register bits uniform, {} as built (lossless), bound {}",
+                c.uniform_state_bits, c.built_state_bits, c.tapered_state_bits
             ),
+            format!("   widths as built {:?}", c.built_widths),
         ] {
             p.text(60.0, y, 8.0, Font::Regular, Align::Left, &line);
             y -= 11.0;
@@ -533,12 +547,24 @@ fn page_two(d: &interp_chain::InterpDesign) -> Page {
             d.dac_snr_db, d.spec.output_width
         ),
         format!(
-            "register bits ........ {} uniform, {} tapered",
-            d.register_bits, d.tapered_register_bits
+            "register bits ........ {} uniform, {} as built, {} at the exact bound",
+            d.register_bits, d.built_register_bits, d.tapered_register_bits
         ),
         format!(
             "compensator DC gain .. {:.4}, shift {}",
             d.compensator.dc_gain, d.compensator.shift
+        ),
+        format!(
+            "compensator headroom . {} bits for any input, {} for in-band only",
+            d.mid_width_any_input, d.mid_width_in_band
+        ),
+        format!(
+            "   norms ............. l1 {:.4}, passband peak {:.4}",
+            d.compensator_l1, d.compensator_peak
+        ),
+        format!(
+            "adder depth .......... {} deep in the combs, 1 in the integrators",
+            d.cics.iter().map(|c| c.stages).max().unwrap_or(0)
         ),
     ];
     if let Some(a) = &d.alternative {
@@ -555,6 +581,28 @@ fn page_two(d: &interp_chain::InterpDesign) -> Page {
     for line in wrap_values("taps ................. ", &d.compensator.taps, 475.0, 8.0) {
         p.text(60.0, y, 8.0, Font::Regular, Align::Left, &line);
         y -= 11.0;
+    }
+
+    // ---- headroom, which is easy to under-read ----
+    y -= 8.0;
+    p.text(
+        60.0,
+        y,
+        9.0,
+        Font::Bold,
+        Align::Left,
+        "Build to the any-input headroom unless the envelope is band-limited.",
+    );
+    y -= 12.0;
+    for line in [
+        "The in-band figure is the peak gain an in-band sinusoid sees. The any-input figure is the",
+        "sum of the taps' magnitudes, which is the bound for an arbitrary bounded input -- and a",
+        "transmit envelope is not band-limited: switch-on, a burst boundary and a modulation change",
+        "are all steps, and a step is exactly the input that reaches it. Choosing the narrower",
+        "figure for a burst transmitter is how a compensator saturates on the first sample.",
+    ] {
+        p.text(60.0, y, 7.5, Font::Regular, Align::Left, line);
+        y -= 9.5;
     }
 
     // ---- the thing a receive-trained reader will get wrong ----
@@ -609,6 +657,28 @@ mod tests {
         let bytes = interp_chain_report(&d).to_bytes();
         assert!(bytes.starts_with(b"%PDF"));
         assert!(bytes.len() > 10_000);
+    }
+
+    /// The headroom figures reach the page.
+    ///
+    /// Not just computed — a figure a reader needs and cannot see is not
+    /// reported. Checked by rendering and looking for the label, which is
+    /// crude and is exactly the failure it catches: a field added to the
+    /// design and never wired into a page.
+    #[test]
+    fn the_headroom_figures_are_on_the_page() {
+        let d = as_design(InterpReport::default()).expect("designable");
+        assert!(d.mid_width_any_input >= d.mid_width_in_band);
+        let bytes = interp_report(InterpReport::default()).unwrap().to_bytes();
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(
+            text.contains("compensator headroom"),
+            "the headroom line must be rendered"
+        );
+        assert!(
+            text.contains("adder depth"),
+            "the adder-depth line must be rendered"
+        );
     }
 
     /// **The report is deterministic.**

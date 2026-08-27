@@ -39,8 +39,10 @@
 //! Size stage `j` to `w_in + ceil(log2 G_j)` and it holds its own value
 //! exactly: no truncation, no wrap, **no error at all**. That is the
 //! important difference from the decimator, where tapering trades
-//! noise for area. Here it is free, and
-//! [`stage_width`] is the schedule.
+//! noise for area. Here it is free, [`stage_width`] is the schedule, and
+//! `rhdl_fpga::cic_interp_tapered!` is the widget that follows it —
+//! bit-identical to the uniform form, which is a guarantee the
+//! decimator's pruning schedule cannot offer.
 //!
 //! The saving is real. At `w_in = 18, N = 3, R = 125, M = 1` a uniform
 //! filter spends 32 bits in all six stages; tapered they are

@@ -86,15 +86,19 @@
 //! unchanged — 500 ksps at `R = 250` would not, and would need a
 //! rebuild. Mark the first sample at each new rate; see below.
 //!
-//! **What the taper would save.** The uniform-width interpolator in this
-//! configuration spends 180 bits of state per arm; tapered to each
-//! stage's own growth bound — `17, 18, 19, 18, 24, 30` — it spends 126,
-//! a 30% saving, and *losslessly*, because an interpolator's taper
-//! injects no error at all
-//! ([`crate::dsp::cic::interp`] carries the argument). The tapered
-//! widget is not built yet; [`crate::dsp::cic::interpolator`] is the
-//! uniform form and is the reference a tapered one would be checked
-//! against. `the_worked_sizing_is_what_the_docs_say` pins these numbers.
+//! **What the taper saves.** The uniform-width interpolator in this
+//! configuration spends 180 bits of state per arm. Tapered to each
+//! stage's own growth bound the exact figure is 126 — widths
+//! `17, 18, 19, 18, 24, 30` — and a generated
+//! [`crate::cic_interp_tapered!`] widget spends **127**, because it
+//! lifts the non-monotonic fourth stage to the running maximum so that
+//! every inter-stage transfer is a widening. Either way a 30% saving,
+//! and *losslessly*: an interpolator's taper injects no error at all, so
+//! the tapered widget is **bit-identical** to
+//! [`crate::dsp::cic::interpolator`]'s uniform form rather than merely
+//! close to it. [`crate::dsp::cic::interp`] carries the argument and
+//! `tests/cic_interp_tapered.rs` asserts the equality.
+//! `the_worked_sizing_is_what_the_docs_say` pins these numbers.
 //!
 //! # The rate is a run-time input
 //!

@@ -856,6 +856,9 @@ mod tests {
         assert_eq!(widths, vec![17, 18, 19, 18, 24, 30]);
         assert_eq!(interp::uniform_state_bits(WU, SU, RU, MU), 180);
         assert_eq!(interp::tapered_state_bits(WU, SU, RU, MU), 126);
+        // And what a generated `cic_interp_tapered!` widget carries: one
+        // bit more, because it lifts the non-monotonic stage.
+        assert_eq!(interp::implemented_state_bits(WU, SU, RU, MU), 127);
 
         // And the whole configuration actually builds, which is the part
         // a table of numbers does not establish.

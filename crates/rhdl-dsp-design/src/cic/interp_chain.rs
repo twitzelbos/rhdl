@@ -179,7 +179,23 @@ pub struct InterpStage {
     pub uniform_state_bits: usize,
     /// Register bits under the taper. Lossless — the two produce
     /// bit-identical output.
+    ///
+    /// The *exact* bounds, which is the mathematical figure. See
+    /// [`InterpStage::built_state_bits`] for what a generated widget
+    /// spends.
     pub tapered_state_bits: usize,
+    /// Register bits a `cic_interp_tapered!` widget actually carries.
+    ///
+    /// The exact bounds are not monotonic, and a generated datapath uses
+    /// the running maximum so that every inter-stage transfer is a
+    /// widening — one bit more in practice, and no truncation logic
+    /// anywhere. This is the number to build to;
+    /// [`InterpStage::tapered_state_bits`] is the number to quote as the
+    /// bound.
+    pub built_state_bits: usize,
+    /// Per-stage widths as built: the monotone lift of
+    /// [`InterpStage::stage_widths`].
+    pub built_widths: Vec<usize>,
 }
 
 /// A cheaper or otherwise notable candidate that was not chosen.
@@ -232,8 +248,40 @@ pub struct InterpDesign {
     pub cost: f64,
     /// Total register bits at the uniform width.
     pub register_bits: usize,
-    /// Total register bits under the lossless taper.
+    /// Total register bits under the lossless taper, at the exact
+    /// bounds.
     pub tapered_register_bits: usize,
+    /// Total register bits a generated tapered widget carries.
+    pub built_register_bits: usize,
+    /// Width the pre-compensator's output needs to be unable to saturate
+    /// on **any** input.
+    ///
+    /// `input_width + ceil(log2 ‖h‖₁)`, from the sum of the quantised
+    /// taps' magnitudes. The `l1` norm is the bound for an arbitrary
+    /// bounded input, so a register this wide cannot overflow whatever
+    /// arrives.
+    ///
+    /// **This is the one to build to unless you know the input is
+    /// band-limited.** A transmit envelope is not: switch-on, a burst
+    /// boundary and a modulation change are all steps, and a step is
+    /// exactly the input that reaches the `l1` bound.
+    pub mid_width_any_input: usize,
+    /// Width it needs to be unable to saturate on a signal confined to
+    /// the passband.
+    ///
+    /// `input_width + ceil(log2 peak)`, from the largest passband gain.
+    /// Narrower than [`InterpDesign::mid_width_any_input`] — often by
+    /// two or three bits — and correct only for an in-band sinusoid.
+    ///
+    /// Reported because it is the figure the follow-up that prompted
+    /// this asked for, and because for a continuously-modulated carrier
+    /// it is the right one. Choosing it for a burst transmitter is how a
+    /// compensator saturates on the first sample.
+    pub mid_width_in_band: usize,
+    /// Sum of the quantised taps' magnitudes, `‖h‖₁`.
+    pub compensator_l1: f64,
+    /// Largest passband gain the compensator asks for.
+    pub compensator_peak: f64,
     /// The runner-up, when there was one.
     pub alternative: Option<Alternative>,
 }
@@ -568,6 +616,35 @@ pub fn cascade_image_db(
     }
 }
 
+/// Headroom the compensator's output needs, both bounds.
+///
+/// Returns `(any_input, in_band, l1, peak)`: the two widths and the two
+/// norms they come from. Measured on the taps the hardware holds, not on
+/// the ideal design — quantisation moves both slightly and the register
+/// has to hold what is actually computed.
+pub fn compensator_headroom_of(
+    input_width: usize,
+    taps: &[f64],
+    passband: f64,
+) -> (usize, usize, f64, f64) {
+    let l1: f64 = taps.iter().map(|t| t.abs()).sum();
+    let edge = response::passband_edge_out(passband);
+    let mut peak = 0.0f64;
+    const GRID: usize = 512;
+    for g in 0..GRID {
+        let u = edge * g as f64 / (GRID - 1) as f64;
+        peak = peak.max(compensator::fir_amplitude(taps, u).abs());
+    }
+    let bits = |gain: f64| -> usize {
+        if gain <= 1.0 {
+            input_width
+        } else {
+            input_width + gain.log2().ceil() as usize
+        }
+    };
+    (bits(l1), bits(peak), l1, peak)
+}
+
 /// Peak-to-peak ripple of the **composite** across the passband, in dB.
 ///
 /// Cascade times compensator, evaluated on the taps the hardware will
@@ -778,6 +855,7 @@ pub fn design(spec: InterpSpec) -> Result<InterpDesign, Unmet> {
             let mut cost = 0.0f64;
             let mut uniform_bits = 0usize;
             let mut tapered_bits = 0usize;
+            let mut built_bits = 0usize;
             for (r, (n, m)) in split.iter().zip(&depths) {
                 let wa = interp::accumulator_width(w_in, *n, *r, *m);
                 let widths: Vec<usize> = (1..=2 * n)
@@ -785,6 +863,10 @@ pub fn design(spec: InterpSpec) -> Result<InterpDesign, Unmet> {
                     .collect();
                 let u_bits = interp::uniform_state_bits(w_in, *n, *r, *m);
                 let t_bits = interp::tapered_state_bits(w_in, *n, *r, *m);
+                let b_bits = interp::implemented_state_bits(w_in, *n, *r, *m);
+                let built: Vec<usize> = (1..=2 * n)
+                    .map(|j| interp::implemented_stage_width(j, w_in, *n, *r, *m))
+                    .collect();
                 let rate_out = rate_in * *r as f64;
 
                 // Rate-weighted cost: the combs are clocked at this
@@ -800,6 +882,7 @@ pub fn design(spec: InterpSpec) -> Result<InterpDesign, Unmet> {
 
                 uniform_bits += u_bits;
                 tapered_bits += t_bits;
+                built_bits += b_bits;
                 stages_out.push(InterpStage {
                     interpolate: *r,
                     stages: *n,
@@ -811,10 +894,15 @@ pub fn design(spec: InterpSpec) -> Result<InterpDesign, Unmet> {
                     stage_widths: widths,
                     uniform_state_bits: u_bits,
                     tapered_state_bits: t_bits,
+                    built_state_bits: b_bits,
+                    built_widths: built,
                 });
                 w_in = wa;
                 rate_in = rate_out;
             }
+
+            let (mid_any, mid_band, l1, peak) =
+                compensator_headroom_of(spec.input_width, &dequantised(&quantised), passband);
 
             feasible.push(InterpDesign {
                 spec: spec.clone(),
@@ -831,6 +919,11 @@ pub fn design(spec: InterpSpec) -> Result<InterpDesign, Unmet> {
                 cost,
                 register_bits: uniform_bits,
                 tapered_register_bits: tapered_bits,
+                built_register_bits: built_bits,
+                mid_width_any_input: mid_any,
+                mid_width_in_band: mid_band,
+                compensator_l1: l1,
+                compensator_peak: peak,
                 alternative: None,
             });
         }
@@ -1022,6 +1115,102 @@ mod tests {
             b.cost,
             a.cost
         );
+    }
+
+    /// **The design reports the buildable width, not only the bound.**
+    ///
+    /// `tapered_*` are the exact bounds and `built_*` are what a
+    /// `cic_interp_tapered!` widget carries — the monotone lift, one bit
+    /// more per stage boundary that dips. Reporting only the bound would
+    /// under-state the hardware by a bit or two per stage, which is
+    /// exactly the sort of drift a report exists to prevent.
+    #[test]
+    fn the_design_reports_both_the_bound_and_the_buildable_width() {
+        let d = design(InterpSpec::default()).expect("designable");
+        assert!(d.built_register_bits >= d.tapered_register_bits);
+        assert!(d.built_register_bits < d.register_bits, "still a saving");
+        for c in &d.cics {
+            assert_eq!(c.built_widths.len(), c.stage_widths.len());
+            for (built, exact) in c.built_widths.iter().zip(&c.stage_widths) {
+                assert!(built >= exact, "the lift never narrows");
+            }
+            for pair in c.built_widths.windows(2) {
+                assert!(pair[1] >= pair[0], "built widths are monotone");
+            }
+        }
+    }
+
+    /// **The design says how wide the compensator's output has to be.**
+    ///
+    /// The follow-up this closes: the designer used to report the
+    /// compensator's gain and leave the headroom to the caller, so
+    /// `CompensatedInterp`'s `W_MID` was a guess.
+    #[test]
+    fn the_design_reports_the_headroom_the_compensator_needs() {
+        let d = design(InterpSpec::default()).expect("designable");
+        // Both bounds are at least the input width -- a compensator
+        // never needs *less* room than its input.
+        assert!(d.mid_width_in_band >= d.spec.input_width);
+        assert!(d.mid_width_any_input >= d.mid_width_in_band);
+        // And the norms are consistent with the widths.
+        assert!(d.compensator_l1 >= d.compensator_peak);
+        assert!(
+            d.compensator_peak >= 1.0,
+            "a droop-inverting compensator has gain above one, got {}",
+            d.compensator_peak
+        );
+    }
+
+    /// **The two bounds differ, and by enough to matter.**
+    ///
+    /// If they were equal the distinction would be pedantry. The `l1`
+    /// norm counts every tap's magnitude and the passband peak counts
+    /// only what an in-band sinusoid sees, so a compensator with large
+    /// alternating taps has a much bigger `l1` — and an envelope step,
+    /// which every burst transmitter produces, is the input that reaches
+    /// it.
+    #[test]
+    fn the_any_input_bound_is_wider_than_the_in_band_one() {
+        let d = design(InterpSpec::default()).expect("designable");
+        assert!(
+            d.compensator_l1 > 1.5 * d.compensator_peak,
+            "l1 {} against passband peak {}",
+            d.compensator_l1,
+            d.compensator_peak
+        );
+        assert!(
+            d.mid_width_any_input > d.mid_width_in_band,
+            "the two widths should differ: {} and {}",
+            d.mid_width_any_input,
+            d.mid_width_in_band
+        );
+    }
+
+    /// The headroom function agrees with hand arithmetic on a filter
+    /// whose norms are obvious.
+    #[test]
+    fn the_headroom_arithmetic_is_right() {
+        // A unit impulse: both norms one, so no extra bits.
+        let (any, band, l1, peak) = compensator_headroom_of(16, &[0.0, 1.0, 0.0], 0.4);
+        assert_eq!((any, band), (16, 16));
+        assert!((l1 - 1.0).abs() < 1e-12 && (peak - 1.0).abs() < 1e-12);
+
+        // `[-1, 3, -1]` has response `3 - 2·cos(2πu)`, so `l1` is 5 and
+        // the peak across a band reaching `u = 0.3` is `3 + 2·0.309`.
+        let (any, band, l1, peak) = compensator_headroom_of(16, &[-1.0, 3.0, -1.0], 0.6);
+        assert!((l1 - 5.0).abs() < 1e-12, "l1 {l1}");
+        assert!((peak - 3.618).abs() < 0.01, "peak {peak}");
+        assert_eq!(any, 16 + 3, "ceil(log2 5) = 3");
+        assert_eq!(band, 16 + 2, "ceil(log2 3.618) = 2");
+
+        // **A gain a hair above one costs a whole bit**, which is
+        // arithmetically right and reads as a surprise: the same filter
+        // over a band so narrow that its peak is 1.0005 still needs one
+        // extra bit, because 1.0005 times full scale does not fit.
+        // Pinned because an earlier version of this test expected zero.
+        let (_, band, _, peak) = compensator_headroom_of(16, &[-1.0, 3.0, -1.0], 0.01);
+        assert!(peak > 1.0 && peak < 1.001, "peak {peak}");
+        assert_eq!(band, 17);
     }
 
     /// **A post-compensator suppresses images; a pre-compensator

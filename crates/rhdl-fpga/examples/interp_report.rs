@@ -63,8 +63,8 @@ fn main() -> Result<(), RHDLError> {
         hand.worst_image_hz / 1e6
     );
     println!(
-        "  ripple {:.4} dB after compensation, {} register bits ({} tapered)",
-        hand.achieved_ripple_db, hand.register_bits, hand.tapered_register_bits
+        "  ripple {:.4} dB after compensation, {} register bits ({} as built)",
+        hand.achieved_ripple_db, hand.register_bits, hand.built_register_bits
     );
     println!("  wrote {}", path.display());
     println!();
@@ -92,14 +92,18 @@ fn main() -> Result<(), RHDLError> {
         derived.delays()
     );
     println!(
+        "  headroom: {} bits for any input, {} in-band only",
+        derived.mid_width_any_input, derived.mid_width_in_band
+    );
+    println!(
         "  got:   images {:.1} dB down, ripple {:.4} dB, {} taps",
         derived.achieved_image_db,
         derived.achieved_ripple_db,
         derived.compensator.taps.len()
     );
     println!(
-        "  cost:  {} register bits uniform, {} tapered (lossless)",
-        derived.register_bits, derived.tapered_register_bits
+        "  cost:  {} register bits uniform, {} as built (lossless)",
+        derived.register_bits, derived.built_register_bits
     );
     if let Some(a) = &derived.alternative {
         println!(
