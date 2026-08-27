@@ -180,6 +180,48 @@ impl<
     const PROD_W: usize,
     const DROP: usize,
     C,
+> RealDuc<W, WA, CW, OW, PROD_W, DROP, C>
+where
+    rhdl::bits::W<W>: BitWidth,
+    rhdl::bits::W<WA>: BitWidth,
+    rhdl::bits::W<CW>: BitWidth,
+    rhdl::bits::W<OW>: BitWidth,
+    rhdl::bits::W<PROD_W>: BitWidth,
+    C: SynchronousIO<I = interpolator::In<W, CW>, O = interpolator::Out<WA>>
+        + Synchronous
+        + Clone
+        + std::fmt::Debug,
+{
+    /// Build the chain around one interpolator, cloned into both arms.
+    ///
+    /// For an interpolator that cannot be defaulted — a
+    /// [`crate::dsp::cic::compensated_interp::CompensatedInterp`], whose
+    /// filter half needs taps. [`Default`] covers the rest. See
+    /// [`super::EnvelopeUpsampler::new`] on why this takes one arm and
+    /// not two.
+    pub fn new(cic: C) -> Self {
+        assert_eq!(
+            PROD_W,
+            WA + sin_cos_linear_interp::AMP_W + 1,
+            "PROD_W is the mixer's natural product width, A_W + B_W + 1; \
+             Rust cannot derive it from WA without generic_const_exprs"
+        );
+        Self {
+            up: EnvelopeUpsampler::new(cic),
+            lo: composite::NcoDefault::default(),
+            mix: RealPartMixer::default(),
+        }
+    }
+}
+
+impl<
+    const W: usize,
+    const WA: usize,
+    const CW: usize,
+    const OW: usize,
+    const PROD_W: usize,
+    const DROP: usize,
+    C,
 > Default for RealDuc<W, WA, CW, OW, PROD_W, DROP, C>
 where
     rhdl::bits::W<W>: BitWidth,

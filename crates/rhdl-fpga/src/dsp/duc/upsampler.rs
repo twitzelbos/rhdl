@@ -140,6 +140,40 @@ where
     combine: IqCombine<WA, SyncMark>,
 }
 
+impl<const W: usize, const WA: usize, const CW: usize, C> EnvelopeUpsampler<W, WA, CW, C>
+where
+    rhdl::bits::W<W>: BitWidth,
+    rhdl::bits::W<WA>: BitWidth,
+    rhdl::bits::W<CW>: BitWidth,
+    C: SynchronousIO<I = interpolator::In<W, CW>, O = interpolator::Out<WA>>
+        + Synchronous
+        + Clone
+        + std::fmt::Debug,
+{
+    /// Build an upsampler around one interpolator, cloned into both
+    /// arms.
+    ///
+    /// **One argument, not two, and that is the point.** An asymmetry
+    /// between the in-phase and quadrature arms rotates the
+    /// constellation, which on transmit leaks into the sideband the
+    /// modulation was meant to suppress. Taking a single arm and cloning
+    /// it makes the two identical by construction rather than by the
+    /// caller's care — the same reasoning, and the same shape, as
+    /// [`crate::dsp::ddc::Ddc::new`].
+    ///
+    /// Use this for an interpolator that cannot be defaulted — a
+    /// [`crate::dsp::cic::compensated_interp::CompensatedInterp`], whose
+    /// filter half needs taps. [`Default`] covers the rest.
+    pub fn new(cic: C) -> Self {
+        Self {
+            split: IqSplit::default(),
+            interp_i: interp_stream::StreamInterpolator::new(cic.clone()),
+            interp_q: interp_stream::StreamInterpolator::new(cic),
+            combine: IqCombine::default(),
+        }
+    }
+}
+
 impl<const W: usize, const WA: usize, const CW: usize, C> Default
     for EnvelopeUpsampler<W, WA, CW, C>
 where

@@ -12,6 +12,7 @@
 pub mod chain;
 pub mod compensator;
 pub mod interp;
+pub mod interp_chain;
 pub mod prune;
 pub mod response;
 

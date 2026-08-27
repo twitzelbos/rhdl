@@ -39,6 +39,7 @@
 
 pub mod cascaded;
 pub mod compensated;
+pub mod compensated_interp;
 pub mod decimator;
 pub mod interp_stream;
 pub mod interpolator;
@@ -55,5 +56,5 @@ pub use interpolator::CicInterpolate;
 // `$crate::dsp::cic::prune::stage_width` paths -- see no difference.
 pub use rhdl_dsp_design::cic::{
     accumulator_width, accumulator_width_is_sufficient, chain, compensator, counter_width, dc_gain,
-    gain_bits, interp, prune, response,
+    gain_bits, interp, interp_chain, prune, response,
 };
