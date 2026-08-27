@@ -441,6 +441,7 @@ When new structural needs arise, follow these patterns rather than improvising.
 | `kernel-language-extensions.md` | Future kernel-language extensions | Updated as extensions ship |
 | `vendor-primitive-architecture.md` | Future target-provider system | Updated as primitives are added |
 | `black-box-connectivity.md` | How a module RHDL did not author declares its combinational connectivity | Updated as phases ship |
+| `xilinx-primitive-library.md` | Execution plan for a verified Xilinx 7-series primitive library; needs a Vivado machine | Updated as phases ship |
 | `fsm-architecture.md` | Future FSM ergonomics + analysis + formal verification | Updated as phases ship |
 | `stream-bus-architecture.md` | Future typed LID streaming bus + AXI Stream interop | Updated as phases ship |
 | `rule-architecture.md` | Future Bluespec-style guarded atomic rules (rhdl-rule) | Updated as phases ship |

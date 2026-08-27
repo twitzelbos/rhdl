@@ -31,6 +31,35 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-27 — `xilinx-primitive-library.md`: an execution plan for a machine that has Vivado
+
+**Paths:** `xilinx-primitive-library.md` (new), `architecture.md` §8, `CLAUDE.md` §1.
+
+**Why this, why now:** the ask was a complete black-box library for the Xilinx primitives a Zynq-7020 provides, plus examples using them in RHDL circuits. Two things made a plan the right deliverable instead of code.
+
+**I cannot write the library from memory, and faking it would be actively harmful.** A connectivity declaration is *believed*: `make_net_graph` adds exactly the edges a black box declares and the cycle detector treats them as fact. So a primitive wrongly declared `None` is a combinational path the compiler asserts does not exist — the Phase 1 bug reintroduced as data, and worse than the original because it arrives in a checked-in file with a `source:` field citing UG953. I am reliable on `IBUF`, `FDRE`, `LUT6`, `MUXF7`, `CARRY4`, `ODDR`; I am not reliable on `DSP48E1` (~50 ports with cascades), `RAMB36E1` (~100), the SERDES family, or `PS7` (several hundred). Guessing the fuzzy majority would produce a library that lies with a citation attached.
+
+**And the plan got better once the Vivado machine was in scope.** Connectivity stops being a judgement and becomes an experiment: instantiate the real `unisims` model, hold every clock *static*, toggle each input, and see whether any output changes. An output that moves with no clock edge anywhere **proves** a combinational path.
+
+**Design decisions:**
+
+- **The asymmetry of that test is the point, and it runs the right way.** Observing a change proves a path, so the harness can *refute* a `None` declaration — the unsound direction, the one that hides a loop. Not observing one proves nothing: the path may need a different attribute setting or an unreached state. The harness therefore fails only on refutation, and the plan says plainly that it cannot confirm absence. A test that can fail only in the direction that matters beats one that aims at exhaustiveness and ends up asserting nothing.
+- **Attribute-dependent primitives declare the most combinational configuration.** `DSP48E1` with `PREG=0`, block RAM with `DO_REG=0`. A user who set the register gets a spurious feedthrough report; the opposite choice would hide a real path from the user who did not. Only one of those is a trade worth making.
+- **Extraction is a hand-run tool with checked-in output, not a build step.** Nobody should be able to change what the compiler believes about silicon by having a different Vivado installed. The output records the Vivado version, so a bump means re-running and reviewing the diff.
+- **Don't use `rhdl-vlog`'s parser to read `unisims`.** It implements the subset RHDL emits; vendor models use `specify` blocks, `defparam`, timing checks and compiler directives. A purpose-built header scanner is a smaller job than widening the AST parser, and widening it is a separate project — a real follow-up, since it would let the existing cross-check test point at real sources.
+- **`PS7` is `Opaque`, deliberately and with a note saying why.** Every AXI interface is registered in practice, so it is conservative rather than wrong, and auditing several hundred ports to slightly improve a conservative answer is not worth it. The note records that, so the next reader does not repeat the analysis to find out it was not worth doing.
+
+**Surprises and gotchas:**
+
+- **The stub trick makes the library load-bearing twice, which is a free second check.** Stubs for `checked()` are generated from the declared ports, so a wrong width in the library produces a stub that does not match the instantiation and Icarus says so. Port data gets validated by the syntax checker without anyone writing a test for it.
+- **The ask's phrasing invites exactly the unsound mistake.** "Include the drivers, even if their connectivity matrix is null" — but `IBUFDS` is a *buffer*. Its honest declaration is `Paths([("I","O"), ("IB","O")])`, and declaring it `None` would be the unsound direction on the most-used primitive in the BSP. The null ones are the registered ones: `IDDR`, `ODDR`, `MMCME2` outputs, the OpalKelly host's interfaces.
+- **Externals have to propagate up the widget hierarchy**, or a parent that knows nothing about its child's primitive fails the top-level check. Easy to forget, and it would present as a mystifying failure in an unrelated widget.
+- **One row of the validation matrix is deliberately empty.** Nothing checks that a declared `Paths` is *complete* — a primitive with five real paths and four declared under-reports, and neither the harness nor the compiler notices. Recorded rather than papered over.
+
+**Validation:** none — it is a plan. Its one prototyped claim is §2.1's `checked_with_stubs`, which was written, compiled and then reverted so this document could be the deliverable; reinstating it is a copy-paste. The `Unknown module type: MUXF7` failure it exists to fix was observed, not predicted.
+
+**Follow-ups:** the five phases in §8. Only the first blocks the others, needs no Vivado, and is about a day's work.
+
 ## 2026-08-27 — Black-box connectivity, Phase 3: a primitive library as data
 
 **Paths:** `crates/rhdl-core/src/circuit/blackbox_decl.rs` (new), `crates/rhdl-core/src/{error.rs,circuit/mod.rs}`, `crates/rhdl-bsp/{build.rs,Cargo.toml,primitives/xilinx-7series.ron,src/primitives.rs,src/drivers/xilinx/muxf7.rs,tests/primitive_library.rs}` (all new), `black-box-connectivity.md` §8.
