@@ -155,7 +155,8 @@ impl<W: Domain, R: Domain, const N: usize> Circuit for BitSyncChain<W, R, N> {
             hdl: Some(self.hdl(&name)?),
             _phantom: std::marker::PhantomData,
         }
-        .with_netlist_black_box()
+        // Nothing feeds through: N flops in series.
+        .with_netlist_black_box(BlackBoxConnectivity::None)
     }
 }
 

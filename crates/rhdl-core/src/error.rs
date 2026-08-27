@@ -69,6 +69,10 @@ pub enum RHDLError {
     #[error("Logic Loop")]
     #[diagnostic(transparent)]
     NetLoopError(#[from] Box<crate::ntl::error::NetLoopError>),
+    #[error(
+        "Black box declares a combinational path through {side} port {port}, which it does not have"
+    )]
+    BlackBoxPortNotFound { port: String, side: &'static str },
     #[error("Combinational Cycle")]
     #[diagnostic(transparent)]
     CombinationalCycle(#[from] Box<crate::circuit::error::CombinationalCycle>),

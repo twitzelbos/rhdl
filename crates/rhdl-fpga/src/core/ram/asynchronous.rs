@@ -275,7 +275,8 @@ where
             netlist: None,
             _phantom: std::marker::PhantomData,
         }
-        .with_netlist_black_box()
+        // Nothing feeds through: a registered read port.
+        .with_netlist_black_box(BlackBoxConnectivity::None)
     }
 }
 
