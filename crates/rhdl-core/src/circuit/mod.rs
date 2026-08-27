@@ -10,6 +10,7 @@
 //! and chain circuits.
 pub mod adapter;
 pub mod array;
+pub mod blackbox_decl;
 pub mod chain;
 pub mod circuit_impl;
 pub mod descriptor;

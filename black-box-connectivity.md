@@ -426,16 +426,30 @@ Three descriptors were relying on the old meaning and now state their answers ex
 
 **What this does not do**, and what Phase 3 still owes: nothing in the *widget* API can yet be undeclared, so the conservative path is reachable only by building a descriptor by hand. A library that can omit a module is what makes it reachable in earnest.
 
-### Phase 3 — the file format and the build script (2-3 weeks)
+### Phase 3 — the file format and the build script — **SHIPPED**
 
 - The RON schema of §4.3, with serde types in a small crate or module shared between the build script and the runtime types.
-- A build script in `rhdl-bsp` reading a checked-in `xilinx-7series.ron`, seeded with the primitives the BSP already instantiates — `IBUFDS` and the open-collector pattern to begin with, which makes the format earn its place on real cases before it is asked to describe hundreds.
+- A build script in `rhdl-bsp` reading a checked-in `xilinx-7series.ron`.
 - `resolve()`, and its three error cases.
 - The interface cross-check of §5.3, skipped where the vendor source is absent.
 
-### Phase 4 — IP cores as circuits (unscoped)
+**As shipped, with §9's open question dissolved, the seed changed, and one blocker found.**
 
-Sketched in §7. Wants its own document; it is a bigger question than connectivity, because it also has to answer what an IP core's Rust type is and who owns the TCL that creates it.
+**§9 asked where the serde types should live**, since a build script cannot depend on the crate it is building, and offered a new leaf crate or duplicated definitions with a test asserting they agree. Neither is needed. The build script deserialises into its own private structs and emits *text*; the text names the runtime types. Agreement is checked by the generated code having to compile against them — a mismatch is a compile error in `OUT_DIR`, not a silently wrong constant, so there is nothing for a test to assert and no crate to add. `ron` and `serde` live in `[build-dependencies]` and never enter the runtime graph.
+
+**The seed could not be `IBUFDS` and the open-collector pattern.** Those are `Driver`s: they sit at the pin boundary, have no descriptor and no matrix, and therefore cannot consume a `BlackBoxConnectivity` at all — §1.1 says so and this phase's own plan forgot it. Seeding with them would have shipped a library nothing could instantiate. The seed is instead `MUXF7` (a purely combinational 2:1 mux, and exactly the shape that was invisible before this work), `FDRE` (a flop, declaring `None`), and `MMCME2_ADV` (declaring `Opaque`, so that "not analysed" is a decision in the file rather than an absence from it). `MUXF7` ships as a widget that resolves its connectivity from the library, so the format is exercised end to end.
+
+**And the blocker: RHDL cannot emit an instantiation of a module it does not define.** `Descriptor::hdl()` calls `ModuleList::checked()`, which runs `iverilog -t null` over the emitted text, and iverilog rejects an unresolved instantiation — `Unknown module type: MUXF7`. The descriptor cannot be built at all.
+
+That is why every black box in the tree *defines* its Verilog rather than instantiating someone else's: `core::dff` writes an `always` block, it does not instantiate `FDRE`. There is no way to say "this module is defined elsewhere".
+
+This is the same root cause as §1.3's observation that Vivado IP cores have no circuit-level representation, and it reaches further than that section suggested — not just IP cores, but **any** external module. The declaration machinery is complete and works; what is missing is the ability to reference a module RHDL did not write. `MUXF7` therefore ships emitting a behavioural equivalent, which demonstrates the library-driven declaration honestly while leaving the primitive itself to Phase 4.
+
+### Phase 4 — external modules, and IP cores as circuits (unscoped)
+
+Sketched in §7, and Phase 3 found its first and smallest requirement: **a descriptor needs a way to declare that a module it instantiates is defined elsewhere**, so that `ModuleList::checked()` does not reject the design and so that the toolchain knows what to link. That is a prerequisite for wrapping any vendor primitive, not only for IP cores, and it is much smaller than the rest of Phase 4 — plausibly its own piece of work.
+
+The rest still wants its own document: it has to answer what an IP core's Rust type is and who owns the TCL that creates it.
 
 ---
 
