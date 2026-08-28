@@ -488,7 +488,7 @@ mod tests {
             .join("vcd")
             .join("cic_cascaded");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["d7f65bbd764f10ee654965e69143c873db9eaf7127d8709e250b17ee4793c408"];
+        let expect = expect!["6d7bf5feb709653914b98401d824a7baea1a37c0359b4a2e2249b4b642e3e5cf"];
         let digest = vcd.dump_to_file(root.join("cic_cascaded.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

@@ -862,7 +862,7 @@ Some({data: {re: 0, im: -90}, frame: {sync: 0}})
 <path d="M 550 310 L 553 303 L 647 303 L 650 310 L 647 317 L 553 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="600" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: 45}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 0}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 650 310 L 653 303 L 747 303 L 750 310 L 747 317 L 653 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="700" xml:space="preserve" y="310">
@@ -872,7 +872,7 @@ Some({data: {re: 0, im: -90}, frame: {sync: 0}})
 <path d="M 750 310 L 753 303 L 847 303 L 850 310 L 847 317 L 753 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="800" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: -135}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 0}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 850 310 L 853 303 L 947 303 L 950 310 L 947 317 L 853 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="900" xml:space="preserve" y="310">
@@ -882,7 +882,7 @@ Some({data: {re: 0, im: -90}, frame: {sync: 0}})
 <path d="M 950 310 L 953 303 L 1047 303 L 1050 310 L 1047 317 L 953 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1000" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: 225}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 0}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 1050 310 L 1053 303 L 1147 303 L 1150 310 L 1147 317 L 1053 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1100" xml:space="preserve" y="310">
@@ -892,7 +892,7 @@ Some({data: {re: 0, im: -90}, frame: {sync: 0}})
 <path d="M 1150 310 L 1153 303 L 1247 303 L 1250 310 L 1247 317 L 1153 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1200" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: -315}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 0}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 1250 310 L 1253 303 L 1347 303 L 1350 310 L 1347 317 L 1253 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1300" xml:space="preserve" y="310">
@@ -902,77 +902,77 @@ Some({data: {re: 0, im: -90}, frame: {sync: 0}})
 <path d="M 1350 310 L 1353 303 L 1447 303 L 1450 310 L 1447 317 L 1353 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1400" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: 315}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 0}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 1450 310 L 1453 303 L 1547 303 L 1550 310 L 1547 317 L 1453 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1500" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: -90}, frame: {sync: 0}}), ready: 0}, master: c00000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 0}, frame: {sync: 0}}), ready: 0}, master: c00000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 1550 310 L 1553 303 L 1647 303 L 1650 310 L 1647 317 L 1553 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1600" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: -225}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 0}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 1650 310 L 1653 303 L 1747 303 L 1750 310 L 1747 317 L 1653 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1700" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: 180}, frame: {sync: 0}}), ready: 0}, master: 400000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 0}, frame: {sync: 0}}), ready: 0}, master: 400000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 1750 310 L 1753 303 L 1847 303 L 1850 310 L 1847 317 L 1753 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1800" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: 135}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 0}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 1850 310 L 1853 303 L 1947 303 L 1950 310 L 1947 317 L 1853 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1900" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: -270}, frame: {sync: 0}}), ready: 1}, master: c00000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 0}, frame: {sync: 0}}), ready: 1}, master: c00000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 1950 310 L 1953 303 L 2047 303 L 2050 310 L 2047 317 L 1953 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2000" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: -45}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 0}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 2050 310 L 2053 303 L 2147 303 L 2150 310 L 2147 317 L 2053 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2100" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: 360}, frame: {sync: 0}}), ready: 0}, master: 400000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 0}, frame: {sync: 0}}), ready: 0}, master: 400000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 2150 310 L 2153 303 L 2247 303 L 2250 310 L 2247 317 L 2153 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2200" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: -45}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 45}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 2250 310 L 2253 303 L 2347 303 L 2350 310 L 2347 317 L 2253 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2300" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: -270}, frame: {sync: 0}}), ready: 0}, master: c00000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 0}, frame: {sync: 0}}), ready: 0}, master: c00000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 2350 310 L 2353 303 L 2447 303 L 2450 310 L 2447 317 L 2353 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2400" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: 135}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: -135}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 2450 310 L 2453 303 L 2547 303 L 2550 310 L 2547 317 L 2453 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2500" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: 180}, frame: {sync: 0}}), ready: 0}, master: 400000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 0}, frame: {sync: 0}}), ready: 0}, master: 400000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 2550 310 L 2553 303 L 2647 303 L 2650 310 L 2647 317 L 2553 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2600" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: -225}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 225}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 2650 310 L 2653 303 L 2747 303 L 2750 310 L 2747 317 L 2653 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2700" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: -90}, frame: {sync: 0}}), ready: 1}, master: c00000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 0}, frame: {sync: 0}}), ready: 1}, master: c00000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 2750 310 L 2753 303 L 2847 303 L 2850 310 L 2847 317 L 2753 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2800" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: 315}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: -315}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 2850 310 L 2853 303 L 2947 303 L 2950 310 L 2947 317 L 2853 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2900" xml:space="preserve" y="310">
@@ -982,77 +982,77 @@ Some({data: {re: 0, im: -90}, frame: {sync: 0}})
 <path d="M 2950 310 L 2953 303 L 3047 303 L 3050 310 L 3047 317 L 2953 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3000" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: -315}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 315}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 3050 310 L 3053 303 L 3147 303 L 3150 310 L 3147 317 L 3053 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3100" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: 90}, frame: {sync: 0}}), ready: 0}, master: c00000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: -90}, frame: {sync: 0}}), ready: 0}, master: c00000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 3150 310 L 3153 303 L 3247 303 L 3250 310 L 3247 317 L 3153 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3200" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: 225}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: -225}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 3250 310 L 3253 303 L 3347 303 L 3350 310 L 3347 317 L 3253 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3300" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: -180}, frame: {sync: 0}}), ready: 0}, master: 400000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 180}, frame: {sync: 0}}), ready: 0}, master: 400000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 3350 310 L 3353 303 L 3447 303 L 3450 310 L 3447 317 L 3353 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3400" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: -135}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 135}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 3450 310 L 3453 303 L 3547 303 L 3550 310 L 3547 317 L 3453 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3500" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: 270}, frame: {sync: 0}}), ready: 1}, master: c00000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: -270}, frame: {sync: 0}}), ready: 1}, master: c00000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 3550 310 L 3553 303 L 3647 303 L 3650 310 L 3647 317 L 3553 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3600" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: 45}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: -45}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 3650 310 L 3653 303 L 3747 303 L 3750 310 L 3747 317 L 3653 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3700" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: -360}, frame: {sync: 0}}), ready: 0}, master: 400000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 360}, frame: {sync: 0}}), ready: 0}, master: 400000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 3750 310 L 3753 303 L 3847 303 L 3850 310 L 3847 317 L 3753 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3800" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: 45}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: -45}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 3850 310 L 3853 303 L 3947 303 L 3950 310 L 3947 317 L 3853 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3900" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: 270}, frame: {sync: 0}}), ready: 0}, master: c00000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: -270}, frame: {sync: 0}}), ready: 0}, master: c00000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 3950 310 L 3953 303 L 4047 303 L 4050 310 L 4047 317 L 3953 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4000" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: -135}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 135}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 4050 310 L 4053 303 L 4147 303 L 4150 310 L 4147 317 L 4053 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4100" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: -180}, frame: {sync: 0}}), ready: 0}, master: 400000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 180}, frame: {sync: 0}}), ready: 0}, master: 400000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 4150 310 L 4153 303 L 4247 303 L 4250 310 L 4247 317 L 4153 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4200" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: 225}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: -225}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 4250 310 L 4253 303 L 4347 303 L 4350 310 L 4347 317 L 4253 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4300" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: 90}, frame: {sync: 0}}), ready: 1}, master: c00000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: -90}, frame: {sync: 0}}), ready: 1}, master: c00000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 4350 310 L 4353 303 L 4447 303 L 4450 310 L 4447 317 L 4353 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4400" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: -315}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 315}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 4450 310 L 4453 303 L 4547 303 L 4550 310 L 4547 317 L 4453 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4500" xml:space="preserve" y="310">
@@ -1062,77 +1062,77 @@ Some({data: {re: 0, im: -90}, frame: {sync: 0}})
 <path d="M 4550 310 L 4553 303 L 4647 303 L 4650 310 L 4647 317 L 4553 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4600" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: 315}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: -315}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 4650 310 L 4653 303 L 4747 303 L 4750 310 L 4747 317 L 4653 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4700" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: -90}, frame: {sync: 0}}), ready: 0}, master: c00000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 90}, frame: {sync: 0}}), ready: 0}, master: c00000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 4750 310 L 4753 303 L 4847 303 L 4850 310 L 4847 317 L 4753 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4800" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: -225}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 225}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 4850 310 L 4853 303 L 4947 303 L 4950 310 L 4947 317 L 4853 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4900" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: 180}, frame: {sync: 0}}), ready: 0}, master: 400000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: -180}, frame: {sync: 0}}), ready: 0}, master: 400000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 4950 310 L 4953 303 L 5047 303 L 5050 310 L 5047 317 L 4953 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5000" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: 135}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: -135}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 5050 310 L 5053 303 L 5147 303 L 5150 310 L 5147 317 L 5053 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5100" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: -270}, frame: {sync: 0}}), ready: 1}, master: c00000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 270}, frame: {sync: 0}}), ready: 1}, master: c00000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 5150 310 L 5153 303 L 5247 303 L 5250 310 L 5247 317 L 5153 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5200" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: -45}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 45}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 5250 310 L 5253 303 L 5347 303 L 5350 310 L 5347 317 L 5253 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5300" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: 360}, frame: {sync: 0}}), ready: 0}, master: 400000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: -360}, frame: {sync: 0}}), ready: 0}, master: 400000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 5350 310 L 5353 303 L 5447 303 L 5450 310 L 5447 317 L 5353 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5400" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: -45}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 45}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 5450 310 L 5453 303 L 5547 303 L 5550 310 L 5547 317 L 5453 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5500" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: -270}, frame: {sync: 0}}), ready: 0}, master: c00000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 270}, frame: {sync: 0}}), ready: 0}, master: c00000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 5550 310 L 5553 303 L 5647 303 L 5650 310 L 5647 317 L 5553 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5600" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: 135}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: -135}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 5650 310 L 5653 303 L 5747 303 L 5750 310 L 5747 317 L 5653 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5700" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: 180}, frame: {sync: 0}}), ready: 0}, master: 400000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: -180}, frame: {sync: 0}}), ready: 0}, master: 400000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 5750 310 L 5753 303 L 5847 303 L 5850 310 L 5847 317 L 5753 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5800" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: -225}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 225}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 5850 310 L 5853 303 L 5947 303 L 5950 310 L 5947 317 L 5853 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5900" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: -90}, frame: {sync: 0}}), ready: 1}, master: c00000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 90}, frame: {sync: 0}}), ready: 1}, master: c00000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 5950 310 L 5953 303 L 6047 303 L 6050 310 L 6047 317 L 5953 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6000" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: 315}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: -315}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 6050 310 L 6053 303 L 6147 303 L 6150 310 L 6147 317 L 6053 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6100" xml:space="preserve" y="310">
@@ -1142,32 +1142,32 @@ Some({data: {re: 0, im: -90}, frame: {sync: 0}})
 <path d="M 6150 310 L 6153 303 L 6247 303 L 6250 310 L 6247 317 L 6153 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6200" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: -315}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 315}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 6250 310 L 6253 303 L 6347 303 L 6350 310 L 6347 317 L 6253 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6300" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: 90}, frame: {sync: 0}}), ready: 0}, master: c00000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: -90}, frame: {sync: 0}}), ready: 0}, master: c00000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 6350 310 L 6353 303 L 6447 303 L 6450 310 L 6447 317 L 6353 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6400" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: 225}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: -225}, frame: {sync: 0}}), ready: 0}, master: 000000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 6450 310 L 6453 303 L 6547 303 L 6550 310 L 6547 317 L 6453 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6500" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: -180}, frame: {sync: 0}}), ready: 0}, master: 400000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 180}, frame: {sync: 0}}), ready: 0}, master: 400000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 6550 310 L 6553 303 L 6647 303 L 6650 310 L 6647 317 L 6553 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6600" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: -135}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: 135}, frame: {sync: 0}}), ready: 0}, master: 800000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <path d="M 6650 310 L 6653 303 L 6747 303 L 6750 310 L 6747 317 L 6653 317 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6700" xml:space="preserve" y="310">
 {stream...
-<title>{stream: {data: Some({data: {v: 270}, frame: {sync: 0}}), ready: 1}, master: c00000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
+<title>{stream: {data: Some({data: {v: -270}, frame: {sync: 0}}), ready: 1}, master: c00000000000, starved: 0, overrun: 0, frame_mismatch: 0, saturated: 0}</title>
 </text>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="start" x="3" xml:space="preserve" y="330">
    .stream
@@ -1193,120 +1193,65 @@ Some({data: {re: 0, im: -90}, frame: {sync: 0}})
 {data: ...
 <title>{data: Some({data: {v: 0}, frame: {sync: 1}}), ready: 0}</title>
 </text>
-<path d="M 550 330 L 553 323 L 647 323 L 650 330 L 647 337 L 553 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="600" xml:space="preserve" y="330">
-{data: ...
-<title>{data: Some({data: {v: 45}, frame: {sync: 0}}), ready: 0}</title>
-</text>
-<path d="M 650 330 L 653 323 L 747 323 L 750 330 L 747 337 L 653 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="700" xml:space="preserve" y="330">
-{data: ...
-<title>{data: Some({data: {v: 0}, frame: {sync: 0}}), ready: 0}</title>
-</text>
-<path d="M 750 330 L 753 323 L 847 323 L 850 330 L 847 337 L 753 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<path d="M 550 330 L 553 323 L 1047 323 L 1050 330 L 1047 337 L 553 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="800" xml:space="preserve" y="330">
-{data: ...
-<title>{data: Some({data: {v: -135}, frame: {sync: 0}}), ready: 0}</title>
-</text>
-<path d="M 850 330 L 853 323 L 947 323 L 950 330 L 947 337 L 853 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="900" xml:space="preserve" y="330">
-{data: ...
+{data: Some({data: {v: 0}, frame: {sync: 0}}), ...
 <title>{data: Some({data: {v: 0}, frame: {sync: 0}}), ready: 0}</title>
-</text>
-<path d="M 950 330 L 953 323 L 1047 323 L 1050 330 L 1047 337 L 953 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1000" xml:space="preserve" y="330">
-{data: ...
-<title>{data: Some({data: {v: 225}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 1050 330 L 1053 323 L 1147 323 L 1150 330 L 1147 337 L 1053 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1100" xml:space="preserve" y="330">
 {data: ...
 <title>{data: Some({data: {v: 0}, frame: {sync: 0}}), ready: 1}</title>
 </text>
-<path d="M 1150 330 L 1153 323 L 1247 323 L 1250 330 L 1247 337 L 1153 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1200" xml:space="preserve" y="330">
-{data: ...
-<title>{data: Some({data: {v: -315}, frame: {sync: 0}}), ready: 0}</title>
-</text>
-<path d="M 1250 330 L 1253 323 L 1347 323 L 1350 330 L 1347 337 L 1253 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1300" xml:space="preserve" y="330">
-{data: ...
-<title>{data: Some({data: {v: 0}, frame: {sync: 0}}), ready: 0}</title>
-</text>
-<path d="M 1350 330 L 1353 323 L 1447 323 L 1450 330 L 1447 337 L 1353 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1400" xml:space="preserve" y="330">
-{data: ...
-<title>{data: Some({data: {v: 315}, frame: {sync: 0}}), ready: 0}</title>
-</text>
-<path d="M 1450 330 L 1453 323 L 1547 323 L 1550 330 L 1547 337 L 1453 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<path d="M 1150 330 L 1153 323 L 1847 323 L 1850 330 L 1847 337 L 1153 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1500" xml:space="preserve" y="330">
-{data: ...
-<title>{data: Some({data: {v: -90}, frame: {sync: 0}}), ready: 0}</title>
-</text>
-<path d="M 1550 330 L 1553 323 L 1647 323 L 1650 330 L 1647 337 L 1553 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1600" xml:space="preserve" y="330">
-{data: ...
-<title>{data: Some({data: {v: -225}, frame: {sync: 0}}), ready: 0}</title>
-</text>
-<path d="M 1650 330 L 1653 323 L 1747 323 L 1750 330 L 1747 337 L 1653 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1700" xml:space="preserve" y="330">
-{data: ...
-<title>{data: Some({data: {v: 180}, frame: {sync: 0}}), ready: 0}</title>
-</text>
-<path d="M 1750 330 L 1753 323 L 1847 323 L 1850 330 L 1847 337 L 1753 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1800" xml:space="preserve" y="330">
-{data: ...
-<title>{data: Some({data: {v: 135}, frame: {sync: 0}}), ready: 0}</title>
+{data: Some({data: {v: 0}, frame: {sync: 0}}), ready: 0}
+<title>{data: Some({data: {v: 0}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 1850 330 L 1853 323 L 1947 323 L 1950 330 L 1947 337 L 1853 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1900" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: -270}, frame: {sync: 0}}), ready: 1}</title>
+<title>{data: Some({data: {v: 0}, frame: {sync: 0}}), ready: 1}</title>
 </text>
-<path d="M 1950 330 L 1953 323 L 2047 323 L 2050 330 L 2047 337 L 1953 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2000" xml:space="preserve" y="330">
-{data: ...
-<title>{data: Some({data: {v: -45}, frame: {sync: 0}}), ready: 0}</title>
-</text>
-<path d="M 2050 330 L 2053 323 L 2147 323 L 2150 330 L 2147 337 L 2053 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2100" xml:space="preserve" y="330">
-{data: ...
-<title>{data: Some({data: {v: 360}, frame: {sync: 0}}), ready: 0}</title>
+<path d="M 1950 330 L 1953 323 L 2147 323 L 2150 330 L 2147 337 L 1953 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2050" xml:space="preserve" y="330">
+{data: Some({data...
+<title>{data: Some({data: {v: 0}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 2150 330 L 2153 323 L 2247 323 L 2250 330 L 2247 337 L 2153 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2200" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: -45}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: 45}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 2250 330 L 2253 323 L 2347 323 L 2350 330 L 2347 337 L 2253 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2300" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: -270}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: 0}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 2350 330 L 2353 323 L 2447 323 L 2450 330 L 2447 337 L 2353 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2400" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: 135}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: -135}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 2450 330 L 2453 323 L 2547 323 L 2550 330 L 2547 337 L 2453 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2500" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: 180}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: 0}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 2550 330 L 2553 323 L 2647 323 L 2650 330 L 2647 337 L 2553 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2600" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: -225}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: 225}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 2650 330 L 2653 323 L 2747 323 L 2750 330 L 2747 337 L 2653 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2700" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: -90}, frame: {sync: 0}}), ready: 1}</title>
+<title>{data: Some({data: {v: 0}, frame: {sync: 0}}), ready: 1}</title>
 </text>
 <path d="M 2750 330 L 2753 323 L 2847 323 L 2850 330 L 2847 337 L 2753 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2800" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: 315}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: -315}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 2850 330 L 2853 323 L 2947 323 L 2950 330 L 2947 337 L 2853 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2900" xml:space="preserve" y="330">
@@ -1316,77 +1261,77 @@ Some({data: {re: 0, im: -90}, frame: {sync: 0}})
 <path d="M 2950 330 L 2953 323 L 3047 323 L 3050 330 L 3047 337 L 2953 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3000" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: -315}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: 315}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 3050 330 L 3053 323 L 3147 323 L 3150 330 L 3147 337 L 3053 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3100" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: 90}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: -90}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 3150 330 L 3153 323 L 3247 323 L 3250 330 L 3247 337 L 3153 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3200" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: 225}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: -225}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 3250 330 L 3253 323 L 3347 323 L 3350 330 L 3347 337 L 3253 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3300" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: -180}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: 180}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 3350 330 L 3353 323 L 3447 323 L 3450 330 L 3447 337 L 3353 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3400" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: -135}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: 135}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 3450 330 L 3453 323 L 3547 323 L 3550 330 L 3547 337 L 3453 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3500" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: 270}, frame: {sync: 0}}), ready: 1}</title>
+<title>{data: Some({data: {v: -270}, frame: {sync: 0}}), ready: 1}</title>
 </text>
 <path d="M 3550 330 L 3553 323 L 3647 323 L 3650 330 L 3647 337 L 3553 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3600" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: 45}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: -45}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 3650 330 L 3653 323 L 3747 323 L 3750 330 L 3747 337 L 3653 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3700" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: -360}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: 360}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 3750 330 L 3753 323 L 3847 323 L 3850 330 L 3847 337 L 3753 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3800" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: 45}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: -45}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 3850 330 L 3853 323 L 3947 323 L 3950 330 L 3947 337 L 3853 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3900" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: 270}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: -270}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 3950 330 L 3953 323 L 4047 323 L 4050 330 L 4047 337 L 3953 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4000" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: -135}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: 135}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 4050 330 L 4053 323 L 4147 323 L 4150 330 L 4147 337 L 4053 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4100" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: -180}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: 180}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 4150 330 L 4153 323 L 4247 323 L 4250 330 L 4247 337 L 4153 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4200" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: 225}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: -225}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 4250 330 L 4253 323 L 4347 323 L 4350 330 L 4347 337 L 4253 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4300" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: 90}, frame: {sync: 0}}), ready: 1}</title>
+<title>{data: Some({data: {v: -90}, frame: {sync: 0}}), ready: 1}</title>
 </text>
 <path d="M 4350 330 L 4353 323 L 4447 323 L 4450 330 L 4447 337 L 4353 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4400" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: -315}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: 315}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 4450 330 L 4453 323 L 4547 323 L 4550 330 L 4547 337 L 4453 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4500" xml:space="preserve" y="330">
@@ -1396,77 +1341,77 @@ Some({data: {re: 0, im: -90}, frame: {sync: 0}})
 <path d="M 4550 330 L 4553 323 L 4647 323 L 4650 330 L 4647 337 L 4553 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4600" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: 315}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: -315}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 4650 330 L 4653 323 L 4747 323 L 4750 330 L 4747 337 L 4653 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4700" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: -90}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: 90}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 4750 330 L 4753 323 L 4847 323 L 4850 330 L 4847 337 L 4753 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4800" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: -225}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: 225}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 4850 330 L 4853 323 L 4947 323 L 4950 330 L 4947 337 L 4853 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4900" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: 180}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: -180}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 4950 330 L 4953 323 L 5047 323 L 5050 330 L 5047 337 L 4953 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5000" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: 135}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: -135}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 5050 330 L 5053 323 L 5147 323 L 5150 330 L 5147 337 L 5053 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5100" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: -270}, frame: {sync: 0}}), ready: 1}</title>
+<title>{data: Some({data: {v: 270}, frame: {sync: 0}}), ready: 1}</title>
 </text>
 <path d="M 5150 330 L 5153 323 L 5247 323 L 5250 330 L 5247 337 L 5153 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5200" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: -45}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: 45}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 5250 330 L 5253 323 L 5347 323 L 5350 330 L 5347 337 L 5253 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5300" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: 360}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: -360}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 5350 330 L 5353 323 L 5447 323 L 5450 330 L 5447 337 L 5353 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5400" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: -45}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: 45}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 5450 330 L 5453 323 L 5547 323 L 5550 330 L 5547 337 L 5453 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5500" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: -270}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: 270}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 5550 330 L 5553 323 L 5647 323 L 5650 330 L 5647 337 L 5553 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5600" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: 135}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: -135}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 5650 330 L 5653 323 L 5747 323 L 5750 330 L 5747 337 L 5653 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5700" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: 180}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: -180}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 5750 330 L 5753 323 L 5847 323 L 5850 330 L 5847 337 L 5753 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5800" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: -225}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: 225}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 5850 330 L 5853 323 L 5947 323 L 5950 330 L 5947 337 L 5853 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5900" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: -90}, frame: {sync: 0}}), ready: 1}</title>
+<title>{data: Some({data: {v: 90}, frame: {sync: 0}}), ready: 1}</title>
 </text>
 <path d="M 5950 330 L 5953 323 L 6047 323 L 6050 330 L 6047 337 L 5953 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6000" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: 315}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: -315}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 6050 330 L 6053 323 L 6147 323 L 6150 330 L 6147 337 L 6053 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6100" xml:space="preserve" y="330">
@@ -1476,32 +1421,32 @@ Some({data: {re: 0, im: -90}, frame: {sync: 0}})
 <path d="M 6150 330 L 6153 323 L 6247 323 L 6250 330 L 6247 337 L 6153 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6200" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: -315}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: 315}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 6250 330 L 6253 323 L 6347 323 L 6350 330 L 6347 337 L 6253 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6300" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: 90}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: -90}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 6350 330 L 6353 323 L 6447 323 L 6450 330 L 6447 337 L 6353 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6400" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: 225}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: -225}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 6450 330 L 6453 323 L 6547 323 L 6550 330 L 6547 337 L 6453 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6500" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: -180}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: 180}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 6550 330 L 6553 323 L 6647 323 L 6650 330 L 6647 337 L 6553 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6600" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: -135}, frame: {sync: 0}}), ready: 0}</title>
+<title>{data: Some({data: {v: 135}, frame: {sync: 0}}), ready: 0}</title>
 </text>
 <path d="M 6650 330 L 6653 323 L 6747 323 L 6750 330 L 6747 337 L 6653 337 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6700" xml:space="preserve" y="330">
 {data: ...
-<title>{data: Some({data: {v: 270}, frame: {sync: 0}}), ready: 1}</title>
+<title>{data: Some({data: {v: -270}, frame: {sync: 0}}), ready: 1}</title>
 </text>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="start" x="3" xml:space="preserve" y="350">
       .data
@@ -1522,120 +1467,45 @@ Some({data: {v: ...
 Some({d...
 <title>Some({data: {v: 0}, frame: {sync: 1}})</title>
 </text>
-<path d="M 550 350 L 553 343 L 647 343 L 650 350 L 647 357 L 553 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="600" xml:space="preserve" y="350">
-Some({d...
-<title>Some({data: {v: 45}, frame: {sync: 0}})</title>
-</text>
-<path d="M 650 350 L 653 343 L 747 343 L 750 350 L 747 357 L 653 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="700" xml:space="preserve" y="350">
-Some({d...
+<path d="M 550 350 L 553 343 L 2147 343 L 2150 350 L 2147 357 L 553 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1350" xml:space="preserve" y="350">
+Some({data: {v: 0}, frame: {sync: 0}})
 <title>Some({data: {v: 0}, frame: {sync: 0}})</title>
-</text>
-<path d="M 750 350 L 753 343 L 847 343 L 850 350 L 847 357 L 753 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="800" xml:space="preserve" y="350">
-Some({d...
-<title>Some({data: {v: -135}, frame: {sync: 0}})</title>
-</text>
-<path d="M 850 350 L 853 343 L 947 343 L 950 350 L 947 357 L 853 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="900" xml:space="preserve" y="350">
-Some({d...
-<title>Some({data: {v: 0}, frame: {sync: 0}})</title>
-</text>
-<path d="M 950 350 L 953 343 L 1047 343 L 1050 350 L 1047 357 L 953 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1000" xml:space="preserve" y="350">
-Some({d...
-<title>Some({data: {v: 225}, frame: {sync: 0}})</title>
-</text>
-<path d="M 1050 350 L 1053 343 L 1147 343 L 1150 350 L 1147 357 L 1053 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1100" xml:space="preserve" y="350">
-Some({d...
-<title>Some({data: {v: 0}, frame: {sync: 0}})</title>
-</text>
-<path d="M 1150 350 L 1153 343 L 1247 343 L 1250 350 L 1247 357 L 1153 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1200" xml:space="preserve" y="350">
-Some({d...
-<title>Some({data: {v: -315}, frame: {sync: 0}})</title>
-</text>
-<path d="M 1250 350 L 1253 343 L 1347 343 L 1350 350 L 1347 357 L 1253 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1300" xml:space="preserve" y="350">
-Some({d...
-<title>Some({data: {v: 0}, frame: {sync: 0}})</title>
-</text>
-<path d="M 1350 350 L 1353 343 L 1447 343 L 1450 350 L 1447 357 L 1353 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1400" xml:space="preserve" y="350">
-Some({d...
-<title>Some({data: {v: 315}, frame: {sync: 0}})</title>
-</text>
-<path d="M 1450 350 L 1453 343 L 1547 343 L 1550 350 L 1547 357 L 1453 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1500" xml:space="preserve" y="350">
-Some({d...
-<title>Some({data: {v: -90}, frame: {sync: 0}})</title>
-</text>
-<path d="M 1550 350 L 1553 343 L 1647 343 L 1650 350 L 1647 357 L 1553 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1600" xml:space="preserve" y="350">
-Some({d...
-<title>Some({data: {v: -225}, frame: {sync: 0}})</title>
-</text>
-<path d="M 1650 350 L 1653 343 L 1747 343 L 1750 350 L 1747 357 L 1653 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1700" xml:space="preserve" y="350">
-Some({d...
-<title>Some({data: {v: 180}, frame: {sync: 0}})</title>
-</text>
-<path d="M 1750 350 L 1753 343 L 1847 343 L 1850 350 L 1847 357 L 1753 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1800" xml:space="preserve" y="350">
-Some({d...
-<title>Some({data: {v: 135}, frame: {sync: 0}})</title>
-</text>
-<path d="M 1850 350 L 1853 343 L 1947 343 L 1950 350 L 1947 357 L 1853 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1900" xml:space="preserve" y="350">
-Some({d...
-<title>Some({data: {v: -270}, frame: {sync: 0}})</title>
-</text>
-<path d="M 1950 350 L 1953 343 L 2047 343 L 2050 350 L 2047 357 L 1953 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2000" xml:space="preserve" y="350">
-Some({d...
-<title>Some({data: {v: -45}, frame: {sync: 0}})</title>
-</text>
-<path d="M 2050 350 L 2053 343 L 2147 343 L 2150 350 L 2147 357 L 2053 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2100" xml:space="preserve" y="350">
-Some({d...
-<title>Some({data: {v: 360}, frame: {sync: 0}})</title>
 </text>
 <path d="M 2150 350 L 2153 343 L 2247 343 L 2250 350 L 2247 357 L 2153 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2200" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: -45}, frame: {sync: 0}})</title>
+<title>Some({data: {v: 45}, frame: {sync: 0}})</title>
 </text>
 <path d="M 2250 350 L 2253 343 L 2347 343 L 2350 350 L 2347 357 L 2253 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2300" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: -270}, frame: {sync: 0}})</title>
+<title>Some({data: {v: 0}, frame: {sync: 0}})</title>
 </text>
 <path d="M 2350 350 L 2353 343 L 2447 343 L 2450 350 L 2447 357 L 2353 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2400" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: 135}, frame: {sync: 0}})</title>
+<title>Some({data: {v: -135}, frame: {sync: 0}})</title>
 </text>
 <path d="M 2450 350 L 2453 343 L 2547 343 L 2550 350 L 2547 357 L 2453 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2500" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: 180}, frame: {sync: 0}})</title>
+<title>Some({data: {v: 0}, frame: {sync: 0}})</title>
 </text>
 <path d="M 2550 350 L 2553 343 L 2647 343 L 2650 350 L 2647 357 L 2553 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2600" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: -225}, frame: {sync: 0}})</title>
+<title>Some({data: {v: 225}, frame: {sync: 0}})</title>
 </text>
 <path d="M 2650 350 L 2653 343 L 2747 343 L 2750 350 L 2747 357 L 2653 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2700" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: -90}, frame: {sync: 0}})</title>
+<title>Some({data: {v: 0}, frame: {sync: 0}})</title>
 </text>
 <path d="M 2750 350 L 2753 343 L 2847 343 L 2850 350 L 2847 357 L 2753 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2800" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: 315}, frame: {sync: 0}})</title>
+<title>Some({data: {v: -315}, frame: {sync: 0}})</title>
 </text>
 <path d="M 2850 350 L 2853 343 L 2947 343 L 2950 350 L 2947 357 L 2853 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2900" xml:space="preserve" y="350">
@@ -1645,77 +1515,77 @@ Some({d...
 <path d="M 2950 350 L 2953 343 L 3047 343 L 3050 350 L 3047 357 L 2953 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3000" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: -315}, frame: {sync: 0}})</title>
+<title>Some({data: {v: 315}, frame: {sync: 0}})</title>
 </text>
 <path d="M 3050 350 L 3053 343 L 3147 343 L 3150 350 L 3147 357 L 3053 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3100" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: 90}, frame: {sync: 0}})</title>
+<title>Some({data: {v: -90}, frame: {sync: 0}})</title>
 </text>
 <path d="M 3150 350 L 3153 343 L 3247 343 L 3250 350 L 3247 357 L 3153 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3200" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: 225}, frame: {sync: 0}})</title>
+<title>Some({data: {v: -225}, frame: {sync: 0}})</title>
 </text>
 <path d="M 3250 350 L 3253 343 L 3347 343 L 3350 350 L 3347 357 L 3253 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3300" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: -180}, frame: {sync: 0}})</title>
+<title>Some({data: {v: 180}, frame: {sync: 0}})</title>
 </text>
 <path d="M 3350 350 L 3353 343 L 3447 343 L 3450 350 L 3447 357 L 3353 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3400" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: -135}, frame: {sync: 0}})</title>
+<title>Some({data: {v: 135}, frame: {sync: 0}})</title>
 </text>
 <path d="M 3450 350 L 3453 343 L 3547 343 L 3550 350 L 3547 357 L 3453 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3500" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: 270}, frame: {sync: 0}})</title>
+<title>Some({data: {v: -270}, frame: {sync: 0}})</title>
 </text>
 <path d="M 3550 350 L 3553 343 L 3647 343 L 3650 350 L 3647 357 L 3553 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3600" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: 45}, frame: {sync: 0}})</title>
+<title>Some({data: {v: -45}, frame: {sync: 0}})</title>
 </text>
 <path d="M 3650 350 L 3653 343 L 3747 343 L 3750 350 L 3747 357 L 3653 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3700" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: -360}, frame: {sync: 0}})</title>
+<title>Some({data: {v: 360}, frame: {sync: 0}})</title>
 </text>
 <path d="M 3750 350 L 3753 343 L 3847 343 L 3850 350 L 3847 357 L 3753 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3800" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: 45}, frame: {sync: 0}})</title>
+<title>Some({data: {v: -45}, frame: {sync: 0}})</title>
 </text>
 <path d="M 3850 350 L 3853 343 L 3947 343 L 3950 350 L 3947 357 L 3853 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3900" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: 270}, frame: {sync: 0}})</title>
+<title>Some({data: {v: -270}, frame: {sync: 0}})</title>
 </text>
 <path d="M 3950 350 L 3953 343 L 4047 343 L 4050 350 L 4047 357 L 3953 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4000" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: -135}, frame: {sync: 0}})</title>
+<title>Some({data: {v: 135}, frame: {sync: 0}})</title>
 </text>
 <path d="M 4050 350 L 4053 343 L 4147 343 L 4150 350 L 4147 357 L 4053 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4100" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: -180}, frame: {sync: 0}})</title>
+<title>Some({data: {v: 180}, frame: {sync: 0}})</title>
 </text>
 <path d="M 4150 350 L 4153 343 L 4247 343 L 4250 350 L 4247 357 L 4153 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4200" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: 225}, frame: {sync: 0}})</title>
+<title>Some({data: {v: -225}, frame: {sync: 0}})</title>
 </text>
 <path d="M 4250 350 L 4253 343 L 4347 343 L 4350 350 L 4347 357 L 4253 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4300" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: 90}, frame: {sync: 0}})</title>
+<title>Some({data: {v: -90}, frame: {sync: 0}})</title>
 </text>
 <path d="M 4350 350 L 4353 343 L 4447 343 L 4450 350 L 4447 357 L 4353 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4400" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: -315}, frame: {sync: 0}})</title>
+<title>Some({data: {v: 315}, frame: {sync: 0}})</title>
 </text>
 <path d="M 4450 350 L 4453 343 L 4547 343 L 4550 350 L 4547 357 L 4453 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4500" xml:space="preserve" y="350">
@@ -1725,77 +1595,77 @@ Some({d...
 <path d="M 4550 350 L 4553 343 L 4647 343 L 4650 350 L 4647 357 L 4553 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4600" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: 315}, frame: {sync: 0}})</title>
+<title>Some({data: {v: -315}, frame: {sync: 0}})</title>
 </text>
 <path d="M 4650 350 L 4653 343 L 4747 343 L 4750 350 L 4747 357 L 4653 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4700" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: -90}, frame: {sync: 0}})</title>
+<title>Some({data: {v: 90}, frame: {sync: 0}})</title>
 </text>
 <path d="M 4750 350 L 4753 343 L 4847 343 L 4850 350 L 4847 357 L 4753 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4800" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: -225}, frame: {sync: 0}})</title>
+<title>Some({data: {v: 225}, frame: {sync: 0}})</title>
 </text>
 <path d="M 4850 350 L 4853 343 L 4947 343 L 4950 350 L 4947 357 L 4853 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4900" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: 180}, frame: {sync: 0}})</title>
+<title>Some({data: {v: -180}, frame: {sync: 0}})</title>
 </text>
 <path d="M 4950 350 L 4953 343 L 5047 343 L 5050 350 L 5047 357 L 4953 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5000" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: 135}, frame: {sync: 0}})</title>
+<title>Some({data: {v: -135}, frame: {sync: 0}})</title>
 </text>
 <path d="M 5050 350 L 5053 343 L 5147 343 L 5150 350 L 5147 357 L 5053 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5100" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: -270}, frame: {sync: 0}})</title>
+<title>Some({data: {v: 270}, frame: {sync: 0}})</title>
 </text>
 <path d="M 5150 350 L 5153 343 L 5247 343 L 5250 350 L 5247 357 L 5153 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5200" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: -45}, frame: {sync: 0}})</title>
+<title>Some({data: {v: 45}, frame: {sync: 0}})</title>
 </text>
 <path d="M 5250 350 L 5253 343 L 5347 343 L 5350 350 L 5347 357 L 5253 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5300" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: 360}, frame: {sync: 0}})</title>
+<title>Some({data: {v: -360}, frame: {sync: 0}})</title>
 </text>
 <path d="M 5350 350 L 5353 343 L 5447 343 L 5450 350 L 5447 357 L 5353 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5400" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: -45}, frame: {sync: 0}})</title>
+<title>Some({data: {v: 45}, frame: {sync: 0}})</title>
 </text>
 <path d="M 5450 350 L 5453 343 L 5547 343 L 5550 350 L 5547 357 L 5453 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5500" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: -270}, frame: {sync: 0}})</title>
+<title>Some({data: {v: 270}, frame: {sync: 0}})</title>
 </text>
 <path d="M 5550 350 L 5553 343 L 5647 343 L 5650 350 L 5647 357 L 5553 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5600" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: 135}, frame: {sync: 0}})</title>
+<title>Some({data: {v: -135}, frame: {sync: 0}})</title>
 </text>
 <path d="M 5650 350 L 5653 343 L 5747 343 L 5750 350 L 5747 357 L 5653 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5700" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: 180}, frame: {sync: 0}})</title>
+<title>Some({data: {v: -180}, frame: {sync: 0}})</title>
 </text>
 <path d="M 5750 350 L 5753 343 L 5847 343 L 5850 350 L 5847 357 L 5753 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5800" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: -225}, frame: {sync: 0}})</title>
+<title>Some({data: {v: 225}, frame: {sync: 0}})</title>
 </text>
 <path d="M 5850 350 L 5853 343 L 5947 343 L 5950 350 L 5947 357 L 5853 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5900" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: -90}, frame: {sync: 0}})</title>
+<title>Some({data: {v: 90}, frame: {sync: 0}})</title>
 </text>
 <path d="M 5950 350 L 5953 343 L 6047 343 L 6050 350 L 6047 357 L 5953 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6000" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: 315}, frame: {sync: 0}})</title>
+<title>Some({data: {v: -315}, frame: {sync: 0}})</title>
 </text>
 <path d="M 6050 350 L 6053 343 L 6147 343 L 6150 350 L 6147 357 L 6053 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6100" xml:space="preserve" y="350">
@@ -1805,32 +1675,32 @@ Some({d...
 <path d="M 6150 350 L 6153 343 L 6247 343 L 6250 350 L 6247 357 L 6153 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6200" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: -315}, frame: {sync: 0}})</title>
+<title>Some({data: {v: 315}, frame: {sync: 0}})</title>
 </text>
 <path d="M 6250 350 L 6253 343 L 6347 343 L 6350 350 L 6347 357 L 6253 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6300" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: 90}, frame: {sync: 0}})</title>
+<title>Some({data: {v: -90}, frame: {sync: 0}})</title>
 </text>
 <path d="M 6350 350 L 6353 343 L 6447 343 L 6450 350 L 6447 357 L 6353 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6400" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: 225}, frame: {sync: 0}})</title>
+<title>Some({data: {v: -225}, frame: {sync: 0}})</title>
 </text>
 <path d="M 6450 350 L 6453 343 L 6547 343 L 6550 350 L 6547 357 L 6453 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6500" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: -180}, frame: {sync: 0}})</title>
+<title>Some({data: {v: 180}, frame: {sync: 0}})</title>
 </text>
 <path d="M 6550 350 L 6553 343 L 6647 343 L 6650 350 L 6647 357 L 6553 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6600" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: -135}, frame: {sync: 0}})</title>
+<title>Some({data: {v: 135}, frame: {sync: 0}})</title>
 </text>
 <path d="M 6650 350 L 6653 343 L 6747 343 L 6750 350 L 6747 357 L 6653 357 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6700" xml:space="preserve" y="350">
 Some({d...
-<title>Some({data: {v: 270}, frame: {sync: 0}})</title>
+<title>Some({data: {v: -270}, frame: {sync: 0}})</title>
 </text>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="start" x="3" xml:space="preserve" y="370">
          #None
@@ -1855,120 +1725,45 @@ Some({d...
 {data: ...
 <title>{data: {v: 0}, frame: {sync: 1}}</title>
 </text>
-<path d="M 550 390 L 553 383 L 647 383 L 650 390 L 647 397 L 553 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="600" xml:space="preserve" y="390">
-{data: ...
-<title>{data: {v: 45}, frame: {sync: 0}}</title>
-</text>
-<path d="M 650 390 L 653 383 L 747 383 L 750 390 L 747 397 L 653 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="700" xml:space="preserve" y="390">
-{data: ...
+<path d="M 550 390 L 553 383 L 2147 383 L 2150 390 L 2147 397 L 553 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1350" xml:space="preserve" y="390">
+{data: {v: 0}, frame: {sync: 0}}
 <title>{data: {v: 0}, frame: {sync: 0}}</title>
-</text>
-<path d="M 750 390 L 753 383 L 847 383 L 850 390 L 847 397 L 753 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="800" xml:space="preserve" y="390">
-{data: ...
-<title>{data: {v: -135}, frame: {sync: 0}}</title>
-</text>
-<path d="M 850 390 L 853 383 L 947 383 L 950 390 L 947 397 L 853 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="900" xml:space="preserve" y="390">
-{data: ...
-<title>{data: {v: 0}, frame: {sync: 0}}</title>
-</text>
-<path d="M 950 390 L 953 383 L 1047 383 L 1050 390 L 1047 397 L 953 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1000" xml:space="preserve" y="390">
-{data: ...
-<title>{data: {v: 225}, frame: {sync: 0}}</title>
-</text>
-<path d="M 1050 390 L 1053 383 L 1147 383 L 1150 390 L 1147 397 L 1053 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1100" xml:space="preserve" y="390">
-{data: ...
-<title>{data: {v: 0}, frame: {sync: 0}}</title>
-</text>
-<path d="M 1150 390 L 1153 383 L 1247 383 L 1250 390 L 1247 397 L 1153 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1200" xml:space="preserve" y="390">
-{data: ...
-<title>{data: {v: -315}, frame: {sync: 0}}</title>
-</text>
-<path d="M 1250 390 L 1253 383 L 1347 383 L 1350 390 L 1347 397 L 1253 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1300" xml:space="preserve" y="390">
-{data: ...
-<title>{data: {v: 0}, frame: {sync: 0}}</title>
-</text>
-<path d="M 1350 390 L 1353 383 L 1447 383 L 1450 390 L 1447 397 L 1353 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1400" xml:space="preserve" y="390">
-{data: ...
-<title>{data: {v: 315}, frame: {sync: 0}}</title>
-</text>
-<path d="M 1450 390 L 1453 383 L 1547 383 L 1550 390 L 1547 397 L 1453 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1500" xml:space="preserve" y="390">
-{data: ...
-<title>{data: {v: -90}, frame: {sync: 0}}</title>
-</text>
-<path d="M 1550 390 L 1553 383 L 1647 383 L 1650 390 L 1647 397 L 1553 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1600" xml:space="preserve" y="390">
-{data: ...
-<title>{data: {v: -225}, frame: {sync: 0}}</title>
-</text>
-<path d="M 1650 390 L 1653 383 L 1747 383 L 1750 390 L 1747 397 L 1653 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1700" xml:space="preserve" y="390">
-{data: ...
-<title>{data: {v: 180}, frame: {sync: 0}}</title>
-</text>
-<path d="M 1750 390 L 1753 383 L 1847 383 L 1850 390 L 1847 397 L 1753 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1800" xml:space="preserve" y="390">
-{data: ...
-<title>{data: {v: 135}, frame: {sync: 0}}</title>
-</text>
-<path d="M 1850 390 L 1853 383 L 1947 383 L 1950 390 L 1947 397 L 1853 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1900" xml:space="preserve" y="390">
-{data: ...
-<title>{data: {v: -270}, frame: {sync: 0}}</title>
-</text>
-<path d="M 1950 390 L 1953 383 L 2047 383 L 2050 390 L 2047 397 L 1953 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2000" xml:space="preserve" y="390">
-{data: ...
-<title>{data: {v: -45}, frame: {sync: 0}}</title>
-</text>
-<path d="M 2050 390 L 2053 383 L 2147 383 L 2150 390 L 2147 397 L 2053 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2100" xml:space="preserve" y="390">
-{data: ...
-<title>{data: {v: 360}, frame: {sync: 0}}</title>
 </text>
 <path d="M 2150 390 L 2153 383 L 2247 383 L 2250 390 L 2247 397 L 2153 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2200" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: -45}, frame: {sync: 0}}</title>
+<title>{data: {v: 45}, frame: {sync: 0}}</title>
 </text>
 <path d="M 2250 390 L 2253 383 L 2347 383 L 2350 390 L 2347 397 L 2253 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2300" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: -270}, frame: {sync: 0}}</title>
+<title>{data: {v: 0}, frame: {sync: 0}}</title>
 </text>
 <path d="M 2350 390 L 2353 383 L 2447 383 L 2450 390 L 2447 397 L 2353 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2400" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: 135}, frame: {sync: 0}}</title>
+<title>{data: {v: -135}, frame: {sync: 0}}</title>
 </text>
 <path d="M 2450 390 L 2453 383 L 2547 383 L 2550 390 L 2547 397 L 2453 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2500" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: 180}, frame: {sync: 0}}</title>
+<title>{data: {v: 0}, frame: {sync: 0}}</title>
 </text>
 <path d="M 2550 390 L 2553 383 L 2647 383 L 2650 390 L 2647 397 L 2553 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2600" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: -225}, frame: {sync: 0}}</title>
+<title>{data: {v: 225}, frame: {sync: 0}}</title>
 </text>
 <path d="M 2650 390 L 2653 383 L 2747 383 L 2750 390 L 2747 397 L 2653 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2700" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: -90}, frame: {sync: 0}}</title>
+<title>{data: {v: 0}, frame: {sync: 0}}</title>
 </text>
 <path d="M 2750 390 L 2753 383 L 2847 383 L 2850 390 L 2847 397 L 2753 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2800" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: 315}, frame: {sync: 0}}</title>
+<title>{data: {v: -315}, frame: {sync: 0}}</title>
 </text>
 <path d="M 2850 390 L 2853 383 L 2947 383 L 2950 390 L 2947 397 L 2853 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2900" xml:space="preserve" y="390">
@@ -1978,77 +1773,77 @@ Some({d...
 <path d="M 2950 390 L 2953 383 L 3047 383 L 3050 390 L 3047 397 L 2953 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3000" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: -315}, frame: {sync: 0}}</title>
+<title>{data: {v: 315}, frame: {sync: 0}}</title>
 </text>
 <path d="M 3050 390 L 3053 383 L 3147 383 L 3150 390 L 3147 397 L 3053 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3100" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: 90}, frame: {sync: 0}}</title>
+<title>{data: {v: -90}, frame: {sync: 0}}</title>
 </text>
 <path d="M 3150 390 L 3153 383 L 3247 383 L 3250 390 L 3247 397 L 3153 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3200" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: 225}, frame: {sync: 0}}</title>
+<title>{data: {v: -225}, frame: {sync: 0}}</title>
 </text>
 <path d="M 3250 390 L 3253 383 L 3347 383 L 3350 390 L 3347 397 L 3253 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3300" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: -180}, frame: {sync: 0}}</title>
+<title>{data: {v: 180}, frame: {sync: 0}}</title>
 </text>
 <path d="M 3350 390 L 3353 383 L 3447 383 L 3450 390 L 3447 397 L 3353 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3400" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: -135}, frame: {sync: 0}}</title>
+<title>{data: {v: 135}, frame: {sync: 0}}</title>
 </text>
 <path d="M 3450 390 L 3453 383 L 3547 383 L 3550 390 L 3547 397 L 3453 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3500" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: 270}, frame: {sync: 0}}</title>
+<title>{data: {v: -270}, frame: {sync: 0}}</title>
 </text>
 <path d="M 3550 390 L 3553 383 L 3647 383 L 3650 390 L 3647 397 L 3553 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3600" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: 45}, frame: {sync: 0}}</title>
+<title>{data: {v: -45}, frame: {sync: 0}}</title>
 </text>
 <path d="M 3650 390 L 3653 383 L 3747 383 L 3750 390 L 3747 397 L 3653 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3700" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: -360}, frame: {sync: 0}}</title>
+<title>{data: {v: 360}, frame: {sync: 0}}</title>
 </text>
 <path d="M 3750 390 L 3753 383 L 3847 383 L 3850 390 L 3847 397 L 3753 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3800" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: 45}, frame: {sync: 0}}</title>
+<title>{data: {v: -45}, frame: {sync: 0}}</title>
 </text>
 <path d="M 3850 390 L 3853 383 L 3947 383 L 3950 390 L 3947 397 L 3853 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3900" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: 270}, frame: {sync: 0}}</title>
+<title>{data: {v: -270}, frame: {sync: 0}}</title>
 </text>
 <path d="M 3950 390 L 3953 383 L 4047 383 L 4050 390 L 4047 397 L 3953 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4000" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: -135}, frame: {sync: 0}}</title>
+<title>{data: {v: 135}, frame: {sync: 0}}</title>
 </text>
 <path d="M 4050 390 L 4053 383 L 4147 383 L 4150 390 L 4147 397 L 4053 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4100" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: -180}, frame: {sync: 0}}</title>
+<title>{data: {v: 180}, frame: {sync: 0}}</title>
 </text>
 <path d="M 4150 390 L 4153 383 L 4247 383 L 4250 390 L 4247 397 L 4153 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4200" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: 225}, frame: {sync: 0}}</title>
+<title>{data: {v: -225}, frame: {sync: 0}}</title>
 </text>
 <path d="M 4250 390 L 4253 383 L 4347 383 L 4350 390 L 4347 397 L 4253 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4300" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: 90}, frame: {sync: 0}}</title>
+<title>{data: {v: -90}, frame: {sync: 0}}</title>
 </text>
 <path d="M 4350 390 L 4353 383 L 4447 383 L 4450 390 L 4447 397 L 4353 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4400" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: -315}, frame: {sync: 0}}</title>
+<title>{data: {v: 315}, frame: {sync: 0}}</title>
 </text>
 <path d="M 4450 390 L 4453 383 L 4547 383 L 4550 390 L 4547 397 L 4453 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4500" xml:space="preserve" y="390">
@@ -2058,77 +1853,77 @@ Some({d...
 <path d="M 4550 390 L 4553 383 L 4647 383 L 4650 390 L 4647 397 L 4553 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4600" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: 315}, frame: {sync: 0}}</title>
+<title>{data: {v: -315}, frame: {sync: 0}}</title>
 </text>
 <path d="M 4650 390 L 4653 383 L 4747 383 L 4750 390 L 4747 397 L 4653 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4700" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: -90}, frame: {sync: 0}}</title>
+<title>{data: {v: 90}, frame: {sync: 0}}</title>
 </text>
 <path d="M 4750 390 L 4753 383 L 4847 383 L 4850 390 L 4847 397 L 4753 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4800" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: -225}, frame: {sync: 0}}</title>
+<title>{data: {v: 225}, frame: {sync: 0}}</title>
 </text>
 <path d="M 4850 390 L 4853 383 L 4947 383 L 4950 390 L 4947 397 L 4853 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4900" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: 180}, frame: {sync: 0}}</title>
+<title>{data: {v: -180}, frame: {sync: 0}}</title>
 </text>
 <path d="M 4950 390 L 4953 383 L 5047 383 L 5050 390 L 5047 397 L 4953 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5000" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: 135}, frame: {sync: 0}}</title>
+<title>{data: {v: -135}, frame: {sync: 0}}</title>
 </text>
 <path d="M 5050 390 L 5053 383 L 5147 383 L 5150 390 L 5147 397 L 5053 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5100" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: -270}, frame: {sync: 0}}</title>
+<title>{data: {v: 270}, frame: {sync: 0}}</title>
 </text>
 <path d="M 5150 390 L 5153 383 L 5247 383 L 5250 390 L 5247 397 L 5153 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5200" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: -45}, frame: {sync: 0}}</title>
+<title>{data: {v: 45}, frame: {sync: 0}}</title>
 </text>
 <path d="M 5250 390 L 5253 383 L 5347 383 L 5350 390 L 5347 397 L 5253 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5300" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: 360}, frame: {sync: 0}}</title>
+<title>{data: {v: -360}, frame: {sync: 0}}</title>
 </text>
 <path d="M 5350 390 L 5353 383 L 5447 383 L 5450 390 L 5447 397 L 5353 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5400" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: -45}, frame: {sync: 0}}</title>
+<title>{data: {v: 45}, frame: {sync: 0}}</title>
 </text>
 <path d="M 5450 390 L 5453 383 L 5547 383 L 5550 390 L 5547 397 L 5453 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5500" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: -270}, frame: {sync: 0}}</title>
+<title>{data: {v: 270}, frame: {sync: 0}}</title>
 </text>
 <path d="M 5550 390 L 5553 383 L 5647 383 L 5650 390 L 5647 397 L 5553 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5600" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: 135}, frame: {sync: 0}}</title>
+<title>{data: {v: -135}, frame: {sync: 0}}</title>
 </text>
 <path d="M 5650 390 L 5653 383 L 5747 383 L 5750 390 L 5747 397 L 5653 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5700" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: 180}, frame: {sync: 0}}</title>
+<title>{data: {v: -180}, frame: {sync: 0}}</title>
 </text>
 <path d="M 5750 390 L 5753 383 L 5847 383 L 5850 390 L 5847 397 L 5753 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5800" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: -225}, frame: {sync: 0}}</title>
+<title>{data: {v: 225}, frame: {sync: 0}}</title>
 </text>
 <path d="M 5850 390 L 5853 383 L 5947 383 L 5950 390 L 5947 397 L 5853 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5900" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: -90}, frame: {sync: 0}}</title>
+<title>{data: {v: 90}, frame: {sync: 0}}</title>
 </text>
 <path d="M 5950 390 L 5953 383 L 6047 383 L 6050 390 L 6047 397 L 5953 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6000" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: 315}, frame: {sync: 0}}</title>
+<title>{data: {v: -315}, frame: {sync: 0}}</title>
 </text>
 <path d="M 6050 390 L 6053 383 L 6147 383 L 6150 390 L 6147 397 L 6053 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6100" xml:space="preserve" y="390">
@@ -2138,156 +1933,76 @@ Some({d...
 <path d="M 6150 390 L 6153 383 L 6247 383 L 6250 390 L 6247 397 L 6153 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6200" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: -315}, frame: {sync: 0}}</title>
+<title>{data: {v: 315}, frame: {sync: 0}}</title>
 </text>
 <path d="M 6250 390 L 6253 383 L 6347 383 L 6350 390 L 6347 397 L 6253 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6300" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: 90}, frame: {sync: 0}}</title>
+<title>{data: {v: -90}, frame: {sync: 0}}</title>
 </text>
 <path d="M 6350 390 L 6353 383 L 6447 383 L 6450 390 L 6447 397 L 6353 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6400" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: 225}, frame: {sync: 0}}</title>
+<title>{data: {v: -225}, frame: {sync: 0}}</title>
 </text>
 <path d="M 6450 390 L 6453 383 L 6547 383 L 6550 390 L 6547 397 L 6453 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6500" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: -180}, frame: {sync: 0}}</title>
+<title>{data: {v: 180}, frame: {sync: 0}}</title>
 </text>
 <path d="M 6550 390 L 6553 383 L 6647 383 L 6650 390 L 6647 397 L 6553 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6600" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: -135}, frame: {sync: 0}}</title>
+<title>{data: {v: 135}, frame: {sync: 0}}</title>
 </text>
 <path d="M 6650 390 L 6653 383 L 6747 383 L 6750 390 L 6747 397 L 6653 397 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6700" xml:space="preserve" y="390">
 {data: ...
-<title>{data: {v: 270}, frame: {sync: 0}}</title>
+<title>{data: {v: -270}, frame: {sync: 0}}</title>
 </text>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="start" x="3" xml:space="preserve" y="410">
             .data
 <title>top.outputs.stream.data#Some.0.data</title>
 </text>
-<path d="M 251 410 L 254 403 L 547 403 L 550 410 L 547 417 L 254 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="400" xml:space="preserve" y="410">
-{v: 0}
-<title>{v: 0}</title>
-</text>
-<path d="M 550 410 L 553 403 L 647 403 L 650 410 L 647 417 L 553 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="600" xml:space="preserve" y="410">
-{v: 45}
-<title>{v: 45}</title>
-</text>
-<path d="M 650 410 L 653 403 L 747 403 L 750 410 L 747 417 L 653 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="700" xml:space="preserve" y="410">
-{v: 0}
-<title>{v: 0}</title>
-</text>
-<path d="M 750 410 L 753 403 L 847 403 L 850 410 L 847 417 L 753 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="800" xml:space="preserve" y="410">
-{v: -135}
-<title>{v: -135}</title>
-</text>
-<path d="M 850 410 L 853 403 L 947 403 L 950 410 L 947 417 L 853 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="900" xml:space="preserve" y="410">
-{v: 0}
-<title>{v: 0}</title>
-</text>
-<path d="M 950 410 L 953 403 L 1047 403 L 1050 410 L 1047 417 L 953 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1000" xml:space="preserve" y="410">
-{v: 225}
-<title>{v: 225}</title>
-</text>
-<path d="M 1050 410 L 1053 403 L 1147 403 L 1150 410 L 1147 417 L 1053 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1100" xml:space="preserve" y="410">
-{v: 0}
-<title>{v: 0}</title>
-</text>
-<path d="M 1150 410 L 1153 403 L 1247 403 L 1250 410 L 1247 417 L 1153 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<path d="M 251 410 L 254 403 L 2147 403 L 2150 410 L 2147 417 L 254 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1200" xml:space="preserve" y="410">
-{v: -315}
-<title>{v: -315}</title>
-</text>
-<path d="M 1250 410 L 1253 403 L 1347 403 L 1350 410 L 1347 417 L 1253 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1300" xml:space="preserve" y="410">
 {v: 0}
 <title>{v: 0}</title>
-</text>
-<path d="M 1350 410 L 1353 403 L 1447 403 L 1450 410 L 1447 417 L 1353 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1400" xml:space="preserve" y="410">
-{v: 315}
-<title>{v: 315}</title>
-</text>
-<path d="M 1450 410 L 1453 403 L 1547 403 L 1550 410 L 1547 417 L 1453 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1500" xml:space="preserve" y="410">
-{v: -90}
-<title>{v: -90}</title>
-</text>
-<path d="M 1550 410 L 1553 403 L 1647 403 L 1650 410 L 1647 417 L 1553 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1600" xml:space="preserve" y="410">
-{v: -225}
-<title>{v: -225}</title>
-</text>
-<path d="M 1650 410 L 1653 403 L 1747 403 L 1750 410 L 1747 417 L 1653 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1700" xml:space="preserve" y="410">
-{v: 180}
-<title>{v: 180}</title>
-</text>
-<path d="M 1750 410 L 1753 403 L 1847 403 L 1850 410 L 1847 417 L 1753 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1800" xml:space="preserve" y="410">
-{v: 135}
-<title>{v: 135}</title>
-</text>
-<path d="M 1850 410 L 1853 403 L 1947 403 L 1950 410 L 1947 417 L 1853 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1900" xml:space="preserve" y="410">
-{v: -270}
-<title>{v: -270}</title>
-</text>
-<path d="M 1950 410 L 1953 403 L 2047 403 L 2050 410 L 2047 417 L 1953 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2000" xml:space="preserve" y="410">
-{v: -45}
-<title>{v: -45}</title>
-</text>
-<path d="M 2050 410 L 2053 403 L 2147 403 L 2150 410 L 2147 417 L 2053 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2100" xml:space="preserve" y="410">
-{v: 360}
-<title>{v: 360}</title>
 </text>
 <path d="M 2150 410 L 2153 403 L 2247 403 L 2250 410 L 2247 417 L 2153 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2200" xml:space="preserve" y="410">
-{v: -45}
-<title>{v: -45}</title>
+{v: 45}
+<title>{v: 45}</title>
 </text>
 <path d="M 2250 410 L 2253 403 L 2347 403 L 2350 410 L 2347 417 L 2253 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2300" xml:space="preserve" y="410">
-{v: -270}
-<title>{v: -270}</title>
+{v: 0}
+<title>{v: 0}</title>
 </text>
 <path d="M 2350 410 L 2353 403 L 2447 403 L 2450 410 L 2447 417 L 2353 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2400" xml:space="preserve" y="410">
-{v: 135}
-<title>{v: 135}</title>
+{v: -135}
+<title>{v: -135}</title>
 </text>
 <path d="M 2450 410 L 2453 403 L 2547 403 L 2550 410 L 2547 417 L 2453 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2500" xml:space="preserve" y="410">
-{v: 180}
-<title>{v: 180}</title>
+{v: 0}
+<title>{v: 0}</title>
 </text>
 <path d="M 2550 410 L 2553 403 L 2647 403 L 2650 410 L 2647 417 L 2553 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2600" xml:space="preserve" y="410">
-{v: -225}
-<title>{v: -225}</title>
+{v: 225}
+<title>{v: 225}</title>
 </text>
 <path d="M 2650 410 L 2653 403 L 2747 403 L 2750 410 L 2747 417 L 2653 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2700" xml:space="preserve" y="410">
-{v: -90}
-<title>{v: -90}</title>
+{v: 0}
+<title>{v: 0}</title>
 </text>
 <path d="M 2750 410 L 2753 403 L 2847 403 L 2850 410 L 2847 417 L 2753 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2800" xml:space="preserve" y="410">
-{v: 315}
-<title>{v: 315}</title>
+{v: -315}
+<title>{v: -315}</title>
 </text>
 <path d="M 2850 410 L 2853 403 L 2947 403 L 2950 410 L 2947 417 L 2853 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2900" xml:space="preserve" y="410">
@@ -2296,78 +2011,78 @@ Some({d...
 </text>
 <path d="M 2950 410 L 2953 403 L 3047 403 L 3050 410 L 3047 417 L 2953 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3000" xml:space="preserve" y="410">
-{v: -315}
-<title>{v: -315}</title>
+{v: 315}
+<title>{v: 315}</title>
 </text>
 <path d="M 3050 410 L 3053 403 L 3147 403 L 3150 410 L 3147 417 L 3053 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3100" xml:space="preserve" y="410">
-{v: 90}
-<title>{v: 90}</title>
+{v: -90}
+<title>{v: -90}</title>
 </text>
 <path d="M 3150 410 L 3153 403 L 3247 403 L 3250 410 L 3247 417 L 3153 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3200" xml:space="preserve" y="410">
-{v: 225}
-<title>{v: 225}</title>
+{v: -225}
+<title>{v: -225}</title>
 </text>
 <path d="M 3250 410 L 3253 403 L 3347 403 L 3350 410 L 3347 417 L 3253 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3300" xml:space="preserve" y="410">
-{v: -180}
-<title>{v: -180}</title>
+{v: 180}
+<title>{v: 180}</title>
 </text>
 <path d="M 3350 410 L 3353 403 L 3447 403 L 3450 410 L 3447 417 L 3353 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3400" xml:space="preserve" y="410">
-{v: -135}
-<title>{v: -135}</title>
+{v: 135}
+<title>{v: 135}</title>
 </text>
 <path d="M 3450 410 L 3453 403 L 3547 403 L 3550 410 L 3547 417 L 3453 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3500" xml:space="preserve" y="410">
-{v: 270}
-<title>{v: 270}</title>
+{v: -270}
+<title>{v: -270}</title>
 </text>
 <path d="M 3550 410 L 3553 403 L 3647 403 L 3650 410 L 3647 417 L 3553 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3600" xml:space="preserve" y="410">
-{v: 45}
-<title>{v: 45}</title>
+{v: -45}
+<title>{v: -45}</title>
 </text>
 <path d="M 3650 410 L 3653 403 L 3747 403 L 3750 410 L 3747 417 L 3653 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3700" xml:space="preserve" y="410">
-{v: -360}
-<title>{v: -360}</title>
+{v: 360}
+<title>{v: 360}</title>
 </text>
 <path d="M 3750 410 L 3753 403 L 3847 403 L 3850 410 L 3847 417 L 3753 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3800" xml:space="preserve" y="410">
-{v: 45}
-<title>{v: 45}</title>
+{v: -45}
+<title>{v: -45}</title>
 </text>
 <path d="M 3850 410 L 3853 403 L 3947 403 L 3950 410 L 3947 417 L 3853 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3900" xml:space="preserve" y="410">
-{v: 270}
-<title>{v: 270}</title>
+{v: -270}
+<title>{v: -270}</title>
 </text>
 <path d="M 3950 410 L 3953 403 L 4047 403 L 4050 410 L 4047 417 L 3953 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4000" xml:space="preserve" y="410">
-{v: -135}
-<title>{v: -135}</title>
+{v: 135}
+<title>{v: 135}</title>
 </text>
 <path d="M 4050 410 L 4053 403 L 4147 403 L 4150 410 L 4147 417 L 4053 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4100" xml:space="preserve" y="410">
-{v: -180}
-<title>{v: -180}</title>
+{v: 180}
+<title>{v: 180}</title>
 </text>
 <path d="M 4150 410 L 4153 403 L 4247 403 L 4250 410 L 4247 417 L 4153 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4200" xml:space="preserve" y="410">
-{v: 225}
-<title>{v: 225}</title>
+{v: -225}
+<title>{v: -225}</title>
 </text>
 <path d="M 4250 410 L 4253 403 L 4347 403 L 4350 410 L 4347 417 L 4253 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4300" xml:space="preserve" y="410">
-{v: 90}
-<title>{v: 90}</title>
+{v: -90}
+<title>{v: -90}</title>
 </text>
 <path d="M 4350 410 L 4353 403 L 4447 403 L 4450 410 L 4447 417 L 4353 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4400" xml:space="preserve" y="410">
-{v: -315}
-<title>{v: -315}</title>
+{v: 315}
+<title>{v: 315}</title>
 </text>
 <path d="M 4450 410 L 4453 403 L 4547 403 L 4550 410 L 4547 417 L 4453 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4500" xml:space="preserve" y="410">
@@ -2376,78 +2091,78 @@ Some({d...
 </text>
 <path d="M 4550 410 L 4553 403 L 4647 403 L 4650 410 L 4647 417 L 4553 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4600" xml:space="preserve" y="410">
-{v: 315}
-<title>{v: 315}</title>
+{v: -315}
+<title>{v: -315}</title>
 </text>
 <path d="M 4650 410 L 4653 403 L 4747 403 L 4750 410 L 4747 417 L 4653 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4700" xml:space="preserve" y="410">
-{v: -90}
-<title>{v: -90}</title>
+{v: 90}
+<title>{v: 90}</title>
 </text>
 <path d="M 4750 410 L 4753 403 L 4847 403 L 4850 410 L 4847 417 L 4753 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4800" xml:space="preserve" y="410">
-{v: -225}
-<title>{v: -225}</title>
+{v: 225}
+<title>{v: 225}</title>
 </text>
 <path d="M 4850 410 L 4853 403 L 4947 403 L 4950 410 L 4947 417 L 4853 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4900" xml:space="preserve" y="410">
-{v: 180}
-<title>{v: 180}</title>
+{v: -180}
+<title>{v: -180}</title>
 </text>
 <path d="M 4950 410 L 4953 403 L 5047 403 L 5050 410 L 5047 417 L 4953 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5000" xml:space="preserve" y="410">
-{v: 135}
-<title>{v: 135}</title>
+{v: -135}
+<title>{v: -135}</title>
 </text>
 <path d="M 5050 410 L 5053 403 L 5147 403 L 5150 410 L 5147 417 L 5053 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5100" xml:space="preserve" y="410">
-{v: -270}
-<title>{v: -270}</title>
+{v: 270}
+<title>{v: 270}</title>
 </text>
 <path d="M 5150 410 L 5153 403 L 5247 403 L 5250 410 L 5247 417 L 5153 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5200" xml:space="preserve" y="410">
-{v: -45}
-<title>{v: -45}</title>
+{v: 45}
+<title>{v: 45}</title>
 </text>
 <path d="M 5250 410 L 5253 403 L 5347 403 L 5350 410 L 5347 417 L 5253 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5300" xml:space="preserve" y="410">
-{v: 360}
-<title>{v: 360}</title>
+{v: -360}
+<title>{v: -360}</title>
 </text>
 <path d="M 5350 410 L 5353 403 L 5447 403 L 5450 410 L 5447 417 L 5353 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5400" xml:space="preserve" y="410">
-{v: -45}
-<title>{v: -45}</title>
+{v: 45}
+<title>{v: 45}</title>
 </text>
 <path d="M 5450 410 L 5453 403 L 5547 403 L 5550 410 L 5547 417 L 5453 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5500" xml:space="preserve" y="410">
-{v: -270}
-<title>{v: -270}</title>
+{v: 270}
+<title>{v: 270}</title>
 </text>
 <path d="M 5550 410 L 5553 403 L 5647 403 L 5650 410 L 5647 417 L 5553 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5600" xml:space="preserve" y="410">
-{v: 135}
-<title>{v: 135}</title>
+{v: -135}
+<title>{v: -135}</title>
 </text>
 <path d="M 5650 410 L 5653 403 L 5747 403 L 5750 410 L 5747 417 L 5653 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5700" xml:space="preserve" y="410">
-{v: 180}
-<title>{v: 180}</title>
+{v: -180}
+<title>{v: -180}</title>
 </text>
 <path d="M 5750 410 L 5753 403 L 5847 403 L 5850 410 L 5847 417 L 5753 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5800" xml:space="preserve" y="410">
-{v: -225}
-<title>{v: -225}</title>
+{v: 225}
+<title>{v: 225}</title>
 </text>
 <path d="M 5850 410 L 5853 403 L 5947 403 L 5950 410 L 5947 417 L 5853 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5900" xml:space="preserve" y="410">
-{v: -90}
-<title>{v: -90}</title>
+{v: 90}
+<title>{v: 90}</title>
 </text>
 <path d="M 5950 410 L 5953 403 L 6047 403 L 6050 410 L 6047 417 L 5953 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6000" xml:space="preserve" y="410">
-{v: 315}
-<title>{v: 315}</title>
+{v: -315}
+<title>{v: -315}</title>
 </text>
 <path d="M 6050 410 L 6053 403 L 6147 403 L 6150 410 L 6147 417 L 6053 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6100" xml:space="preserve" y="410">
@@ -2456,157 +2171,77 @@ Some({d...
 </text>
 <path d="M 6150 410 L 6153 403 L 6247 403 L 6250 410 L 6247 417 L 6153 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6200" xml:space="preserve" y="410">
-{v: -315}
-<title>{v: -315}</title>
+{v: 315}
+<title>{v: 315}</title>
 </text>
 <path d="M 6250 410 L 6253 403 L 6347 403 L 6350 410 L 6347 417 L 6253 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6300" xml:space="preserve" y="410">
-{v: 90}
-<title>{v: 90}</title>
+{v: -90}
+<title>{v: -90}</title>
 </text>
 <path d="M 6350 410 L 6353 403 L 6447 403 L 6450 410 L 6447 417 L 6353 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6400" xml:space="preserve" y="410">
-{v: 225}
-<title>{v: 225}</title>
+{v: -225}
+<title>{v: -225}</title>
 </text>
 <path d="M 6450 410 L 6453 403 L 6547 403 L 6550 410 L 6547 417 L 6453 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6500" xml:space="preserve" y="410">
-{v: -180}
-<title>{v: -180}</title>
+{v: 180}
+<title>{v: 180}</title>
 </text>
 <path d="M 6550 410 L 6553 403 L 6647 403 L 6650 410 L 6647 417 L 6553 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6600" xml:space="preserve" y="410">
-{v: -135}
-<title>{v: -135}</title>
+{v: 135}
+<title>{v: 135}</title>
 </text>
 <path d="M 6650 410 L 6653 403 L 6747 403 L 6750 410 L 6747 417 L 6653 417 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6700" xml:space="preserve" y="410">
-{v: 270}
-<title>{v: 270}</title>
+{v: -270}
+<title>{v: -270}</title>
 </text>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="start" x="3" xml:space="preserve" y="430">
                .v
 <title>top.outputs.stream.data#Some.0.data.v</title>
 </text>
-<path d="M 251 430 L 254 423 L 547 423 L 550 430 L 547 437 L 254 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="400" xml:space="preserve" y="430">
-0
-<title>0</title>
-</text>
-<path d="M 550 430 L 553 423 L 647 423 L 650 430 L 647 437 L 553 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="600" xml:space="preserve" y="430">
-45
-<title>45</title>
-</text>
-<path d="M 650 430 L 653 423 L 747 423 L 750 430 L 747 437 L 653 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="700" xml:space="preserve" y="430">
-0
-<title>0</title>
-</text>
-<path d="M 750 430 L 753 423 L 847 423 L 850 430 L 847 437 L 753 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="800" xml:space="preserve" y="430">
--135
-<title>-135</title>
-</text>
-<path d="M 850 430 L 853 423 L 947 423 L 950 430 L 947 437 L 853 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="900" xml:space="preserve" y="430">
-0
-<title>0</title>
-</text>
-<path d="M 950 430 L 953 423 L 1047 423 L 1050 430 L 1047 437 L 953 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1000" xml:space="preserve" y="430">
-225
-<title>225</title>
-</text>
-<path d="M 1050 430 L 1053 423 L 1147 423 L 1150 430 L 1147 437 L 1053 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1100" xml:space="preserve" y="430">
-0
-<title>0</title>
-</text>
-<path d="M 1150 430 L 1153 423 L 1247 423 L 1250 430 L 1247 437 L 1153 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<path d="M 251 430 L 254 423 L 2147 423 L 2150 430 L 2147 437 L 254 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1200" xml:space="preserve" y="430">
--315
-<title>-315</title>
-</text>
-<path d="M 1250 430 L 1253 423 L 1347 423 L 1350 430 L 1347 437 L 1253 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1300" xml:space="preserve" y="430">
 0
 <title>0</title>
-</text>
-<path d="M 1350 430 L 1353 423 L 1447 423 L 1450 430 L 1447 437 L 1353 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1400" xml:space="preserve" y="430">
-315
-<title>315</title>
-</text>
-<path d="M 1450 430 L 1453 423 L 1547 423 L 1550 430 L 1547 437 L 1453 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1500" xml:space="preserve" y="430">
--90
-<title>-90</title>
-</text>
-<path d="M 1550 430 L 1553 423 L 1647 423 L 1650 430 L 1647 437 L 1553 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1600" xml:space="preserve" y="430">
--225
-<title>-225</title>
-</text>
-<path d="M 1650 430 L 1653 423 L 1747 423 L 1750 430 L 1747 437 L 1653 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1700" xml:space="preserve" y="430">
-180
-<title>180</title>
-</text>
-<path d="M 1750 430 L 1753 423 L 1847 423 L 1850 430 L 1847 437 L 1753 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1800" xml:space="preserve" y="430">
-135
-<title>135</title>
-</text>
-<path d="M 1850 430 L 1853 423 L 1947 423 L 1950 430 L 1947 437 L 1853 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="1900" xml:space="preserve" y="430">
--270
-<title>-270</title>
-</text>
-<path d="M 1950 430 L 1953 423 L 2047 423 L 2050 430 L 2047 437 L 1953 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2000" xml:space="preserve" y="430">
--45
-<title>-45</title>
-</text>
-<path d="M 2050 430 L 2053 423 L 2147 423 L 2150 430 L 2147 437 L 2053 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2100" xml:space="preserve" y="430">
-360
-<title>360</title>
 </text>
 <path d="M 2150 430 L 2153 423 L 2247 423 L 2250 430 L 2247 437 L 2153 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2200" xml:space="preserve" y="430">
--45
-<title>-45</title>
+45
+<title>45</title>
 </text>
 <path d="M 2250 430 L 2253 423 L 2347 423 L 2350 430 L 2347 437 L 2253 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2300" xml:space="preserve" y="430">
--270
-<title>-270</title>
+0
+<title>0</title>
 </text>
 <path d="M 2350 430 L 2353 423 L 2447 423 L 2450 430 L 2447 437 L 2353 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2400" xml:space="preserve" y="430">
-135
-<title>135</title>
+-135
+<title>-135</title>
 </text>
 <path d="M 2450 430 L 2453 423 L 2547 423 L 2550 430 L 2547 437 L 2453 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2500" xml:space="preserve" y="430">
-180
-<title>180</title>
+0
+<title>0</title>
 </text>
 <path d="M 2550 430 L 2553 423 L 2647 423 L 2650 430 L 2647 437 L 2553 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2600" xml:space="preserve" y="430">
--225
-<title>-225</title>
+225
+<title>225</title>
 </text>
 <path d="M 2650 430 L 2653 423 L 2747 423 L 2750 430 L 2747 437 L 2653 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2700" xml:space="preserve" y="430">
--90
-<title>-90</title>
+0
+<title>0</title>
 </text>
 <path d="M 2750 430 L 2753 423 L 2847 423 L 2850 430 L 2847 437 L 2753 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2800" xml:space="preserve" y="430">
-315
-<title>315</title>
+-315
+<title>-315</title>
 </text>
 <path d="M 2850 430 L 2853 423 L 2947 423 L 2950 430 L 2947 437 L 2853 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2900" xml:space="preserve" y="430">
@@ -2615,78 +2250,78 @@ Some({d...
 </text>
 <path d="M 2950 430 L 2953 423 L 3047 423 L 3050 430 L 3047 437 L 2953 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3000" xml:space="preserve" y="430">
--315
-<title>-315</title>
+315
+<title>315</title>
 </text>
 <path d="M 3050 430 L 3053 423 L 3147 423 L 3150 430 L 3147 437 L 3053 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3100" xml:space="preserve" y="430">
-90
-<title>90</title>
+-90
+<title>-90</title>
 </text>
 <path d="M 3150 430 L 3153 423 L 3247 423 L 3250 430 L 3247 437 L 3153 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3200" xml:space="preserve" y="430">
-225
-<title>225</title>
+-225
+<title>-225</title>
 </text>
 <path d="M 3250 430 L 3253 423 L 3347 423 L 3350 430 L 3347 437 L 3253 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3300" xml:space="preserve" y="430">
--180
-<title>-180</title>
+180
+<title>180</title>
 </text>
 <path d="M 3350 430 L 3353 423 L 3447 423 L 3450 430 L 3447 437 L 3353 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3400" xml:space="preserve" y="430">
--135
-<title>-135</title>
+135
+<title>135</title>
 </text>
 <path d="M 3450 430 L 3453 423 L 3547 423 L 3550 430 L 3547 437 L 3453 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3500" xml:space="preserve" y="430">
-270
-<title>270</title>
+-270
+<title>-270</title>
 </text>
 <path d="M 3550 430 L 3553 423 L 3647 423 L 3650 430 L 3647 437 L 3553 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3600" xml:space="preserve" y="430">
-45
-<title>45</title>
+-45
+<title>-45</title>
 </text>
 <path d="M 3650 430 L 3653 423 L 3747 423 L 3750 430 L 3747 437 L 3653 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3700" xml:space="preserve" y="430">
--360
-<title>-360</title>
+360
+<title>360</title>
 </text>
 <path d="M 3750 430 L 3753 423 L 3847 423 L 3850 430 L 3847 437 L 3753 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3800" xml:space="preserve" y="430">
-45
-<title>45</title>
+-45
+<title>-45</title>
 </text>
 <path d="M 3850 430 L 3853 423 L 3947 423 L 3950 430 L 3947 437 L 3853 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="3900" xml:space="preserve" y="430">
-270
-<title>270</title>
+-270
+<title>-270</title>
 </text>
 <path d="M 3950 430 L 3953 423 L 4047 423 L 4050 430 L 4047 437 L 3953 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4000" xml:space="preserve" y="430">
--135
-<title>-135</title>
+135
+<title>135</title>
 </text>
 <path d="M 4050 430 L 4053 423 L 4147 423 L 4150 430 L 4147 437 L 4053 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4100" xml:space="preserve" y="430">
--180
-<title>-180</title>
+180
+<title>180</title>
 </text>
 <path d="M 4150 430 L 4153 423 L 4247 423 L 4250 430 L 4247 437 L 4153 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4200" xml:space="preserve" y="430">
-225
-<title>225</title>
+-225
+<title>-225</title>
 </text>
 <path d="M 4250 430 L 4253 423 L 4347 423 L 4350 430 L 4347 437 L 4253 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4300" xml:space="preserve" y="430">
-90
-<title>90</title>
+-90
+<title>-90</title>
 </text>
 <path d="M 4350 430 L 4353 423 L 4447 423 L 4450 430 L 4447 437 L 4353 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4400" xml:space="preserve" y="430">
--315
-<title>-315</title>
+315
+<title>315</title>
 </text>
 <path d="M 4450 430 L 4453 423 L 4547 423 L 4550 430 L 4547 437 L 4453 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4500" xml:space="preserve" y="430">
@@ -2695,78 +2330,78 @@ Some({d...
 </text>
 <path d="M 4550 430 L 4553 423 L 4647 423 L 4650 430 L 4647 437 L 4553 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4600" xml:space="preserve" y="430">
-315
-<title>315</title>
+-315
+<title>-315</title>
 </text>
 <path d="M 4650 430 L 4653 423 L 4747 423 L 4750 430 L 4747 437 L 4653 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4700" xml:space="preserve" y="430">
--90
-<title>-90</title>
+90
+<title>90</title>
 </text>
 <path d="M 4750 430 L 4753 423 L 4847 423 L 4850 430 L 4847 437 L 4753 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4800" xml:space="preserve" y="430">
--225
-<title>-225</title>
+225
+<title>225</title>
 </text>
 <path d="M 4850 430 L 4853 423 L 4947 423 L 4950 430 L 4947 437 L 4853 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="4900" xml:space="preserve" y="430">
-180
-<title>180</title>
+-180
+<title>-180</title>
 </text>
 <path d="M 4950 430 L 4953 423 L 5047 423 L 5050 430 L 5047 437 L 4953 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5000" xml:space="preserve" y="430">
-135
-<title>135</title>
+-135
+<title>-135</title>
 </text>
 <path d="M 5050 430 L 5053 423 L 5147 423 L 5150 430 L 5147 437 L 5053 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5100" xml:space="preserve" y="430">
--270
-<title>-270</title>
+270
+<title>270</title>
 </text>
 <path d="M 5150 430 L 5153 423 L 5247 423 L 5250 430 L 5247 437 L 5153 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5200" xml:space="preserve" y="430">
--45
-<title>-45</title>
+45
+<title>45</title>
 </text>
 <path d="M 5250 430 L 5253 423 L 5347 423 L 5350 430 L 5347 437 L 5253 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5300" xml:space="preserve" y="430">
-360
-<title>360</title>
+-360
+<title>-360</title>
 </text>
 <path d="M 5350 430 L 5353 423 L 5447 423 L 5450 430 L 5447 437 L 5353 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5400" xml:space="preserve" y="430">
--45
-<title>-45</title>
+45
+<title>45</title>
 </text>
 <path d="M 5450 430 L 5453 423 L 5547 423 L 5550 430 L 5547 437 L 5453 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5500" xml:space="preserve" y="430">
--270
-<title>-270</title>
+270
+<title>270</title>
 </text>
 <path d="M 5550 430 L 5553 423 L 5647 423 L 5650 430 L 5647 437 L 5553 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5600" xml:space="preserve" y="430">
-135
-<title>135</title>
+-135
+<title>-135</title>
 </text>
 <path d="M 5650 430 L 5653 423 L 5747 423 L 5750 430 L 5747 437 L 5653 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5700" xml:space="preserve" y="430">
-180
-<title>180</title>
+-180
+<title>-180</title>
 </text>
 <path d="M 5750 430 L 5753 423 L 5847 423 L 5850 430 L 5847 437 L 5753 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5800" xml:space="preserve" y="430">
--225
-<title>-225</title>
+225
+<title>225</title>
 </text>
 <path d="M 5850 430 L 5853 423 L 5947 423 L 5950 430 L 5947 437 L 5853 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="5900" xml:space="preserve" y="430">
--90
-<title>-90</title>
+90
+<title>90</title>
 </text>
 <path d="M 5950 430 L 5953 423 L 6047 423 L 6050 430 L 6047 437 L 5953 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6000" xml:space="preserve" y="430">
-315
-<title>315</title>
+-315
+<title>-315</title>
 </text>
 <path d="M 6050 430 L 6053 423 L 6147 423 L 6150 430 L 6147 437 L 6053 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6100" xml:space="preserve" y="430">
@@ -2775,33 +2410,33 @@ Some({d...
 </text>
 <path d="M 6150 430 L 6153 423 L 6247 423 L 6250 430 L 6247 437 L 6153 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6200" xml:space="preserve" y="430">
--315
-<title>-315</title>
+315
+<title>315</title>
 </text>
 <path d="M 6250 430 L 6253 423 L 6347 423 L 6350 430 L 6347 437 L 6253 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6300" xml:space="preserve" y="430">
-90
-<title>90</title>
+-90
+<title>-90</title>
 </text>
 <path d="M 6350 430 L 6353 423 L 6447 423 L 6450 430 L 6447 437 L 6353 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6400" xml:space="preserve" y="430">
-225
-<title>225</title>
+-225
+<title>-225</title>
 </text>
 <path d="M 6450 430 L 6453 423 L 6547 423 L 6550 430 L 6547 437 L 6453 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6500" xml:space="preserve" y="430">
--180
-<title>-180</title>
+180
+<title>180</title>
 </text>
 <path d="M 6550 430 L 6553 423 L 6647 423 L 6650 430 L 6647 437 L 6553 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6600" xml:space="preserve" y="430">
--135
-<title>-135</title>
+135
+<title>135</title>
 </text>
 <path d="M 6650 430 L 6653 423 L 6747 423 L 6750 430 L 6747 437 L 6653 437 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6700" xml:space="preserve" y="430">
-270
-<title>270</title>
+-270
+<title>-270</title>
 </text>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="start" x="3" xml:space="preserve" y="450">
             .frame

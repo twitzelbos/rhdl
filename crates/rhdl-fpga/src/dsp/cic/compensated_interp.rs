@@ -740,7 +740,7 @@ mod tests {
             .join("vcd")
             .join("cic_compensated_interp");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["c0580c4199a9f04ef11481c6673cdaf4290789abb8e06f71eb164273a1d6b096"];
+        let expect = expect!["739c47d409899f3705765861659af4e003dc0954cc174bf471d75c1d0c544aff"];
         let digest = vcd
             .dump_to_file(root.join("compensated_interp.vcd"))
             .unwrap();

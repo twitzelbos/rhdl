@@ -31,6 +31,181 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-28 — The up-converter's deferred work: a lossless taper, a compensator that can reach the images, and honest headroom
+
+**Paths:** `crates/rhdl-fpga/src/dsp/cic/{tapered.rs,post_compensated_interp.rs}` (new), `crates/rhdl-fpga/tests/cic_interp_tapered.rs` (new), `crates/rhdl-dsp-design/src/cic/{interp.rs,interp_chain.rs,compensator.rs}`, `crates/rhdl-fpga/src/doc/interp_report.rs`, `crates/rhdl-fpga/src/dsp/duc/{mod.rs,real.rs}`, two new examples and traces, both PDFs regenerated.
+
+**Why this, why now:** PR #116 shipped the up-converter and named five things it left out. Three were actionable and are done here; two are timing work that is deliberately still open, for reasons stated at the end rather than left as silence.
+
+**Design decisions:**
+
+- **`cic_interp_tapered!`, and the taper is lossless.** Each stage carries only the bits its own growth bound needs. The whole difference from `cic_pruned!` is that this discards *nothing*: a pruned decimator's stages hold the value divided by two to the power of the bits they dropped, so every inter-stage transfer is an arithmetic shift and the correctness argument is an error budget. Here each stage's output is a finite filter applied to a bounded input, so it has an exact bound of its own; size the stage to that and it holds its value at LSB weight one like every other stage. No shift anywhere, no noise, no budget — **so the test demands equality rather than a tolerance**, which is a far stronger claim than `cic_pruned.rs` can make. A tolerance would have been the wrong shape: it would pass on a datapath that had quietly acquired a truncation.
+- **The generated widths are the *monotone* lift of the exact bounds.** The exact taper is not monotonic — the last comb can be wider than the first integrator, because zero-stuffing divides by `R` faster than one integrator re-grows by `R·M`. Following it exactly would need transfers in both directions, and the narrowing one is only exercised by *some* configurations, which is the shape of a bug that hides. Taking the running maximum makes the only inter-stage operation anywhere a `sign_extend`. Measured cost: **one bit** at every realistic configuration, three at the degenerate `R·M = 2`. `cic_pruned!`'s own docs record a scaling bug that a schedule which happened not to prune the first stage hid completely; a datapath with one transfer direction has nowhere for that to hide.
+- **A converter-rate compensator, which is the only kind that can reach the images.** A pre-compensator is periodic in envelope-rate units, so it lifts every image exactly as much as the signal — image rejection is the cascade's alone. Move the filter past the rate change and the periodicity goes, so signal and images become different frequencies to it. Measured through the hardware at `N = 2, R = 4`: images from **29 dB down to 52 dB**.
+- **`compensator::design` generalised rather than duplicated.** Its fit evaluates the cosine basis and the cascade at the *same* frequency, which is right for a decimator's compensator and an interpolator's pre-compensator but not for one on the far side of an interpolator, where the two differ by `R`. `design_scaled(spec, scale)` takes the factor and `design(spec)` is now `design_scaled(spec, 1.0)` — so **no `Spec` literal anywhere changed** (there are 76 of them) and the 98 existing design tests prove the default is behaviour-preserving. Remez is *refused* at a scale other than one rather than run with the wrong band bookkeeping: a filter that looks designed and is not is worse than a refusal.
+- **Two headroom bounds, not one, and the report says which to build to.** "The width the compensator needs" is ambiguous and the ambiguity is worth five bits. `mid_width_in_band` is the largest passband gain — what the follow-up asked for, and right for a continuously-modulated carrier. `mid_width_any_input` is the `l1` norm, the bound for an arbitrary bounded input, and **that is the one to build to**: a transmit envelope is not band-limited, since switch-on, a burst boundary and a modulation change are all steps, and a step is exactly the input that reaches the `l1` bound. 23 bits against 18 on the default spec.
+
+**Surprises and gotchas:**
+
+- **A post-compensator's tap count is linear in `R`, which decides where it belongs.** The signal band is squeezed into `[0, edge/R]` and the first image starts at `(1-edge)/R`, so the filter narrows in proportion to the rate: 13 taps at `R = 2`, 49 at `R = 8`, **755 at `R = 125`** — at the converter clock. So the useful reading is not "don't" but "not here": put it **between chain stages**, where the local `R` is small. After the first stage of a `5 × 25` split it is a couple of dozen taps at 5 MHz rather than 755 at 125 MHz. That is a reason to split a transmit chain that has nothing to do with register bits, and it makes `max_chain_stages` matter more on transmit than the width figures suggested.
+- **`min_stopband_db` is a *composite* requirement and that reads oddly on transmit.** Asking for 30 dB where the cascade alone already gives 24 produced a filter that added 2 dB — the composite metric working exactly as designed, and easy to misread as the widget not working. Ask for the number you want to end up with.
+- **The first spectral test measured 5 dB of improvement where the design predicted 36.** The widget was right and the *measurement* had no dynamic range: at 10-bit words an image suppressed by 60 dB sits at 1.6 output LSBs, indistinguishable from the rounding floor. Widening to 14-bit words put it 32 LSBs clear. The hardware then measured 52 dB against a predicted 60, and **that remaining 8 dB is the converter word length** — past some point it, not the CIC and not the compensator, is the limit on image rejection. Recorded on the widget.
+- **The macro has four arms and only one was covered at first.** A transposed stage index in an unexercised arm compiles, generates a plausible widget and computes the wrong filter. Every arm now gets bit-exactness *and* the DC-gain property, which a mis-wired cascade would break even where it happened to agree with the reference on a varying input.
+- **Adding the tapered widget created a drift in the report.** `tapered_state_bits` is the exact bound; a generated widget carries the monotone lift. The design reports `built_state_bits` and `built_widths` alongside the bounds now, and the `duc` module docs no longer claim the tapered widget does not exist.
+- **A gain a hair above one costs a whole bit**, which is arithmetically obvious and still caught a wrong expectation in my own test: the same filter over a band narrow enough that its peak is 1.0005 needs one extra bit, because 1.0005 times full scale does not fit.
+- **`&& echo` after a pipeline reports the pipe's last command, and `2>&1 | grep -c` counts nothing when the errors are on stderr.** Two more instances of a check that appears to run and does not — the clippy gate reported clean twice while doing nothing. Counting with the redirect placed correctly is the only version worth trusting.
+
+**Validation:** 24 tests on the tapered macro across all four arms — bit-identical to the uniform widget on a varying input at three rates, at full scale both signs, across a restart, across a mid-stream rate change, and on a starved cycle, plus a structural test that the emitted Verilog really does declare narrower registers (the functional tests would all pass if the macro achieved nothing). 10 on the post-compensator including the end-to-end spectral measurement. 23 on the designer including the headroom arithmetic and the pre-versus-post image comparison. Both iverilog paths on both widgets; two new examples and traces; both PDFs regenerated deterministically. Full workspace suite green.
+
+**The comb cascades are pipelined now, in both directions.** This was
+listed as deliberately-not-done and then done, at your call, so the
+reasoning is worth recording rather than just the diff.
+
+- **The path was real and the rate was irrelevant.** A cascade chained
+  combinationally is `N` subtractors between registers and has to settle
+  inside one clock period whether its registers move every cycle or one
+  cycle in `R`. At `N = 5` that was five accumulator-width subtractors in
+  a single period, in the decimator, the uniform interpolator and the
+  tapered one. Every stage now reads the previous stage's *registered*
+  output, so the depth is one subtractor regardless of `N` — matching what
+  the integrator sections already did.
+- **It costs `N` registers per filter, and the design maths was wrong
+  until it counted them.** A comb stage's delay line holds its *inputs*,
+  so pipelining the chain needs an output register per stage on top. That
+  is 90 of the 270 uniform bits at the worked configuration.
+  `uniform_state_bits`, `tapered_state_bits` and `implemented_state_bits`
+  all count them now; before this they described a filter that no longer
+  existed, and the report was quoting them.
+- **Latency moves, and that is the whole price.** `z^-(N-1)` at the comb
+  section's own rate — the *output* rate for a decimator, the *input*
+  rate for an interpolator, where it is `N·R` output cycles and dominates
+  the group delay. Magnitude one throughout, so the filter is the same
+  filter delayed.
+- **Six independent models had to learn it**, which is how the change was
+  validated rather than assumed: the decimator's and interpolator's own
+  in-file gold models, and `tests/cic_gold_model.rs`'s separate uniform
+  and pruned pair. That last file caught the change on ten
+  configurations, having been written to a model that no longer matched —
+  exactly what an independently-written model is for.
+- **Re-blessed snapshots, audited.** Every affected VCD digest moved
+  because the waveforms are genuinely later. The structural diffs are
+  one new `top_comb_out` module in the decimator and interpolator, and
+  the pruned widget's bundled state growing 44 to 65 bits. Nothing else.
+
+**Surprises from doing it:**
+
+- **A 513-sample transform evaluated at 512-sample bins cost an hour.**
+  The post-compensator's image measurement uses `out.len() / 2` as a
+  tail, and the run is 1025 long, so the tail was 513 samples while the
+  bins assumed 512. Off-bin by a fraction, which smeared a 70 dB null
+  into 48 dB. **The widget was exact the whole time** — 29.1 dB bare and
+  69.4 dB compensated, against 29.1 and 69.4 predicted.
+- **And I had already published a physical explanation for that
+  artefact.** The previous entry attributed an "8 dB shortfall" to the
+  converter word length. There was no shortfall. I varied the
+  coefficient width and the output width looking for the cause and
+  neither moved the number, which should have been the clue that the
+  measurement was at fault rather than the hardware. A plausible
+  physical story for a measurement artefact is the most expensive kind of
+  wrong answer, and it is corrected on the widget and in the entry above.
+- **The bit-exactness tests earned their keep immediately.** Pipelining
+  the uniform interpolator before the tapered one put the two out of
+  step, and all nine equality tests failed on the next run rather than
+  the divergence surviving to review.
+
+**Sizing under a run-time rate.** Asked how a design guarantees its
+specs when `R` is only known at run time, which turned out to be a real
+gap: `design` took a single `interpolate` while the widget takes `R_MAX`
+and a runtime rate. Four things behave differently and only one of them
+was previously checked.
+
+- **Widths were already safe** — `G_j` is monotone in `R`, proved before
+  this.
+- **Image rejection depends on what the caller holds fixed, and this is
+  the trap.** With a bandwidth in *hertz*, the passband fraction is
+  `2·B·R/fs`, so a smaller rate sits a smaller fraction of the way to the
+  first null and everything improves: 37.9 dB at `R = 125` becomes
+  137.9 dB at `R = 2`. **`R_MAX` is the worst case.** With a fixed
+  *fractional* occupancy the figures are flat to 0.5 dB down to `R = 8`
+  and then fall 7 dB by `R = 2` — **`R_MIN` is the worst case**, and a
+  design verified only at the top would miss it. Both regimes are
+  tabulated and tested.
+- **Ripple needs no per-rate switching**, and the argument is worth
+  keeping: the droop curve is nearly `R`-independent in `u`, so a smaller
+  rate is the *same* curve over a *shorter* interval, and ripple over a
+  sub-interval cannot exceed ripple over the whole. One tap set designed
+  at `R_MAX` is valid throughout.
+- **Splitting the chain restricts the reachable rate set, and that is
+  arithmetic.** A stage's runtime factor tops out at its design-time
+  factor, so `5 × 25` reaches only `r1 · r2` with `r1 ≤ 5, r2 ≤ 25` —
+  **51 of the 124 rates below 125 are unreachable**, every prime above
+  five among them. Worse, a rate reachable two ways gives two *different
+  filters*, because each stage's nulls sit at its own factor. So
+  `InterpSpec::arbitrary_rate` forces a single stage, and
+  `InterpDesign::reachable_rates` reports the set otherwise. The example
+  and the PDF both print it.
+
+**Can you set one stage to `R = 1` to reach the missing rates?** Asked,
+and the answer has three parts.
+
+- **Yes, and it was already counted.** `reachable_rates` iterates
+  `1..=factor` per stage, so the bypass settings are in the 73-of-124
+  figure rather than missing from it.
+- **It cannot reach a prime above the largest stage.** Bypassing one
+  stage leaves the total equal to the other's setting, so for a *prime*
+  total the cap is `max(per-stage factor)`, not the product. `R = 29` is
+  out of reach of a `5 × 25` chain however it is set.
+- **And a bypassed stage stops filtering, which is the real cost.**
+  `R = 25` on a `5 × 25` chain is `(5, 5)` at **83.1 dB** of image
+  rejection or `(1, 25)` at **55.6 dB** — the same rate, 27 dB apart,
+  because bypassing the first stage discards its `sinc^5` and leaves only
+  the second's `sinc^2`. The `(1, 25)` setting misses the 60 dB spec that
+  the design nominally meets.
+
+There is a second, smaller trap underneath: **a stage at `R = 1` is only
+a *bypass* when `M = 1`.** At `M = 2` the comb and integrator sections do
+not cancel — `(1 - z^-2)^N / (1 - z^-1)^N` is `(1 + z^-1)^N`, magnitude
+`|cos(π f)|^N`, an `N`-th order lowpass with every zero at Nyquist — and
+its gain is `M^N` rather than one. At `N = 5, M = 2` that is 0.18 at a
+quarter of Nyquist and a gain of 32. `design`'s search is free to choose
+`M = 2` and at the default configuration it does, so this is live rather
+than hypothetical.
+
+So `verify_setting` evaluates any per-stage setting on its *actual*
+shapes, `settings_for` enumerates the settings giving a rate (four of
+them for `R = 20`, all different filters), and `rates_meeting_spec`
+reports which rates have at least one setting that still meets the spec —
+71 of 124 against 73 reachable. `reachable_rates` counts what the
+counters can produce; only this counts what the filter delivers, and
+conflating the two was the gap.
+
+**And the cost of arbitrary rate is the opposite of what I assumed.** I
+wrote a test asserting a single stage costs more registers than a split.
+It fails: measured at the default configuration the single stage picks
+`R = 125, N = 5` and spends **351** built register bits, while the
+`5 × 25` split picks `N = [5, 2]` and spends **614** — because a split
+*chains* widths and its second stage takes a 31-bit input. What the split
+actually wins is the rate-weighted cost, 9.7e9 against 2.0e10, because it
+does the deep filtering at 1 MHz instead of 125 MHz. So arbitrary rate
+buys every rate at roughly twice the rate-weighted cost and *fewer*
+registers. The test now asserts that, and the docs carry the table.
+
+**One process note.** Verifying across the range inside `design` — a
+search inside a search — took the module from 19 seconds to 514. Reverted
+to evaluating at `R_MAX` with the monotonicity proved by a single dense
+sweep instead. A guarantee belongs in a test that runs once, not in every
+candidate evaluation. `worst_image_over_range` survives as a public
+helper for callers who want the sweep, and it rebuilds the shape per
+rate — because a stage's factor *is* the rate it is set to, so its nulls
+move, and evaluating the design-time shape against a narrower band would
+be measuring a filter the hardware is not configured as. That error was
+in the first version.
+
+**Follow-ups — the remaining timing item:**
+
+- **The integrator cascade at 125 MHz.** Unchanged: it is pipelined one adder deep by construction, and the widest stage is 30 bits at the worked sizing. Still blocked on `auto-pipelining-plan.md`, which is the mechanism CLAUDE.md designates for it. What this PR adds is *visibility* — the report now states the adder depth per section and the per-stage widths as built, so the deferral is informed rather than a shrug.
+- **Nothing is measured.** Every depth statement here is inspection of adder counts; no synthesis has been run, because there is no vendor toolchain in this environment. The pipelining is defensible on its own terms — one adder between registers is the shape a synchronous datapath should have — but whether any of it was *necessary* at 125 MHz is unknown, and the honest next step is a timing report from the Vivado machine `xilinx-primitive-library.md` is staged for. An earlier version of this file called the comb depth "the timing risk", which claimed a finding that did not exist.
+
 ## 2026-08-27 — Transmit-side compensation, a spec-driven designer, and a PDF report
 
 **Paths:** `crates/rhdl-dsp-design/src/cic/interp_chain.rs` (new), `crates/rhdl-fpga/src/dsp/cic/compensated_interp.rs` (new), `crates/rhdl-fpga/src/doc/interp_report.rs` (new), `crates/rhdl-fpga/src/doc/{mod.rs,report.rs}`, `crates/rhdl-fpga/src/dsp/duc/{upsampler.rs,real.rs,iq.rs}`, `crates/rhdl-fpga/examples/{cic_compensated_interp.rs,interp_report.rs}`, two committed PDFs.

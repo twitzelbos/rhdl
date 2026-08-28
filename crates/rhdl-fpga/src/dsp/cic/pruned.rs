@@ -167,7 +167,9 @@ macro_rules! cic_pruned {
             [(i1, 2, i0, 1)],
             i1,
             c0,
-            [(c1, 4, c0, 3)]
+            o0,
+            [(c1, o1, o0, 4, 3)],
+            o1
         );
     };
     ($name:ident, w_in = $wi:tt, n = 3, r = $r:tt, m = $m:tt, b_out = $bo:tt) => {
@@ -182,7 +184,9 @@ macro_rules! cic_pruned {
             [(i1, 2, i0, 1), (i2, 3, i1, 2)],
             i2,
             c0,
-            [(c1, 5, c0, 4), (c2, 6, c1, 5)]
+            o0,
+            [(c1, o1, o0, 5, 4), (c2, o2, o1, 6, 5)],
+            o2
         );
     };
     ($name:ident, w_in = $wi:tt, n = 4, r = $r:tt, m = $m:tt, b_out = $bo:tt) => {
@@ -197,7 +201,9 @@ macro_rules! cic_pruned {
             [(i1, 2, i0, 1), (i2, 3, i1, 2), (i3, 4, i2, 3)],
             i3,
             c0,
-            [(c1, 6, c0, 5), (c2, 7, c1, 6), (c3, 8, c2, 7)]
+            o0,
+            [(c1, o1, o0, 6, 5), (c2, o2, o1, 7, 6), (c3, o3, o2, 8, 7)],
+            o3
         );
     };
     ($name:ident, w_in = $wi:tt, n = 5, r = $r:tt, m = $m:tt, b_out = $bo:tt) => {
@@ -217,12 +223,14 @@ macro_rules! cic_pruned {
             ],
             i4,
             c0,
+            o0,
             [
-                (c1, 7, c0, 6),
-                (c2, 8, c1, 7),
-                (c3, 9, c2, 8),
-                (c4, 10, c3, 9)
-            ]
+                (c1, o1, o0, 7, 6),
+                (c2, o2, o1, 8, 7),
+                (c3, o3, o2, 9, 8),
+                (c4, o4, o3, 10, 9)
+            ],
+            o4
         );
     };
     ($name:ident, w_in = $wi:tt, n = 6, r = $r:tt, m = $m:tt, b_out = $bo:tt) => {
@@ -243,13 +251,15 @@ macro_rules! cic_pruned {
             ],
             i5,
             c0,
+            o0,
             [
-                (c1, 8, c0, 7),
-                (c2, 9, c1, 8),
-                (c3, 10, c2, 9),
-                (c4, 11, c3, 10),
-                (c5, 12, c4, 11)
-            ]
+                (c1, o1, o0, 8, 7),
+                (c2, o2, o1, 9, 8),
+                (c3, o3, o2, 10, 9),
+                (c4, o4, o3, 11, 10),
+                (c5, o5, o4, 12, 11)
+            ],
+            o5
         );
     };
     ($name:ident, w_in = $wi:tt, n = 7, r = $r:tt, m = $m:tt, b_out = $bo:tt) => {
@@ -271,14 +281,16 @@ macro_rules! cic_pruned {
             ],
             i6,
             c0,
+            o0,
             [
-                (c1, 9, c0, 8),
-                (c2, 10, c1, 9),
-                (c3, 11, c2, 10),
-                (c4, 12, c3, 11),
-                (c5, 13, c4, 12),
-                (c6, 14, c5, 13)
-            ]
+                (c1, o1, o0, 9, 8),
+                (c2, o2, o1, 10, 9),
+                (c3, o3, o2, 11, 10),
+                (c4, o4, o3, 12, 11),
+                (c5, o5, o4, 13, 12),
+                (c6, o6, o5, 14, 13)
+            ],
+            o6
         );
     };
     ($name:ident, w_in = $wi:tt, n = 8, r = $r:tt, m = $m:tt, b_out = $bo:tt) => {
@@ -301,15 +313,17 @@ macro_rules! cic_pruned {
             ],
             i7,
             c0,
+            o0,
             [
-                (c1, 10, c0, 9),
-                (c2, 11, c1, 10),
-                (c3, 12, c2, 11),
-                (c4, 13, c3, 12),
-                (c5, 14, c4, 13),
-                (c6, 15, c5, 14),
-                (c7, 16, c6, 15)
-            ]
+                (c1, o1, o0, 10, 9),
+                (c2, o2, o1, 11, 10),
+                (c3, o3, o2, 12, 11),
+                (c4, o4, o3, 13, 12),
+                (c5, o5, o4, 14, 13),
+                (c6, o6, o5, 15, 14),
+                (c7, o7, o6, 16, 15)
+            ],
+            o7
         );
     };
 }
@@ -326,7 +340,9 @@ macro_rules! cic_pruned_impl {
     (
         $name:ident, $wi:tt, $n:tt, $r:tt, $m:tt, $bo:tt,
         $i0:ident, [$(($ik:ident, $ikj:tt, $ikprev:ident, $ikpj:tt)),* $(,)?], $ilast:ident,
-        $c0:ident, [$(($ck:ident, $ckj:tt, $ckprev:ident, $ckpj:tt)),* $(,)?]
+        $c0:ident, $o0:ident,
+        [$(($ck:ident, $ok:ident, $okprev:ident, $ckj:tt, $ckpj:tt)),* $(,)?],
+        $olast:ident
     ) => {
         /// Per-stage state of the generated CIC, bundled into one
         /// register so the widget's field count does not grow with the
@@ -341,6 +357,10 @@ macro_rules! cic_pruned_impl {
             $(pub $ik: SignedBits<{ $crate::dsp::cic::prune::stage_width($ikj, $wi, $n, $r, $m, $bo) }>,)*
             pub $c0: [SignedBits<{ $crate::dsp::cic::prune::stage_width($n + 1, $wi, $n, $r, $m, $bo) }>; $m],
             $(pub $ck: [SignedBits<{ $crate::dsp::cic::prune::stage_width($ckj, $wi, $n, $r, $m, $bo) }>; $m],)*
+            // Each comb stage's registered output: what makes the comb
+            // cascade one subtractor deep instead of `N`.
+            pub $o0: SignedBits<{ $crate::dsp::cic::prune::stage_width($n + 1, $wi, $n, $r, $m, $bo) }>,
+            $(pub $ok: SignedBits<{ $crate::dsp::cic::prune::stage_width($ckj, $wi, $n, $r, $m, $bo) }>,)*
         }
 
         #[doc = concat!("A ", stringify!($n), "-stage CIC decimator with a Hogenauer-pruned datapath.")]
@@ -479,12 +499,18 @@ macro_rules! cic_pruned_impl {
 
                 if last {
                     // ---- comb cascade, once per R input samples ----
+                    //
+                    // *** Pipelined: each stage reads the previous
+                    // stage's REGISTERED output. *** One subtractor
+                    // between registers however deep the cascade;
+                    // combinational depth does not care that this
+                    // section is clocked one cycle in `R`. See
+                    // `cic::decimator`.
                     let mut cs = st;
                     let v = $crate::dsp::narrow::<
                         { $crate::dsp::cic::prune::stage_width($n, $wi, $n, $r, $m, $bo) },
                         { $crate::dsp::cic::prune::stage_width($n + 1, $wi, $n, $r, $m, $bo) },
                     >(carry);
-                    let dif = v - pc.$c0[$m - 1];
                     let mut line = pc.$c0;
                     for j in 0..$m {
                         // Shift toward the tail, newest at index 0.
@@ -492,23 +518,22 @@ macro_rules! cic_pruned_impl {
                         line[idx] = if idx == 0 { v } else { pc.$c0[idx - 1] };
                     }
                     cs.$c0 = line;
-                    let v = dif;
+                    cs.$o0 = v - pc.$c0[$m - 1];
                     $(
                         let vin = $crate::dsp::narrow::<
                             { $crate::dsp::cic::prune::stage_width($ckpj, $wi, $n, $r, $m, $bo) },
                             { $crate::dsp::cic::prune::stage_width($ckj, $wi, $n, $r, $m, $bo) },
-                        >(v);
-                        let dif = vin - pc.$ck[$m - 1];
+                        >(pc.$okprev);
                         let mut line = pc.$ck;
                         for j in 0..$m {
                             let idx = $m - 1 - j;
                             line[idx] = if idx == 0 { vin } else { pc.$ck[idx - 1] };
                         }
                         cs.$ck = line;
-                        let v = dif;
+                        cs.$ok = vin - pc.$ck[$m - 1];
                     )*
                     d.stages = cs;
-                    d.out = Some(v);
+                    d.out = Some(cs.$olast);
                 }
             }
 

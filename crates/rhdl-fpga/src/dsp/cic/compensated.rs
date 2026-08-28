@@ -492,7 +492,7 @@ mod tests {
             .join("vcd")
             .join("cic_compensated");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["4cb5eceab635b6cdc0a2ce5eb9e02c9620df2f62fcecbbf4df26089a215d086a"];
+        let expect = expect!["5088cad7f24d7877360e97cf67245cc342dde7be5782db78ebb64ac3d2214b45"];
         let digest = vcd.dump_to_file(root.join("cic_compensated.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

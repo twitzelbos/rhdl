@@ -39,12 +39,16 @@
 //! Size stage `j` to `w_in + ceil(log2 G_j)` and it holds its own value
 //! exactly: no truncation, no wrap, **no error at all**. That is the
 //! important difference from the decimator, where tapering trades
-//! noise for area. Here it is free, and
-//! [`stage_width`] is the schedule.
+//! noise for area. Here it is free, [`stage_width`] is the schedule, and
+//! `rhdl_fpga::cic_interp_tapered!` is the widget that follows it —
+//! bit-identical to the uniform form, which is a guarantee the
+//! decimator's pruning schedule cannot offer.
 //!
 //! The saving is real. At `w_in = 18, N = 3, R = 125, M = 1` a uniform
 //! filter spends 32 bits in all six stages; tapered they are
-//! `19, 20, 21, 20, 26, 32`.
+//! `19, 20, 21, 20, 26, 32`. Counting the registers each spends —
+//! including the `N` comb output registers the pipelining needs, see
+//! [`uniform_state_bits`] — that is 288 bits uniform against 198.
 //!
 //! Note the dip at the fourth stage. The taper is **not** monotonic
 //! across the comb-to-integrator boundary: the last comb needs 21 bits
@@ -182,6 +186,64 @@ pub const fn stage_width(j: usize, w_in: usize, n: usize, r: usize, m: usize) ->
     w_in + stage_gain_bits(j, n, r, m)
 }
 
+/// Width of stage `j` as **built**, the running maximum of the exact
+/// bounds up to `j`.
+///
+/// # Why the hardware does not use [`stage_width`] directly
+///
+/// The exact taper is not monotonic: at the comb-to-integrator boundary
+/// it can *narrow*, because zero-stuffing divides the signal by `R`
+/// faster than one integrator re-grows it by `R·M`. At
+/// `w_in = 16, N = 3, R = 125` the widths are
+/// `17, 18, 19, 18, 24, 30` — note the 19 followed by an 18.
+///
+/// A generated datapath that followed those widths exactly would need
+/// transfers in *both* directions: sign-extension going up and
+/// truncation coming down. Two operations, two chances to get the
+/// scaling wrong, and the narrowing one is only exercised by some
+/// configurations — which is the shape of a bug that hides.
+///
+/// Taking the running maximum makes every transfer a widening. The cost
+/// is measured rather than assumed: **one bit** at every configuration
+/// tried, and three at the degenerate `R·M = 2`, where the comb section
+/// is the widest part of the filter anyway.
+/// `the_monotone_taper_costs_almost_nothing` pins it.
+///
+/// The taper remains lossless either way: a stage wider than its own
+/// bound still holds its value exactly.
+pub const fn implemented_stage_width(j: usize, w_in: usize, n: usize, r: usize, m: usize) -> usize {
+    let mut widest = 0;
+    let mut k = 1;
+    while k <= j {
+        let w = stage_width(k, w_in, n, r, m);
+        if w > widest {
+            widest = w;
+        }
+        k += 1;
+    }
+    widest
+}
+
+/// Bits of state the built datapath spends.
+///
+/// [`tapered_state_bits`] against the exact bounds;  this against the
+/// monotone widths a generated widget actually carries. Report the exact
+/// figure to describe the mathematics and this one to describe the
+/// hardware.
+pub const fn implemented_state_bits(w_in: usize, n: usize, r: usize, m: usize) -> usize {
+    let mut total = 0;
+    let mut j = 1;
+    while j <= 2 * n {
+        let w = implemented_stage_width(j, w_in, n, r, m);
+        // A comb stage carries an M-deep delay line and an output
+        // register; an integrator carries one register. See
+        // [`uniform_state_bits`] on why the comb output registers exist.
+        total += if j <= n { m * w + w } else { w };
+        j += 1;
+    }
+    total
+}
+
 /// Bits of growth the *widest* stage needs.
 ///
 /// The maximum over every stage, not `G_2N`, because the two sections
@@ -267,23 +329,43 @@ pub const fn rate_width(r: usize) -> usize {
 
 /// Bits of state a uniform-width interpolator spends, for comparison.
 ///
-/// `2N` stages at [`accumulator_width`], plus `M-1` extra registers per
-/// comb stage for the differential delay line.
+/// Three contributions per filter:
+///
+/// - `N` integrators, one register each.
+/// - `N` comb stages, each holding an `M`-deep delay line.
+/// - `N` comb *output* registers.
+///
+/// # The comb output registers are the pipelining, and they are not free
+///
+/// Both cascades read the previous stage's registered value so that the
+/// depth between registers is one adder rather than `N` — see
+/// `rhdl_fpga::dsp::cic::interpolator`. The integrator section gets that
+/// for nothing, because a running sum is a register anyway. The comb
+/// section does not: its delay lines hold each stage's *inputs*, so
+/// pipelining the chain needs a register for each stage's *output* too.
+///
+/// That is `N` registers per filter, and at the worked configuration
+/// (`w_in = 16, N = 3, R = 125`) it is 90 of the 270 uniform bits. Real
+/// money, bought to keep the combinational path at one subtractor.
 pub const fn uniform_state_bits(w_in: usize, n: usize, r: usize, m: usize) -> usize {
     let w = accumulator_width(w_in, n, r, m);
-    // N integrators, plus N comb stages each holding an M-deep line.
-    n * w + n * m * w
+    // N integrators, N comb delay lines of M, and N comb output
+    // registers.
+    n * w + n * m * w + n * w
 }
 
-/// Bits of state the tapered schedule spends.
+/// Bits of state the tapered schedule spends, at the exact bounds.
+///
+/// Same three contributions as [`uniform_state_bits`], each at its own
+/// stage's width.
 pub const fn tapered_state_bits(w_in: usize, n: usize, r: usize, m: usize) -> usize {
     let mut total = 0;
     let mut j = 1;
     while j <= 2 * n {
         let w = stage_width(j, w_in, n, r, m);
-        // Comb stages carry an M-deep delay line; integrators carry one
-        // register.
-        total += if j <= n { m * w } else { w };
+        // A comb stage carries an M-deep delay line and an output
+        // register; an integrator carries one register.
+        total += if j <= n { m * w + w } else { w };
         j += 1;
     }
     total
@@ -407,6 +489,67 @@ mod tests {
             tapered_state_bits(w_in, n, r, m),
             uniform_state_bits(w_in, n, r, m)
         );
+    }
+
+    /// **The monotone taper is monotone, and costs almost nothing.**
+    ///
+    /// Both halves matter. Monotone is what makes every inter-stage
+    /// transfer a widening, which is the whole reason a generated
+    /// datapath uses these widths; and the overhead is what makes that
+    /// simplification free.
+    #[test]
+    fn the_monotone_taper_costs_almost_nothing() {
+        for &(w, n, r, m, overhead) in &[
+            (16usize, 3usize, 125usize, 1usize, 1usize),
+            (16, 5, 5, 1, 1),
+            (16, 2, 8, 1, 1),
+            (18, 4, 25, 1, 1),
+            (16, 5, 1024, 1, 1),
+            // The degenerate rate, where the comb section is the widest
+            // part of the filter and the dip is three bits deep.
+            (16, 3, 2, 1, 3),
+        ] {
+            let built: Vec<usize> = (1..=2 * n)
+                .map(|j| implemented_stage_width(j, w, n, r, m))
+                .collect();
+            for pair in built.windows(2) {
+                assert!(
+                    pair[1] >= pair[0],
+                    "w={w} N={n} R={r}: {built:?} is not monotone"
+                );
+            }
+            // Never below the exact bound, so still lossless.
+            for j in 1..=2 * n {
+                assert!(
+                    implemented_stage_width(j, w, n, r, m) >= stage_width(j, w, n, r, m),
+                    "w={w} N={n} R={r} j={j}"
+                );
+            }
+            assert_eq!(
+                implemented_state_bits(w, n, r, m) - tapered_state_bits(w, n, r, m),
+                overhead,
+                "w={w} N={n} R={r} M={m}"
+            );
+        }
+    }
+
+    /// And the built widths still beat the uniform ones, which is the
+    /// point of tapering at all.
+    #[test]
+    fn the_built_taper_is_still_a_real_saving() {
+        for &(w, n, r, m) in &[(16, 3, 125, 1), (16, 2, 8, 1), (18, 4, 25, 1)] {
+            let built = implemented_state_bits(w, n, r, m);
+            let uniform = uniform_state_bits(w, n, r, m);
+            assert!(
+                built < uniform,
+                "w={w} N={n} R={r}: built {built} vs uniform {uniform}"
+            );
+        }
+        // The worked configuration, as data: 181 against 270. Both
+        // figures include the `N` comb output registers the pipelining
+        // needs -- see `uniform_state_bits`.
+        assert_eq!(implemented_state_bits(16, 3, 125, 1), 181);
+        assert_eq!(uniform_state_bits(16, 3, 125, 1), 270);
     }
 
     /// **Sizing for `R_MAX` covers every smaller rate.**

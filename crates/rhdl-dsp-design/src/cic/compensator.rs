@@ -238,6 +238,12 @@ pub struct Design {
     /// iterate rather than the optimum — worth knowing before shipping
     /// them.
     pub converged: bool,
+    /// Factor between the fit's frequency variable and the cascade's.
+    ///
+    /// `1.0` for an ordinary compensator, where the filter and the CIC
+    /// see the same rate. `R` for a compensator placed on the *far* side
+    /// of an interpolator — see [`design_scaled`].
+    pub cascade_scale: f64,
 }
 
 /// Amplitude response of a symmetric odd-length FIR at output-rate
@@ -322,15 +328,60 @@ fn solve(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Option<Vec<f64>> {
 /// `1/|H|` is unbounded), or the normal equations are singular.
 #[allow(clippy::needless_range_loop, clippy::manual_is_multiple_of)]
 pub fn design(spec: Spec) -> Option<Design> {
-    if spec.taps % 2 == 0 || spec.taps == 0 || spec.cics.is_empty() {
+    design_scaled(spec, 1.0)
+}
+
+/// Design a compensator whose own rate differs from the cascade's by
+/// `cascade_scale`.
+///
+/// # What the scale is for
+///
+/// [`design`] assumes the filter and the CIC see the same sample rate,
+/// so one frequency variable serves both: the cosine basis and
+/// [`cascade_magnitude`] are evaluated at the same `u`. That holds for a
+/// decimator's compensator, which sits after the rate change, and for an
+/// interpolator's *pre*-compensator, which sits before it.
+///
+/// It does not hold for an interpolator's **post**-compensator. That
+/// filter runs at the converter rate while the droop it inverts is a
+/// property of the envelope rate, so the two variables differ by `R`.
+/// Pass `cascade_scale = R` and the fit evaluates its basis at the
+/// filter's frequency `g` and the cascade at `g · R`, which is the
+/// correct pairing.
+///
+/// `spec.passband` and `spec.stopband_edge` are then in the *filter's*
+/// units — for a post-compensator, fractions of the converter Nyquist.
+/// [`crate::cic::interp_chain::post_compensator_bands`] computes them.
+///
+/// # Least squares only
+///
+/// Returns `None` for [`Method::Remez`] with a scale other than one. The
+/// exchange algorithm's band bookkeeping assumes the single-variable
+/// pairing, and quietly running it with the wrong one would produce a
+/// filter that looks designed and is not — a worse outcome than a
+/// refusal. Least squares carries the scale correctly because its
+/// objective is assembled frequency by frequency.
+// `!(cascade_scale > 0.0)` rather than `<= 0.0`, deliberately: the
+// argument may be NaN, where every comparison is false and the negated
+// form is the one that rejects rather than silently accepts. Same
+// reasoning and same allow as `super::chain::design`.
+#[allow(clippy::neg_cmp_op_on_partial_ord)]
+pub fn design_scaled(spec: Spec, cascade_scale: f64) -> Option<Design> {
+    if spec.taps.is_multiple_of(2) || spec.taps == 0 || spec.cics.is_empty() {
+        return None;
+    }
+    if !(cascade_scale > 0.0) {
         return None;
     }
     if spec.method == Method::Remez {
+        if cascade_scale != 1.0 {
+            return None;
+        }
         return remez::design(&spec);
     }
     if spec.min_stopband_db <= 0.0 {
         // Pure compensation: no stopband term at all.
-        return design_at_weight(&spec, 0.0);
+        return design_at_weight(&spec, 0.0, cascade_scale);
     }
 
     // Attenuation rises monotonically with the stopband weight, so the
@@ -348,7 +399,7 @@ pub fn design(spec: Spec) -> Option<Design> {
     const RUNGS: usize = 33;
     let weight_of = |k: usize| 1e-3 * 10f64.powf(k as f64 / 8.0);
 
-    let top = design_at_weight(&spec, weight_of(RUNGS - 1))?;
+    let top = design_at_weight(&spec, weight_of(RUNGS - 1), cascade_scale)?;
     if top.stopband_db < spec.min_stopband_db {
         // Not reachable at any weight; report the deepest attempt so
         // the caller sees how far short it fell.
@@ -359,7 +410,7 @@ pub fn design(spec: Spec) -> Option<Design> {
     let mut best = top;
     while lo + 1 < hi {
         let mid = (lo + hi) / 2;
-        let d = design_at_weight(&spec, weight_of(mid))?;
+        let d = design_at_weight(&spec, weight_of(mid), cascade_scale)?;
         if d.stopband_db >= spec.min_stopband_db {
             hi = mid;
             best = d;
@@ -369,7 +420,7 @@ pub fn design(spec: Spec) -> Option<Design> {
     }
     // Rung zero might already have been enough.
     if hi == 1 {
-        let d = design_at_weight(&spec, weight_of(0))?;
+        let d = design_at_weight(&spec, weight_of(0), cascade_scale)?;
         if d.stopband_db >= spec.min_stopband_db {
             best = d;
         }
@@ -380,7 +431,7 @@ pub fn design(spec: Spec) -> Option<Design> {
 
 /// One least-squares fit at a fixed stopband weight.
 #[allow(clippy::needless_range_loop)]
-fn design_at_weight(spec: &Spec, weight: f64) -> Option<Design> {
+fn design_at_weight(spec: &Spec, weight: f64, cascade_scale: f64) -> Option<Design> {
     let c = spec.taps / 2;
     let nb = c + 1;
     let basis = |u: f64, i: usize| -> f64 {
@@ -398,7 +449,11 @@ fn design_at_weight(spec: &Spec, weight: f64) -> Option<Design> {
     const GRID: usize = 512;
     for g in 0..GRID {
         let u = edge * g as f64 / (GRID - 1) as f64;
-        let h = cascade_magnitude(&spec.cics, u);
+        // The basis is evaluated at the filter's own frequency `u`
+        // and the cascade at `u * cascade_scale`. They are the same
+        // variable only when the filter and the CIC share a rate; see
+        // `design_scaled`.
+        let h = cascade_magnitude(&spec.cics, u * cascade_scale);
         if h <= 1e-12 {
             return None; // the passband touches a null
         }
@@ -427,7 +482,7 @@ fn design_at_weight(spec: &Spec, weight: f64) -> Option<Design> {
             // objective, which is the correct answer -- there is nothing
             // left to attenuate. The passband terms keep the system
             // non-singular.
-            let h = cascade_magnitude(&spec.cics, u);
+            let h = cascade_magnitude(&spec.cics, u * cascade_scale);
             let w = weight * h * h;
             for i in 0..nb {
                 let pi_ = basis(u, i);
@@ -447,9 +502,9 @@ fn design_at_weight(spec: &Spec, weight: f64) -> Option<Design> {
         taps[c + i] = x[i];
     }
 
-    let (ripple_db, peak_gain) = evaluate(&taps, spec);
+    let (ripple_db, peak_gain) = evaluate(&taps, spec, cascade_scale);
     Some(Design {
-        stopband_db: stopband_db(&taps, spec),
+        stopband_db: stopband_db(&taps, spec, cascade_scale),
         ripple_db,
         peak_gain,
         stopband_weight: weight,
@@ -458,6 +513,7 @@ fn design_at_weight(spec: &Spec, weight: f64) -> Option<Design> {
         converged: true,
         taps,
         spec: spec.clone(),
+        cascade_scale,
     })
 }
 
@@ -481,7 +537,7 @@ fn design_at_weight(spec: &Spec, weight: f64) -> Option<Design> {
 /// passband target is `1/|H|`, so the composite is 1.0 at DC by
 /// construction, and [`quantise`] trims the centre tap to keep it there
 /// exactly.
-fn stopband_db(taps: &[f64], spec: &Spec) -> f64 {
+fn stopband_db(taps: &[f64], spec: &Spec, cascade_scale: f64) -> f64 {
     let lo = 0.5 * spec.stopband_edge;
     if lo >= 0.5 {
         return f64::INFINITY;
@@ -490,7 +546,8 @@ fn stopband_db(taps: &[f64], spec: &Spec) -> f64 {
     const GRID: usize = 512;
     for g in 0..GRID {
         let u = lo + (0.5 - lo) * g as f64 / (GRID - 1) as f64;
-        worst = worst.max(cascade_magnitude(&spec.cics, u) * fir_amplitude(taps, u).abs());
+        worst = worst
+            .max(cascade_magnitude(&spec.cics, u * cascade_scale) * fir_amplitude(taps, u).abs());
     }
     if worst <= 1e-15 {
         f64::INFINITY
@@ -501,7 +558,7 @@ fn stopband_db(taps: &[f64], spec: &Spec) -> f64 {
 
 /// Peak-to-peak passband deviation in dB, and the largest tap gain
 /// asked of the filter.
-fn evaluate(taps: &[f64], spec: &Spec) -> (f64, f64) {
+fn evaluate(taps: &[f64], spec: &Spec, cascade_scale: f64) -> (f64, f64) {
     let edge = passband_edge_out(spec.passband);
     let mut lo = f64::INFINITY;
     let mut hi = f64::NEG_INFINITY;
@@ -509,7 +566,8 @@ fn evaluate(taps: &[f64], spec: &Spec) -> (f64, f64) {
     const GRID: usize = 1024;
     for g in 0..GRID {
         let u = edge * g as f64 / (GRID - 1) as f64;
-        let composite = cascade_magnitude(&spec.cics, u) * fir_amplitude(taps, u).abs();
+        let composite =
+            cascade_magnitude(&spec.cics, u * cascade_scale) * fir_amplitude(taps, u).abs();
         let db = 20.0 * composite.log10();
         lo = lo.min(db);
         hi = hi.max(db);
@@ -603,9 +661,13 @@ pub fn quantise(design: &Design, coeff_width: usize) -> Quantised {
 
     let real: Vec<f64> = taps.iter().map(|t| *t as f64 / scale).collect();
     let dc_gain = real.iter().sum::<f64>();
-    let (ripple_db, _) = evaluate(&real, &design.spec);
+    // The design's own scale: a post-compensator's ripple and
+    // stopband have to be re-measured with the same frequency pairing
+    // the fit used, or `quantise` reports numbers for a filter at the
+    // wrong rate.
+    let (ripple_db, _) = evaluate(&real, &design.spec, design.cascade_scale);
     Quantised {
-        stopband_db: stopband_db(&real, &design.spec),
+        stopband_db: stopband_db(&real, &design.spec, design.cascade_scale),
         taps,
         shift,
         coeff_width,
@@ -943,10 +1005,12 @@ pub mod remez {
         }
 
         let final_taps = symmetric_from(&coeffs, taps);
-        let (ripple, peak_gain) = evaluate(&final_taps, spec);
+        // Remez only ever runs at scale one -- `design_scaled`
+        // refuses otherwise.
+        let (ripple, peak_gain) = evaluate(&final_taps, spec, 1.0);
         let _ = iterations;
         Some(Design {
-            stopband_db: super::stopband_db(&final_taps, spec),
+            stopband_db: super::stopband_db(&final_taps, spec, 1.0),
             ripple_db: ripple,
             peak_gain,
             // Remez fixes its weighting analytically from the two dB
@@ -957,6 +1021,7 @@ pub mod remez {
             converged,
             taps: final_taps,
             spec: spec.clone(),
+            cascade_scale: 1.0,
         })
     }
 
@@ -1340,7 +1405,7 @@ mod cascade_and_stopband_tests {
         // search overspent and gave away ripple for nothing.
         let lower = d.stopband_weight / 10f64.powf(1.0 / 8.0);
         if lower >= 1e-3 {
-            let weaker = design_at_weight(&spec, lower).unwrap();
+            let weaker = design_at_weight(&spec, lower, 1.0).unwrap();
             assert!(
                 weaker.stopband_db < spec.min_stopband_db,
                 "weight {} was more than needed: {} already gives {}",

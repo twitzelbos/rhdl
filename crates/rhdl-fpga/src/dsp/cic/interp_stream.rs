@@ -57,12 +57,15 @@
 //!
 //! That is the first sample of the new burst, which is what a mark
 //! means. It is deliberately *not* the first output the marked sample
-//! measurably influenced: the core's integrator cascade is pipelined,
-//! so a new sample does not reach the output for `STAGES` cycles, and
-//! the cascade then fills over `N·R·M` more. **A phase-sensitive
-//! transmitter has to account for that group delay itself** — the mark
-//! names the window boundary, not the point at which the signal
-//! arrives. Marking the boundary is the choice that composes, because
+//! measurably influenced: **both** of the core's cascades are pipelined,
+//! so a new sample does not reach the output for `STAGES` input samples
+//! plus `STAGES - 1` output cycles — `STAGES · R` output cycles to a
+//! first approximation — and the cascade then fills over `N·R·M` more.
+//! **A phase-sensitive transmitter has to account for that group delay
+//! itself** — the mark names the window boundary, not the point at which
+//! the signal arrives. See
+//! [`super::interpolator`] for the depth-versus-delay trade the
+//! pipelining makes. Marking the boundary is the choice that composes, because
 //! the boundary is the thing both ends of the link can agree on without
 //! knowing the filter's configuration.
 //!
@@ -754,95 +757,99 @@ mod tests {
                endfunction
             endmodule
             module top_cic(input wire [1:0] clock_reset, input wire [14:0] i, output wire [14:0] o);
-               wire [74:0] od;
-               wire [59:0] d;
-               wire [59:0] q;
+               wire [96:0] od;
+               wire [81:0] d;
+               wire [81:0] q;
                assign o = od[14:0];
                top_cic_combs c0(.clock_reset(clock_reset), .i(d[21:0]), .o(q[21:0]));
-               top_cic_integrators c1(.clock_reset(clock_reset), .i(d[43:22]), .o(q[43:22]));
-               top_cic_phase c2(.clock_reset(clock_reset), .i(d[47:44]), .o(q[47:44]));
-               top_cic_out c3(.clock_reset(clock_reset), .i(d[58:48]), .o(q[58:48]));
-               top_cic_starved c4(.clock_reset(clock_reset), .i(d[59:59]), .o(q[59:59]));
-               assign d = od[74:15];
+               top_cic_comb_out c1(.clock_reset(clock_reset), .i(d[43:22]), .o(q[43:22]));
+               top_cic_integrators c2(.clock_reset(clock_reset), .i(d[65:44]), .o(q[65:44]));
+               top_cic_phase c3(.clock_reset(clock_reset), .i(d[69:66]), .o(q[69:66]));
+               top_cic_out c4(.clock_reset(clock_reset), .i(d[80:70]), .o(q[80:70]));
+               top_cic_starved c5(.clock_reset(clock_reset), .i(d[81:81]), .o(q[81:81]));
+               assign d = od[96:15];
                assign od = kernel_cic_interpolate_kernel(clock_reset, i, q);
-               function [74:0] kernel_cic_interpolate_kernel(input reg [1:0] arg_0, input reg [14:0] arg_1, input reg [59:0] arg_2);
+               function [96:0] kernel_cic_interpolate_kernel(input reg [1:0] arg_0, input reg [14:0] arg_1, input reg [81:0] arg_2);
                      reg [21:0] r0;
-                     reg [59:0] r1;
+                     reg [81:0] r1;
                      // d
-                     reg [59:0] r2;
-                     reg [3:0] r3;
+                     reg [81:0] r2;
+                     reg [21:0] r3;
                      // d
-                     reg [59:0] r4;
+                     reg [81:0] r4;
                      reg [3:0] r5;
-                     reg [0:0] r6;
-                     reg [0:0] r7;
-                     reg [14:0] r8;
+                     // d
+                     reg [81:0] r6;
+                     reg [3:0] r7;
+                     reg [0:0] r8;
                      reg [0:0] r9;
-                     reg [0:0] r10;
-                     reg [3:0] r11;
-                     reg [3:0] r12;
+                     reg [14:0] r10;
+                     reg [0:0] r11;
+                     reg [0:0] r12;
                      reg [3:0] r13;
                      reg [3:0] r14;
-                     reg [0:0] r15;
+                     reg [3:0] r15;
                      reg [3:0] r16;
-                     reg [3:0] r17;
+                     reg [0:0] r17;
+                     reg [3:0] r18;
+                     reg [3:0] r19;
                      // d
-                     reg [59:0] r18;
-                     reg [8:0] r19;
-                     reg [0:0] r20;
-                     reg [7:0] r21;
-                     reg [7:0] r22;
+                     reg [81:0] r20;
+                     reg [8:0] r21;
+                     reg [0:0] r22;
                      reg [7:0] r23;
-                     reg [0:0] r24;
-                     reg [10:0] r25;
-                     reg [10:0] r26;
+                     reg [7:0] r24;
+                     reg [7:0] r25;
+                     reg [0:0] r26;
                      reg [10:0] r27;
-                     reg signed [10:0] r28;
-                     // starved_now
-                     reg [0:0] r29;
-                     // x
+                     reg [10:0] r28;
+                     reg [10:0] r29;
                      reg signed [10:0] r30;
                      // starved_now
                      reg [0:0] r31;
                      // x
                      reg signed [10:0] r32;
+                     // starved_now
+                     reg [0:0] r33;
+                     // x
+                     reg signed [10:0] r34;
                      // d
-                     reg [59:0] r33;
-                     reg [0:0] r34;
-                     reg [21:0] r35;
-                     reg [21:0] r36;
-                     reg [10:0] r37;
-                     reg signed [10:0] r38;
-                     reg [10:0] r39;
-                     // line
-                     reg [10:0] r40;
-                     // cs
+                     reg [81:0] r35;
+                     reg [0:0] r36;
+                     reg [21:0] r37;
+                     reg [21:0] r38;
+                     reg [0:0] r39;
+                     reg [21:0] r40;
                      reg [21:0] r41;
                      reg [10:0] r42;
                      reg signed [10:0] r43;
-                     reg [10:0] r44;
-                     // line
+                     // outs
+                     reg [21:0] r44;
                      reg [10:0] r45;
+                     // line
+                     reg [10:0] r46;
                      // cs
-                     reg [21:0] r46;
+                     reg [21:0] r47;
+                     reg signed [10:0] r48;
+                     reg [10:0] r49;
+                     reg signed [10:0] r50;
+                     // outs
+                     reg [21:0] r51;
+                     reg [10:0] r52;
+                     // line
+                     reg [10:0] r53;
+                     // cs
+                     reg [21:0] r54;
                      // d
-                     reg [59:0] r47;
+                     reg [81:0] r55;
                      // d
-                     reg [59:0] r48;
+                     reg [81:0] r56;
+                     reg signed [10:0] r57;
+                     // d
+                     reg [81:0] r58;
                      // feed
-                     reg signed [10:0] r49;
-                     reg [21:0] r50;
-                     reg [0:0] r51;
-                     reg [21:0] r52;
-                     reg signed [10:0] r53;
-                     reg signed [10:0] r54;
-                     reg signed [10:0] r55;
-                     // ints
-                     reg [21:0] r56;
-                     reg [0:0] r57;
-                     reg [21:0] r58;
                      reg signed [10:0] r59;
-                     reg signed [10:0] r60;
+                     reg [21:0] r60;
                      reg [0:0] r61;
                      reg [21:0] r62;
                      reg signed [10:0] r63;
@@ -850,49 +857,62 @@ mod tests {
                      reg signed [10:0] r65;
                      // ints
                      reg [21:0] r66;
-                     // d
-                     reg [59:0] r67;
-                     reg signed [10:0] r68;
-                     // d
-                     reg [59:0] r69;
+                     reg [0:0] r67;
+                     reg [21:0] r68;
+                     reg signed [10:0] r69;
                      reg signed [10:0] r70;
                      reg [0:0] r71;
-                     reg [0:0] r72;
-                     reg [0:0] r73;
-                     reg [14:0] r74;
-                     reg [14:0] r75;
-                     reg [14:0] r76;
-                     reg [14:0] r77;
-                     reg [14:0] r78;
-                     reg [0:0] r79;
-                     reg [1:0] r80;
+                     reg [21:0] r72;
+                     reg signed [10:0] r73;
+                     reg signed [10:0] r74;
+                     reg signed [10:0] r75;
+                     // ints
+                     reg [21:0] r76;
+                     // d
+                     reg [81:0] r77;
+                     reg signed [10:0] r78;
+                     // d
+                     reg [81:0] r79;
+                     reg signed [10:0] r80;
                      reg [0:0] r81;
-                     // d
-                     reg [59:0] r82;
-                     // d
-                     reg [59:0] r83;
-                     // d
-                     reg [59:0] r84;
-                     // d
-                     reg [59:0] r85;
-                     // d
-                     reg [59:0] r86;
-                     // o
+                     reg [0:0] r82;
+                     reg [0:0] r83;
+                     reg [14:0] r84;
+                     reg [14:0] r85;
+                     reg [14:0] r86;
                      reg [14:0] r87;
-                     // o
                      reg [14:0] r88;
-                     // o
-                     reg [14:0] r89;
-                     // o
-                     reg [14:0] r90;
-                     // o
-                     reg [14:0] r91;
+                     reg [0:0] r89;
+                     reg [1:0] r90;
+                     reg [0:0] r91;
                      // d
-                     reg [59:0] r92;
+                     reg [81:0] r92;
+                     // d
+                     reg [81:0] r93;
+                     // d
+                     reg [81:0] r94;
+                     // d
+                     reg [81:0] r95;
+                     // d
+                     reg [81:0] r96;
+                     // d
+                     reg [81:0] r97;
                      // o
-                     reg [14:0] r93;
-                     reg [74:0] r94;
-                     localparam l0 = 60'bXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX;
+                     reg [14:0] r98;
+                     // o
+                     reg [14:0] r99;
+                     // o
+                     reg [14:0] r100;
+                     // o
+                     reg [14:0] r101;
+                     // o
+                     reg [14:0] r102;
+                     // d
+                     reg [81:0] r103;
+                     // o
+                     reg [14:0] r104;
+                     reg [96:0] r105;
+                     localparam l0 = 82'bXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX;
                      localparam l1 = 4'b0000;
                      localparam l2 = 4'b0000;
                      localparam l3 = 4'b0001;
@@ -907,157 +927,191 @@ mod tests {
                      localparam l12 = 1'b1;
                      localparam l13 = 11'sb00000000000;
                      localparam l14 = 22'b0000000000000000000000;
-                     localparam l15 = 11'sb00000000000;
+                     localparam l15 = 22'b0000000000000000000000;
                      localparam l16 = 11'sb00000000000;
                      localparam l17 = 11'sb00000000000;
                      localparam l18 = 11'sb00000000000;
-                     localparam l19 = 15'b000000000000000;
-                     localparam l20 = 1'b0;
-                     localparam l21 = 22'b0000000000000000000000;
+                     localparam l19 = 11'sb00000000000;
+                     localparam l20 = 15'b000000000000000;
+                     localparam l21 = 1'b0;
                      localparam l22 = 22'b0000000000000000000000;
-                     localparam l23 = 4'b0000;
-                     localparam l24 = 11'sb00000000000;
-                     localparam l25 = 1'b0;
+                     localparam l23 = 22'b0000000000000000000000;
+                     localparam l24 = 22'b0000000000000000000000;
+                     localparam l25 = 4'b0000;
                      localparam l26 = 11'sb00000000000;
                      localparam l27 = 1'b0;
-                     localparam l28 = 1'b0;
+                     localparam l28 = 11'sb00000000000;
                      localparam l29 = 1'b0;
                      localparam l30 = 1'b0;
+                     localparam l31 = 1'b0;
+                     localparam l32 = 1'b0;
                      begin
-                        r80 = arg_0;
-                        r8 = arg_1;
+                        r90 = arg_0;
+                        r10 = arg_1;
                         r1 = arg_2;
                         r0 = r1[21:0];
                         r2 = l0;
                         r2[21:0] = r0;
-                        r3 = r1[47:44];
+                        r3 = r1[43:22];
                         r4 = r2;
-                        r4[47:44] = r3;
-                        r5 = r1[47:44];
-                        r6 = r5 == l1;
-                        r7 = r8[13:13];
-                        r9 = r6 | r7;
-                        r10 = r8[13:13];
-                        r11 = r1[47:44];
-                        r12 = r10 ? l2 : r11;
-                        r13 = r12 + l3;
-                        r14 = r8[12:9];
-                        r15 = r13 >= r14;
-                        r16 = r12 + l4;
-                        r17 = r15 ? l5 : r16;
-                        r18 = r4;
-                        r18[47:44] = r17;
-                        r19 = r8[8:0];
-                        r20 = r19[8:8];
-                        r21 = r19[7:0];
-                        r22 = $unsigned(r21);
-                        r23 = r22 & l6;
-                        r24 = |r23;
-                        r25 = {{3{1'b0}}, r22};
-                        r26 = r24 ? l7 : l8;
-                        r27 = r25 + r26;
-                        r28 = $signed(r27);
-                        case (r20)
-                           1'b1 : r29 = l10;
-                           1'b0 : r29 = l12;
+                        r4[43:22] = r3;
+                        r5 = r1[69:66];
+                        r6 = r4;
+                        r6[69:66] = r5;
+                        r7 = r1[69:66];
+                        r8 = r7 == l1;
+                        r9 = r10[13:13];
+                        r11 = r8 | r9;
+                        r12 = r10[13:13];
+                        r13 = r1[69:66];
+                        r14 = r12 ? l2 : r13;
+                        r15 = r14 + l3;
+                        r16 = r10[12:9];
+                        r17 = r15 >= r16;
+                        r18 = r14 + l4;
+                        r19 = r17 ? l5 : r18;
+                        r20 = r6;
+                        r20[69:66] = r19;
+                        r21 = r10[8:0];
+                        r22 = r21[8:8];
+                        r23 = r21[7:0];
+                        r24 = $unsigned(r23);
+                        r25 = r24 & l6;
+                        r26 = |r25;
+                        r27 = {{3{1'b0}}, r24};
+                        r28 = r26 ? l7 : l8;
+                        r29 = r27 + r28;
+                        r30 = $signed(r29);
+                        case (r22)
+                           1'b1 : r31 = l10;
+                           1'b0 : r31 = l12;
                         endcase
-                        case (r20)
-                           1'b1 : r30 = r28;
-                           1'b0 : r30 = l13;
+                        case (r22)
+                           1'b1 : r32 = r30;
+                           1'b0 : r32 = l13;
                         endcase
-                        r31 = r9 ? r29 : l10;
-                        r32 = r9 ? r30 : l13;
-                        r33 = r18;
-                        r33[59:59] = r31;
-                        r34 = r8[13:13];
-                        r35 = r1[21:0];
-                        r36 = r34 ? l14 : r35;
-                        r37 = r36[10:0];
-                        r38 = r32 - r37;
-                        r39 = r36[10:0];
-                        r40 = r39;
-                        r40[10:0] = r32;
-                        r41 = r36;
-                        r41[10:0] = r40;
-                        r42 = r36[21:11];
-                        r43 = r38 - r42;
-                        r44 = r36[21:11];
-                        r45 = r44;
-                        r45[10:0] = r38;
-                        r46 = r41;
-                        r46[21:11] = r45;
-                        r47 = r33;
-                        r47[21:0] = r46;
-                        r48 = r9 ? r47 : r33;
-                        r49 = r9 ? r43 : l15;
-                        r50 = r1[43:22];
-                        r51 = r8[13:13];
-                        r52 = r1[43:22];
-                        r53 = r52[10:0];
-                        r54 = r51 ? l16 : r53;
-                        r55 = r54 + r49;
-                        r56 = r50;
-                        r56[10:0] = r55;
-                        r57 = r8[13:13];
-                        r58 = r1[43:22];
-                        r59 = r58[21:11];
-                        r60 = r57 ? l17 : r59;
-                        r61 = r8[13:13];
-                        r62 = r1[43:22];
+                        r33 = r11 ? r31 : l10;
+                        r34 = r11 ? r32 : l13;
+                        r35 = r20;
+                        r35[81:81] = r33;
+                        r36 = r10[13:13];
+                        r37 = r1[21:0];
+                        r38 = r36 ? l14 : r37;
+                        r39 = r10[13:13];
+                        r40 = r1[43:22];
+                        r41 = r39 ? l15 : r40;
+                        r42 = r38[10:0];
+                        r43 = r34 - r42;
+                        r44 = r41;
+                        r44[10:0] = r43;
+                        r45 = r38[10:0];
+                        r46 = r45;
+                        r46[10:0] = r34;
+                        r47 = r38;
+                        r47[10:0] = r46;
+                        r48 = r41[10:0];
+                        r49 = r38[21:11];
+                        r50 = r48 - r49;
+                        r51 = r44;
+                        r51[21:11] = r50;
+                        r52 = r38[21:11];
+                        r53 = r52;
+                        r53[10:0] = r48;
+                        r54 = r47;
+                        r54[21:11] = r53;
+                        r55 = r35;
+                        r55[21:0] = r54;
+                        r56 = r55;
+                        r56[43:22] = r51;
+                        r57 = r41[21:11];
+                        r58 = r11 ? r56 : r35;
+                        r59 = r11 ? r57 : l16;
+                        r60 = r1[65:44];
+                        r61 = r10[13:13];
+                        r62 = r1[65:44];
                         r63 = r62[10:0];
-                        r64 = r61 ? l18 : r63;
-                        r65 = r60 + r64;
-                        r66 = r56;
-                        r66[21:11] = r65;
-                        r67 = r48;
-                        r67[43:22] = r66;
-                        r68 = r66[21:11];
-                        r69 = r67;
-                        r69[58:48] = r68;
-                        r70 = r1[58:48];
-                        r71 = r1[59:59];
-                        r72 = r8[14:14];
-                        r73 = ~r72;
-                        r74 = l19;
-                        r74[10:0] = r70;
-                        r75 = r74;
-                        r75[11:11] = r6;
-                        r76 = r75;
-                        r76[12:12] = r71;
-                        r77 = r76;
-                        r77[13:13] = r73;
-                        r78 = r77;
-                        r78[14:14] = l20;
-                        r79 = r80[1:1];
-                        r81 = |r79;
-                        r82 = r69;
-                        r82[21:0] = l21;
-                        r83 = r82;
-                        r83[43:22] = l22;
-                        r84 = r83;
-                        r84[47:44] = l23;
+                        r64 = r61 ? l17 : r63;
+                        r65 = r64 + r59;
+                        r66 = r60;
+                        r66[10:0] = r65;
+                        r67 = r10[13:13];
+                        r68 = r1[65:44];
+                        r69 = r68[21:11];
+                        r70 = r67 ? l18 : r69;
+                        r71 = r10[13:13];
+                        r72 = r1[65:44];
+                        r73 = r72[10:0];
+                        r74 = r71 ? l19 : r73;
+                        r75 = r70 + r74;
+                        r76 = r66;
+                        r76[21:11] = r75;
+                        r77 = r58;
+                        r77[65:44] = r76;
+                        r78 = r76[21:11];
+                        r79 = r77;
+                        r79[80:70] = r78;
+                        r80 = r1[80:70];
+                        r81 = r1[81:81];
+                        r82 = r10[14:14];
+                        r83 = ~r82;
+                        r84 = l20;
+                        r84[10:0] = r80;
                         r85 = r84;
-                        r85[58:48] = l24;
+                        r85[11:11] = r8;
                         r86 = r85;
-                        r86[59:59] = l25;
-                        r87 = r78;
-                        r87[10:0] = l26;
+                        r86[12:12] = r81;
+                        r87 = r86;
+                        r87[13:13] = r83;
                         r88 = r87;
-                        r88[11:11] = l27;
-                        r89 = r88;
-                        r89[12:12] = l28;
-                        r90 = r89;
-                        r90[13:13] = l29;
-                        r91 = r90;
-                        r91[14:14] = l30;
-                        r92 = r81 ? r86 : r69;
-                        r93 = r81 ? r91 : r78;
-                        r94 = {r92, r93};
-                        kernel_cic_interpolate_kernel = r94;
+                        r88[14:14] = l21;
+                        r89 = r90[1:1];
+                        r91 = |r89;
+                        r92 = r79;
+                        r92[21:0] = l22;
+                        r93 = r92;
+                        r93[43:22] = l23;
+                        r94 = r93;
+                        r94[65:44] = l24;
+                        r95 = r94;
+                        r95[69:66] = l25;
+                        r96 = r95;
+                        r96[80:70] = l26;
+                        r97 = r96;
+                        r97[81:81] = l27;
+                        r98 = r88;
+                        r98[10:0] = l28;
+                        r99 = r98;
+                        r99[11:11] = l29;
+                        r100 = r99;
+                        r100[12:12] = l30;
+                        r101 = r100;
+                        r101[13:13] = l31;
+                        r102 = r101;
+                        r102[14:14] = l32;
+                        r103 = r91 ? r97 : r79;
+                        r104 = r91 ? r102 : r88;
+                        r105 = {r103, r104};
+                        kernel_cic_interpolate_kernel = r105;
                      end
                endfunction
             endmodule
             module top_cic_combs(input wire [1:0] clock_reset, input wire [21:0] i, output reg [21:0] o);
+               wire  clock;
+               wire  reset;
+               assign clock = clock_reset[0];
+               assign reset = clock_reset[1];
+               initial begin
+                  o = 22'b0000000000000000000000;
+               end
+               always @(posedge clock) begin
+                  if (reset) begin
+                     o <= 22'b0000000000000000000000;
+                  end else begin
+                     o <= i;
+                  end
+               end
+            endmodule
+            module top_cic_comb_out(input wire [1:0] clock_reset, input wire [21:0] i, output reg [21:0] o);
                wire  clock;
                wire  reset;
                assign clock = clock_reset[0];
@@ -1181,7 +1235,7 @@ mod tests {
             .join("vcd")
             .join("cic_interp_stream");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["767aa020aff472449fea0ab476f6eec929184712f1b47164331c69bfcffe935a"];
+        let expect = expect!["af96619bf4dba2dbbab96c3e288dc073a8ba941a109dcbc3bb5ed412713ec029"];
         let digest = vcd.dump_to_file(root.join("interp_stream.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

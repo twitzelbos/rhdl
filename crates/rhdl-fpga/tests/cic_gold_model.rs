@@ -55,6 +55,7 @@ fn narrow(v: i128, from: usize, to: usize) -> i128 {
 fn uniform_model(x: &[i128], wa: usize, n: usize, r: usize, m: usize) -> Vec<i128> {
     let mut ints = vec![0i128; n];
     let mut combs = vec![vec![0i128; m]; n];
+    let mut comb_outs = vec![0i128; n];
     let mut out = Vec::new();
     for (idx, s) in x.iter().enumerate() {
         // Pipelined: stage k reads stage k-1's value from the previous
@@ -67,16 +68,21 @@ fn uniform_model(x: &[i128], wa: usize, n: usize, r: usize, m: usize) -> Vec<i12
         }
         let carry = ints[n - 1];
         if (idx + 1) % r == 0 {
-            let mut v = carry;
-            for line in combs.iter_mut() {
-                let diff = wrap(v - line[m - 1], wa);
+            // Pipelined here too: each comb stage reads the previous
+            // stage's value from the previous *comb* cycle. Same
+            // reasoning as the integrators -- a chained cascade is
+            // `n` subtractors between registers and has to settle in one
+            // period whatever rate the registers move at.
+            let prev_out = comb_outs.clone();
+            for k in 0..n {
+                let v = if k == 0 { carry } else { prev_out[k - 1] };
+                comb_outs[k] = wrap(v - combs[k][m - 1], wa);
                 for j in (1..m).rev() {
-                    line[j] = line[j - 1];
+                    combs[k][j] = combs[k][j - 1];
                 }
-                line[0] = v;
-                v = diff;
+                combs[k][0] = v;
             }
-            out.push(v);
+            out.push(comb_outs[n - 1]);
         }
     }
     out
@@ -99,6 +105,7 @@ fn pruned_model(x: &[i128], wi: usize, n: usize, r: usize, m: usize, bo: usize) 
 
     let mut ints = vec![0i128; n];
     let mut combs = vec![vec![0i128; m]; n];
+    let mut comb_outs = vec![0i128; n];
     let mut out = Vec::new();
     for (idx, s) in x.iter().enumerate() {
         let prev = ints.clone();
@@ -111,22 +118,25 @@ fn pruned_model(x: &[i128], wi: usize, n: usize, r: usize, m: usize, bo: usize) 
         }
         let carry = ints[n - 1];
         if (idx + 1) % r == 0 {
-            let mut v = narrow(carry, w[n - 1], w[n]);
+            // Pipelined, as in `uniform_model`: each comb stage reads
+            // the previous stage's *registered* output, narrowed to its
+            // own width.
+            let prev_out = comb_outs.clone();
+            let first = narrow(carry, w[n - 1], w[n]);
             for k in 0..n {
                 let wj = w[n + k];
                 let vin = if k == 0 {
-                    v
+                    first
                 } else {
-                    narrow(v, w[n + k - 1], wj)
+                    narrow(prev_out[k - 1], w[n + k - 1], wj)
                 };
-                let dif = wrap(vin - combs[k][m - 1], wj);
+                comb_outs[k] = wrap(vin - combs[k][m - 1], wj);
                 for j in (1..m).rev() {
                     combs[k][j] = combs[k][j - 1];
                 }
                 combs[k][0] = vin;
-                v = dif;
             }
-            out.push(v);
+            out.push(comb_outs[n - 1]);
         }
     }
     out

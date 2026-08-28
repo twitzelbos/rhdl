@@ -43,8 +43,10 @@ pub mod compensated_interp;
 pub mod decimator;
 pub mod interp_stream;
 pub mod interpolator;
+pub mod post_compensated_interp;
 pub mod pruned;
 pub mod stream;
+pub mod tapered;
 
 pub use decimator::CicDecimate;
 pub use interpolator::CicInterpolate;
