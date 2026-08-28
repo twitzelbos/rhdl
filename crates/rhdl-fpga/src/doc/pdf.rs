@@ -25,8 +25,14 @@
 //! # Coordinates
 //!
 //! PDF's native convention: origin bottom-left, `y` increasing upward,
-//! units of 1/72 inch. A4 is 595 x 842. No transform is applied, so
-//! what you pass is what PDF sees — one less thing to get inverted.
+//! units of 1/72 inch. US Letter is 612 x 792 and A4 is 595 x 842 — note
+//! that Letter is *wider and shorter*, so it is not a scale of A4 and a
+//! layout tuned for one does not simply transfer. No transform is
+//! applied, so what you pass is what PDF sees — one less thing to get
+//! inverted.
+//!
+//! The reports default to [`Page::letter`]; see `super::report` for the
+//! named geometry they lay out against.
 
 use std::fmt::Write as _;
 
@@ -115,7 +121,18 @@ pub struct Page {
 }
 
 impl Page {
-    /// A blank A4 portrait page.
+    /// A blank US Letter portrait page: 612 x 792 points.
+    ///
+    /// The default for RHDL's reports. Letter is 50 points *shorter* than
+    /// A4 and 17 wider, which is why the report geometry is named
+    /// constants in `super::report` rather than literals — the reports
+    /// were originally laid out for A4 and the difference has to be
+    /// absorbed somewhere visible.
+    pub fn letter() -> Self {
+        Self::new(612.0, 792.0)
+    }
+
+    /// A blank A4 portrait page: 595 x 842 points.
     pub fn a4() -> Self {
         Self::new(595.0, 842.0)
     }

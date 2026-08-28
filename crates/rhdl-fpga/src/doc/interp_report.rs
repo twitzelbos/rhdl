@@ -37,7 +37,10 @@ use super::pdf::{Align, Font, Page, Pdf};
 // two things to keep in step, and the one in `report` already carries
 // the reasoning about separators and the right page edge.
 use super::plot::{Axes, Frame, PALETTE, Series, draw};
-use super::report::wrap_values;
+use super::report::{
+    BLOCK_BODY_Y, BLOCK_HEAD_Y, CENTRE_X, LINE_STEP, MARGIN_X, PAGE_H, PLOT_BOTTOM_Y, PLOT_H,
+    PLOT_TOP_Y, PLOT_W, SUBTITLE_Y, TEXT_WIDTH, TITLE_Y, page, wrap_values,
+};
 use crate::dsp::cic::{compensator, delay, interp, interp_chain, response};
 
 /// A hand-specified interpolator to report on.
@@ -237,19 +240,19 @@ fn real_taps(d: &interp_chain::InterpDesign) -> Vec<f64> {
 }
 
 fn page_one(d: &interp_chain::InterpDesign, provenance: &str) -> Page {
-    let mut p = Page::a4();
+    let mut p = page();
     p.fill_style((0.0, 0.0, 0.0));
     p.text(
-        297.5,
-        800.0,
+        CENTRE_X,
+        TITLE_Y,
         16.0,
         Font::Bold,
         Align::Centre,
         &format!("Interpolation Chain - {provenance}"),
     );
     p.text(
-        297.5,
-        784.0,
+        CENTRE_X,
+        SUBTITLE_Y,
         9.0,
         Font::Regular,
         Align::Centre,
@@ -313,10 +316,10 @@ fn page_one(d: &interp_chain::InterpDesign, provenance: &str) -> Page {
     draw(
         &mut p,
         Frame {
-            x: 60.0,
-            y: 545.0,
-            w: 470.0,
-            h: 200.0,
+            x: MARGIN_X,
+            y: PLOT_TOP_Y,
+            w: PLOT_W,
+            h: PLOT_H,
         },
         &axes,
         &s,
@@ -380,8 +383,15 @@ fn page_one(d: &interp_chain::InterpDesign, provenance: &str) -> Page {
 
     // ---- the stages ----
     p.fill_style((0.0, 0.0, 0.0));
-    p.text(60.0, 235.0, 10.0, Font::Bold, Align::Left, "Stages");
-    let mut y = 220.0;
+    p.text(
+        MARGIN_X,
+        BLOCK_HEAD_Y,
+        10.0,
+        Font::Bold,
+        Align::Left,
+        "Stages",
+    );
+    let mut y = BLOCK_BODY_Y;
     for (k, c) in d.cics.iter().enumerate() {
         for line in [
             format!(
@@ -421,19 +431,19 @@ fn page_one(d: &interp_chain::InterpDesign, provenance: &str) -> Page {
 }
 
 fn page_two(d: &interp_chain::InterpDesign) -> Page {
-    let mut p = Page::a4();
+    let mut p = page();
     p.fill_style((0.0, 0.0, 0.0));
     p.text(
-        297.5,
-        800.0,
+        CENTRE_X,
+        TITLE_Y,
         16.0,
         Font::Bold,
         Align::Centre,
         "Compensation and Result",
     );
     p.text(
-        297.5,
-        784.0,
+        CENTRE_X,
+        SUBTITLE_Y,
         9.0,
         Font::Regular,
         Align::Centre,
@@ -484,10 +494,10 @@ fn page_two(d: &interp_chain::InterpDesign) -> Page {
     draw(
         &mut p,
         Frame {
-            x: 60.0,
-            y: 545.0,
-            w: 470.0,
-            h: 200.0,
+            x: MARGIN_X,
+            y: PLOT_TOP_Y,
+            w: PLOT_W,
+            h: PLOT_H,
         },
         &axes,
         &s,
@@ -534,10 +544,10 @@ fn page_two(d: &interp_chain::InterpDesign) -> Page {
     draw(
         &mut p,
         Frame {
-            x: 60.0,
-            y: 300.0,
-            w: 470.0,
-            h: 180.0,
+            x: MARGIN_X,
+            y: PLOT_BOTTOM_Y,
+            w: PLOT_W,
+            h: PLOT_H,
         },
         &axes,
         &s,
@@ -556,11 +566,11 @@ fn page_two(d: &interp_chain::InterpDesign) -> Page {
 /// they existed. Nothing checked, because nothing knew the page had a
 /// bottom.
 fn page_three(d: &interp_chain::InterpDesign) -> Page {
-    let mut p = Page::a4();
+    let mut p = page();
     p.fill_style((0.0, 0.0, 0.0));
     p.text(
-        297.5,
-        800.0,
+        CENTRE_X,
+        TITLE_Y,
         16.0,
         Font::Bold,
         Align::Centre,
@@ -574,8 +584,15 @@ fn page_three(d: &interp_chain::InterpDesign) -> Page {
         d.cics[0].interpolate,
         d.cics[0].delay,
     );
-    p.text(60.0, 770.0, 10.0, Font::Bold, Align::Left, "Figures");
-    let mut y = 755.0;
+    p.text(
+        MARGIN_X,
+        PAGE_H - 72.0,
+        10.0,
+        Font::Bold,
+        Align::Left,
+        "Figures",
+    );
+    let mut y = PAGE_H - 87.0;
     let mut lines: Vec<String> = vec![
         format!(
             "images ............... {:.1} dB down  (asked >= {:.1})",
@@ -644,12 +661,17 @@ fn page_three(d: &interp_chain::InterpDesign) -> Page {
     }
     for line in &lines {
         p.text(60.0, y, 8.0, Font::Regular, Align::Left, line);
-        y -= 11.0;
+        y -= LINE_STEP;
     }
     y -= 6.0;
-    for line in wrap_values("taps ................. ", &d.compensator.taps, 475.0, 8.0) {
+    for line in wrap_values(
+        "taps ................. ",
+        &d.compensator.taps,
+        TEXT_WIDTH,
+        8.0,
+    ) {
         p.text(60.0, y, 8.0, Font::Regular, Align::Left, &line);
-        y -= 11.0;
+        y -= LINE_STEP;
     }
 
     // ---- headroom, which is easy to under-read ----

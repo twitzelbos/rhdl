@@ -168,6 +168,49 @@ pub fn as_design(cfg: CicReport) -> Option<chain::ChainDesign> {
     })
 }
 
+// ---- page geometry ----
+//
+// Named, and in one place, because these were literals scattered across
+// two 800-line modules and that is how the TX report came to render its
+// two most important paragraphs below the bottom of the paper. The
+// numbers below are for US Letter (612 x 792); moving to A4 means
+// changing `PAGE` and re-deriving, not editing thirty call sites.
+
+/// The page every report uses.
+pub(crate) fn page() -> Page {
+    Page::letter()
+}
+
+/// Page width and height in points, matching [`page`].
+pub(crate) const PAGE_W: f64 = 612.0;
+/// See [`PAGE_W`].
+pub(crate) const PAGE_H: f64 = 792.0;
+/// Horizontal centre, for centred headings.
+pub(crate) const CENTRE_X: f64 = PAGE_W / 2.0;
+/// Left margin, and the `x` of every left-aligned run of text.
+pub(crate) const MARGIN_X: f64 = 60.0;
+/// Baseline of a page's main heading.
+pub(crate) const TITLE_Y: f64 = PAGE_H - 42.0;
+/// Baseline of the line under it.
+pub(crate) const SUBTITLE_Y: f64 = PAGE_H - 58.0;
+/// Plot frames: `x`, `w`, and the height both plots share.
+pub(crate) const PLOT_W: f64 = 492.0;
+/// See [`PLOT_W`].
+pub(crate) const PLOT_H: f64 = 180.0;
+/// Bottom of the upper plot's frame.
+///
+/// A plot occupies `y - 24` (the x-axis label) to `y + h + 20` (the axes
+/// title), which is what sets the clearances here.
+pub(crate) const PLOT_TOP_Y: f64 = 515.0;
+/// Bottom of the lower plot's frame.
+pub(crate) const PLOT_BOTTOM_Y: f64 = 280.0;
+/// Baseline of the heading above the block of figures.
+pub(crate) const BLOCK_HEAD_Y: f64 = 235.0;
+/// Baseline of the first line of that block; lines step down by 11.
+pub(crate) const BLOCK_BODY_Y: f64 = 220.0;
+/// Leading between lines in a block of figures.
+pub(crate) const LINE_STEP: f64 = 11.0;
+
 /// Every text position in a rendered PDF, as `(x, y)`.
 ///
 /// Test-only, and shared with [`super::interp_report`]'s tests. Exists
@@ -197,12 +240,12 @@ pub(crate) fn text_positions(pdf: &Pdf) -> Vec<(f64, f64)> {
     out
 }
 
-/// Assert every glyph a report places is inside an A4 page.
+/// Assert every glyph a report places is inside the page.
 ///
-/// A4 is 595 x 842 points. The margin is deliberately generous at the
-/// bottom (40) because a descender below a baseline at 45 is still
-/// readable, and deliberately strict about *negative* coordinates,
-/// which are unambiguously off the paper.
+/// The margin is deliberately generous at the bottom (40) because a
+/// descender below a baseline at 45 is still readable, and deliberately
+/// strict about *negative* coordinates, which are unambiguously off the
+/// paper.
 #[cfg(test)]
 pub(crate) fn assert_all_text_on_page(pdf: &Pdf, what: &str) {
     let positions = text_positions(pdf);
@@ -218,12 +261,12 @@ pub(crate) fn assert_all_text_on_page(pdf: &Pdf, what: &str) {
     for (x, y) in positions {
         worst = worst.min(y);
         assert!(
-            (0.0..=842.0).contains(&y),
-            "{what}: text baseline at y = {y} is off an A4 page (0..842)"
+            (0.0..=PAGE_H).contains(&y),
+            "{what}: text baseline at y = {y} is off the page (0..{PAGE_H})"
         );
         assert!(
-            (0.0..=595.0).contains(&x),
-            "{what}: text at x = {x} is off an A4 page (0..595)"
+            (0.0..=PAGE_W).contains(&x),
+            "{what}: text at x = {x} is off the page (0..{PAGE_W})"
         );
     }
     assert!(
@@ -306,19 +349,19 @@ fn shapes(d: &chain::ChainDesign) -> Vec<compensator::CicShape> {
 }
 
 fn chain_page_one(d: &chain::ChainDesign, provenance: &str) -> Page {
-    let mut p = Page::a4();
+    let mut p = page();
     p.fill_style((0.0, 0.0, 0.0));
     p.text(
-        297.5,
-        800.0,
+        CENTRE_X,
+        TITLE_Y,
         16.0,
         Font::Bold,
         Align::Centre,
         &format!("Decimation Chain - {provenance}"),
     );
     p.text(
-        297.5,
-        784.0,
+        CENTRE_X,
+        SUBTITLE_Y,
         9.0,
         Font::Regular,
         Align::Centre,
@@ -366,10 +409,10 @@ fn chain_page_one(d: &chain::ChainDesign, provenance: &str) -> Page {
     draw(
         &mut p,
         Frame {
-            x: 60.0,
-            y: 545.0,
-            w: 470.0,
-            h: 200.0,
+            x: MARGIN_X,
+            y: PLOT_TOP_Y,
+            w: PLOT_W,
+            h: PLOT_H,
         },
         &axes,
         &s,
@@ -403,18 +446,25 @@ fn chain_page_one(d: &chain::ChainDesign, provenance: &str) -> Page {
     draw(
         &mut p,
         Frame {
-            x: 60.0,
-            y: 290.0,
-            w: 470.0,
-            h: 200.0,
+            x: MARGIN_X,
+            y: PLOT_BOTTOM_Y,
+            w: PLOT_W,
+            h: PLOT_H,
         },
         &axes,
         &s,
     );
 
     p.fill_style((0.0, 0.0, 0.0));
-    p.text(60.0, 235.0, 10.0, Font::Bold, Align::Left, "Stages");
-    let mut y = 220.0;
+    p.text(
+        MARGIN_X,
+        BLOCK_HEAD_Y,
+        10.0,
+        Font::Bold,
+        Align::Left,
+        "Stages",
+    );
+    let mut y = BLOCK_BODY_Y;
     for (k, c) in d.cics.iter().enumerate() {
         for line in [
             format!(
@@ -465,9 +515,11 @@ const FIGURE_SIZE: f64 = 8.0;
 
 /// Width available to the figures block, in points.
 ///
-/// A4 is 595 wide and the block starts at x=60, so this leaves the same
-/// 60 points on the right.
-const TEXT_WIDTH: f64 = 475.0;
+/// The block starts at [`MARGIN_X`], so this leaves the same margin on
+/// the right. It grew from 475 to 492 when the reports moved from A4 to
+/// US Letter, which is 17 points wider — a tap list wraps at a different
+/// place as a result, which is why the committed PDFs changed.
+pub(crate) const TEXT_WIDTH: f64 = PAGE_W - 2.0 * MARGIN_X;
 
 /// A labelled list of numbers, broken across as many lines as it needs.
 ///
@@ -515,19 +567,19 @@ pub(crate) fn wrap_values<T: std::fmt::Display>(
 }
 
 fn chain_page_two(d: &chain::ChainDesign) -> Page {
-    let mut p = Page::a4();
+    let mut p = page();
     p.fill_style((0.0, 0.0, 0.0));
     p.text(
-        297.5,
-        800.0,
+        CENTRE_X,
+        TITLE_Y,
         16.0,
         Font::Bold,
         Align::Centre,
         "Compensation and Result",
     );
     p.text(
-        297.5,
-        784.0,
+        CENTRE_X,
+        SUBTITLE_Y,
         9.0,
         Font::Regular,
         Align::Centre,
@@ -654,10 +706,10 @@ fn chain_page_two(d: &chain::ChainDesign) -> Page {
     draw(
         &mut p,
         Frame {
-            x: 60.0,
-            y: 545.0,
-            w: 470.0,
-            h: 200.0,
+            x: MARGIN_X,
+            y: PLOT_TOP_Y,
+            w: PLOT_W,
+            h: PLOT_H,
         },
         &axes,
         &s,
@@ -678,10 +730,10 @@ fn chain_page_two(d: &chain::ChainDesign) -> Page {
     draw(
         &mut p,
         Frame {
-            x: 60.0,
-            y: 290.0,
-            w: 470.0,
-            h: 200.0,
+            x: MARGIN_X,
+            y: PLOT_BOTTOM_Y,
+            w: PLOT_W,
+            h: PLOT_H,
         },
         &axes,
         &s,
@@ -749,11 +801,18 @@ fn chain_page_two(d: &chain::ChainDesign) -> Page {
     }
 
     p.fill_style((0.0, 0.0, 0.0));
-    p.text(60.0, 235.0, 10.0, Font::Bold, Align::Left, "Achieved");
-    let mut y = 220.0;
+    p.text(
+        MARGIN_X,
+        BLOCK_HEAD_Y,
+        10.0,
+        Font::Bold,
+        Align::Left,
+        "Achieved",
+    );
+    let mut y = BLOCK_BODY_Y;
     for l in &lines {
         p.text(60.0, y, 8.0, Font::Regular, Align::Left, l);
-        y -= 11.0;
+        y -= LINE_STEP;
     }
     p.text(
         60.0,
@@ -777,6 +836,67 @@ fn chain_page_two(d: &chain::ChainDesign) -> Page {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **The page geometry does not overlap itself.**
+    ///
+    /// `assert_all_text_on_page` checks text baselines against the paper.
+    /// It cannot see two plots sitting on top of each other, or an axes
+    /// title underneath the subtitle — a plot's extent is `y - 24` to
+    /// `y + h + 20`, which is drawn by `plot::draw` and not by anything
+    /// this module can inspect. So the clearances are arithmetic here.
+    ///
+    /// This matters because the reports were laid out for A4 and now
+    /// render on US Letter, which is 50 points *shorter*. That 50 points
+    /// had to come out of somewhere, and "somewhere" was these constants.
+    #[test]
+    fn the_page_geometry_has_room_for_what_it_places() {
+        // A plot's real vertical extent, per `plot::draw`.
+        let plot_top = |y: f64| y + PLOT_H + 20.0;
+        let plot_bottom = |y: f64| y - 24.0;
+
+        assert!(TITLE_Y < PAGE_H, "the title is off the top");
+        assert!(SUBTITLE_Y < TITLE_Y);
+        assert!(
+            plot_top(PLOT_TOP_Y) < SUBTITLE_Y,
+            "the upper plot's title at {} runs into the subtitle at {SUBTITLE_Y}",
+            plot_top(PLOT_TOP_Y)
+        );
+        assert!(
+            plot_top(PLOT_BOTTOM_Y) < plot_bottom(PLOT_TOP_Y),
+            "the two plots overlap: lower reaches {}, upper starts {}",
+            plot_top(PLOT_BOTTOM_Y),
+            plot_bottom(PLOT_TOP_Y)
+        );
+        assert!(
+            BLOCK_HEAD_Y < plot_bottom(PLOT_BOTTOM_Y),
+            "the figures heading at {BLOCK_HEAD_Y} runs into the lower plot at {}",
+            plot_bottom(PLOT_BOTTOM_Y)
+        );
+        assert!(BLOCK_BODY_Y < BLOCK_HEAD_Y);
+        // And horizontally, with a margin on the right at least as wide
+        // as the left one.
+        assert!(
+            MARGIN_X + PLOT_W <= PAGE_W - MARGIN_X,
+            "the plots are wider than the page's margins allow"
+        );
+        assert!(TEXT_WIDTH <= PLOT_W, "text is wider than the plots");
+        assert_eq!(CENTRE_X, PAGE_W / 2.0);
+    }
+
+    /// **The reports render on US Letter, not A4.**
+    ///
+    /// Pinned because it is a deliberate choice and the writer will
+    /// happily emit any `MediaBox` at all.
+    #[test]
+    fn the_reports_are_us_letter() {
+        let d = as_design(CicReport::default()).expect("designable");
+        let text = rendered(&d);
+        assert!(
+            text.contains("/MediaBox [0 0 612.00 792.00]"),
+            "not US Letter"
+        );
+        assert!(!text.contains("595.00 842.00"), "an A4 page slipped in");
+    }
 
     /// **Every glyph the RX reports place is on the paper.**
     ///
