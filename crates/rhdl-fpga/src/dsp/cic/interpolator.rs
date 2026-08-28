@@ -109,6 +109,34 @@
 //! [`super::interp_stream`] says where the framing mark sits relative to
 //! it.
 //!
+//! ## The pipelining and the run-time rate
+//!
+//! They interact in exactly one place, and it is the reason the comb
+//! cascade had to be pipelined rather than left alone.
+//!
+//! **Correctness: no interaction.** The comb section computes
+//! `(1 - z^-M)^N` at the input rate, which has no `R` in it, and its
+//! pipeline advances on accept *events* rather than on cycles — so the
+//! depth is `STAGES` accepts whatever the rate. A rate change cannot
+//! corrupt values in flight because they never depended on the rate.
+//! [`In::restart`] clears the output registers along with the delay
+//! lines.
+//!
+//! **Latency: yes, proportionally.** `STAGES · R` output cycles, so the
+//! group delay moves when the rate does — measured at 7, 10, 16, 28 and
+//! 52 cycles for `R` of 1, 2, 4, 8 and 16 at `N = 3`, linear with slope
+//! `N` and a rate-independent intercept.
+//!
+//! **And the critical path is now rate-independent, which it was not
+//! before.** Accepts arrive every `R` cycles, so at `R = 1` the comb
+//! logic runs at the full converter clock. Unpipelined, its critical
+//! path would have been `STAGES` chained subtractors *whose timing
+//! depended on a run-time input* — and since the rate can drop to one,
+//! timing would have had to close for that case anyway, so the combs
+//! being idle most of the time bought nothing. There is no way to close
+//! timing against a value the tool cannot see. `tests/interp_variable_rate.rs`
+//! is the evidence for all three.
+//!
 //! # Widths taper losslessly, and pruning does not apply
 //!
 //! [`super::interp`] carries the analysis. Two results matter to a
