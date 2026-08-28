@@ -154,6 +154,11 @@ pub fn as_design(cfg: InterpReport) -> Option<interp_chain::InterpDesign> {
         max_taps: cfg.taps,
         max_chain_stages: 1,
         method: compensator::Method::LeastSquares,
+        // A hand-specified single stage reaches every rate up to its
+        // factor, so the range is the full one and nothing is
+        // restricted.
+        rate_min: 2,
+        arbitrary_rate: true,
     };
 
     Some(interp_chain::InterpDesign {
@@ -179,6 +184,9 @@ pub fn as_design(cfg: InterpReport) -> Option<interp_chain::InterpDesign> {
         input_rate_hz,
         achieved_ripple_db: quantised.ripple_db,
         achieved_image_db: image_db,
+        // Hand-specified parameters describe one rate, so that rate is
+        // trivially the worst one.
+        worst_image_rate: r,
         worst_image_hz: at_u * input_rate_hz,
         dac_snr_db: 6.02 * cfg.output_width as f64 + 1.76,
         cost: 0.0,
@@ -563,6 +571,22 @@ fn page_two(d: &interp_chain::InterpDesign) -> Page {
             d.compensator_l1, d.compensator_peak
         ),
         format!(
+            "rates reachable ...... {} of {} in {}..={}{}",
+            d.reachable_rates()
+                .iter()
+                .filter(|r| **r >= d.spec.rate_min && **r <= d.spec.interpolate)
+                .count(),
+            d.spec.interpolate - d.spec.rate_min + 1,
+            d.spec.rate_min,
+            d.spec.interpolate,
+            if d.cics.len() > 1 {
+                "  (a split restricts them)"
+            } else {
+                "  (single stage: all of them)"
+            }
+        ),
+        format!("worst image at rate .. {}", d.worst_image_rate),
+        format!(
             "adder depth .......... {} deep in the combs, 1 in the integrators",
             d.cics.iter().map(|c| c.stages).max().unwrap_or(0)
         ),
@@ -739,6 +763,8 @@ mod tests {
             max_taps: cfg.taps,
             max_chain_stages: 1,
             method: compensator::Method::LeastSquares,
+            rate_min: 2,
+            arbitrary_rate: true,
         };
         let derived = interp_chain::design(spec).expect("designable");
         assert_eq!(derived.split(), vec![cfg.rate]);

@@ -69,6 +69,63 @@
 //!   at the converter clock. That is a different widget and it is not
 //!   what [`crate::cic::interp`]'s pre-compensation describes.
 //!
+//! # Sizing a design when `R` is only known at run time
+//!
+//! The widget takes `R_MAX` and a runtime rate, so a design has to hold
+//! for a *range*. Four things have to be checked and they behave
+//! differently.
+//!
+//! **Widths: monotone, so `R_MAX` covers everything.**
+//! [`super::interp`]'s `G_j` grows with `R`, so sizing every stage for
+//! `R_MAX` is exact there and merely generous below.
+//! `sizing_for_the_maximum_rate_covers_every_smaller_one` proves it.
+//!
+//! **Image rejection: depends on what the caller holds fixed**, and this
+//! is the part that catches people. See
+//! [`worst_image_over_range`] for the two regimes and their tables. With
+//! a bandwidth in *hertz* — which is what
+//! [`InterpSpec::image_free_bw_hz`] states — the passband fraction is
+//! `2·B·R/fs` and every figure improves as `R` falls, so **`R_MAX` is
+//! the worst case**. With a fixed *fractional* occupancy the worst case
+//! is `R_MIN` instead, and a design verified only at the top would miss
+//! a 7 dB loss by `R = 2`.
+//!
+//! **Ripple: the widest band's compensator serves every narrower one.**
+//! The droop curve is nearly `R`-independent in `u`
+//! ([`super::interp`] measures 0.027 dB between `R = 8` and `R = 125`),
+//! so a smaller rate is the *same* curve over a *shorter* interval — and
+//! the ripple over a sub-interval cannot exceed the ripple over the
+//! whole. One tap set designed at `R_MAX` is therefore valid throughout,
+//! with no per-rate switching.
+//!
+//! **The reachable rate set: restricted by splitting, and this is
+//! arithmetic.** A stage's runtime factor tops out at its design-time
+//! factor, so a `5 × 25` chain reaches only `r1 · r2` with `r1 ≤ 5` and
+//! `r2 ≤ 25` — 51 of the 124 rates below 125 are unreachable, `R = 113`
+//! among them. Worse, a rate reachable two ways gives *two different
+//! filters*, because the stages' nulls sit at their own factors. So
+//! **if the rate genuinely varies, use a single stage**, which
+//! [`InterpSpec::arbitrary_rate`] enforces;
+//! [`InterpDesign::reachable_rates`] reports the set otherwise.
+//!
+//! ## What a single stage costs, measured
+//!
+//! Not what intuition suggests. At the default configuration:
+//!
+//! | | single stage | `5 × 25` split |
+//! |---|---|---|
+//! | shape | `R=125, N=5` | `N=[5,2], M=[2,1]` |
+//! | built register bits | **351** | 614 |
+//! | rate-weighted cost | 2.0e10 | **9.7e9** |
+//! | unreachable rates | **0** | 51 of 124 |
+//!
+//! The split wins on the figure that matters — half the rate-weighted
+//! cost, because it does the deep filtering at 1 MHz rather than
+//! 125 MHz — and *loses* on register bits, because a split chains widths
+//! and its second stage takes a 31-bit input. So arbitrary rate buys
+//! every rate at roughly twice the rate-weighted cost and *fewer*
+//! registers. `arbitrary_rate_forces_a_single_stage` pins all of it.
+//!
 //! # There is no pruning noise, so there is no SNR search
 //!
 //! [`super::chain`] spends much of its effort choosing a pruning budget
@@ -99,8 +156,29 @@ use super::{compensator, interp, response};
 pub struct InterpSpec {
     /// Converter (output) sample rate, in Hz.
     pub fs_hz: f64,
-    /// Total interpolation factor. The envelope arrives at `fs_hz / R`.
+    /// **Largest** interpolation factor the design must support.
+    ///
+    /// The widget's `R_MAX`: widths and counters are sized for this, and
+    /// [`crate::cic::interpolator::In::rate`] chooses the rate at run
+    /// time up to it. The envelope arrives at `fs_hz / R`.
     pub interpolate: usize,
+    /// **Smallest** interpolation factor the design must support.
+    ///
+    /// Two is the default and usually right. It exists because which end
+    /// of the range is the worst case depends on what the caller holds
+    /// fixed — see the module docs on the two regimes — and a design
+    /// cannot be verified against a range it was not told about.
+    pub rate_min: usize,
+    /// Must every integer rate in `rate_min..=interpolate` be reachable?
+    ///
+    /// **This forbids splitting the chain**, and that is not a
+    /// conservatism — it is arithmetic. A two-stage chain of `5 × 25`
+    /// produces only rates `r1 · r2` with `r1 ≤ 5, r2 ≤ 25`, so `R = 113`
+    /// is unreachable however the stages are set. Set this when the rate
+    /// is genuinely arbitrary at run time; leave it false when the caller
+    /// will only ever ask for rates the split can make, and
+    /// [`InterpDesign::reachable_rates`] will tell you which those are.
+    pub arbitrary_rate: bool,
     /// Baseband bandwidth the signal occupies, in Hz.
     ///
     /// One-sided: a complex envelope occupying `±200 kHz` has
@@ -141,6 +219,8 @@ impl Default for InterpSpec {
         Self {
             fs_hz: 125e6,
             interpolate: 125,
+            rate_min: 2,
+            arbitrary_rate: false,
             image_free_bw_hz: 200e3,
             input_width: 16,
             output_width: 14,
@@ -235,8 +315,18 @@ pub struct InterpDesign {
     pub input_rate_hz: f64,
     /// Achieved passband ripple after compensation, in dB.
     pub achieved_ripple_db: f64,
-    /// Achieved worst image, in dB below the signal. Positive.
+    /// Achieved worst image over the whole rate range, in dB below the
+    /// signal. Positive.
+    ///
+    /// The **worst** figure across `rate_min..=interpolate`, not the
+    /// figure at one rate — a design that met the spec at `R_MAX` and
+    /// missed it at `R_MIN` would otherwise be reported as passing.
     pub achieved_image_db: f64,
+    /// The rate at which [`InterpDesign::achieved_image_db`] was worst.
+    ///
+    /// Which end this lands on is the whole story of the two regimes;
+    /// see the module docs.
+    pub worst_image_rate: usize,
     /// Where the worst image sits, in Hz.
     pub worst_image_hz: f64,
     /// The converter's own quantisation floor, in dB.
@@ -300,6 +390,49 @@ impl InterpDesign {
     /// Per-stage differential delay, lowest rate first.
     pub fn delays(&self) -> Vec<usize> {
         self.cics.iter().map(|c| c.delay).collect()
+    }
+
+    /// Every runtime rate this chain can actually produce.
+    ///
+    /// **A split restricts the rate set, and that is arithmetic rather
+    /// than conservatism.** Each stage's runtime rate is independently
+    /// settable from one up to its own factor, so the reachable totals
+    /// are the products — a `5 × 25` chain reaches 1 through 125 but
+    /// *only* at values expressible as `r1 · r2` with `r1 ≤ 5` and
+    /// `r2 ≤ 25`. `R = 113` is prime and larger than 5, so no setting
+    /// produces it.
+    ///
+    /// A single-stage design reaches every integer up to its factor,
+    /// which is why [`InterpSpec::arbitrary_rate`] forces one.
+    ///
+    /// Sorted and deduplicated.
+    pub fn reachable_rates(&self) -> Vec<usize> {
+        let mut set: Vec<usize> = vec![1];
+        for c in &self.cics {
+            let mut next = Vec::new();
+            for base in &set {
+                for r in 1..=c.interpolate {
+                    next.push(base * r);
+                }
+            }
+            next.sort_unstable();
+            next.dedup();
+            set = next;
+        }
+        set.retain(|r| *r >= 1);
+        set
+    }
+
+    /// Rates in `rate_min..=interpolate` this chain **cannot** produce.
+    ///
+    /// Empty for a single-stage design. For a split, the list a caller
+    /// has to live with — or set [`InterpSpec::arbitrary_rate`] and take
+    /// the wider registers instead.
+    pub fn unreachable_rates(&self) -> Vec<usize> {
+        let ok = self.reachable_rates();
+        (self.spec.rate_min.max(1)..=self.spec.interpolate)
+            .filter(|r| !ok.contains(r))
+            .collect()
     }
 
     /// The cascade's shapes in **signal order**, lowest rate first.
@@ -373,6 +506,86 @@ pub enum Unmet {
         /// What is wrong with it.
         reason: &'static str,
     },
+}
+
+/// Worst image rejection over a whole rate range, and where it occurred.
+///
+/// # Which end is the worst case depends on what the caller holds fixed
+///
+/// This is the question a run-time-variable rate forces, and it has two
+/// answers.
+///
+/// **Fixed absolute bandwidth** — the caller has a 200 kHz signal and a
+/// 125 MHz converter, and varies `R` to trade host bandwidth. Then the
+/// passband *fraction* is `2·B·R/fs`, proportional to `R`, so a smaller
+/// rate puts the signal a smaller fraction of the way to the first null.
+/// Everything improves monotonically as `R` falls:
+///
+/// | `R` | passband | images | droop |
+/// |---|---|---|---|
+/// | 125 | 0.400 | 37.9 dB | −1.74 dB |
+/// | 64 | 0.205 | 57.0 dB | −0.45 dB |
+/// | 16 | 0.051 | 94.7 dB | −0.03 dB |
+/// | 2 | 0.006 | 137.9 dB | −0.00 dB |
+///
+/// So **`R_MAX` is the worst case and designing there guarantees the
+/// rest**, which is what [`design`] does.
+///
+/// **Fixed fractional occupancy** — the caller always fills 40% of the
+/// envelope Nyquist, so the absolute bandwidth scales as `1/R`. Then the
+/// passband fraction is constant and the figures are nearly
+/// `R`-independent — until they are not:
+///
+/// | `R` | images |
+/// |---|---|
+/// | 125 | 37.9 dB |
+/// | 16 | 37.8 dB |
+/// | 8 | 37.4 dB |
+/// | 4 | 36.1 dB |
+/// | 2 | **30.6 dB** |
+///
+/// Flat to within 0.5 dB down to `R = 8`, then 7 dB of loss by `R = 2`,
+/// because `sin(π u / R)` stops being its argument. **Here the worst
+/// case is `R_MIN`.**
+///
+/// # Single-stage designs only
+///
+/// At run time a stage's factor *is* the rate it is set to, so its nulls
+/// move — the response is a different curve, not the same curve over a
+/// narrower band. For one stage that is easy: rebuild the shape with the
+/// runtime factor, which is what this does.
+///
+/// For a **split** it is not, because the runtime rate can be factorised
+/// across the stages in more than one way and the response differs for
+/// each. `5 × 25` set to `(5, 4)` and to `(1, 20)` both give `R = 20` and
+/// are different filters. So a split is left at its design-time shape
+/// here, and the honest position is the one
+/// [`InterpSpec::arbitrary_rate`] encodes: **if the rate varies at run
+/// time, use a single stage.** A split fixes the rate at design time, or
+/// restricts it to a set the caller verifies themselves —
+/// [`InterpDesign::reachable_rates`] says which set.
+pub fn worst_image_over_range(
+    shapes: &[compensator::CicShape],
+    fs_hz: f64,
+    bw_hz: f64,
+    rate_min: usize,
+    rate_max: usize,
+) -> (f64, usize) {
+    let mut worst = f64::INFINITY;
+    let mut at = rate_max;
+    for r in rate_min.max(1)..=rate_max {
+        let pb = 2.0 * bw_hz * r as f64 / fs_hz;
+        if !(pb > 0.0 && pb < 1.0) {
+            continue;
+        }
+        // The cascade's shapes are fixed; only the band moves.
+        let (db, _) = cascade_image_db(shapes, pb, r);
+        if db < worst {
+            worst = db;
+            at = r;
+        }
+    }
+    (worst, at)
 }
 
 /// Where a **post**-compensator's passband and stopband sit, in
@@ -781,8 +994,21 @@ pub fn design(spec: InterpSpec) -> Result<InterpDesign, Unmet> {
         return Err(Unmet::BandwidthTooWide { passband });
     }
 
+    if spec.rate_min < 1 || spec.rate_min > spec.interpolate {
+        return Err(Unmet::Invalid {
+            reason: "rate_min must be between one and the maximum rate",
+        });
+    }
+
     let input_rate_hz = spec.fs_hz / spec.interpolate as f64;
-    let splits = ordered_factorisations(spec.interpolate, spec.max_chain_stages.max(1));
+    // `arbitrary_rate` forbids splitting: only a single stage reaches
+    // every integer rate. See `InterpDesign::reachable_rates`.
+    let chain_stages = if spec.arbitrary_rate {
+        1
+    } else {
+        spec.max_chain_stages.max(1)
+    };
+    let splits = ordered_factorisations(spec.interpolate, chain_stages);
 
     let mut best_image = f64::NEG_INFINITY;
     let mut best_ripple = f64::INFINITY;
@@ -801,7 +1027,24 @@ pub fn design(spec: InterpSpec) -> Result<InterpDesign, Unmet> {
                 })
                 .collect();
 
+            // Evaluated at `R_MAX` alone, and that is the worst case
+            // rather than a shortcut.
+            //
+            // With the bandwidth stated in hertz the passband *fraction*
+            // is `2·B·R/fs`, proportional to the rate, so a smaller rate
+            // puts the signal a smaller fraction of the way to the first
+            // null and every figure improves: 37.9 dB of image rejection
+            // at `R = 125` becomes 137.9 dB at `R = 2`.
+            // `worst_image_over_range` carries the table and
+            // `image_rejection_is_monotonic_in_the_rate` sweeps it
+            // densely.
+            //
+            // Sweeping *here* instead was tried and reverted. It is a
+            // search inside a search: the test module went from 19
+            // seconds to 514. The guarantee belongs in a test that runs
+            // once, not in every candidate evaluation.
             let (image_db, at_u) = cascade_image_db(&shapes, passband, spec.interpolate);
+            let worst_rate = spec.interpolate;
             if image_db > best_image {
                 best_image = image_db;
             }
@@ -916,7 +1159,8 @@ pub fn design(spec: InterpSpec) -> Result<InterpDesign, Unmet> {
                 input_rate_hz,
                 achieved_ripple_db: achieved_ripple,
                 achieved_image_db: image_db,
-                worst_image_hz: at_u * input_rate_hz,
+                worst_image_rate: worst_rate,
+                worst_image_hz: at_u * spec.fs_hz / worst_rate as f64,
                 // A full-scale sine at the converter width. The chain
                 // adds nothing: the interpolator is exact.
                 dac_snr_db: 6.02 * spec.output_width as f64 + 1.76,
@@ -1057,6 +1301,207 @@ mod tests {
         );
         assert_eq!(d.input_rate_hz, 1e6);
         assert!(d.tapered_register_bits < d.register_bits);
+    }
+
+    /// **Image rejection improves monotonically as the rate falls**, for
+    /// a bandwidth stated in hertz.
+    ///
+    /// The guarantee [`design`] leans on to evaluate at `R_MAX` alone.
+    /// Swept densely here, once, rather than inside every candidate
+    /// evaluation — which is where it was first put, and it took this
+    /// module from 19 seconds to 514.
+    ///
+    /// The mechanism is that the passband *fraction* is `2·B·R/fs`, so a
+    /// smaller rate puts the signal a smaller fraction of the way to the
+    /// first null. Note the shape is rebuilt at each rate: a stage's
+    /// factor *is* the rate it is set to, so its nulls move too.
+    #[test]
+    fn image_rejection_is_monotonic_in_the_rate() {
+        let (fs, bw, m) = (125e6f64, 200e3f64, 1usize);
+        for n in 1..=5 {
+            let mut prev: Option<(usize, f64)> = None;
+            for r in 2..=125usize {
+                let pb = 2.0 * bw * r as f64 / fs;
+                if !(pb > 0.0 && pb < 1.0) {
+                    continue;
+                }
+                let db = worst_image_db(pb, n, r, m);
+                if let Some((pr, pd)) = prev {
+                    assert!(
+                        db <= pd + 1e-6,
+                        "N={n}: R={r} gives {db:.2} dB, worse than R={pr}'s {pd:.2}"
+                    );
+                }
+                prev = Some((r, db));
+            }
+        }
+        // And the span is large, so the monotonicity is doing real work
+        // rather than being a flat line.
+        let at = |r: usize| worst_image_db(2.0 * bw * r as f64 / fs, 3, r, m);
+        assert!(at(2) > at(125) + 80.0, "{} vs {}", at(2), at(125));
+    }
+
+    /// **`worst_image_over_range` agrees that the maximum is the worst.**
+    ///
+    /// The function `design` does *not* call, kept as a verification
+    /// helper a caller can run. If this ever disagreed with the fast
+    /// path, one of them would be wrong.
+    #[test]
+    fn the_worst_case_is_the_maximum_rate() {
+        let shapes = vec![compensator::CicShape {
+            decimate: 125,
+            stages: 3,
+            delay: 1,
+        }];
+        let (db, at) = worst_image_over_range(&shapes, 125e6, 200e3, 2, 125);
+        assert_eq!(at, 125, "the worst rate is the maximum");
+        let (direct, _) = cascade_image_db(&shapes, 2.0 * 200e3 * 125.0 / 125e6, 125);
+        assert!(
+            (db - direct).abs() < 1e-9,
+            "the swept figure {db:.4} must match the direct one {direct:.4}"
+        );
+    }
+
+    /// **The other regime degrades at the *low* end**, which is why the
+    /// distinction is in the docs rather than assumed away.
+    ///
+    /// If the caller holds the *fractional* occupancy fixed instead —
+    /// always 40% of the envelope Nyquist, so the absolute bandwidth
+    /// scales as `1/R` — the figures are nearly rate-independent down to
+    /// about `R = 8` and then fall away. A design verified only at
+    /// `R_MAX` would miss it.
+    #[test]
+    fn a_fixed_fractional_band_degrades_at_small_rates() {
+        let at = |r: usize| worst_image_db(0.4, 3, r, 1);
+        // Flat to within half a dB down to eight.
+        for r in [8usize, 16, 32, 64, 125] {
+            assert!(
+                (at(r) - at(125)).abs() < 0.5,
+                "R={r}: {:.2} against {:.2} at 125",
+                at(r),
+                at(125)
+            );
+        }
+        // Then it goes: about 7 dB by R = 2.
+        assert!(
+            at(125) - at(2) > 5.0,
+            "R=2 gives {:.2}, R=125 gives {:.2}",
+            at(2),
+            at(125)
+        );
+    }
+
+    /// **A split cannot reach every rate, and the design says which.**
+    ///
+    /// Arithmetic, not conservatism: a `5 × 25` chain produces only
+    /// `r1 · r2` with `r1 ≤ 5` and `r2 ≤ 25`, so no setting gives
+    /// `R = 113`.
+    #[test]
+    fn a_split_restricts_the_reachable_rates() {
+        let spec = InterpSpec {
+            max_chain_stages: 2,
+            ..InterpSpec::default()
+        };
+        let d = design(spec).expect("designable");
+        let reachable = d.reachable_rates();
+        let missing = d.unreachable_rates();
+        if d.cics.len() > 1 {
+            assert!(
+                !missing.is_empty(),
+                "a split of {:?} should miss some rates",
+                d.split()
+            );
+            // 113 is prime and larger than either factor of a 5 x 25
+            // split, so it is unreachable however the stages are set.
+            for r in &missing {
+                assert!(!reachable.contains(r));
+            }
+            assert!(
+                reachable.contains(&d.spec.interpolate),
+                "R_MAX itself works"
+            );
+        }
+        // Whatever the split, the total is always reachable.
+        assert!(reachable.contains(&125));
+    }
+
+    /// **And `arbitrary_rate` forces a single stage, which reaches
+    /// everything.**
+    ///
+    /// The escape hatch for a genuinely run-time rate: wider registers
+    /// in exchange for every integer being settable.
+    #[test]
+    fn arbitrary_rate_forces_a_single_stage() {
+        let spec = InterpSpec {
+            arbitrary_rate: true,
+            max_chain_stages: 3,
+            ..InterpSpec::default()
+        };
+        let d = design(spec).expect("designable");
+        assert_eq!(d.cics.len(), 1, "split {:?}", d.split());
+        assert_eq!(d.split(), vec![125]);
+        assert!(
+            d.unreachable_rates().is_empty(),
+            "a single stage reaches every rate, missing {:?}",
+            d.unreachable_rates()
+        );
+        // **And what it costs is not what you would guess.**
+        //
+        // Measured at the default configuration: the single stage picks
+        // `R = 125, N = 5` and spends 351 built register bits; the
+        // `5 × 25` split picks `N = [5, 2]` and spends 614, because a
+        // split *chains* widths — its second stage takes a 31-bit input,
+        // so every stage of it is at least 31 bits wide.
+        //
+        // The split wins on the figure that actually matters, which is
+        // the rate-weighted cost: 9.7e9 against 2.0e10, less than half,
+        // because it does the deep filtering at 1 MHz instead of at
+        // 125 MHz.
+        //
+        // So `arbitrary_rate` buys every rate at roughly **twice the
+        // rate-weighted cost and fewer registers** — not "wider
+        // registers", which is what an earlier version of this test
+        // asserted and got backwards.
+        let split = design(InterpSpec {
+            max_chain_stages: 2,
+            ..InterpSpec::default()
+        })
+        .expect("designable");
+        if split.cics.len() > 1 {
+            assert!(
+                d.cost > split.cost,
+                "the split should be cheaper by the rate-weighted model: \
+                 {:.3e} against {:.3e}",
+                d.cost,
+                split.cost
+            );
+            assert!(
+                d.built_register_bits < split.built_register_bits,
+                "and the single stage should spend *fewer* registers: \
+                 {} against {}",
+                d.built_register_bits,
+                split.built_register_bits
+            );
+            assert!(
+                !split.unreachable_rates().is_empty(),
+                "which is what the split gives up"
+            );
+        }
+    }
+
+    /// A `rate_min` outside the range is refused.
+    #[test]
+    fn an_invalid_rate_range_is_refused() {
+        for rate_min in [0usize, 200] {
+            let spec = InterpSpec {
+                rate_min,
+                ..InterpSpec::default()
+            };
+            assert!(
+                matches!(design(spec), Err(Unmet::Invalid { .. })),
+                "{rate_min}"
+            );
+        }
     }
 
     /// **Every design returned satisfies its own spec.**

@@ -113,6 +113,60 @@ reasoning is worth recording rather than just the diff.
   step, and all nine equality tests failed on the next run rather than
   the divergence surviving to review.
 
+**Sizing under a run-time rate.** Asked how a design guarantees its
+specs when `R` is only known at run time, which turned out to be a real
+gap: `design` took a single `interpolate` while the widget takes `R_MAX`
+and a runtime rate. Four things behave differently and only one of them
+was previously checked.
+
+- **Widths were already safe** — `G_j` is monotone in `R`, proved before
+  this.
+- **Image rejection depends on what the caller holds fixed, and this is
+  the trap.** With a bandwidth in *hertz*, the passband fraction is
+  `2·B·R/fs`, so a smaller rate sits a smaller fraction of the way to the
+  first null and everything improves: 37.9 dB at `R = 125` becomes
+  137.9 dB at `R = 2`. **`R_MAX` is the worst case.** With a fixed
+  *fractional* occupancy the figures are flat to 0.5 dB down to `R = 8`
+  and then fall 7 dB by `R = 2` — **`R_MIN` is the worst case**, and a
+  design verified only at the top would miss it. Both regimes are
+  tabulated and tested.
+- **Ripple needs no per-rate switching**, and the argument is worth
+  keeping: the droop curve is nearly `R`-independent in `u`, so a smaller
+  rate is the *same* curve over a *shorter* interval, and ripple over a
+  sub-interval cannot exceed ripple over the whole. One tap set designed
+  at `R_MAX` is valid throughout.
+- **Splitting the chain restricts the reachable rate set, and that is
+  arithmetic.** A stage's runtime factor tops out at its design-time
+  factor, so `5 × 25` reaches only `r1 · r2` with `r1 ≤ 5, r2 ≤ 25` —
+  **51 of the 124 rates below 125 are unreachable**, every prime above
+  five among them. Worse, a rate reachable two ways gives two *different
+  filters*, because each stage's nulls sit at its own factor. So
+  `InterpSpec::arbitrary_rate` forces a single stage, and
+  `InterpDesign::reachable_rates` reports the set otherwise. The example
+  and the PDF both print it.
+
+**And the cost of arbitrary rate is the opposite of what I assumed.** I
+wrote a test asserting a single stage costs more registers than a split.
+It fails: measured at the default configuration the single stage picks
+`R = 125, N = 5` and spends **351** built register bits, while the
+`5 × 25` split picks `N = [5, 2]` and spends **614** — because a split
+*chains* widths and its second stage takes a 31-bit input. What the split
+actually wins is the rate-weighted cost, 9.7e9 against 2.0e10, because it
+does the deep filtering at 1 MHz instead of 125 MHz. So arbitrary rate
+buys every rate at roughly twice the rate-weighted cost and *fewer*
+registers. The test now asserts that, and the docs carry the table.
+
+**One process note.** Verifying across the range inside `design` — a
+search inside a search — took the module from 19 seconds to 514. Reverted
+to evaluating at `R_MAX` with the monotonicity proved by a single dense
+sweep instead. A guarantee belongs in a test that runs once, not in every
+candidate evaluation. `worst_image_over_range` survives as a public
+helper for callers who want the sweep, and it rebuilds the shape per
+rate — because a stage's factor *is* the rate it is set to, so its nulls
+move, and evaluating the design-time shape against a narrower band would
+be measuring a filter the hardware is not configured as. That error was
+in the first version.
+
 **Follow-ups — the remaining timing item:**
 
 - **The integrator cascade at 125 MHz.** Unchanged: it is pipelined one adder deep by construction, and the widest stage is 30 bits at the worked sizing. Still blocked on `auto-pipelining-plan.md`, which is the mechanism CLAUDE.md designates for it. What this PR adds is *visibility* — the report now states the adder depth per section and the per-stage widths as built, so the deferral is informed rather than a shrug.

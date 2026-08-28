@@ -2708,7 +2708,7 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595.00 842.00] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 8 0 R >>
 endobj
 8 0 obj
-<< /Length 55048 >>
+<< /Length 55231 >>
 stream
 0.000 0.000 0.000 rg
 BT /F2 16.00 Tf 198.820 800.000 Td (Compensation and Result) Tj ET
@@ -5482,25 +5482,27 @@ BT /F1 8.00 Tf 60.000 180.000 Td (register bits ........ 836 uniform, 614 as bui
 BT /F1 8.00 Tf 60.000 169.000 Td (compensator DC gain .. 1.0000, shift 10) Tj ET
 BT /F1 8.00 Tf 60.000 158.000 Td (compensator headroom . 23 bits for any input, 18 for in-band only) Tj ET
 BT /F1 8.00 Tf 60.000 147.000 Td (   norms ............. l1 81.1289, passband peak 3.9907) Tj ET
-BT /F1 8.00 Tf 60.000 136.000 Td (adder depth .......... 5 deep in the combs, 1 in the integrators) Tj ET
-BT /F1 8.00 Tf 60.000 125.000 Td (runner-up ............ split [5, 25] N=[5, 2] M=[2, 2], 924 register bits) Tj ET
-BT /F1 8.00 Tf 60.000 108.000 Td (taps ................. [304, -2290, 8288, -18223, 24866, -18223, 8288, -2290, 304]) Tj ET
-BT /F2 9.00 Tf 60.000 89.000 Td (Build to the any-input headroom unless the envelope is band-limited.) Tj ET
-BT /F1 7.50 Tf 60.000 77.000 Td (The in-band figure is the peak gain an in-band sinusoid sees. The any-input figure is the) Tj ET
-BT /F1 7.50 Tf 60.000 67.500 Td (sum of the taps' magnitudes, which is the bound for an arbitrary bounded input -- and a) Tj ET
-BT /F1 7.50 Tf 60.000 58.000 Td (transmit envelope is not band-limited: switch-on, a burst boundary and a modulation change) Tj ET
-BT /F1 7.50 Tf 60.000 48.500 Td (are all steps, and a step is exactly the input that reaches it. Choosing the narrower) Tj ET
-BT /F1 7.50 Tf 60.000 39.000 Td (figure for a burst transmitter is how a compensator saturates on the first sample.) Tj ET
-BT /F2 9.00 Tf 60.000 19.500 Td (More taps will not improve image rejection.) Tj ET
-BT /F1 7.50 Tf 60.000 7.500 Td (The compensator runs before the rate change, at the envelope rate, so its response is) Tj ET
-BT /F1 7.50 Tf 60.000 -2.000 Td (periodic and the image at k+u sees exactly the gain the signal at u sees -- the plot above) Tj ET
-BT /F1 7.50 Tf 60.000 -11.500 Td (shows it. The image-to-signal ratio is the cascade's alone. This is the one place where) Tj ET
-BT /F1 7.50 Tf 60.000 -21.000 Td (transposing receive-side intuition is wrong: there, the compensator sits after the fold and) Tj ET
-BT /F1 7.50 Tf 60.000 -30.500 Td (its stopband is part of the alias budget.) Tj ET
-BT /F1 7.50 Tf 60.000 -40.000 Td () Tj ET
-BT /F1 7.50 Tf 60.000 -49.500 Td (The knobs are the CIC depth N, the interpolation factor R, and the signal bandwidth. A) Tj ET
-BT /F1 7.50 Tf 60.000 -59.000 Td (compensator at the converter rate would work, because it is no longer periodic in u, and) Tj ET
-BT /F1 7.50 Tf 60.000 -68.500 Td (costs a FIR running at the full clock.) Tj ET
+BT /F1 8.00 Tf 60.000 136.000 Td (rates reachable ...... 73 of 124 in 2..=125  \(a split restricts them\)) Tj ET
+BT /F1 8.00 Tf 60.000 125.000 Td (worst image at rate .. 125) Tj ET
+BT /F1 8.00 Tf 60.000 114.000 Td (adder depth .......... 5 deep in the combs, 1 in the integrators) Tj ET
+BT /F1 8.00 Tf 60.000 103.000 Td (runner-up ............ split [5, 25] N=[5, 2] M=[2, 2], 924 register bits) Tj ET
+BT /F1 8.00 Tf 60.000 86.000 Td (taps ................. [304, -2290, 8288, -18223, 24866, -18223, 8288, -2290, 304]) Tj ET
+BT /F2 9.00 Tf 60.000 67.000 Td (Build to the any-input headroom unless the envelope is band-limited.) Tj ET
+BT /F1 7.50 Tf 60.000 55.000 Td (The in-band figure is the peak gain an in-band sinusoid sees. The any-input figure is the) Tj ET
+BT /F1 7.50 Tf 60.000 45.500 Td (sum of the taps' magnitudes, which is the bound for an arbitrary bounded input -- and a) Tj ET
+BT /F1 7.50 Tf 60.000 36.000 Td (transmit envelope is not band-limited: switch-on, a burst boundary and a modulation change) Tj ET
+BT /F1 7.50 Tf 60.000 26.500 Td (are all steps, and a step is exactly the input that reaches it. Choosing the narrower) Tj ET
+BT /F1 7.50 Tf 60.000 17.000 Td (figure for a burst transmitter is how a compensator saturates on the first sample.) Tj ET
+BT /F2 9.00 Tf 60.000 -2.500 Td (More taps will not improve image rejection.) Tj ET
+BT /F1 7.50 Tf 60.000 -14.500 Td (The compensator runs before the rate change, at the envelope rate, so its response is) Tj ET
+BT /F1 7.50 Tf 60.000 -24.000 Td (periodic and the image at k+u sees exactly the gain the signal at u sees -- the plot above) Tj ET
+BT /F1 7.50 Tf 60.000 -33.500 Td (shows it. The image-to-signal ratio is the cascade's alone. This is the one place where) Tj ET
+BT /F1 7.50 Tf 60.000 -43.000 Td (transposing receive-side intuition is wrong: there, the compensator sits after the fold and) Tj ET
+BT /F1 7.50 Tf 60.000 -52.500 Td (its stopband is part of the alias budget.) Tj ET
+BT /F1 7.50 Tf 60.000 -62.000 Td () Tj ET
+BT /F1 7.50 Tf 60.000 -71.500 Td (The knobs are the CIC depth N, the interpolation factor R, and the signal bandwidth. A) Tj ET
+BT /F1 7.50 Tf 60.000 -81.000 Td (compensator at the converter rate would work, because it is no longer periodic in u, and) Tj ET
+BT /F1 7.50 Tf 60.000 -90.500 Td (costs a FIR running at the full clock.) Tj ET
 endstream
 endobj
 xref
@@ -5517,5 +5519,5 @@ xref
 trailer
 << /Size 9 /Root 1 0 R >>
 startxref
-107192
+107375
 %%EOF

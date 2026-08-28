@@ -105,6 +105,18 @@ fn main() -> Result<(), RHDLError> {
         "  cost:  {} register bits uniform, {} as built (lossless)",
         derived.register_bits, derived.built_register_bits
     );
+    let missing = derived.unreachable_rates();
+    if missing.is_empty() {
+        println!("  rates:  every rate from 2 to 125 is settable at run time");
+    } else {
+        println!(
+            "  rates:  {} of {} rates in 2..=125 are NOT reachable by this split \
+             (e.g. {:?}) -- set arbitrary_rate to force a single stage",
+            missing.len(),
+            derived.spec.interpolate - derived.spec.rate_min + 1,
+            &missing[..missing.len().min(5)]
+        );
+    }
     if let Some(a) = &derived.alternative {
         println!(
             "  runner-up: split {:?} N={:?} M={:?} -- {}",
