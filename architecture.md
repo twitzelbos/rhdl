@@ -441,6 +441,7 @@ When new structural needs arise, follow these patterns rather than improvising.
 | `kernel-language-extensions.md` | Future kernel-language extensions | Updated as extensions ship |
 | `vendor-primitive-architecture.md` | Future target-provider system | Updated as primitives are added |
 | `black-box-connectivity.md` | How a module RHDL did not author declares its combinational connectivity | Updated as phases ship |
+| `farrow-resampler.md` | Scoping plan for a fractional-rate Farrow resampler, and the phase contract it has to satisfy | Updated as phases ship |
 | `xilinx-primitive-library.md` | Execution plan for a verified Xilinx 7-series primitive library, plus (§7) how a design declares the silicon it needs and how a widget picks primitives per target; needs a Vivado machine from phase C | Updated as phases ship |
 | `fsm-architecture.md` | Future FSM ergonomics + analysis + formal verification | Updated as phases ship |
 | `stream-bus-architecture.md` | Future typed LID streaming bus + AXI Stream interop | Updated as phases ship |
