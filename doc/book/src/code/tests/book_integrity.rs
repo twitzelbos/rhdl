@@ -164,6 +164,33 @@ const KNOWN_ORPHANS: &[(&str, &str)] = &[
     ("unicode.md", "scratch pad, not prose"),
 ];
 
+/// Every markdown file some chapter `{{#include}}`s.
+///
+/// A generated fragment -- a table produced by an example, say -- is
+/// reachable through the chapter that includes it, and is deliberately
+/// *not* listed in `SUMMARY.md`: it is not a chapter and would render as
+/// a stray sidebar entry.
+fn included_fragments(src: &Path) -> BTreeSet<PathBuf> {
+    let mut out = BTreeSet::new();
+    for md in markdown_files(src) {
+        let text = std::fs::read_to_string(&md).expect("read chapter");
+        let dir = md.parent().expect("chapter has a directory");
+        for line in text.lines() {
+            for tag in ["{{#rustdoc_include ", "{{#include "] {
+                let Some(at) = line.find(tag) else { continue };
+                let rest = &line[at + tag.len()..];
+                let Some(end) = rest.find("}}") else { continue };
+                let spec = rest[..end].trim();
+                let rel = spec.split_once(':').map(|(f, _)| f).unwrap_or(spec);
+                if let Ok(c) = dir.join(rel).canonicalize() {
+                    out.insert(c);
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Every chapter is reachable from `SUMMARY.md`.
 ///
 /// An orphaned chapter is invisible in the rendered book, so it gets
@@ -184,10 +211,12 @@ fn no_chapter_is_orphaned() {
         })
         .collect();
 
+    let included = included_fragments(&src);
     let orphans: Vec<String> = markdown_files(&src)
         .into_iter()
         .filter(|p| p.file_name().and_then(|s| s.to_str()) != Some("SUMMARY.md"))
         .filter(|p| !listed.contains(p))
+        .filter(|p| !p.canonicalize().is_ok_and(|c| included.contains(&c)))
         .map(|p| p.strip_prefix(&src).unwrap_or(&p).display().to_string())
         .filter(|rel| !KNOWN_ORPHANS.iter().any(|(k, _)| k == rel))
         .collect();

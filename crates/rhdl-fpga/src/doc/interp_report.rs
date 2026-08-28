@@ -38,7 +38,7 @@ use super::pdf::{Align, Font, Page, Pdf};
 // the reasoning about separators and the right page edge.
 use super::plot::{Axes, Frame, PALETTE, Series, draw};
 use super::report::wrap_values;
-use crate::dsp::cic::{compensator, interp, interp_chain, response};
+use crate::dsp::cic::{compensator, delay, interp, interp_chain, response};
 
 /// A hand-specified interpolator to report on.
 ///
@@ -159,6 +159,12 @@ pub fn as_design(cfg: InterpReport) -> Option<interp_chain::InterpDesign> {
         // restricted.
         rate_min: 2,
         arbitrary_rate: true,
+        // Nothing was asked, so nothing is claimed; the delay is
+        // reported below as what this shape happens to cost.
+        max_group_delay_s: 0.0,
+        // Matches the built `CicInterpolate`, whose comb cascade is
+        // pipelined.
+        pipelined_combs: true,
     };
 
     Some(interp_chain::InterpDesign {
@@ -197,6 +203,7 @@ pub fn as_design(cfg: InterpReport) -> Option<interp_chain::InterpDesign> {
         mid_width_in_band: in_band,
         compensator_l1: l1,
         compensator_peak: peak,
+        group_delay: delay::interpolation_chain_breakdown(&[(n, r, m)], quantised.taps.len(), true),
         alternative: None,
     })
 }
@@ -215,6 +222,7 @@ pub fn render(d: &interp_chain::InterpDesign, provenance: &str) -> Pdf {
     let mut doc = Pdf::new();
     doc.push(page_one(d, provenance));
     doc.push(page_two(d));
+    doc.push(page_three(d));
     doc
 }
 
@@ -535,10 +543,39 @@ fn page_two(d: &interp_chain::InterpDesign) -> Page {
         &s,
     );
 
+    p
+}
+
+/// The figures, and the two things a reader gets wrong.
+///
+/// A page of its own because it did not fit on page two. The committed
+/// PDF ran to `y = -90` — several hundred points below the bottom of an
+/// A4 page — so the headroom warning and the "more taps will not improve
+/// image rejection" note, which are the two most important paragraphs in
+/// the report, were rendered off the paper and had been for as long as
+/// they existed. Nothing checked, because nothing knew the page had a
+/// bottom.
+fn page_three(d: &interp_chain::InterpDesign) -> Page {
+    let mut p = Page::a4();
+    p.fill_style((0.0, 0.0, 0.0));
+    p.text(
+        297.5,
+        800.0,
+        16.0,
+        Font::Bold,
+        Align::Centre,
+        "Figures and Cautions",
+    );
     // ---- the figures ----
     p.fill_style((0.0, 0.0, 0.0));
-    p.text(60.0, 250.0, 10.0, Font::Bold, Align::Left, "Figures");
-    let mut y = 235.0;
+    let droop = response::passband_droop_db(
+        d.passband,
+        d.cics[0].stages,
+        d.cics[0].interpolate,
+        d.cics[0].delay,
+    );
+    p.text(60.0, 770.0, 10.0, Font::Bold, Align::Left, "Figures");
+    let mut y = 755.0;
     let mut lines: Vec<String> = vec![
         format!(
             "images ............... {:.1} dB down  (asked >= {:.1})",
@@ -586,11 +623,19 @@ fn page_two(d: &interp_chain::InterpDesign) -> Page {
             }
         ),
         format!("worst image at rate .. {}", d.worst_image_rate),
-        format!(
-            "adder depth .......... {} deep in the combs, 1 in the integrators",
-            d.cics.iter().map(|c| c.stages).max().unwrap_or(0)
-        ),
+        // Both cascades read the previous stage's *registered* output
+        // (`dsp::cic::interpolator`), so the depth is one however deep
+        // the cascade. The report said "N deep in the combs" until the
+        // group-delay work went looking for where the delay came from --
+        // a stale claim that had been printed into a committed PDF.
+        "adder depth .......... 1 in the combs, 1 in the integrators (both pipelined)".to_string(),
     ];
+    lines.push(String::new());
+    lines.extend(crate::doc::report::delay_lines(
+        &d.group_delay,
+        d.spec.fs_hz,
+        "converter",
+    ));
     if let Some(a) = &d.alternative {
         lines.push(format!(
             "runner-up ............ split {:?} N={:?} M={:?}, {} register bits",
@@ -660,6 +705,44 @@ fn page_two(d: &interp_chain::InterpDesign) -> Page {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **Every glyph the TX reports place is on the paper.**
+    ///
+    /// This test is the reason page three exists: the committed PDF had
+    /// its headroom warning and its "more taps will not help" note at
+    /// `y = -90`, off the bottom of an A4 page, and had done since they
+    /// were written. `render` returning `Ok` proved only that bytes were
+    /// produced.
+    #[test]
+    fn the_tx_reports_fit_on_their_pages() {
+        let cfg = InterpReport::default();
+        let d = as_design(cfg).expect("designable");
+        crate::doc::report::assert_all_text_on_page(&render(&d, "Test"), "interp_report");
+        crate::doc::report::assert_all_text_on_page(
+            &interp_chain_report(&d),
+            "interp_chain_report",
+        );
+    }
+
+    /// **The group delay is reported, with its parts**, and the adder
+    /// depth claim matches the built widget.
+    #[test]
+    fn the_report_states_the_group_delay_and_the_real_adder_depth() {
+        let d = as_design(InterpReport::default()).expect("designable");
+        let text = String::from_utf8_lossy(&render(&d, "Test").to_bytes()).to_string();
+        assert!(text.contains("group delay"), "no delay line");
+        assert!(text.contains("comb pipeline"), "no breakdown");
+        // Both cascades read a registered value, so the depth is one.
+        // The report claimed `N` until the group-delay work went looking.
+        assert!(
+            text.contains("1 in the combs"),
+            "the adder-depth claim does not match dsp::cic::interpolator"
+        );
+        assert!(
+            !text.contains("deep in the combs"),
+            "the stale claim is back"
+        );
+    }
 
     /// The default hand-specified configuration renders.
     #[test]
@@ -765,6 +848,8 @@ mod tests {
             method: compensator::Method::LeastSquares,
             rate_min: 2,
             arbitrary_rate: true,
+            max_group_delay_s: 0.0,
+            pipelined_combs: true,
         };
         let derived = interp_chain::design(spec).expect("designable");
         assert_eq!(derived.split(), vec![cfg.rate]);

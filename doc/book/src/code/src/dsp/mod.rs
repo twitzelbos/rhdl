@@ -4,4 +4,5 @@
 //! has drifted from the library fails the build rather than misleading
 //! a reader.
 
+pub mod delay;
 pub mod design;

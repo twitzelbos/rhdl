@@ -140,6 +140,38 @@ pub struct ChainSpec {
     /// Every extra stage multiplies the search, so this is a budget
     /// rather than an aspiration.
     pub max_chain_stages: usize,
+    /// Worst permitted group delay, in seconds. Zero means unconstrained.
+    ///
+    /// **The binding constraint for a filter inside a feedback loop**,
+    /// and the only one in this struct that is not about the frequency
+    /// response. See [`super::delay`]: loop bandwidth is set by loop
+    /// delay, and a decimating measurement filter is usually the largest
+    /// contributor to it.
+    ///
+    /// Unconstrained by default, because most callers are not in a loop
+    /// and a delay bound would silently narrow their search.
+    pub max_group_delay_s: f64,
+    /// Does the *implementation* pipeline its comb cascades?
+    ///
+    /// `true` describes RHDL's `CicDecimate` / `CicInterpolate`, whose
+    /// comb cascades read the previous stage's registered output so the
+    /// critical path is one subtractor however deep the cascade.
+    ///
+    /// `false` describes an implementation with no such registers — a
+    /// software CIC in an ARM real-time thread, a vendor IP core, a
+    /// hand-written block. That is not a hypothetical: the fabric-versus-
+    /// processor comparison for a control loop turns on exactly this
+    /// term, and it is the one contribution that differs between the two.
+    ///
+    /// It is deliberately *not* a knob on the shipped widgets. Selecting
+    /// with `const PIPELINE_COMBS: bool` and an `if` was considered and
+    /// rejected for the reason recorded in `dsp::mixer`: `if` lowers to a
+    /// mux where **both branches always evaluate**, so the unselected
+    /// combinational cascade would still be in the netlist — and the
+    /// *default* path would silently lose the fmax the pipelining exists
+    /// to buy. [`super::delay::Breakdown::comb_pipeline`] prices the alternative
+    /// without anyone having to build it.
+    pub pipelined_combs: bool,
     /// Where the compensator's stopband begins, as a fraction of the
     /// output Nyquist.
     ///
@@ -183,6 +215,8 @@ impl Default for ChainSpec {
             max_stages: 8,
             max_taps: 31,
             max_chain_stages: 3,
+            max_group_delay_s: 0.0,
+            pipelined_combs: true,
             // Compensation only by default. Asking for attenuation
             // costs taps, and the CIC's own stopband is often enough --
             // `min_alias_rejection_db` already holds it to account.
@@ -252,6 +286,12 @@ pub struct ChainDesign {
     pub passband: f64,
     /// Output sample rate, in Hz.
     pub output_rate_hz: f64,
+    /// Where the chain's group delay comes from, in input samples.
+    ///
+    /// Reported unconditionally, whether or not
+    /// [`ChainSpec::max_group_delay_s`] constrained it: the figure is
+    /// useful to anyone and it was invisible until this existed.
+    pub group_delay: super::delay::Breakdown,
     /// Achieved passband ripple of the whole chain, in dB.
     pub achieved_ripple_db: f64,
     /// Achieved alias rejection, in dB, as a magnitude — the worst of
@@ -341,6 +381,19 @@ pub enum Unmet {
     BandwidthTooWide {
         /// Fraction of output Nyquist the request implies.
         passband: f64,
+    },
+    /// No candidate meets the group-delay bound.
+    ///
+    /// Read [`ChainDesign::group_delay`] of a design made *without* the
+    /// bound before reaching for a knob: which term dominates is
+    /// configuration-dependent, so the useful move is to attack the
+    /// largest one rather than the one intuition suggests. See
+    /// [`super::delay`].
+    GroupDelay {
+        /// Shortest delay found, in seconds.
+        best_s: f64,
+        /// What was asked.
+        needed_s: f64,
     },
     /// The spec is not self-consistent.
     Invalid {
@@ -657,8 +710,31 @@ fn design_split(spec: &ChainSpec, split: &[usize], passband: f64) -> Result<Chai
     let scale = (1u64 << quant.shift) as f64;
     let real: Vec<f64> = quant.taps.iter().map(|t| *t as f64 / scale).collect();
 
+    // The delay, from the shapes actually chosen and the compensator
+    // actually designed. Computed here rather than in the caller so it is
+    // available to the feasibility check below.
+    let stage_tuples: Vec<(usize, usize, usize)> = cics
+        .iter()
+        .map(|c| (c.stages, c.decimate, c.delay))
+        .collect();
+    let group_delay = super::delay::decimation_chain_breakdown(
+        &stage_tuples,
+        quant.taps.len(),
+        spec.pipelined_combs,
+    );
+    if spec.max_group_delay_s > 0.0 {
+        let s = super::delay::seconds(group_delay.total(), spec.fs_hz);
+        if s > spec.max_group_delay_s {
+            return Err(Unmet::GroupDelay {
+                best_s: s,
+                needed_s: spec.max_group_delay_s,
+            });
+        }
+    }
+
     Ok(ChainDesign {
         spec: *spec,
+        group_delay,
         achieved_ripple_db: combined_ripple_db(&shapes, spec.decimate, passband, &real),
         achieved_alias_db: worst_alias,
         achieved_snr_db: -10.0 * snr_powers.log10(),
@@ -756,6 +832,25 @@ pub fn design(spec: ChainSpec) -> Result<ChainDesign, Unmet> {
         }
     }
     if feasible.is_empty() {
+        // A group-delay failure is reported with the *shortest* delay any
+        // candidate managed, not the first one tried -- otherwise the
+        // number tells the caller nothing about how far short they are.
+        let best_delay = splits
+            .iter()
+            .filter_map(|split| {
+                let mut probe = spec;
+                probe.max_group_delay_s = 0.0;
+                design_split(&probe, split, passband)
+                    .ok()
+                    .map(|d| super::delay::seconds(d.group_delay.total(), spec.fs_hz))
+            })
+            .fold(f64::INFINITY, f64::min);
+        if spec.max_group_delay_s > 0.0 && best_delay.is_finite() {
+            return Err(Unmet::GroupDelay {
+                best_s: best_delay,
+                needed_s: spec.max_group_delay_s,
+            });
+        }
         return Err(first_error.unwrap_or(Unmet::Invalid {
             reason: "no candidate split was designable",
         }));
@@ -853,6 +948,37 @@ impl std::fmt::Display for ChainDesign {
                 self.achieved_stopband_db, self.spec.stopband_edge, self.spec.min_stopband_db
             )?;
         }
+        // The parts, not just the total: which one is largest depends on
+        // the configuration, so a single number is not actionable. See
+        // `super::delay`.
+        let gd = &self.group_delay;
+        writeln!(
+            f,
+            "group delay ........... {:.0} input samples = {:.1} us{}",
+            gd.total(),
+            super::delay::seconds(gd.total(), self.spec.fs_hz) * 1e6,
+            if self.spec.max_group_delay_s > 0.0 {
+                format!(" (asked <= {:.1})", self.spec.max_group_delay_s * 1e6)
+            } else {
+                String::new()
+            }
+        )?;
+        writeln!(
+            f,
+            "  cascade {:.0}, int pipe {:.0}, comb pipe {:.0}, out reg {:.0}, comp {:.0}",
+            gd.cic_body,
+            gd.integrator_pipeline,
+            gd.comb_pipeline,
+            gd.output_registers,
+            gd.compensator
+        )?;
+        writeln!(
+            f,
+            "  largest is the {} at {:.0}; loop bandwidth ~ {:.1} kHz",
+            gd.dominant().0,
+            gd.dominant().1,
+            super::delay::loop_bandwidth_hz(gd.total(), self.spec.fs_hz) / 1e3
+        )?;
         match &self.alternative {
             None => write!(f, "alternative ........... none"),
             Some(a) => write!(
@@ -868,6 +994,147 @@ impl std::fmt::Display for ChainDesign {
 
 #[cfg(test)]
 mod tests {
+
+    /// **The design reports its group delay, and the parts of it.**
+    ///
+    /// Invisible until this existed, which is how a lock-in control loop
+    /// came to be dominated by two contributions nobody had counted.
+    #[test]
+    fn the_design_reports_its_group_delay() {
+        let d = design(ChainSpec::default()).expect("designable");
+        let b = d.group_delay;
+        assert!(b.total() > 0.0);
+        assert_eq!(
+            b.total(),
+            b.cic_body
+                + b.integrator_pipeline
+                + b.comb_pipeline
+                + b.output_registers
+                + b.compensator
+        );
+        // Every part is non-negative and at least one is substantial.
+        for part in [
+            b.cic_body,
+            b.integrator_pipeline,
+            b.comb_pipeline,
+            b.compensator,
+        ] {
+            assert!(part >= 0.0, "{b:?}");
+        }
+        let (name, size) = b.dominant();
+        assert!(size > 0.0, "something must dominate: {name}");
+    }
+
+    /// **A delay bound is honoured, and reported when it cannot be.**
+    #[test]
+    fn a_group_delay_bound_is_honoured() {
+        let base = ChainSpec::default();
+        let unbounded = design(base).expect("designable");
+        let actual = super::super::delay::seconds(unbounded.group_delay.total(), base.fs_hz);
+
+        // Generous: the same design comes back.
+        let mut ok = base;
+        ok.max_group_delay_s = actual * 2.0;
+        let d = design(ok).expect("designable under a generous bound");
+        assert!(super::super::delay::seconds(d.group_delay.total(), base.fs_hz) <= actual * 2.0);
+
+        // Impossible: reported, with a number that means something.
+        let mut tight = base;
+        tight.max_group_delay_s = actual / 1000.0;
+        match design(tight) {
+            Err(Unmet::GroupDelay { best_s, needed_s }) => {
+                assert_eq!(needed_s, actual / 1000.0);
+                assert!(
+                    best_s > needed_s,
+                    "the best found must exceed what was asked: {best_s} vs {needed_s}"
+                );
+                assert!(best_s.is_finite());
+            }
+            other => panic!("expected GroupDelay, got {other:?}"),
+        }
+    }
+
+    /// **A bound that binds selects a different design**, rather than
+    /// only rejecting the cheapest one.
+    ///
+    /// The failure mode: check the bound *after* the search has committed
+    /// to its cheapest candidate, and a spec one percent tighter than
+    /// that candidate reports infeasible while a shorter split sits
+    /// unexamined.
+    #[test]
+    fn a_binding_bound_selects_a_different_design() {
+        // A modest rate: the split search is exponential in the rate's
+        // factorisations and the behaviour under test is not.
+        let base = ChainSpec {
+            decimate: 200,
+            alias_free_bw_hz: 50e3,
+            max_chain_stages: 2,
+            ..ChainSpec::default()
+        };
+        let free = design(base).expect("designable");
+        let free_s = super::super::delay::seconds(free.group_delay.total(), base.fs_hz);
+
+        let bound = free_s * 0.9;
+        let tight = ChainSpec {
+            max_group_delay_s: bound,
+            ..base
+        };
+        match design(tight) {
+            Ok(d) => {
+                let s = super::super::delay::seconds(d.group_delay.total(), base.fs_hz);
+                assert!(s <= bound, "returned {s} against a bound of {bound}");
+                assert!(
+                    d.split() != free.split()
+                        || d.compensator.taps.len() != free.compensator.taps.len(),
+                    "a bound that binds must change something"
+                );
+            }
+            // Also correct, and the reason this arm is not a panic: at
+            // some configurations the cheapest design really is the
+            // shortest one, and then there is nothing to select.
+            Err(Unmet::GroupDelay { best_s, .. }) => {
+                assert!(best_s > bound, "{best_s} against {bound}");
+            }
+            Err(other) => panic!("unexpected {other:?}"),
+        }
+    }
+
+    /// **An unpipelined implementation is shorter, by the term that
+    /// names it.**
+    ///
+    /// `pipelined_combs = false` is not a knob on the shipped widget --
+    /// see the field docs -- it describes a software or vendor CIC. This
+    /// is the comparison a fabric-versus-ARM decision rests on, so the
+    /// difference has to be exactly `comb_pipeline` and nothing else.
+    #[test]
+    fn an_unpipelined_implementation_is_shorter_by_that_term() {
+        let mut piped = ChainSpec::default();
+        piped.pipelined_combs = true;
+        let mut flat = ChainSpec::default();
+        flat.pipelined_combs = false;
+
+        let a = design(piped).expect("designable");
+        let b = design(flat).expect("designable");
+        assert!(
+            b.group_delay.total() < a.group_delay.total(),
+            "unpipelined {} should beat pipelined {}",
+            b.group_delay.total(),
+            a.group_delay.total()
+        );
+        assert_eq!(b.group_delay.comb_pipeline, 0.0);
+        // And it is the only part that moved -- same shapes, same
+        // compensator, so the whole difference is that one term.
+        assert_eq!(a.group_delay.cic_body, b.group_delay.cic_body);
+        assert_eq!(a.group_delay.compensator, b.group_delay.compensator);
+        assert_eq!(
+            a.group_delay.integrator_pipeline,
+            b.group_delay.integrator_pipeline
+        );
+        assert_eq!(
+            a.group_delay.total() - b.group_delay.total(),
+            a.group_delay.comb_pipeline
+        );
+    }
     use super::*;
 
     /// A modest spec that designs quickly, for tests that vary one knob.

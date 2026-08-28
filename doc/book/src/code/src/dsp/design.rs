@@ -29,6 +29,14 @@ pub fn narrowband() -> ChainSpec {
         stopband_edge: 1.0,
         min_stopband_db: 0.0,
         method: Method::LeastSquares,
+        // Delay, which is the requirement a control loop is bound by and
+        // no other figure here captures. Zero means unconstrained; a
+        // receiver that is only listening does not care.
+        max_group_delay_s: 0.0,
+        // What the built widget does. `CicDecimate` pipelines its comb
+        // cascade so the critical path is one adder; set `false` to
+        // price a software implementation instead.
+        pipelined_combs: true,
     }
 }
 // ANCHOR_END: spec
@@ -111,6 +119,24 @@ mod tests {
         let text = derive();
         assert!(text.contains("decimate"), "{text}");
         assert!(!text.starts_with("unmet"), "{text}");
+    }
+
+    /// **The delay lines the chapter quotes.**
+    ///
+    /// The chapter shows this report's output as a `text` block, which
+    /// is hand-copied prose and drifts silently. Pinning the lines that
+    /// were added most recently at least keeps the newest claim honest.
+    #[test]
+    fn the_report_states_the_delay_the_chapter_quotes() {
+        let text = derive();
+        assert!(
+            text.contains("group delay ........... 6862 input samples = 54.9 us"),
+            "{text}"
+        );
+        assert!(
+            text.contains("cascade 2427, int pipe 33, comb pipe 1960, out reg 2, comp 2440"),
+            "{text}"
+        );
     }
 
     #[test]

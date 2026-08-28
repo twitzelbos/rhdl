@@ -3,7 +3,7 @@
 << /Type /Catalog /Pages 2 0 R >>
 endobj
 2 0 obj
-<< /Type /Pages /Kids [5 0 R 7 0 R] /Count 2 >>
+<< /Type /Pages /Kids [5 0 R 7 0 R 9 0 R] /Count 3 >>
 endobj
 3 0 obj
 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
@@ -2700,7 +2700,7 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595.00 842.00] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 8 0 R >>
 endobj
 8 0 obj
-<< /Length 54986 >>
+<< /Length 51809 >>
 stream
 0.000 0.000 0.000 rg
 BT /F2 16.00 Tf 198.820 800.000 Td (Compensation and Result) Tj ET
@@ -5459,52 +5459,68 @@ S
 [] 0 d
 0.000 0.000 0.000 rg
 BT /F1 7.00 Tf 470.202 447.000 Td (first image band) Tj ET
+endstream
+endobj
+9 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.00 842.00] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 10 0 R >>
+endobj
+10 0 obj
+<< /Length 3667 >>
+stream
 0.000 0.000 0.000 rg
-BT /F2 10.00 Tf 60.000 250.000 Td (Figures) Tj ET
-BT /F1 8.00 Tf 60.000 235.000 Td (images ............... 37.9 dB down  \(asked >= 37.9\)) Tj ET
-BT /F1 8.00 Tf 60.000 224.000 Td (   worst image at .... 0.8000 MHz) Tj ET
-BT /F1 8.00 Tf 60.000 213.000 Td (passband ripple ...... 0.0011 dB  \(asked <= 0.001\)) Tj ET
-BT /F1 8.00 Tf 60.000 202.000 Td (uncompensated droop .. -1.738 dB at the band edge) Tj ET
-BT /F1 8.00 Tf 60.000 191.000 Td (converter floor ...... 86.0 dB at 14 bits \(the chain adds none\)) Tj ET
-BT /F1 8.00 Tf 60.000 180.000 Td (register bits ........ 270 uniform, 181 as built, 180 at the exact bound) Tj ET
-BT /F1 8.00 Tf 60.000 169.000 Td (compensator DC gain .. 1.0000, shift 14) Tj ET
-BT /F1 8.00 Tf 60.000 158.000 Td (compensator headroom . 18 bits for any input, 17 for in-band only) Tj ET
-BT /F1 8.00 Tf 60.000 147.000 Td (   norms ............. l1 2.5906, passband peak 1.2214) Tj ET
-BT /F1 8.00 Tf 60.000 136.000 Td (rates reachable ...... 124 of 124 in 2..=125  \(single stage: all of them\)) Tj ET
-BT /F1 8.00 Tf 60.000 125.000 Td (worst image at rate .. 125) Tj ET
-BT /F1 8.00 Tf 60.000 114.000 Td (adder depth .......... 3 deep in the combs, 1 in the integrators) Tj ET
-BT /F1 8.00 Tf 60.000 97.000 Td (taps ................. [0, 4, -27, 130, -506, 1737, -5982, 25672, -5982, 1737, -506, 130, -27, 4, 0]) Tj ET
-BT /F2 9.00 Tf 60.000 78.000 Td (Build to the any-input headroom unless the envelope is band-limited.) Tj ET
-BT /F1 7.50 Tf 60.000 66.000 Td (The in-band figure is the peak gain an in-band sinusoid sees. The any-input figure is the) Tj ET
-BT /F1 7.50 Tf 60.000 56.500 Td (sum of the taps' magnitudes, which is the bound for an arbitrary bounded input -- and a) Tj ET
-BT /F1 7.50 Tf 60.000 47.000 Td (transmit envelope is not band-limited: switch-on, a burst boundary and a modulation change) Tj ET
-BT /F1 7.50 Tf 60.000 37.500 Td (are all steps, and a step is exactly the input that reaches it. Choosing the narrower) Tj ET
-BT /F1 7.50 Tf 60.000 28.000 Td (figure for a burst transmitter is how a compensator saturates on the first sample.) Tj ET
-BT /F2 9.00 Tf 60.000 8.500 Td (More taps will not improve image rejection.) Tj ET
-BT /F1 7.50 Tf 60.000 -3.500 Td (The compensator runs before the rate change, at the envelope rate, so its response is) Tj ET
-BT /F1 7.50 Tf 60.000 -13.000 Td (periodic and the image at k+u sees exactly the gain the signal at u sees -- the plot above) Tj ET
-BT /F1 7.50 Tf 60.000 -22.500 Td (shows it. The image-to-signal ratio is the cascade's alone. This is the one place where) Tj ET
-BT /F1 7.50 Tf 60.000 -32.000 Td (transposing receive-side intuition is wrong: there, the compensator sits after the fold and) Tj ET
-BT /F1 7.50 Tf 60.000 -41.500 Td (its stopband is part of the alias budget.) Tj ET
-BT /F1 7.50 Tf 60.000 -51.000 Td () Tj ET
-BT /F1 7.50 Tf 60.000 -60.500 Td (The knobs are the CIC depth N, the interpolation factor R, and the signal bandwidth. A) Tj ET
-BT /F1 7.50 Tf 60.000 -70.000 Td (compensator at the converter rate would work, because it is no longer periodic in u, and) Tj ET
-BT /F1 7.50 Tf 60.000 -79.500 Td (costs a FIR running at the full clock.) Tj ET
+BT /F2 16.00 Tf 215.708 800.000 Td (Figures and Cautions) Tj ET
+0.000 0.000 0.000 rg
+BT /F2 10.00 Tf 60.000 770.000 Td (Figures) Tj ET
+BT /F1 8.00 Tf 60.000 755.000 Td (images ............... 37.9 dB down  \(asked >= 37.9\)) Tj ET
+BT /F1 8.00 Tf 60.000 744.000 Td (   worst image at .... 0.8000 MHz) Tj ET
+BT /F1 8.00 Tf 60.000 733.000 Td (passband ripple ...... 0.0011 dB  \(asked <= 0.001\)) Tj ET
+BT /F1 8.00 Tf 60.000 722.000 Td (uncompensated droop .. -1.738 dB at the band edge) Tj ET
+BT /F1 8.00 Tf 60.000 711.000 Td (converter floor ...... 86.0 dB at 14 bits \(the chain adds none\)) Tj ET
+BT /F1 8.00 Tf 60.000 700.000 Td (register bits ........ 270 uniform, 181 as built, 180 at the exact bound) Tj ET
+BT /F1 8.00 Tf 60.000 689.000 Td (compensator DC gain .. 1.0000, shift 14) Tj ET
+BT /F1 8.00 Tf 60.000 678.000 Td (compensator headroom . 18 bits for any input, 17 for in-band only) Tj ET
+BT /F1 8.00 Tf 60.000 667.000 Td (   norms ............. l1 2.5906, passband peak 1.2214) Tj ET
+BT /F1 8.00 Tf 60.000 656.000 Td (rates reachable ...... 124 of 124 in 2..=125  \(single stage: all of them\)) Tj ET
+BT /F1 8.00 Tf 60.000 645.000 Td (worst image at rate .. 125) Tj ET
+BT /F1 8.00 Tf 60.000 634.000 Td (adder depth .......... 1 in the combs, 1 in the integrators \(both pipelined\)) Tj ET
+BT /F1 8.00 Tf 60.000 623.000 Td () Tj ET
+BT /F1 8.00 Tf 60.000 612.000 Td (group delay ....... 1439 converter samples = 11.5 us) Tj ET
+BT /F1 8.00 Tf 60.000 601.000 Td (  cascade 186, integrator pipeline 2, comb pipeline 375, output regs 1, compensator 875) Tj ET
+BT /F1 8.00 Tf 60.000 590.000 Td (  largest term is the compensator at 875 \(61%\); loop bandwidth ~ 8.7 kHz) Tj ET
+BT /F1 8.00 Tf 60.000 573.000 Td (taps ................. [0, 4, -27, 130, -506, 1737, -5982, 25672, -5982, 1737, -506, 130, -27, 4, 0]) Tj ET
+BT /F2 9.00 Tf 60.000 554.000 Td (Build to the any-input headroom unless the envelope is band-limited.) Tj ET
+BT /F1 7.50 Tf 60.000 542.000 Td (The in-band figure is the peak gain an in-band sinusoid sees. The any-input figure is the) Tj ET
+BT /F1 7.50 Tf 60.000 532.500 Td (sum of the taps' magnitudes, which is the bound for an arbitrary bounded input -- and a) Tj ET
+BT /F1 7.50 Tf 60.000 523.000 Td (transmit envelope is not band-limited: switch-on, a burst boundary and a modulation change) Tj ET
+BT /F1 7.50 Tf 60.000 513.500 Td (are all steps, and a step is exactly the input that reaches it. Choosing the narrower) Tj ET
+BT /F1 7.50 Tf 60.000 504.000 Td (figure for a burst transmitter is how a compensator saturates on the first sample.) Tj ET
+BT /F2 9.00 Tf 60.000 484.500 Td (More taps will not improve image rejection.) Tj ET
+BT /F1 7.50 Tf 60.000 472.500 Td (The compensator runs before the rate change, at the envelope rate, so its response is) Tj ET
+BT /F1 7.50 Tf 60.000 463.000 Td (periodic and the image at k+u sees exactly the gain the signal at u sees -- the plot above) Tj ET
+BT /F1 7.50 Tf 60.000 453.500 Td (shows it. The image-to-signal ratio is the cascade's alone. This is the one place where) Tj ET
+BT /F1 7.50 Tf 60.000 444.000 Td (transposing receive-side intuition is wrong: there, the compensator sits after the fold and) Tj ET
+BT /F1 7.50 Tf 60.000 434.500 Td (its stopband is part of the alias budget.) Tj ET
+BT /F1 7.50 Tf 60.000 425.000 Td () Tj ET
+BT /F1 7.50 Tf 60.000 415.500 Td (The knobs are the CIC depth N, the interpolation factor R, and the signal bandwidth. A) Tj ET
+BT /F1 7.50 Tf 60.000 406.000 Td (compensator at the converter rate would work, because it is no longer periodic in u, and) Tj ET
+BT /F1 7.50 Tf 60.000 396.500 Td (costs a FIR running at the full clock.) Tj ET
 endstream
 endobj
 xref
-0 9
+0 11
 0000000000 65535 f 
 0000000009 00000 n 
 0000000058 00000 n 
-0000000121 00000 n 
-0000000218 00000 n 
-0000000320 00000 n 
-0000000462 00000 n 
-0000051348 00000 n 
-0000051490 00000 n 
+0000000127 00000 n 
+0000000224 00000 n 
+0000000326 00000 n 
+0000000468 00000 n 
+0000051354 00000 n 
+0000051496 00000 n 
+0000103357 00000 n 
+0000103500 00000 n 
 trailer
-<< /Size 9 /Root 1 0 R >>
+<< /Size 11 /Root 1 0 R >>
 startxref
-106528
+107219
 %%EOF

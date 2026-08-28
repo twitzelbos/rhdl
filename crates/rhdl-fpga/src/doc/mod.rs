@@ -1,3 +1,4 @@
+pub mod delay_budget;
 pub mod interp_report;
 pub mod pdf;
 pub mod plot;

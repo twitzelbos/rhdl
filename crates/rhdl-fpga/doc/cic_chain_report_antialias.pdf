@@ -2172,7 +2172,7 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595.00 842.00] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 8 0 R >>
 endobj
 8 0 obj
-<< /Length 50099 >>
+<< /Length 50478 >>
 stream
 0.000 0.000 0.000 rg
 BT /F2 16.00 Tf 198.820 800.000 Td (Compensation and Result) Tj ET
@@ -4766,13 +4766,17 @@ BT /F1 8.00 Tf 60.000 209.000 Td (alias rejection ... 67.3 dB   \(asked >= 60.0\
 BT /F1 8.00 Tf 60.000 198.000 Td (output SNR ........ 84.6 dB   \(asked >= 80.0\)) Tj ET
 BT /F1 8.00 Tf 60.000 187.000 Td (stopband .......... 69.3 dB above 0.75 Nyquist \(asked >= 60.0\)) Tj ET
 BT /F1 8.00 Tf 60.000 176.000 Td () Tj ET
-BT /F1 8.00 Tf 60.000 165.000 Td (register bits ..... 269 \(rate-weighted cost 89.6\)) Tj ET
-BT /F1 8.00 Tf 60.000 154.000 Td (taps .............. [193, -717, 976, 180, -2545, 3236, 367, -5261, 3667, 6054, -11288, -1089, 16550, -1089, -11288, 6054, 3667, -5261,) Tj ET
-BT /F1 8.00 Tf 60.000 143.000 Td (                     367, 3236, -2545, 180, 976, -717, 193]) Tj ET
-BT /F1 8.00 Tf 60.000 132.000 Td (DC gain ........... 1.000000 \(exact by construction\)) Tj ET
-BT /F1 8.00 Tf 60.000 121.000 Td (alternative ....... [4, 61, 2], cost 96.8, 384 bits - feasible, but costlier by the rate-weighted model) Tj ET
-BT /F1 7.50 Tf 60.000 102.000 Td (Rate-weighted cost is a proxy, not an area figure: flops cost the same however slowly) Tj ET
-BT /F1 7.50 Tf 60.000 93.000 Td (they are clocked. It captures that a wide adder at the converter rate is the hard part.) Tj ET
+BT /F1 8.00 Tf 60.000 165.000 Td (group delay ....... 10278 input samples = 82.2 us) Tj ET
+BT /F1 8.00 Tf 60.000 154.000 Td (  cascade 2427, integrator pipeline 33, comb pipeline 1960, output regs 2, compensator 5856) Tj ET
+BT /F1 8.00 Tf 60.000 143.000 Td (  largest term is the compensator at 5856 \(57%\); loop bandwidth ~ 1.2 kHz) Tj ET
+BT /F1 8.00 Tf 60.000 132.000 Td () Tj ET
+BT /F1 8.00 Tf 60.000 121.000 Td (register bits ..... 269 \(rate-weighted cost 89.6\)) Tj ET
+BT /F1 8.00 Tf 60.000 110.000 Td (taps .............. [193, -717, 976, 180, -2545, 3236, 367, -5261, 3667, 6054, -11288, -1089, 16550, -1089, -11288, 6054, 3667, -5261,) Tj ET
+BT /F1 8.00 Tf 60.000 99.000 Td (                     367, 3236, -2545, 180, 976, -717, 193]) Tj ET
+BT /F1 8.00 Tf 60.000 88.000 Td (DC gain ........... 1.000000 \(exact by construction\)) Tj ET
+BT /F1 8.00 Tf 60.000 77.000 Td (alternative ....... [4, 61, 2], cost 96.8, 384 bits - feasible, but costlier by the rate-weighted model) Tj ET
+BT /F1 7.50 Tf 60.000 58.000 Td (Rate-weighted cost is a proxy, not an area figure: flops cost the same however slowly) Tj ET
+BT /F1 7.50 Tf 60.000 49.000 Td (they are clocked. It captures that a wide adder at the converter rate is the hard part.) Tj ET
 endstream
 endobj
 xref
@@ -4789,5 +4793,5 @@ xref
 trailer
 << /Size 9 /Root 1 0 R >>
 startxref
-92357
+92736
 %%EOF

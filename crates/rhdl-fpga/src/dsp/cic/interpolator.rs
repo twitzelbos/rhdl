@@ -109,6 +109,11 @@
 //! [`super::interp_stream`] says where the framing mark sits relative to
 //! it.
 //!
+//! [`super::delay`] has the arithmetic for a whole chain, including the
+//! rate referral, and a breakdown that names which term dominates —
+//! which for a transmit chain is often this one rather than the
+//! compensator.
+//!
 //! ## The pipelining and the run-time rate
 //!
 //! They interact in exactly one place, and it is the reason the comb

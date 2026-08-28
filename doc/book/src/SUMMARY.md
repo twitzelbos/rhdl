@@ -90,6 +90,7 @@
 	- [Compensation](dsp/compensation.md)
 	- [The Down-Converter](dsp/ddc.md)
 	- [Specifying a chain](dsp/design.md)
+	- [Delay and control loops](dsp/delay.md)
 - [Finite State Machines](fsm/summary.md)
 	- [Derive Macros](fsm/derive.md)
 	- [Transition Extraction](fsm/extraction.md)

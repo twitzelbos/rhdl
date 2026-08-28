@@ -16,7 +16,7 @@
 
 use super::pdf::{Align, Font, Page, Pdf};
 use super::plot::{Axes, Frame, PALETTE, Series, draw};
-use crate::dsp::cic::{accumulator_width, chain, compensator, prune, response};
+use crate::dsp::cic::{accumulator_width, chain, compensator, delay, prune, response};
 
 /// What to report on.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -124,6 +124,7 @@ pub fn as_design(cfg: CicReport) -> Option<chain::ChainDesign> {
     // report claiming the parameters met a spec nobody stated would be
     // inventing the spec.
     let ripple = quant.ripple_db;
+    let taps_len = quant.taps.len();
     let alias = -response::worst_alias_db(cfg.passband, n, r, m);
     let snr = chain::snr_db(cfg.w_in, cfg.w_in, n, r, m, cfg.b_out);
 
@@ -144,6 +145,12 @@ pub fn as_design(cfg: CicReport) -> Option<chain::ChainDesign> {
             stopband_edge: 1.0,
             min_stopband_db: 0.0,
             method: compensator::Method::LeastSquares,
+            // Nothing was asked, so nothing is claimed; the delay is
+            // reported below as what this shape happens to cost.
+            max_group_delay_s: 0.0,
+            // Matches the built `CicDecimate`, whose comb cascade is
+            // pipelined.
+            pipelined_combs: true,
         },
         cics: vec![stage],
         multipliers: quant.taps.len() / 2 + 1,
@@ -156,8 +163,102 @@ pub fn as_design(cfg: CicReport) -> Option<chain::ChainDesign> {
         achieved_stopband_db: f64::INFINITY,
         register_bits,
         cost: register_bits as f64,
+        group_delay: delay::decimation_chain_breakdown(&[(n, r, m)], taps_len, true),
         alternative: None,
     })
+}
+
+/// Every text position in a rendered PDF, as `(x, y)`.
+///
+/// Test-only, and shared with [`super::interp_report`]'s tests. Exists
+/// because a PDF page has no bottom as far as the writer is concerned:
+/// text placed at `y = -90` is emitted happily and simply never appears.
+/// The TX report had been rendering its two most important paragraphs
+/// off the paper for as long as they existed, and nothing noticed,
+/// because "does it render" was the only thing asked.
+#[cfg(test)]
+pub(crate) fn text_positions(pdf: &Pdf) -> Vec<(f64, f64)> {
+    let bytes = pdf.to_bytes();
+    let text = String::from_utf8_lossy(&bytes);
+    let mut out = Vec::new();
+    for chunk in text.split(" Td") {
+        // The two tokens immediately before `Td` are the position.
+        let toks: Vec<&str> = chunk.split_whitespace().collect();
+        if toks.len() < 2 {
+            continue;
+        }
+        if let (Ok(x), Ok(y)) = (
+            toks[toks.len() - 2].parse::<f64>(),
+            toks[toks.len() - 1].parse::<f64>(),
+        ) {
+            out.push((x, y));
+        }
+    }
+    out
+}
+
+/// Assert every glyph a report places is inside an A4 page.
+///
+/// A4 is 595 x 842 points. The margin is deliberately generous at the
+/// bottom (40) because a descender below a baseline at 45 is still
+/// readable, and deliberately strict about *negative* coordinates,
+/// which are unambiguously off the paper.
+#[cfg(test)]
+pub(crate) fn assert_all_text_on_page(pdf: &Pdf, what: &str) {
+    let positions = text_positions(pdf);
+    // A checker that found nothing would pass every report, which is the
+    // failure mode this whole helper exists to prevent.
+    assert!(
+        positions.len() > 20,
+        "{what}: only {} text positions parsed out of the PDF -- the parser is broken, \
+         not the layout",
+        positions.len()
+    );
+    let mut worst = f64::INFINITY;
+    for (x, y) in positions {
+        worst = worst.min(y);
+        assert!(
+            (0.0..=842.0).contains(&y),
+            "{what}: text baseline at y = {y} is off an A4 page (0..842)"
+        );
+        assert!(
+            (0.0..=595.0).contains(&x),
+            "{what}: text at x = {x} is off an A4 page (0..595)"
+        );
+    }
+    assert!(
+        worst >= 40.0,
+        "{what}: lowest baseline is y = {worst}, inside the bottom margin"
+    );
+}
+
+/// Render a group-delay [`delay::Breakdown`] as report lines.
+///
+/// Shared by both report paths, and it prints the *parts* because the
+/// total is not actionable on its own: which term is largest depends on
+/// the configuration, so the reader has to be told rather than assume.
+/// See `rhdl_dsp_design::cic::delay`.
+pub(crate) fn delay_lines(b: &delay::Breakdown, fs_hz: f64, unit: &str) -> Vec<String> {
+    let total = b.total();
+    let (name, size) = b.dominant();
+    vec![
+        format!(
+            "group delay ....... {:.0} {unit} samples = {:.1} us",
+            total,
+            delay::seconds(total, fs_hz) * 1e6
+        ),
+        format!(
+            "  cascade {:.0}, integrator pipeline {:.0}, comb pipeline {:.0}, \
+             output regs {:.0}, compensator {:.0}",
+            b.cic_body, b.integrator_pipeline, b.comb_pipeline, b.output_registers, b.compensator
+        ),
+        format!(
+            "  largest term is the {name} at {:.0} ({:.0}%); loop bandwidth ~ {:.1} kHz",
+            size,
+            100.0 * size / total.max(1.0),
+            delay::loop_bandwidth_hz(total, fs_hz) / 1e3
+        ),
+    ]
 }
 
 /// Render a derived chain — the output of [`crate::dsp::cic::chain::design`].
@@ -620,6 +721,8 @@ fn chain_page_two(d: &chain::ChainDesign) -> Page {
         }
     }
     lines.push(String::new());
+    lines.extend(delay_lines(&d.group_delay, d.spec.fs_hz, "input"));
+    lines.push(String::new());
     lines.push(format!(
         "register bits ..... {} (rate-weighted cost {:.1})",
         d.register_bits, d.cost
@@ -674,6 +777,31 @@ fn chain_page_two(d: &chain::ChainDesign) -> Page {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **Every glyph the RX reports place is on the paper.**
+    ///
+    /// See [`assert_all_text_on_page`] for why this is a test and not an
+    /// inspection.
+    #[test]
+    fn the_rx_reports_fit_on_their_pages() {
+        let d = as_design(CicReport::default()).expect("designable");
+        assert_all_text_on_page(&render(&d, "Test"), "cic_report");
+        assert_all_text_on_page(&chain_report(&d), "cic_chain_report");
+    }
+
+    /// **The group delay is reported, with its parts.**
+    ///
+    /// The total alone is not actionable; see
+    /// `rhdl_dsp_design::cic::delay`.
+    #[test]
+    fn the_report_states_the_group_delay_and_its_parts() {
+        let d = as_design(CicReport::default()).expect("designable");
+        let text = rendered(&d);
+        assert!(text.contains("group delay"), "no delay line");
+        assert!(text.contains("comb pipeline"), "no breakdown");
+        assert!(text.contains("largest term"), "no dominant term named");
+        assert!(text.contains("loop bandwidth"), "no loop-bandwidth aid");
+    }
 
     /// A design whose stopband figures can be set without re-running the
     /// search, because what is under test is the *rendering* decision.
