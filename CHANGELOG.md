@@ -145,6 +145,40 @@ was previously checked.
   `InterpDesign::reachable_rates` reports the set otherwise. The example
   and the PDF both print it.
 
+**Can you set one stage to `R = 1` to reach the missing rates?** Asked,
+and the answer has three parts.
+
+- **Yes, and it was already counted.** `reachable_rates` iterates
+  `1..=factor` per stage, so the bypass settings are in the 73-of-124
+  figure rather than missing from it.
+- **It cannot reach a prime above the largest stage.** Bypassing one
+  stage leaves the total equal to the other's setting, so for a *prime*
+  total the cap is `max(per-stage factor)`, not the product. `R = 29` is
+  out of reach of a `5 × 25` chain however it is set.
+- **And a bypassed stage stops filtering, which is the real cost.**
+  `R = 25` on a `5 × 25` chain is `(5, 5)` at **83.1 dB** of image
+  rejection or `(1, 25)` at **55.6 dB** — the same rate, 27 dB apart,
+  because bypassing the first stage discards its `sinc^5` and leaves only
+  the second's `sinc^2`. The `(1, 25)` setting misses the 60 dB spec that
+  the design nominally meets.
+
+There is a second, smaller trap underneath: **a stage at `R = 1` is only
+a *bypass* when `M = 1`.** At `M = 2` the comb and integrator sections do
+not cancel — `(1 - z^-2)^N / (1 - z^-1)^N` is `(1 + z^-1)^N`, magnitude
+`|cos(π f)|^N`, an `N`-th order lowpass with every zero at Nyquist — and
+its gain is `M^N` rather than one. At `N = 5, M = 2` that is 0.18 at a
+quarter of Nyquist and a gain of 32. `design`'s search is free to choose
+`M = 2` and at the default configuration it does, so this is live rather
+than hypothetical.
+
+So `verify_setting` evaluates any per-stage setting on its *actual*
+shapes, `settings_for` enumerates the settings giving a rate (four of
+them for `R = 20`, all different filters), and `rates_meeting_spec`
+reports which rates have at least one setting that still meets the spec —
+71 of 124 against 73 reachable. `reachable_rates` counts what the
+counters can produce; only this counts what the filter delivers, and
+conflating the two was the gap.
+
 **And the cost of arbitrary rate is the opposite of what I assumed.** I
 wrote a test asserting a single stage costs more registers than a split.
 It fails: measured at the default configuration the single stage picks

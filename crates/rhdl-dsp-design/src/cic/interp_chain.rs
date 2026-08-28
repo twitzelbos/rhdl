@@ -101,12 +101,23 @@
 //! **The reachable rate set: restricted by splitting, and this is
 //! arithmetic.** A stage's runtime factor tops out at its design-time
 //! factor, so a `5 × 25` chain reaches only `r1 · r2` with `r1 ≤ 5` and
-//! `r2 ≤ 25` — 51 of the 124 rates below 125 are unreachable, `R = 113`
-//! among them. Worse, a rate reachable two ways gives *two different
-//! filters*, because the stages' nulls sit at their own factors. So
-//! **if the rate genuinely varies, use a single stage**, which
-//! [`InterpSpec::arbitrary_rate`] enforces;
-//! [`InterpDesign::reachable_rates`] reports the set otherwise.
+//! `r2 ≤ 25` — 51 of the 124 rates below 125 are unreachable, every
+//! prime above 25 among them. Setting a stage to `R = 1` is part of that
+//! count and does not rescue them: for a *prime* total the cap is
+//! `max(per-stage factor)`, not the product.
+//!
+//! Worse, a rate reachable two ways gives *two different filters*,
+//! because the stages' nulls sit at their own factors — and the
+//! difference is large. `R = 25` on a `5 × 25` chain is `(5, 5)` at
+//! 83.1 dB of image rejection or `(1, 25)` at **55.6 dB**, because
+//! bypassing the first stage throws away its `sinc^5` and leaves only
+//! the second stage's `sinc^2`. [`InterpDesign::verify_setting`]
+//! evaluates any setting; [`InterpDesign::rates_meeting_spec`] reports
+//! which rates have at least one good one — 71 of 124 against 73
+//! reachable at the default design.
+//!
+//! So **if the rate genuinely varies, use a single stage**, which
+//! [`InterpSpec::arbitrary_rate`] enforces.
 //!
 //! ## What a single stage costs, measured
 //!
@@ -423,6 +434,139 @@ impl InterpDesign {
         set
     }
 
+    /// What a given per-stage rate setting actually achieves.
+    ///
+    /// # Why this is not the same as the design's headline figures
+    ///
+    /// The design's `achieved_image_db` and `achieved_ripple_db` describe
+    /// the configuration it was designed *for* — every stage at its
+    /// design-time factor. A chain with a run-time rate can be set to
+    /// others, and at those settings the *shapes change*, not just the
+    /// band: a stage's nulls sit at multiples of whatever factor it is
+    /// set to.
+    ///
+    /// # The `R = 1` trick, and where it stops being free
+    ///
+    /// Setting a stage to one is the obvious way to reach more rates, and
+    /// [`InterpDesign::reachable_rates`] already counts those settings.
+    /// It is genuinely free **only when that stage has `M = 1`**, where
+    /// `(1 - z^-1)^N` and `1/(1 - z^-1)^N` cancel exactly and the stage
+    /// is a delay.
+    ///
+    /// At `M = 2` they do not cancel. The stage becomes
+    /// `(1 + z^-1)^N`, whose magnitude is `|cos(π f)|^N` — an `N`-th
+    /// order lowpass with all its zeros at Nyquist — **and its gain is
+    /// `M^N`, not one**. At `N = 5, M = 2` that is 0.78 at a tenth of
+    /// Nyquist, 0.18 at a quarter, and a gain of 32. The compensator was
+    /// not designed against that curve, so the passband is neither flat
+    /// nor correctly scaled.
+    ///
+    /// This matters here because [`design`]'s search is free to choose
+    /// `M = 2`, and at the default configuration it does. So "just set a
+    /// stage to one" is sound advice for an `M = 1` stage and a trap for
+    /// an `M = 2` one — which is what this function is for.
+    /// `a_stage_at_rate_one_is_only_free_at_unit_delay` measures it.
+    pub fn verify_setting(&self, per_stage: &[usize]) -> Option<SettingReport> {
+        if per_stage.len() != self.cics.len() {
+            return None;
+        }
+        if per_stage
+            .iter()
+            .zip(&self.cics)
+            .any(|(r, c)| *r == 0 || *r > c.interpolate)
+        {
+            return None;
+        }
+        let total: usize = per_stage.iter().product();
+        if total == 0 {
+            return None;
+        }
+        let shapes: Vec<compensator::CicShape> = per_stage
+            .iter()
+            .zip(&self.cics)
+            .map(|(r, c)| compensator::CicShape {
+                decimate: *r,
+                stages: c.stages,
+                delay: c.delay,
+            })
+            .collect();
+
+        let passband = 2.0 * self.spec.image_free_bw_hz * total as f64 / self.spec.fs_hz;
+        if !(passband > 0.0 && passband < 1.0) {
+            return None;
+        }
+        let (image_db, _) = cascade_image_db(&shapes, passband, total);
+        let ripple_db = combined_ripple_db(&shapes, passband, &dequantised(&self.compensator));
+        let gain: f64 = per_stage
+            .iter()
+            .zip(&self.cics)
+            .map(|(r, c)| {
+                let (num, den) = interp::dc_gain_ratio(c.stages, *r, c.delay);
+                num as f64 / den as f64
+            })
+            .product();
+
+        Some(SettingReport {
+            per_stage: per_stage.to_vec(),
+            total,
+            input_rate_hz: self.spec.fs_hz / total as f64,
+            image_db,
+            ripple_db,
+            gain,
+            meets_spec: image_db >= self.spec.min_image_rejection_db
+                && ripple_db <= self.spec.max_ripple_db,
+        })
+    }
+
+    /// Every per-stage setting whose product is `rate`.
+    ///
+    /// More than one for a composite rate: `R = 20` on a `5 × 25` chain
+    /// is `(1, 20)`, `(2, 10)`, `(4, 5)` and `(5, 4)`, and they are four
+    /// *different filters*. [`InterpDesign::verify_setting`] says which
+    /// of them still meet the spec.
+    pub fn settings_for(&self, rate: usize) -> Vec<Vec<usize>> {
+        let mut out = Vec::new();
+        fn go(caps: &[usize], left: usize, acc: &mut Vec<usize>, out: &mut Vec<Vec<usize>>) {
+            if caps.is_empty() {
+                if left == 1 {
+                    out.push(acc.clone());
+                }
+                return;
+            }
+            for r in 1..=caps[0] {
+                if left.is_multiple_of(r) {
+                    acc.push(r);
+                    go(&caps[1..], left / r, acc, out);
+                    acc.pop();
+                }
+            }
+        }
+        let caps: Vec<usize> = self.cics.iter().map(|c| c.interpolate).collect();
+        go(&caps, rate, &mut Vec::new(), &mut out);
+        out
+    }
+
+    /// Rates that are reachable **and** have at least one setting meeting
+    /// the spec.
+    ///
+    /// The honest answer to "which rates can I actually use".
+    /// [`InterpDesign::reachable_rates`] counts what the counters can
+    /// produce; this counts what the *filter* still delivers, which is
+    /// smaller whenever a stage has `M > 1` — see
+    /// [`InterpDesign::verify_setting`].
+    pub fn rates_meeting_spec(&self) -> Vec<usize> {
+        self.reachable_rates()
+            .into_iter()
+            .filter(|r| *r >= self.spec.rate_min && *r <= self.spec.interpolate)
+            .filter(|r| {
+                self.settings_for(*r)
+                    .iter()
+                    .filter_map(|s| self.verify_setting(s))
+                    .any(|rep| rep.meets_spec)
+            })
+            .collect()
+    }
+
     /// Rates in `rate_min..=interpolate` this chain **cannot** produce.
     ///
     /// Empty for a single-stage design. For a split, the list a caller
@@ -460,6 +604,34 @@ impl InterpDesign {
     pub fn evaluation_shapes(&self) -> Vec<compensator::CicShape> {
         evaluation_order(&self.shapes())
     }
+}
+
+/// What a particular per-stage rate setting actually achieves.
+///
+/// Returned by [`InterpDesign::verify_setting`]. The point of it is that
+/// a design's headline figures describe the configuration it was
+/// designed *for*, and a chain with a run-time rate can be set to
+/// others.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SettingReport {
+    /// Per-stage rates, lowest-rate stage first.
+    pub per_stage: Vec<usize>,
+    /// Total interpolation, the product.
+    pub total: usize,
+    /// Envelope rate this setting implies, in Hz.
+    pub input_rate_hz: f64,
+    /// Worst image at this setting, in dB below the signal.
+    pub image_db: f64,
+    /// Composite passband ripple at this setting, in dB.
+    pub ripple_db: f64,
+    /// Signal gain at this setting, as a float.
+    ///
+    /// Not the design's gain: a stage set to a different factor has a
+    /// different `(R·M)^N / R`, and a stage with `M > 1` set to `R = 1`
+    /// has a gain of `M^N` rather than one.
+    pub gain: f64,
+    /// Does this setting still meet the spec it was designed against?
+    pub meets_spec: bool,
 }
 
 /// Why no chain satisfies the spec.
@@ -1423,6 +1595,159 @@ mod tests {
         }
         // Whatever the split, the total is always reachable.
         assert!(reachable.contains(&125));
+    }
+
+    /// **A stage set to `R = 1` is only a bypass at `M = 1`.**
+    ///
+    /// The answer to "can't I just run one stage at one to reach the
+    /// missing rates". You can, and `reachable_rates` already counts
+    /// those settings — but at `M = 2` the stage stops being a
+    /// pass-through: `(1 - z^-2)^N / (1 - z^-1)^N` is `(1 + z^-1)^N`,
+    /// whose magnitude is `|cos(π f)|^N`, and its gain is `M^N`.
+    #[test]
+    fn a_stage_at_rate_one_is_only_free_at_unit_delay() {
+        for n in [1usize, 2, 5] {
+            // M = 1: flat everywhere, gain one. A genuine bypass.
+            for f in [0.0f64, 0.1, 0.25, 0.5] {
+                let h = response::magnitude(f, n, 1, 1);
+                assert!((h - 1.0).abs() < 1e-12, "M=1 N={n} f={f}: {h}");
+            }
+            assert_eq!(interp::dc_gain_ratio(n, 1, 1), (1, 1));
+
+            // M = 2: an N-th order lowpass with every zero at Nyquist.
+            assert!(
+                (response::magnitude(0.0, n, 1, 2) - 1.0).abs() < 1e-12,
+                "still unity at DC"
+            );
+            assert!(
+                response::magnitude(0.5, n, 1, 2) < 1e-12,
+                "and zero at Nyquist"
+            );
+            let quarter = response::magnitude(0.25, n, 1, 2);
+            let expected = 0.5f64.sqrt().powi(n as i32);
+            assert!(
+                (quarter - expected).abs() < 1e-9,
+                "M=2 N={n} at a quarter: {quarter}, expected |cos(pi/4)|^N = {expected}"
+            );
+            // And the gain is M^N, not one.
+            let (num, den) = interp::dc_gain_ratio(n, 1, 2);
+            assert_eq!((num, den), (1u128 << n, 1), "M=2 N={n} gain");
+        }
+        // The headline number: at N = 5, M = 2 a "bypassed" stage is a
+        // 5th-order lowpass with a gain of 32.
+        assert!((response::magnitude(0.25, 5, 1, 2) - 0.1768).abs() < 1e-3);
+        assert_eq!(interp::dc_gain_ratio(5, 1, 2), (32, 1));
+    }
+
+    /// **And the trick cannot reach a prime above the largest stage.**
+    ///
+    /// The other half of the answer. `R = 1` on one stage leaves the
+    /// total equal to the other stage's setting, so for a prime total the
+    /// cap is `max(per-stage factors)`, not their product. `29` is prime
+    /// and larger than 25, so no setting of a `5 × 25` chain produces it.
+    #[test]
+    fn the_rate_one_trick_is_capped_by_the_largest_stage() {
+        let d = design(InterpSpec {
+            max_chain_stages: 2,
+            ..InterpSpec::default()
+        })
+        .expect("designable");
+        if d.cics.len() < 2 {
+            return;
+        }
+        let caps: Vec<usize> = d.cics.iter().map(|c| c.interpolate).collect();
+        let biggest = *caps.iter().max().unwrap();
+        let reachable = d.reachable_rates();
+        // Every prime above the largest stage is out of reach, however
+        // the stages are set.
+        for p in [29usize, 31, 37, 41, 43, 47, 53, 59, 61] {
+            if p > biggest && p <= d.spec.interpolate {
+                assert!(
+                    !reachable.contains(&p),
+                    "prime {p} exceeds the largest stage {biggest} and cannot be reached"
+                );
+                assert!(d.settings_for(p).is_empty(), "no setting gives {p}");
+            }
+        }
+        // But a composite below the product is, via the R = 1 setting.
+        assert!(reachable.contains(&biggest), "the largest stage alone");
+        assert!(
+            !d.settings_for(biggest).is_empty(),
+            "and there is a setting for it"
+        );
+    }
+
+    /// **One rate, several settings, several different filters.**
+    ///
+    /// `R = 20` on a `5 × 25` chain is `(1,20)`, `(2,10)`, `(4,5)` and
+    /// `(5,4)`. They are not interchangeable — each stage's nulls sit at
+    /// its own factor — so "the rate is 20" does not determine the
+    /// response.
+    #[test]
+    fn one_rate_can_have_several_settings_that_differ() {
+        let d = design(InterpSpec {
+            max_chain_stages: 2,
+            ..InterpSpec::default()
+        })
+        .expect("designable");
+        if d.cics.len() < 2 {
+            return;
+        }
+        let settings = d.settings_for(20);
+        assert!(settings.len() > 1, "several settings give 20: {settings:?}");
+        let reports: Vec<SettingReport> = settings
+            .iter()
+            .filter_map(|s| d.verify_setting(s))
+            .collect();
+        assert_eq!(reports.len(), settings.len());
+        for r in &reports {
+            assert_eq!(r.total, 20);
+        }
+        // They genuinely differ -- in image rejection, in gain, or both.
+        let images: Vec<f64> = reports.iter().map(|r| r.image_db).collect();
+        let gains: Vec<f64> = reports.iter().map(|r| r.gain).collect();
+        let differ = images.windows(2).any(|w| (w[0] - w[1]).abs() > 0.01)
+            || gains.windows(2).any(|w| (w[0] - w[1]).abs() > 0.01);
+        assert!(
+            differ,
+            "settings for one rate must not all be the same filter: \
+             images {images:?} gains {gains:?}"
+        );
+    }
+
+    /// **`rates_meeting_spec` is smaller than `reachable_rates`.**
+    ///
+    /// Which is the honest answer to "which rates can I use": the
+    /// counters reach more than the filter delivers.
+    #[test]
+    fn the_usable_rates_are_fewer_than_the_reachable_ones() {
+        let d = design(InterpSpec {
+            max_chain_stages: 2,
+            ..InterpSpec::default()
+        })
+        .expect("designable");
+        let reachable: Vec<usize> = d
+            .reachable_rates()
+            .into_iter()
+            .filter(|r| *r >= d.spec.rate_min && *r <= d.spec.interpolate)
+            .collect();
+        let usable = d.rates_meeting_spec();
+        assert!(
+            usable.len() <= reachable.len(),
+            "usable {} cannot exceed reachable {}",
+            usable.len(),
+            reachable.len()
+        );
+        // The design's own rate is always usable -- it is what was
+        // designed.
+        assert!(
+            usable.contains(&d.spec.interpolate),
+            "the design rate must be usable, usable = {usable:?}"
+        );
+        // And a setting the design never considered is verifiable.
+        let all_one: Vec<usize> = vec![1; d.cics.len()];
+        let rep = d.verify_setting(&all_one).expect("R = 1 everywhere");
+        assert_eq!(rep.total, 1);
     }
 
     /// **And `arbitrary_rate` forces a single stage, which reaches
