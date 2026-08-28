@@ -2688,7 +2688,7 @@ BT /F1 7.00 Tf 460.850 447.000 Td (achieved 37.9 dB) Tj ET
 BT /F2 10.00 Tf 60.000 235.000 Td (Stages) Tj ET
 BT /F1 8.00 Tf 60.000 220.000 Td (stage 1: x125  N=3 M=1  combs at 1.0000 MHz, integrators at 125.000 MHz) Tj ET
 BT /F1 8.00 Tf 60.000 209.000 Td (   in 16 bits, uniform accumulator 30 bits, tapered widths [17, 18, 19, 18, 24, 30]) Tj ET
-BT /F1 8.00 Tf 60.000 198.000 Td (   180 register bits uniform, 127 as built \(lossless\), bound 126) Tj ET
+BT /F1 8.00 Tf 60.000 198.000 Td (   270 register bits uniform, 181 as built \(lossless\), bound 180) Tj ET
 BT /F1 8.00 Tf 60.000 187.000 Td (   widths as built [17, 18, 19, 19, 24, 30]) Tj ET
 BT /F1 7.50 Tf 60.000 166.000 Td (The combs run at the stage's input rate and the integrators at its output rate, so an) Tj ET
 BT /F1 7.50 Tf 60.000 157.000 Td (integrator bit costs R times what a comb bit costs. Depth belongs early and rate late.) Tj ET
@@ -5466,7 +5466,7 @@ BT /F1 8.00 Tf 60.000 224.000 Td (   worst image at .... 0.8000 MHz) Tj ET
 BT /F1 8.00 Tf 60.000 213.000 Td (passband ripple ...... 0.0011 dB  \(asked <= 0.001\)) Tj ET
 BT /F1 8.00 Tf 60.000 202.000 Td (uncompensated droop .. -1.738 dB at the band edge) Tj ET
 BT /F1 8.00 Tf 60.000 191.000 Td (converter floor ...... 86.0 dB at 14 bits \(the chain adds none\)) Tj ET
-BT /F1 8.00 Tf 60.000 180.000 Td (register bits ........ 180 uniform, 127 as built, 126 at the exact bound) Tj ET
+BT /F1 8.00 Tf 60.000 180.000 Td (register bits ........ 270 uniform, 181 as built, 180 at the exact bound) Tj ET
 BT /F1 8.00 Tf 60.000 169.000 Td (compensator DC gain .. 1.0000, shift 14) Tj ET
 BT /F1 8.00 Tf 60.000 158.000 Td (compensator headroom . 18 bits for any input, 17 for in-band only) Tj ET
 BT /F1 8.00 Tf 60.000 147.000 Td (   norms ............. l1 2.5906, passband peak 1.2214) Tj ET

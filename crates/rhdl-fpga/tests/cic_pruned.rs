@@ -477,25 +477,25 @@ mod hardware {
         let hdl = uut.descriptor("top".into())?.hdl()?.modules.pretty();
         let expect = expect![[r#"
             module top(input wire [1:0] clock_reset, input wire [10:0] i, output wire [12:0] o);
-               wire [69:0] od;
-               wire [56:0] d;
-               wire [56:0] q;
+               wire [90:0] od;
+               wire [77:0] d;
+               wire [77:0] q;
                assign o = od[12:0];
-               top_stages c0(.clock_reset(clock_reset), .i(d[43:0]), .o(q[43:0]));
-               top_phase c1(.clock_reset(clock_reset), .i(d[45:44]), .o(q[45:44]));
-               top_out c2(.clock_reset(clock_reset), .i(d[56:46]), .o(q[56:46]));
-               assign d = od[69:13];
+               top_stages c0(.clock_reset(clock_reset), .i(d[64:0]), .o(q[64:0]));
+               top_phase c1(.clock_reset(clock_reset), .i(d[66:65]), .o(q[66:65]));
+               top_out c2(.clock_reset(clock_reset), .i(d[77:67]), .o(q[77:67]));
+               assign d = od[90:13];
                assign od = kernel_cic_pruned_kernel(clock_reset, i, q);
-               function [69:0] kernel_cic_pruned_kernel(input reg [1:0] arg_0, input reg [10:0] arg_1, input reg [56:0] arg_2);
-                     reg [43:0] r0;
-                     reg [56:0] r1;
+               function [90:0] kernel_cic_pruned_kernel(input reg [1:0] arg_0, input reg [10:0] arg_1, input reg [77:0] arg_2);
+                     reg [64:0] r0;
+                     reg [77:0] r1;
                      // d
-                     reg [56:0] r2;
+                     reg [77:0] r2;
                      reg [1:0] r3;
                      // d
-                     reg [56:0] r4;
+                     reg [77:0] r4;
                      // d
-                     reg [56:0] r5;
+                     reg [77:0] r5;
                      reg [8:0] r6;
                      reg [10:0] r7;
                      reg [0:0] r8;
@@ -513,21 +513,21 @@ mod hardware {
                      // x
                      reg signed [11:0] r19;
                      reg [0:0] r20;
-                     reg [43:0] r21;
-                     reg [43:0] r22;
+                     reg [64:0] r21;
+                     reg [64:0] r22;
                      reg signed [11:0] r23;
                      reg signed [11:0] r24;
                      // st
-                     reg [43:0] r25;
+                     reg [64:0] r25;
                      reg signed [10:0] r26;
                      reg signed [11:0] r27;
                      reg signed [11:0] r28;
                      reg signed [10:0] r29;
                      reg signed [10:0] r30;
                      // st
-                     reg [43:0] r31;
+                     reg [64:0] r31;
                      // d
-                     reg [56:0] r32;
+                     reg [77:0] r32;
                      reg signed [10:0] r33;
                      reg [0:0] r34;
                      reg [1:0] r35;
@@ -536,61 +536,67 @@ mod hardware {
                      reg [1:0] r38;
                      reg [1:0] r39;
                      // d
-                     reg [56:0] r40;
+                     reg [77:0] r40;
                      reg signed [10:0] r41;
                      reg [10:0] r42;
-                     reg signed [10:0] r43;
-                     reg [10:0] r44;
                      // line
-                     reg [10:0] r45;
+                     reg [10:0] r43;
                      // cs
-                     reg [43:0] r46;
-                     reg signed [10:0] r47;
-                     reg signed [9:0] r48;
-                     reg [9:0] r49;
+                     reg [64:0] r44;
+                     reg [10:0] r45;
+                     reg signed [10:0] r46;
+                     // cs
+                     reg [64:0] r47;
+                     reg signed [10:0] r48;
+                     reg signed [10:0] r49;
                      reg signed [9:0] r50;
                      reg [9:0] r51;
                      // line
                      reg [9:0] r52;
                      // cs
-                     reg [43:0] r53;
+                     reg [64:0] r53;
+                     reg [9:0] r54;
+                     reg signed [9:0] r55;
+                     // cs
+                     reg [64:0] r56;
                      // d
-                     reg [56:0] r54;
-                     reg [10:0] r55;
-                     reg [9:0] r56;
+                     reg [77:0] r57;
+                     reg signed [9:0] r58;
+                     reg [10:0] r59;
+                     reg [9:0] r60;
                      // d
-                     reg [56:0] r57;
+                     reg [77:0] r61;
                      // d
-                     reg [56:0] r58;
+                     reg [77:0] r62;
                      // d
-                     reg [56:0] r59;
-                     reg [10:0] r60;
-                     reg [0:0] r61;
-                     reg [0:0] r62;
-                     reg [12:0] r63;
-                     reg [12:0] r64;
-                     reg [12:0] r65;
+                     reg [77:0] r63;
+                     reg [10:0] r64;
+                     reg [0:0] r65;
                      reg [0:0] r66;
-                     reg [1:0] r67;
-                     reg [0:0] r68;
+                     reg [12:0] r67;
+                     reg [12:0] r68;
+                     reg [12:0] r69;
+                     reg [0:0] r70;
+                     reg [1:0] r71;
+                     reg [0:0] r72;
                      // d
-                     reg [56:0] r69;
+                     reg [77:0] r73;
                      // d
-                     reg [56:0] r70;
+                     reg [77:0] r74;
                      // d
-                     reg [56:0] r71;
+                     reg [77:0] r75;
                      // o
-                     reg [12:0] r72;
+                     reg [12:0] r76;
                      // d
-                     reg [56:0] r73;
+                     reg [77:0] r77;
                      // o
-                     reg [12:0] r74;
-                     reg [69:0] r75;
-                     reg signed [11:0] r76;
-                     reg signed [12:0] r77;
-                     reg signed [10:0] r78;
-                     reg signed [11:0] r79;
-                     localparam l0 = 57'bXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX;
+                     reg [12:0] r78;
+                     reg [90:0] r79;
+                     reg signed [11:0] r80;
+                     reg signed [12:0] r81;
+                     reg signed [10:0] r82;
+                     reg signed [11:0] r83;
+                     localparam l0 = 78'bXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX;
                      localparam l1 = 11'b00000000000;
                      localparam l2 = 8'b10000000;
                      localparam l3 = 12'b111100000000;
@@ -599,7 +605,7 @@ mod hardware {
                      localparam l6 = 1'b1;
                      localparam l7 = 1'b0;
                      localparam l8 = 12'sb000000000000;
-                     localparam l9 = 44'b00000000000000000000000000000000000000000000;
+                     localparam l9 = 65'b00000000000000000000000000000000000000000000000000000000000000000;
                      localparam l10 = 2'b00;
                      localparam l11 = 2'b11;
                      localparam l12 = 2'b01;
@@ -607,22 +613,22 @@ mod hardware {
                      localparam l14 = 1'b1;
                      localparam l15 = 13'b0000000000000;
                      localparam l16 = 1'b0;
-                     localparam l17 = 44'b00000000000000000000000000000000000000000000;
+                     localparam l17 = 65'b00000000000000000000000000000000000000000000000000000000000000000;
                      localparam l18 = 2'b00;
                      localparam l19 = 11'b00000000000;
                      localparam l20 = 1'b0;
                      begin
-                        r67 = arg_0;
+                        r71 = arg_0;
                         r7 = arg_1;
                         r1 = arg_2;
-                        r0 = r1[43:0];
+                        r0 = r1[64:0];
                         r2 = l0;
-                        r2[43:0] = r0;
-                        r3 = r1[45:44];
+                        r2[64:0] = r0;
+                        r3 = r1[66:65];
                         r4 = r2;
-                        r4[45:44] = r3;
+                        r4[66:65] = r3;
                         r5 = r4;
-                        r5[56:46] = l1;
+                        r5[77:67] = l1;
                         r6 = r7[8:0];
                         r8 = r6[8:8];
                         r9 = r6[7:0];
@@ -633,8 +639,8 @@ mod hardware {
                         r14 = r12 ? l3 : l4;
                         r15 = r13 + r14;
                         r16 = $signed(r15);
-                        r76 = $signed(r16[11:0]);
-                        r17 = $signed(r76[11:0]);
+                        r80 = $signed(r16[11:0]);
+                        r17 = $signed(r80[11:0]);
                         case (r8)
                            1'b1 : r18 = l6;
                            default : r18 = l7;
@@ -644,7 +650,7 @@ mod hardware {
                            default : r19 = l8;
                         endcase
                         r20 = r7[9:9];
-                        r21 = r1[43:0];
+                        r21 = r1[64:0];
                         r22 = r20 ? l9 : r21;
                         r23 = r22[11:0];
                         r24 = r23 + r19;
@@ -652,87 +658,93 @@ mod hardware {
                         r25[11:0] = r24;
                         r26 = r22[22:12];
                         r27 = r22[11:0];
-                        r77 = $signed({{1{r27[11]}}, r27});
-                        r28 = r77[12:1];
+                        r81 = $signed({{1{r27[11]}}, r27});
+                        r28 = r81[12:1];
                         r29 = $signed(r28[10:0]);
                         r30 = r26 + r29;
                         r31 = r25;
                         r31[22:12] = r30;
                         r32 = r5;
-                        r32[43:0] = r31;
+                        r32[64:0] = r31;
                         r33 = r31[22:12];
                         r34 = r7[9:9];
-                        r35 = r1[45:44];
+                        r35 = r1[66:65];
                         r36 = r34 ? l10 : r35;
                         r37 = r36 == l11;
                         r38 = r36 + l12;
                         r39 = r37 ? l13 : r38;
                         r40 = r32;
-                        r40[45:44] = r39;
-                        r78 = $signed(r33[10:0]);
-                        r41 = $signed(r78[10:0]);
+                        r40[66:65] = r39;
+                        r82 = $signed(r33[10:0]);
+                        r41 = $signed(r82[10:0]);
                         r42 = r22[33:23];
-                        r43 = r41 - r42;
-                        r44 = r22[33:23];
-                        r45 = r44;
-                        r45[10:0] = r41;
-                        r46 = r31;
-                        r46[33:23] = r45;
-                        r79 = $signed({{1{r43[10]}}, r43});
-                        r47 = r79[11:1];
-                        r48 = $signed(r47[9:0]);
-                        r49 = r22[43:34];
-                        r50 = r48 - r49;
+                        r43 = r42;
+                        r43[10:0] = r41;
+                        r44 = r31;
+                        r44[33:23] = r43;
+                        r45 = r22[33:23];
+                        r46 = r41 - r45;
+                        r47 = r44;
+                        r47[54:44] = r46;
+                        r48 = r22[54:44];
+                        r83 = $signed({{1{r48[10]}}, r48});
+                        r49 = r83[11:1];
+                        r50 = $signed(r49[9:0]);
                         r51 = r22[43:34];
                         r52 = r51;
-                        r52[9:0] = r48;
-                        r53 = r46;
+                        r52[9:0] = r50;
+                        r53 = r47;
                         r53[43:34] = r52;
-                        r54 = r40;
-                        r54[43:0] = r53;
-                        r56 = $signed(r50[9:0]);
-                        r55 = {l14, r56};
-                        r57 = r54;
-                        r57[56:46] = r55;
-                        r58 = r37 ? r57 : r40;
-                        r59 = r18 ? r58 : r5;
-                        r60 = r1[56:46];
-                        r61 = r7[10:10];
-                        r62 = ~r61;
-                        r63 = l15;
-                        r63[10:0] = r60;
-                        r64 = r63;
-                        r64[12:12] = l16;
-                        r65 = r64;
-                        r65[11:11] = r62;
-                        r66 = r67[1:1];
-                        r68 = |r66;
-                        r69 = r59;
-                        r69[43:0] = l17;
-                        r70 = r69;
-                        r70[45:44] = l18;
-                        r71 = r70;
-                        r71[56:46] = l19;
-                        r72 = r65;
-                        r72[11:11] = l20;
-                        r73 = r68 ? r71 : r59;
-                        r74 = r68 ? r72 : r65;
-                        r75 = {r73, r74};
-                        kernel_cic_pruned_kernel = r75;
+                        r54 = r22[43:34];
+                        r55 = r50 - r54;
+                        r56 = r53;
+                        r56[64:55] = r55;
+                        r57 = r40;
+                        r57[64:0] = r56;
+                        r58 = r56[64:55];
+                        r60 = $signed(r58[9:0]);
+                        r59 = {l14, r60};
+                        r61 = r57;
+                        r61[77:67] = r59;
+                        r62 = r37 ? r61 : r40;
+                        r63 = r18 ? r62 : r5;
+                        r64 = r1[77:67];
+                        r65 = r7[10:10];
+                        r66 = ~r65;
+                        r67 = l15;
+                        r67[10:0] = r64;
+                        r68 = r67;
+                        r68[12:12] = l16;
+                        r69 = r68;
+                        r69[11:11] = r66;
+                        r70 = r71[1:1];
+                        r72 = |r70;
+                        r73 = r63;
+                        r73[64:0] = l17;
+                        r74 = r73;
+                        r74[66:65] = l18;
+                        r75 = r74;
+                        r75[77:67] = l19;
+                        r76 = r69;
+                        r76[11:11] = l20;
+                        r77 = r72 ? r75 : r63;
+                        r78 = r72 ? r76 : r69;
+                        r79 = {r77, r78};
+                        kernel_cic_pruned_kernel = r79;
                      end
                endfunction
             endmodule
-            module top_stages(input wire [1:0] clock_reset, input wire [43:0] i, output reg [43:0] o);
+            module top_stages(input wire [1:0] clock_reset, input wire [64:0] i, output reg [64:0] o);
                wire  clock;
                wire  reset;
                assign clock = clock_reset[0];
                assign reset = clock_reset[1];
                initial begin
-                  o = 44'b00000000000000000000000000000000000000000000;
+                  o = 65'b00000000000000000000000000000000000000000000000000000000000000000;
                end
                always @(posedge clock) begin
                   if (reset) begin
-                     o <= 44'b00000000000000000000000000000000000000000000;
+                     o <= 65'b00000000000000000000000000000000000000000000000000000000000000000;
                   end else begin
                      o <= i;
                   end
@@ -792,7 +804,7 @@ mod hardware {
             .join("vcd")
             .join("cic_pruned");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["d58b039bd82df870b2341b75c4c5ae7f0aff39bd086694b94e02e24529d14b6d"];
+        let expect = expect!["07c9e9e876d7fc62d531eaff6088f7759e9c86c3ac5433abcb859c4aa3636d48"];
         let digest = vcd.dump_to_file(root.join("cic_pruned.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

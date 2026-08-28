@@ -21,8 +21,14 @@
 //
 // The saving is in the emitted Verilog rather than in the waveform. At
 // w_in = 12, N = 3, R_MAX = 32 the six stages are 13, 14, 15, 15, 18 and
-// 22 bits: 97 register bits against 132 for a uniform datapath, a 27%
+// 22 bits: 139 register bits against 198 for a uniform datapath, a 30%
 // reduction for no error at all.
+//
+// Both figures count the N comb output registers the pipelined cascade
+// needs. Both cascades read the previous stage's registered value, so
+// the combinational depth between registers is one adder however deep
+// the filter -- but a comb stage's delay line holds its *inputs*, so
+// pipelining the chain costs an output register per stage on top.
 //
 // Note the fourth stage. The exact bounds are not monotonic -- the last
 // comb needs 15 bits and the first integrator only 14, because

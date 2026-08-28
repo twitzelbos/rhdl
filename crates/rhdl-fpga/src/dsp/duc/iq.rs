@@ -681,7 +681,7 @@ mod tests {
             .join("vcd")
             .join("duc_iq");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["8de7d3837bd799752f7ca5f22db4501f9d257063dd3deefbf3fc39fe49b8c3e6"];
+        let expect = expect!["b495bb9d79a2f49b0cc964b2c7cb67fb4a9e623e6cf2d7d4b3bb201856e5c706"];
         let digest = vcd.dump_to_file(root.join("duc_iq.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

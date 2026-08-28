@@ -57,10 +57,66 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 **Validation:** 24 tests on the tapered macro across all four arms — bit-identical to the uniform widget on a varying input at three rates, at full scale both signs, across a restart, across a mid-stream rate change, and on a starved cycle, plus a structural test that the emitted Verilog really does declare narrower registers (the functional tests would all pass if the macro achieved nothing). 10 on the post-compensator including the end-to-end spectral measurement. 23 on the designer including the headroom arithmetic and the pre-versus-post image comparison. Both iverilog paths on both widgets; two new examples and traces; both PDFs regenerated deterministically. Full workspace suite green.
 
-**Follow-ups — the two timing items, still open and here is why:**
+**The comb cascades are pipelined now, in both directions.** This was
+listed as deliberately-not-done and then done, at your call, so the
+reasoning is worth recording rather than just the diff.
+
+- **The path was real and the rate was irrelevant.** A cascade chained
+  combinationally is `N` subtractors between registers and has to settle
+  inside one clock period whether its registers move every cycle or one
+  cycle in `R`. At `N = 5` that was five accumulator-width subtractors in
+  a single period, in the decimator, the uniform interpolator and the
+  tapered one. Every stage now reads the previous stage's *registered*
+  output, so the depth is one subtractor regardless of `N` — matching what
+  the integrator sections already did.
+- **It costs `N` registers per filter, and the design maths was wrong
+  until it counted them.** A comb stage's delay line holds its *inputs*,
+  so pipelining the chain needs an output register per stage on top. That
+  is 90 of the 270 uniform bits at the worked configuration.
+  `uniform_state_bits`, `tapered_state_bits` and `implemented_state_bits`
+  all count them now; before this they described a filter that no longer
+  existed, and the report was quoting them.
+- **Latency moves, and that is the whole price.** `z^-(N-1)` at the comb
+  section's own rate — the *output* rate for a decimator, the *input*
+  rate for an interpolator, where it is `N·R` output cycles and dominates
+  the group delay. Magnitude one throughout, so the filter is the same
+  filter delayed.
+- **Six independent models had to learn it**, which is how the change was
+  validated rather than assumed: the decimator's and interpolator's own
+  in-file gold models, and `tests/cic_gold_model.rs`'s separate uniform
+  and pruned pair. That last file caught the change on ten
+  configurations, having been written to a model that no longer matched —
+  exactly what an independently-written model is for.
+- **Re-blessed snapshots, audited.** Every affected VCD digest moved
+  because the waveforms are genuinely later. The structural diffs are
+  one new `top_comb_out` module in the decimator and interpolator, and
+  the pruned widget's bundled state growing 44 to 65 bits. Nothing else.
+
+**Surprises from doing it:**
+
+- **A 513-sample transform evaluated at 512-sample bins cost an hour.**
+  The post-compensator's image measurement uses `out.len() / 2` as a
+  tail, and the run is 1025 long, so the tail was 513 samples while the
+  bins assumed 512. Off-bin by a fraction, which smeared a 70 dB null
+  into 48 dB. **The widget was exact the whole time** — 29.1 dB bare and
+  69.4 dB compensated, against 29.1 and 69.4 predicted.
+- **And I had already published a physical explanation for that
+  artefact.** The previous entry attributed an "8 dB shortfall" to the
+  converter word length. There was no shortfall. I varied the
+  coefficient width and the output width looking for the cause and
+  neither moved the number, which should have been the clue that the
+  measurement was at fault rather than the hardware. A plausible
+  physical story for a measurement artefact is the most expensive kind of
+  wrong answer, and it is corrected on the widget and in the entry above.
+- **The bit-exactness tests earned their keep immediately.** Pipelining
+  the uniform interpolator before the tapered one put the two out of
+  step, and all nine equality tests failed on the next run rather than
+  the divergence surviving to review.
+
+**Follow-ups — the remaining timing item:**
 
 - **The integrator cascade at 125 MHz.** Unchanged: it is pipelined one adder deep by construction, and the widest stage is 30 bits at the worked sizing. Still blocked on `auto-pipelining-plan.md`, which is the mechanism CLAUDE.md designates for it. What this PR adds is *visibility* — the report now states the adder depth per section and the per-stage widths as built, so the deferral is informed rather than a shrug.
-- **The comb cascade is `N` subtractors deep in one cycle**, in the uniform interpolator, the tapered one, and `decimator.rs`. **Deliberately not fixed here.** Pipelining it in the interpolator alone creates exactly the divergence PR #116 avoided — the two widgets should read as transposes. Pipelining it in both is a behavioural change to merged, well-tested code: it moves the decimator's latency, and with it every committed VCD digest, trace and Tier-3 snapshot for `decimator`, `pruned`, `compensated`, `stream`, `cascaded`, `ddc` and `ddc_pruned`, plus the DDC's mark alignment. That is a change worth making against a *measured* fmax target, not against inspection, and Carloni relay insertion is the mechanism that would do it without hand-editing seven widgets. Recorded rather than done.
+- **Nothing is measured.** Every depth statement here is inspection of adder counts; no synthesis has been run, because there is no vendor toolchain in this environment. The pipelining is defensible on its own terms — one adder between registers is the shape a synchronous datapath should have — but whether any of it was *necessary* at 125 MHz is unknown, and the honest next step is a timing report from the Vivado machine `xilinx-primitive-library.md` is staged for. An earlier version of this file called the comb depth "the timing risk", which claimed a finding that did not exist.
 
 ## 2026-08-27 — Transmit-side compensation, a spec-driven designer, and a PDF report
 

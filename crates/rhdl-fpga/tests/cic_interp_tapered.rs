@@ -179,9 +179,12 @@ fn the_taper_is_smaller_than_the_uniform_datapath() {
     let built = interp::implemented_state_bits(WI, N, RMAX, M);
     let uniform = interp::uniform_state_bits(WI, N, RMAX, M);
     assert!(built < uniform, "built {built} vs uniform {uniform}");
-    // As data, so a change in either schedule is visible.
-    // (13+14+15) + (15+18+22) = 97, against six stages at 22 = 132.
-    assert_eq!((built, uniform), (97, 132));
+    // As data, so a change in either schedule is visible. Both figures
+    // include the `N` comb output registers the pipelined cascade needs
+    // (`interp::uniform_state_bits` explains why they exist), so the
+    // combs cost `M + 1` registers each rather than `M`:
+    // 2*(13+14+15) + (15+18+22) = 139, against 132 + 3*22 = 198.
+    assert_eq!((built, uniform), (139, 198));
 }
 
 /// The generated widths are the ones the design maths specifies.
@@ -216,11 +219,11 @@ fn the_claims_in_the_example_prose_hold() {
     assert_eq!(w, vec![13, 14, 15, 15, 18, 22]);
     let built = interp::implemented_state_bits(WI, N, RMAX, M);
     let uniform = interp::uniform_state_bits(WI, N, RMAX, M);
-    assert_eq!((built, uniform), (97, 132));
+    assert_eq!((built, uniform), (139, 198));
     let saving = 100.0 * (uniform - built) as f64 / uniform as f64;
     assert!(
-        (saving - 27.0).abs() < 1.0,
-        "the example claims 27%, measured {saving:.1}%"
+        (saving - 30.0).abs() < 1.0,
+        "the example claims 30%, measured {saving:.1}%"
     );
     // And the exact bound at the fourth stage really is 14, which is the
     // dip the example explains.

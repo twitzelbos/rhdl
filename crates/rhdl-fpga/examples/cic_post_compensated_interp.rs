@@ -23,7 +23,8 @@
 //     unchanged.
 //   - The output is visibly a cleaner sinusoid than `cic_interpolate`'s
 //     at the same input. Measured through the hardware, images go from
-//     29 dB below the signal to 52 dB.
+//     29 dB below the signal to 69 dB -- which is what the design maths
+//     predicts for this configuration, to within a tenth of a dB.
 //   - There is latency, and it is the FIR's group delay -- twelve
 //     converter cycles for these 25 taps, plus its output register. Note
 //     that is twelve *converter* cycles, where the pre-compensated form

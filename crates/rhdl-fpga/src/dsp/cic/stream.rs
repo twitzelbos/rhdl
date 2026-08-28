@@ -478,7 +478,7 @@ mod tests {
             .join("vcd")
             .join("cic_stream");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["be7bb4c1db08658cea162c4fa5697d616517aca05e685e93fee7af2f6f905d98"];
+        let expect = expect!["fead6bdfe4694c61e63f9276e30e83b1f2355c3c91f4e9a958ccc223a86278ad"];
         let digest = vcd.dump_to_file(root.join("cic_stream.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

@@ -25,7 +25,8 @@
  +----+    +----+    +----+    +----+    +----+    +----+
    combs, at the input rate   |  integrators, every output cycle
                              x R
-   w_in = 16, N = 3, R = 125: 127 register bits, against 180 uniform
+   each stage one adder deep; combs also carry an output register
+   w_in = 16, N = 3, R = 125: 181 register bits, against 270 uniform
 ")]
 //!
 //! # This taper is **lossless**, and that is the whole difference from
@@ -48,6 +49,20 @@
 //! interpolator is **bit-identical** to a uniform-width one, and
 //! `the_taper_is_bit_identical_to_the_uniform_widget` asserts exactly
 //! that rather than measuring an error against a tolerance.
+//!
+//! # Both cascades are one adder deep
+//!
+//! Same as [`super::interpolator`], and for the same reason:
+//! combinational depth does not care that the comb section is clocked
+//! one cycle in `R`. Each stage reads the previous stage's *registered*
+//! output, so the depth between registers is one subtractor or one adder
+//! however deep the cascade.
+//!
+//! The comb section pays for that in registers — its delay lines hold
+//! each stage's *inputs*, so pipelining the chain needs an output
+//! register per stage as well, `N` of them. At the worked configuration
+//! that is 54 of the tapered 181 bits.
+//! [`super::interp::uniform_state_bits`] counts them.
 //!
 //! # Every transfer is a widening
 //!
@@ -111,7 +126,9 @@ macro_rules! cic_interp_tapered {
             $r,
             $m,
             c0,
-            [(c1, 2, 1)],
+            o0,
+            [(c1, o1, o0, 2, 1)],
+            o1,
             i0,
             [(i1, 4, i0, 3)],
             i1,
@@ -126,7 +143,9 @@ macro_rules! cic_interp_tapered {
             $r,
             $m,
             c0,
-            [(c1, 2, 1), (c2, 3, 2)],
+            o0,
+            [(c1, o1, o0, 2, 1), (c2, o2, o1, 3, 2)],
+            o2,
             i0,
             [(i1, 5, i0, 4), (i2, 6, i1, 5)],
             i2,
@@ -141,7 +160,9 @@ macro_rules! cic_interp_tapered {
             $r,
             $m,
             c0,
-            [(c1, 2, 1), (c2, 3, 2), (c3, 4, 3)],
+            o0,
+            [(c1, o1, o0, 2, 1), (c2, o2, o1, 3, 2), (c3, o3, o2, 4, 3)],
+            o3,
             i0,
             [(i1, 6, i0, 5), (i2, 7, i1, 6), (i3, 8, i2, 7)],
             i3,
@@ -156,7 +177,14 @@ macro_rules! cic_interp_tapered {
             $r,
             $m,
             c0,
-            [(c1, 2, 1), (c2, 3, 2), (c3, 4, 3), (c4, 5, 4)],
+            o0,
+            [
+                (c1, o1, o0, 2, 1),
+                (c2, o2, o1, 3, 2),
+                (c3, o3, o2, 4, 3),
+                (c4, o4, o3, 5, 4)
+            ],
+            o4,
             i0,
             [
                 (i1, 7, i0, 6),
@@ -184,7 +212,9 @@ macro_rules! cic_interp_tapered {
 macro_rules! cic_interp_tapered_impl {
     (
         $name:ident, $wi:tt, $n:tt, $r:tt, $m:tt,
-        $c0:ident, [$(($ck:ident, $ckj:tt, $ckpj:tt)),* $(,)?],
+        $c0:ident, $o0:ident,
+        [$(($ck:ident, $ok:ident, $okprev:ident, $ckj:tt, $ckpj:tt)),* $(,)?],
+        $olast:ident,
         $i0:ident, [$(($ik:ident, $ikj:tt, $ikprev:ident, $ikpj:tt)),* $(,)?],
         $ilast:ident, $ilastj:tt
     ) => {
@@ -203,6 +233,14 @@ macro_rules! cic_interp_tapered_impl {
             $(pub $ck: [SignedBits<{
                 $crate::dsp::cic::interp::implemented_stage_width($ckj, $wi, $n, $r, $m)
             }>; $m],)*
+            // Each comb stage's registered output: what makes the comb
+            // cascade one subtractor deep instead of `N`.
+            pub $o0: SignedBits<{
+                $crate::dsp::cic::interp::implemented_stage_width(1, $wi, $n, $r, $m)
+            }>,
+            $(pub $ok: SignedBits<{
+                $crate::dsp::cic::interp::implemented_stage_width($ckj, $wi, $n, $r, $m)
+            }>,)*
             pub $i0: SignedBits<{
                 $crate::dsp::cic::interp::implemented_stage_width($n + 1, $wi, $n, $r, $m)
             }>,
@@ -341,14 +379,17 @@ macro_rules! cic_interp_tapered_impl {
 
             // ---- comb cascade, once per input ----
             //
-            // Chained combinationally, as `cic::interpolator`'s is.
+            // *** Pipelined: each stage reads the previous stage's
+            // REGISTERED output. *** One subtractor between registers
+            // however deep the cascade. Combinational depth does not
+            // care that this section is clocked one cycle in `R`; see
+            // `cic::interpolator`.
             let mut feed = signed::<{
                 $crate::dsp::cic::interp::implemented_stage_width($n, $wi, $n, $r, $m)
             }>(0);
             if take {
                 // `y = x - x[-M]`, then shift this stage's delay line.
                 let delayed = pc.$c0[$m - 1];
-                let dif = x - delayed;
                 let mut line = pc.$c0;
                 for j in 0..$m {
                     // Shift toward the tail, newest at index 0.
@@ -356,7 +397,7 @@ macro_rules! cic_interp_tapered_impl {
                     line[idx] = if idx == 0 { x } else { pc.$c0[idx - 1] };
                 }
                 st.$c0 = line;
-                let v = dif;
+                st.$o0 = x - delayed;
                 $(
                     let vin = $crate::dsp::sign_extend::<
                         {
@@ -369,18 +410,20 @@ macro_rules! cic_interp_tapered_impl {
                                 $ckj, $wi, $n, $r, $m
                             )
                         },
-                    >(v);
+                    >(pc.$okprev);
                     let delayed = pc.$ck[$m - 1];
-                    let dif = vin - delayed;
                     let mut line = pc.$ck;
                     for j in 0..$m {
                         let idx = $m - 1 - j;
                         line[idx] = if idx == 0 { vin } else { pc.$ck[idx - 1] };
                     }
                     st.$ck = line;
-                    let v = dif;
+                    st.$ok = vin - delayed;
                 )*
-                feed = v;
+                // The *registered* last stage, so the integrator's adder
+                // is one deep from a register rather than a subtractor
+                // plus an adder.
+                feed = pc.$olast;
             }
 
             // ---- integrator cascade, every output cycle ----

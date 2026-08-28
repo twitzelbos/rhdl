@@ -564,6 +564,10 @@ pub fn post_compensated_image_db(
 /// which is impossible when every later stage only adds attenuation.
 /// The single-stage case is a no-op, so nothing else in this module
 /// would have noticed.
+pub fn evaluation_shapes_of(shapes: &[compensator::CicShape]) -> Vec<compensator::CicShape> {
+    evaluation_order(shapes)
+}
+
 fn evaluation_order(shapes: &[compensator::CicShape]) -> Vec<compensator::CicShape> {
     let mut v = shapes.to_vec();
     v.reverse();

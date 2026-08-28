@@ -87,12 +87,12 @@
 //! rebuild. Mark the first sample at each new rate; see below.
 //!
 //! **What the taper saves.** The uniform-width interpolator in this
-//! configuration spends 180 bits of state per arm. Tapered to each
-//! stage's own growth bound the exact figure is 126 — widths
+//! configuration spends 270 bits of state per arm. Tapered to each
+//! stage's own growth bound the exact figure is 180 — widths
 //! `17, 18, 19, 18, 24, 30` — and a generated
-//! [`crate::cic_interp_tapered!`] widget spends **127**, because it
+//! [`crate::cic_interp_tapered!`] widget spends **181**, because it
 //! lifts the non-monotonic fourth stage to the running maximum so that
-//! every inter-stage transfer is a widening. Either way a 30% saving,
+//! every inter-stage transfer is a widening. Either way a 33% saving,
 //! and *losslessly*: an interpolator's taper injects no error at all, so
 //! the tapered widget is **bit-identical** to
 //! [`crate::dsp::cic::interpolator`]'s uniform form rather than merely

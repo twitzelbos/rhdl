@@ -46,7 +46,9 @@
 //!
 //! The saving is real. At `w_in = 18, N = 3, R = 125, M = 1` a uniform
 //! filter spends 32 bits in all six stages; tapered they are
-//! `19, 20, 21, 20, 26, 32`.
+//! `19, 20, 21, 20, 26, 32`. Counting the registers each spends —
+//! including the `N` comb output registers the pipelining needs, see
+//! [`uniform_state_bits`] — that is 288 bits uniform against 198.
 //!
 //! Note the dip at the fourth stage. The taper is **not** monotonic
 //! across the comb-to-integrator boundary: the last comb needs 21 bits
@@ -233,7 +235,10 @@ pub const fn implemented_state_bits(w_in: usize, n: usize, r: usize, m: usize) -
     let mut j = 1;
     while j <= 2 * n {
         let w = implemented_stage_width(j, w_in, n, r, m);
-        total += if j <= n { m * w } else { w };
+        // A comb stage carries an M-deep delay line and an output
+        // register; an integrator carries one register. See
+        // [`uniform_state_bits`] on why the comb output registers exist.
+        total += if j <= n { m * w + w } else { w };
         j += 1;
     }
     total
@@ -324,23 +329,43 @@ pub const fn rate_width(r: usize) -> usize {
 
 /// Bits of state a uniform-width interpolator spends, for comparison.
 ///
-/// `2N` stages at [`accumulator_width`], plus `M-1` extra registers per
-/// comb stage for the differential delay line.
+/// Three contributions per filter:
+///
+/// - `N` integrators, one register each.
+/// - `N` comb stages, each holding an `M`-deep delay line.
+/// - `N` comb *output* registers.
+///
+/// # The comb output registers are the pipelining, and they are not free
+///
+/// Both cascades read the previous stage's registered value so that the
+/// depth between registers is one adder rather than `N` — see
+/// `rhdl_fpga::dsp::cic::interpolator`. The integrator section gets that
+/// for nothing, because a running sum is a register anyway. The comb
+/// section does not: its delay lines hold each stage's *inputs*, so
+/// pipelining the chain needs a register for each stage's *output* too.
+///
+/// That is `N` registers per filter, and at the worked configuration
+/// (`w_in = 16, N = 3, R = 125`) it is 90 of the 270 uniform bits. Real
+/// money, bought to keep the combinational path at one subtractor.
 pub const fn uniform_state_bits(w_in: usize, n: usize, r: usize, m: usize) -> usize {
     let w = accumulator_width(w_in, n, r, m);
-    // N integrators, plus N comb stages each holding an M-deep line.
-    n * w + n * m * w
+    // N integrators, N comb delay lines of M, and N comb output
+    // registers.
+    n * w + n * m * w + n * w
 }
 
-/// Bits of state the tapered schedule spends.
+/// Bits of state the tapered schedule spends, at the exact bounds.
+///
+/// Same three contributions as [`uniform_state_bits`], each at its own
+/// stage's width.
 pub const fn tapered_state_bits(w_in: usize, n: usize, r: usize, m: usize) -> usize {
     let mut total = 0;
     let mut j = 1;
     while j <= 2 * n {
         let w = stage_width(j, w_in, n, r, m);
-        // Comb stages carry an M-deep delay line; integrators carry one
-        // register.
-        total += if j <= n { m * w } else { w };
+        // A comb stage carries an M-deep delay line and an output
+        // register; an integrator carries one register.
+        total += if j <= n { m * w + w } else { w };
         j += 1;
     }
     total
@@ -520,9 +545,11 @@ mod tests {
                 "w={w} N={n} R={r}: built {built} vs uniform {uniform}"
             );
         }
-        // The worked configuration, as data: 127 against 180.
-        assert_eq!(implemented_state_bits(16, 3, 125, 1), 127);
-        assert_eq!(uniform_state_bits(16, 3, 125, 1), 180);
+        // The worked configuration, as data: 181 against 270. Both
+        // figures include the `N` comb output registers the pipelining
+        // needs -- see `uniform_state_bits`.
+        assert_eq!(implemented_state_bits(16, 3, 125, 1), 181);
+        assert_eq!(uniform_state_bits(16, 3, 125, 1), 270);
     }
 
     /// **Sizing for `R_MAX` covers every smaller rate.**

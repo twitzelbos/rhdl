@@ -854,11 +854,13 @@ mod tests {
             .map(|j| interp::stage_width(j, WU, SU, RU, MU))
             .collect();
         assert_eq!(widths, vec![17, 18, 19, 18, 24, 30]);
-        assert_eq!(interp::uniform_state_bits(WU, SU, RU, MU), 180);
-        assert_eq!(interp::tapered_state_bits(WU, SU, RU, MU), 126);
+        // Both include the `N` comb output registers the pipelined
+        // cascade needs -- see `interp::uniform_state_bits`.
+        assert_eq!(interp::uniform_state_bits(WU, SU, RU, MU), 270);
+        assert_eq!(interp::tapered_state_bits(WU, SU, RU, MU), 180);
         // And what a generated `cic_interp_tapered!` widget carries: one
         // bit more, because it lifts the non-monotonic stage.
-        assert_eq!(interp::implemented_state_bits(WU, SU, RU, MU), 127);
+        assert_eq!(interp::implemented_state_bits(WU, SU, RU, MU), 181);
 
         // And the whole configuration actually builds, which is the part
         // a table of numbers does not establish.
@@ -926,7 +928,7 @@ mod tests {
             .join("vcd")
             .join("duc_real");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["7db118a6902fd0a82e17fb9342af2471e531c071b651b7a2a5cb5b2caf5d7675"];
+        let expect = expect!["c56eae8ff5085fca0b67c98fd96549d3b6207420a509e880ceccbcdeafcf6874"];
         let digest = vcd.dump_to_file(root.join("duc_real.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

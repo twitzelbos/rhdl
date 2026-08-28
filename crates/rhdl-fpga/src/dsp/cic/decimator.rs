@@ -88,6 +88,12 @@ pub struct CicDecimate<
     integrators: dff::DFF<[SignedBits<W_ACC>; STAGES]>,
     /// Comb delay lines, `M` deep per stage, at the output rate.
     combs: dff::DFF<[[SignedBits<W_ACC>; M]; STAGES]>,
+    /// Each comb stage's registered output.
+    ///
+    /// What makes the comb cascade one subtractor deep instead of
+    /// `STAGES` — see the kernel. Clocked at the output rate, so it
+    /// costs `STAGES · W_ACC` bits that move one cycle in `R`.
+    comb_out: dff::DFF<[SignedBits<W_ACC>; STAGES]>,
     /// Counts input samples toward the next output.
     phase: dff::DFF<Bits<CW>>,
     /// The decimated result, registered.
@@ -189,6 +195,7 @@ where
         Self {
             integrators: dff::DFF::new([SignedBits::<W_ACC>::default(); STAGES]),
             combs: dff::DFF::new([[SignedBits::<W_ACC>::default(); M]; STAGES]),
+            comb_out: dff::DFF::new([SignedBits::<W_ACC>::default(); STAGES]),
             phase: dff::DFF::new(bits::<CW>(0)),
             out: dff::DFF::new(None),
         }
@@ -239,6 +246,7 @@ where
     // moves it.  An idle cycle must not advance the running sums.
     d.integrators = q.integrators;
     d.combs = q.combs;
+    d.comb_out = q.comb_out;
     d.phase = q.phase;
     d.out = None;
 
@@ -298,6 +306,7 @@ where
         if i.restart {
             // The comb delay lines belong to the old window too.
             d.combs = [[signed::<W_ACC>(0); M]; STAGES];
+            d.comb_out = [signed::<W_ACC>(0); STAGES];
         }
 
         // ---- decimation gate ----
@@ -314,17 +323,43 @@ where
 
         if last {
             // ---- comb cascade, once per R input samples ----
+            //
+            // *** Pipelined: each stage reads the previous stage's
+            // REGISTERED output, not its combinational one. ***
+            //
+            // Combinational depth does not care how often the logic is
+            // used. A chained cascade is `STAGES` subtractors between
+            // registers and has to settle inside one clock period
+            // whether those registers move every cycle or one cycle in
+            // `R`, so at `N = 5` it was five accumulator-width
+            // subtractors in a single period. Reading the registered
+            // value puts exactly one subtractor between registers
+            // however deep the cascade -- the same treatment the
+            // integrator section above already had.
+            //
+            // The cost is latency, not response: it multiplies the
+            // transfer function by `z^-(STAGES-1)` at the *output* rate,
+            // whose magnitude is one.
             let prior_combs = if i.restart {
                 [[signed::<W_ACC>(0); M]; STAGES]
             } else {
                 q.combs
             };
+            let prior_out = if i.restart {
+                [signed::<W_ACC>(0); STAGES]
+            } else {
+                q.comb_out
+            };
             let mut cs = prior_combs;
-            let mut v = carry;
+            let mut outs = prior_out;
             for k in 0..STAGES {
+                // Stage one takes the integrator cascade's carry; every
+                // later stage takes the previous stage's *registered*
+                // difference.
+                let v = if k == 0 { carry } else { prior_out[k - 1] };
                 // y = x - x[-M]; then shift this stage's delay line.
                 let delayed = prior_combs[k][M - 1];
-                let diff = v - delayed;
+                outs[k] = v - delayed;
                 let mut line = prior_combs[k];
                 for j in 0..M {
                     // Shift toward the tail, newest at index 0.
@@ -332,10 +367,10 @@ where
                     line[idx] = if idx == 0 { v } else { prior_combs[k][idx - 1] };
                 }
                 cs[k] = line;
-                v = diff;
             }
             d.combs = cs;
-            d.out = Some(v);
+            d.comb_out = outs;
+            d.out = Some(outs[STAGES - 1]);
         }
     }
 
@@ -385,6 +420,7 @@ mod tests {
     fn model(x: &[i128], stages: usize, r: usize, m: usize) -> Vec<i128> {
         let mut ints = vec![0i128; stages];
         let mut combs = vec![vec![0i128; m]; stages];
+        let mut comb_outs = vec![0i128; stages];
         let mut out = Vec::new();
         for (n, s) in x.iter().enumerate() {
             // Pipelined, matching the widget: stage k reads stage k-1's
@@ -395,16 +431,20 @@ mod tests {
             }
             let carry = ints[stages - 1];
             if (n + 1) % r == 0 {
-                let mut v = carry;
-                for line in combs.iter_mut() {
-                    let diff = v - line[m - 1];
+                // Pipelined, matching the widget: each comb stage reads
+                // the previous stage's value from the *previous* comb
+                // cycle, so the section contributes `z^-(N-1)` at the
+                // output rate.
+                let prev = comb_outs.clone();
+                for k in 0..stages {
+                    let v = if k == 0 { carry } else { prev[k - 1] };
+                    comb_outs[k] = v - combs[k][m - 1];
                     for j in (1..m).rev() {
-                        line[j] = line[j - 1];
+                        combs[k][j] = combs[k][j - 1];
                     }
-                    line[0] = v;
-                    v = diff;
+                    combs[k][0] = v;
                 }
-                out.push(v);
+                out.push(comb_outs[stages - 1]);
             }
         }
         out
@@ -810,6 +850,7 @@ mod tests {
             module top
             module top_integrators
             module top_combs
+            module top_comb_out
             module top_phase
             module top_out"#]];
         expect.assert_eq(&shape);
@@ -848,7 +889,7 @@ mod tests {
             .join("vcd")
             .join("cic_decimate");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["52fad2da579523583683ae997b9a4184f0ba78b49fe900595e243450b86b2735"];
+        let expect = expect!["07ee8eac707f7a3d6c4df377c14ff26a73925334667776c68a3569c11e16566a"];
         let digest = vcd.dump_to_file(root.join("cic_decimate.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

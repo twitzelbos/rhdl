@@ -51,17 +51,19 @@
 //!
 //! `it_suppresses_an_image_where_the_pre_compensator_cannot` measures
 //! the difference rather than restating the argument: at `N = 2, R = 4`
-//! with a 25-tap filter asked for 60 dB, images go from **29 dB down to
-//! 52 dB down** through the actual hardware.
+//! with a 25-tap filter, images go from **29 dB down to 69 dB down**
+//! through the actual hardware — against 29.1 and 69.4 predicted by the
+//! design maths at the same two frequencies. **The hardware matches the
+//! prediction to within a tenth of a dB.**
 //!
-//! The design maths predicts 60 dB for the same configuration, and the
-//! 8 dB shortfall is the output's own quantisation rather than the
-//! filter's: an image 60 dB below a 24000-LSB signal is 24 LSBs, close
-//! enough to the rounding floor to be partly buried. Widen `W_OUT` and
-//! the measurement moves toward the prediction. Worth knowing because it
-//! is the *general* limit on image rejection once the filter is good
-//! enough — past some point the converter word length is the constraint,
-//! not the CIC and not the compensator.
+//! An earlier version of this paragraph claimed an 8 dB shortfall and
+//! attributed it to the converter word length. That was wrong twice
+//! over: there is no shortfall, and the "measurement" it rested on was a
+//! 513-sample transform evaluated at 512-sample bins, which smeared a
+//! 70 dB null into 48 dB. Neither the coefficient width nor the output
+//! width was involved — both were varied and neither moved the number.
+//! Recorded because a plausible physical explanation for a measurement
+//! artefact is the most expensive kind of wrong answer.
 //!
 //! # `min_stopband_db` is a composite requirement, and that reads oddly
 //! here
@@ -471,7 +473,15 @@ mod tests {
     /// widget that did nothing.
     #[test]
     fn it_suppresses_an_image_where_the_pre_compensator_cannot() {
-        let f0 = 0.15;
+        // **On a DFT bin, exactly.** `38/256` rather than `0.15`: over
+        // the 512-cycle tail the signal lands on bin 19 and its image on
+        // bin 109, both integers, so there is no spectral leakage. With a
+        // tone off-bin the measurement depends on where the record
+        // starts, and it moved by 4 dB when the comb cascade was
+        // pipelined and shifted the alignment by eight cycles -- a
+        // change in the *measurement*, since pipelining multiplies the
+        // response by `z^-k` and cannot alter its magnitude.
+        let f0 = 38.0 / 256.0;
         let rate = RMAX;
         let envelope: Vec<i128> = (0..256)
             .map(|m| {
@@ -481,30 +491,35 @@ mod tests {
             .collect();
         let seq = stimulus(&envelope, rate);
 
+        // Bins 19 and 109 of a 512-point transform, exactly.
         let signal_f = f0 / rate as f64;
         let image_f = (1.0 - f0) / rate as f64;
+        assert_eq!((signal_f * RECORD as f64).fract(), 0.0, "signal on a bin");
+        assert_eq!((image_f * RECORD as f64).fract(), 0.0, "image on a bin");
 
         let bare = run(uut(identity_taps()), seq.clone());
         let comp = run(uut(designed_taps()), seq);
-        // Measured: 29.4 dB bare, 51.6 dB compensated. The design maths
-        // predicts 24.1 and 60.2 for the same configuration -- see
-        // `a_post_compensator_suppresses_images_and_a_pre_one_does_not`
-        // in `interp_chain` -- and the hardware falls short of the
-        // compensated figure because the output is quantised: an image
-        // 60 dB below a 24000-LSB signal is 24 LSBs, close enough to the
-        // rounding floor to be partly buried. The threshold below is set
-        // against the measurement, not the prediction, and the gap is
-        // recorded in the module docs rather than papered over.
+        // Measured 29.1 dB bare and 69.4 dB compensated, against the
+        // design maths' 29.1 and 69.4 at these exact frequencies. The
+        // hardware matches the prediction to within a tenth of a dB --
+        // once the record length is right, which is the whole story of
+        // the constant above.
 
-        // Settled tail only.
-        let bare = &bare[bare.len() / 2..];
-        let comp = &comp[comp.len() / 2..];
+        // **Exactly 512 samples**, not `len()/2`. The run is 1025 long
+        // (one reset cycle plus 1024), so `len()/2` gives a *513*-sample
+        // tail while the bins below assume 512 — off-bin by a fraction,
+        // which smears a 70 dB null into a 48 dB one. That off-by-one
+        // cost an hour of hunting for a fault in the widget that was
+        // never there.
+        const RECORD: usize = 512;
+        let bare = &bare[bare.len() - RECORD..];
+        let comp = &comp[comp.len() - RECORD..];
 
         let bare_rej = 20.0 * (mag_at(bare, signal_f) / mag_at(bare, image_f)).log10();
         let comp_rej = 20.0 * (mag_at(comp, signal_f) / mag_at(comp, image_f)).log10();
 
         assert!(
-            comp_rej > bare_rej + 20.0,
+            comp_rej > bare_rej + 35.0,
             "the converter-rate filter must buy real rejection: \
              bare {bare_rej:.1} dB, compensated {comp_rej:.1} dB"
         );
@@ -651,7 +666,7 @@ mod tests {
             .join("vcd")
             .join("cic_post_compensated_interp");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["48792729b8f8482701ad5287faad87bd876100099befc03ec48081c1af8c54bf"];
+        let expect = expect!["76922332d3bb77c7b61874e2f8cfca98dedbb42292b5a5aa6fb578b92a7e3109"];
         let digest = vcd
             .dump_to_file(root.join("post_compensated_interp.vcd"))
             .unwrap();
