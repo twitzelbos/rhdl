@@ -13,6 +13,119 @@
 
 ---
 
+## 0 — Amendment: this widget is often unnecessary, and here is the evidence
+
+**Written after §1–§10, on being asked whether a sinc or Fourier method
+would be better and being told the resampling happens upstream of the DUC
+and could be done in software.** It could, and if it can then most of
+this document is the wrong plan. Recorded here rather than quietly
+revised, because the measurements are the useful part.
+
+### Which filter is best depends entirely on where the signal sits
+
+Worst-case fractional-delay error over `μ`, amplitude dB / phase degrees:
+
+| filter | bw = 0.20 | bw = 0.10 | bw = 0.02 |
+|---|---|---|---|
+| Lagrange `K=4` (cubic) | 0.457 / 3.840 | 0.045 / 0.161 | 0.00008 / 0.00006 |
+| Lagrange `K=8` | 0.040 / 0.299 | 0.0002 / 0.0009 | 0.00000 / 0.00000 |
+| Lagrange `K=16` | 0.0004 / 0.0029 | 0.00000 / 0.00000 | 0.00000 / 0.00000 |
+| Kaiser-sinc `K=16` | 0.0056 / 0.0165 | 0.0050 / 0.0165 | 0.00095 / 0.0134 |
+| Kaiser-sinc `K=32` | 0.00028 / 0.00038 | 0.00028 / 0.00038 | 0.00020 / 0.00038 |
+| Kaiser-sinc `K=64` | 0.00002 / 0.00007 | 0.00002 / 0.00007 | 0.00002 / 0.00007 |
+| Kaiser-sinc `K=256` | 0.00000 / 0.00000 | 0.00000 / 0.00000 | 0.00000 / 0.00000 |
+
+Two things fall out, and they point in opposite directions:
+
+- **Windowed sinc is far better wideband.** At `bw = 0.20`, `K = 16`
+  Kaiser-sinc gives 0.0056 dB where cubic Lagrange gives 0.457 — a factor
+  of eighty. Its error is also nearly *flat* across bandwidth, because it
+  is set by the window's ripple rather than concentrated at high
+  frequency.
+- **Lagrange is better narrowband, per tap.** At `bw = 0.02`, `K = 8`
+  Lagrange is exact to the printed precision while `K = 16` Kaiser-sinc
+  still shows 0.00095 dB. Lagrange is maximally flat at DC, which is
+  exactly the right optimality criterion for a heavily oversampled
+  signal.
+
+So §2's placement argument survives — **after the CIC, Lagrange is the
+right filter and a short one suffices.** What changes is that §2's
+rejected placement (before the CIC, `bw = 0.2`) is not intrinsically
+hopeless; it is hopeless *for Lagrange*. A 32-tap windowed sinc there
+gives 0.0003 dB and 0.0004°, which does not falsify phase.
+
+### And in the frequency domain the problem is simply solved
+
+Spectral resampling — FFT the block, zero-pad or truncate, inverse FFT at
+the new length — on an exactly-periodic band-limited block:
+
+| ratio | output samples | max error |
+|---|---|---|
+| 5/4 | 5120 | 1.7e-13 (**−265 dB**) |
+| 7/5 | 5734 | 1.4e-13 (−267 dB) |
+| 125/124 | 4129 | 2.0e-13 (−264 dB) |
+
+Machine precision, and **100 dB better than any FIR in the table**. Phase
+is exact by construction, because a spectral operation has no
+approximation to be phase-wrong about.
+
+The catch is periodicity, and it is bounded rather than fatal: on a
+deliberately non-periodic block the error is 0.19 at the edges and 1.3e-4
+in the interior. **The error lives entirely at the block boundaries**,
+which is what overlap-save with a guard region exists to fix. The other
+constraint is that the ratio must be rational with an integral output
+length — not a real limitation, since a 48-bit rational approximates any
+ratio to below the noise floor of anything downstream.
+
+### Which means the cheapest architecture has no resampler in it at all
+
+If the host can resample in software:
+
+```text
+  host: envelope at whatever rate     host: exact resample to fs/R      FPGA
+        ------------------------>     [ FFT, -265 dB, phase exact ]  -> [ CIC x R ]
+                                      R chosen as an integer            existing widget
+```
+
+The host picks an **integer** `R`, resamples its envelope to exactly
+`fs / R` — exactly, in software — and the FPGA does integer interpolation
+with the CIC that already exists. **No Farrow, no new hardware, and
+better accuracy than any hardware option.** The coarse/fine split of §2
+survives; the fine part just moves to where it is free.
+
+### And better still: if the envelope is synthesised, do not resample
+
+Resampling is only necessary when the envelope arrives at a rate you did
+not choose — a file, a codec, a live feed. If the host *computes* the
+envelope — a pulse shape, a chirp, a symbol stream through a shaping
+filter — then evaluate the waveform at the output instants `t = n·R/fs`
+directly. Zero error, exactly correct phase, no filter of any kind. This
+is worth checking before anything else in this document is built.
+
+### So when is the hardware widget still the answer?
+
+Three cases, and they are real:
+
+- **A live source at an unrelated clock** — an ADC feed, a receiver
+  chain — where there is nothing upstream to do the resampling and no
+  block boundary to work with.
+- **A rate that must change continuously**, with no point at which a
+  block-based method could re-plan.
+- **A closed loop** — sample-rate tracking against a recovered clock —
+  where the ratio is a control signal rather than a configuration value.
+
+For those, §§1–10 stand as written and Lagrange-after-CIC is the right
+shape. For a host-driven transmit envelope, which is the case that
+prompted this document, **the software route is better on every axis and
+should be preferred.**
+
+Phasing consequence: **Phase A (design maths) is still worth doing** —
+`worst_error` and `required_order` are what let a caller decide between
+these options with numbers, and they are days of work with no hardware.
+Phases B–E should wait for one of the three cases above to be real.
+
+---
+
 ## 1 — The gap
 
 The CIC chain reaches integer rates only, and a *split* chain does not
