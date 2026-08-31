@@ -158,3 +158,140 @@ framing even where it is the identity on payload. Worth a paragraph in
   `Digital` gives) and pairing it.
 - **No TLAST in the AXI interop** — see above; a decision with a reason.
 - **`SyncMark` as a newtype** rather than `bool` — the same reasoning.
+
+---
+
+# Addendum: can framing behaviour be a trait?
+
+*2026-08-31. The question was whether Rust composition — traits
+implementing a specific framing behaviour — could express what the tables
+above document by hand. Answer: **partly, and the boundary is sharp**.
+Everything below was compiled and run, not reasoned about.*
+
+## Two things that cannot work
+
+**A trait method cannot be called inside a `#[kernel]`.**
+`rhdl-macro-core/src/kernel.rs`'s `method_call` matches against a
+21-name allowlist — `any`, `all`, `xor`, `as_signed`, `as_unsigned`,
+`val`, `resize`, `raw`, `xadd`, `xsub`, `xmul`, `xneg`, `xext`, `xshl`,
+`xshr`, `xsgn`, `dyn_bits`, `as_bits`, `as_signed_bits` — and anything
+else is a hard error:
+
+```text
+Unsupported method call ... in an rhdl kernel function
+```
+
+So `frame.advance()` on a user trait is out, and this is a deliberate
+allowlist rather than an oversight: the kernel compiler has to *lower*
+the call, and it can only lower operations it knows.
+
+**An associated type cannot be called either — and that one is plain
+Rust.** A path call in a kernel lowers to
+`<path as DigitalFn>::kernel_fn()`, so pointing at a named `#[kernel] fn`
+works. Pointing at an associated type does not:
+
+```rust
+pub trait Framing: Digital {
+    type Advance: DigitalFn;
+}
+
+#[kernel]
+pub fn use_it<F: Framing>(f: F) -> F {
+    <F as Framing>::Advance(f)      // error[E0575]
+}
+```
+
+```text
+error[E0575]: expected method or associated constant,
+              found associated type `Framing::Advance`
+```
+
+`rustc` rejects it before RHDL sees it — an associated type cannot appear
+in call position, and neither can a bare generic parameter. **So there is
+no way to inject caller-supplied logic into an existing kernel body.**
+
+## What does work: the behaviour is its own widget
+
+The sub-widget becomes a generic parameter whose trait bound **pins its
+`I` and `O`**. `dsp::ddc` already does this —
+`Ddc<W, WA, PROD_W, C>` where
+
+```rust
+C: SynchronousIO<I = decimator::In<W>, O = decimator::Out<WA>>
+    + Synchronous + Clone + std::fmt::Debug
+```
+
+— which is how one down-converter accepts a plain `CicDecimate`, a
+`cic_pruned!`-generated one, or a `CompensatedCic`. The kernel carries
+`C` and repeats the same bound; its *body* never mentions `C`, because
+`q.dec_i` and `d.dec_i` have the pinned projection types.
+
+That generalises to framing, and the associated type is welcome as long
+as it is only ever used *as a type*:
+
+```rust
+pub trait FramingPolicy:
+    Synchronous
+    + SynchronousIO<I = PolicyIn<Self::Frame>, O = PolicyOut<Self::Frame>>
+    + Clone + std::fmt::Debug
+{
+    /// The framing type this policy speaks.
+    type Frame: Digital;
+}
+
+pub struct Framed<P: FramingPolicy + Default> { policy: P }
+
+impl<P: FramingPolicy + Default> SynchronousIO for Framed<P> {
+    type I = PolicyIn<P::Frame>;
+    type O = PolicyOut<P::Frame>;
+    type Kernel = framed<P>;
+}
+
+#[kernel]
+pub fn framed<P>(cr: ClockReset, i: PolicyIn<P::Frame>, q: Q<P>)
+    -> (PolicyOut<P::Frame>, D<P>)
+where P: FramingPolicy + Default { ... }
+```
+
+**Verified end to end**: this builds, `descriptor()` succeeds, the policy
+appears as a real `top_policy` submodule rather than being inlined away,
+and it passes the `iverilog` round-trip on *both* the RTL and the NTL
+path, plus an iterator simulation. The associated type flows through
+`SynchronousDQ`'s generated `Q`/`D` without special handling.
+
+**The cost is that it is structural, not zero-cost.** The policy is a
+submodule and holds its own registers. If what you wanted was
+caller-supplied *combinational* logic folded into the parent's kernel,
+there is no route to it — see the two failures above.
+
+## What this means for the three gaps
+
+- **Gap 3 (no composition table) is the one a trait genuinely fixes.**
+  The framing transforms are **type-level functions** — `chunked` maps
+  `F → [F; N]`, `flatten` maps `F → (F, bool)`, `zip` maps `(F, G)` — and
+  a type-level function is exactly an associated type used as a type,
+  which is legal. Something like
+
+  ```rust
+  pub trait ChunkFraming<const N: usize> { type Chunked: Digital; }
+  pub trait FlattenFraming { type Flattened: Digital; }
+  ```
+
+  would state each rule once, machine-check it, and make
+  `flatten ∘ chunked = ([F; N], bool)` a thing the compiler knows rather
+  than a paragraph a reader has to derive. That is a real improvement over
+  a documentation table, and it is available today.
+- **`IqCombine`'s validation needs no trait at all.** Comparing two
+  markers needs only `PartialEq`, which `Digital` already provides.
+- **A `Framing` trait with *methods* is not worth designing**, because no
+  widget can call one. The library's twelve pass-through widgets need
+  nothing from the marker beyond moving it, and moving it needs no trait.
+
+## The third route, for completeness
+
+Where the kernel itself must differ per parameterisation, this repository
+already uses **macro monomorphisation** rather than traits:
+`cic_pruned!` and `cic_interp_tapered!` generate a widget *and* its kernel
+per shape, with one macro arm per depth. That is the escape hatch when the
+logic — not just the type — has to vary, and it is why `tapered.rs` has
+arms for `n = 2..5` instead of a trait.
