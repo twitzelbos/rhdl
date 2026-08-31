@@ -39,7 +39,7 @@ Three gaps fell out of the survey; they are at the bottom.
 | `RCStreamMap<T, F, S>` | pass-through; payload `T → S` |
 | `RCStreamFilterMap<T, F, S>` | pass-through; payload `T → S`, some items dropped |
 | `RCStreamFanout<T, F, N>` | pass-through, replicated to `N` consumers |
-| `RCStreamCdc<T, F, W, R, N>` | pass-through, across clock domains |
+| `RCStreamCdc<T, F, W, R, N>` | pass-through, across clock domains — **atomically**; see the CDC addendum |
 | `RCStreamChunked<T, F, M, N>` | **transforms**: `T` → `[T; N]`, framing `F` → `[F; N]`, positional |
 | `RCStreamFlatten<T, F, M, N>` | **transforms**: `[T; N]` → `T`, framing `F` → `(F, bool)` — group marker plus last-of-group |
 
@@ -324,3 +324,80 @@ already uses **macro monomorphisation** rather than traits:
 per shape, with one macro arm per depth. That is the escape hatch when the
 logic — not just the type — has to vary, and it is why `tapered.rs` has
 arms for `n = 2..5` instead of a trait.
+
+---
+
+# Addendum: when the stream crosses a clock domain, so must the framing
+
+*2026-08-31. It does, and the mechanism is sound. What the survey turned
+up is a missing test and a missing paragraph — and a measurement that
+refuted the warning it was written to support.*
+
+## The mechanism is right
+
+`RCStreamCdc` instantiates a single `AsyncFIFO<Item<T, F>, W, R, N>`. The
+marker is a *field of the same `Digital` value* as the payload, so it
+crosses atomically and cannot be separated. There is no second
+synchroniser for framing — which is the shape that would be wrong, since
+two independent crossings for one item's two halves would land marks on
+the wrong items.
+
+## But nothing tested it
+
+**Every test in `cdc.rs` used `F = ()`** — one `frame: ()` literal in the
+whole file — and the example is `RCStreamCdc::<b8, (), Red, Blue, 3>`. So
+the guarantee was purely structural, and structure was the only thing
+holding it: a refactor that narrowed the FIFO to the payload and carried
+framing alongside would have passed the entire suite while corrupting
+every marked stream.
+
+Now pinned by `the_framing_marker_crosses_with_its_item`, which asserts
+each received item's marker against *its own payload index* — after a
+crossing the cycle means nothing and item identity is all that is left.
+Verified to fail when the expected marker is shifted by one item.
+
+## The measurement that refuted the warning
+
+The paragraph about to be written said: a crossing perturbs the cycle a
+mark lands on, so `dsp::sync`'s **same-cycle** alignment contract cannot
+survive one. **Measured, and false.** Crossing one stimulus through
+crossings of *different depth* produces marks on *identical* read-domain
+cycles. A saturating source keeps the FIFO full, so the read side's
+backpressure alone sets the cadence and the depth is invisible.
+
+What does move the cycle is the **drainage**. So:
+
+- two crossings behind one consumer stay in lockstep, because their state
+  is a deterministic function of identical inputs;
+- two behind different consumers, or different backpressure, do not.
+
+`drainage_not_depth_sets_the_cycle_a_mark_emerges_on` asserts both halves:
+depth-invisible as an equality, drainage-decisive as an inequality.
+
+## The rule that follows
+
+**Cross once, as one `Item`** — not because a crossing is lossy, but
+because one crossing cannot be drained asymmetrically with itself.
+
+```text
+  right:  ... -> RCStreamCdc<Iq<W>, SyncMark, W, R, N> -> IqSplit -> ...
+  wrong:  ... -> IqSplit -> two RCStreamCdc -> IqCombine -> ...
+```
+
+The wrong shape would have `IqCombine::frame_mismatch` firing — or, worse,
+coincidentally not firing.
+
+`dsp::ddc` cannot get this wrong: it is single-domain throughout. Nothing
+in the type system prevents a caller from getting it wrong, which is why
+it is now documented in both `rcstream::cdc` (with the measurement) and
+`dsp::sync` (whose alignment contract previously did not mention clock
+domains at all — zero hits for "domain", "clock" or "cdc" in the file).
+
+## What this says about the phantom domain
+
+`Item<T, F>`'s framing parameter carries no domain, and should not. The
+domain lives on the *stream* — `AsyncRCStream<T, F, D>` — and framing is a
+per-item value, not a per-cycle one. A domain-parameterised `F` would be
+claiming the marker means something about a clock, when what it means is
+"this item is the anchor". The cycle is where the domain enters, and the
+cycle is a property of the connection, not of the marker.

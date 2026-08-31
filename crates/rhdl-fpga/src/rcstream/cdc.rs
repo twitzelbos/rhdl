@@ -47,6 +47,55 @@
                                         next = ready & is_some <-+
 ")]
 //!
+//!# What a crossing preserves, and what it does not
+//!
+//! **Framing crosses atomically with its payload.** The crossing is a
+//! single [`AsyncFIFO<Item<T, F>, W, R, N>`], so the marker is a *field
+//! of the same [`Digital`] value* as the data and cannot be separated
+//! from it. There is no second synchronizer for framing, which is the
+//! shape this avoids: two independent crossings for one item's two
+//! halves would land marks on the wrong items.
+//!
+//! `the_framing_marker_crosses_with_its_item` pins it. That test exists
+//! because the guarantee is purely structural — every other test in this
+//! module uses `F = ()`, as does the example, so a refactor that narrowed
+//! the FIFO to the payload and carried framing alongside it would have
+//! passed the whole suite.
+//!
+//! **The cycle survives too, if the drainage is symmetric.** This is
+//! stronger than expected and was measured rather than assumed:
+//! crossings of *different depth*, given the same stimulus, emit marks on
+//! *identical* read-domain cycles. A saturating source keeps the FIFO
+//! full, so the read side's backpressure alone sets the cadence and depth
+//! is invisible. What moves the cycle is the drainage.
+//!
+//! **So the hazard is asymmetric drainage, not the crossing.** This
+//! matters because [`crate::dsp::sync`]'s alignment contract is a
+//! *same-cycle* contract: two `SyncMark`-framed streams describing one
+//! instant must assert on the same cycle where they meet, and a consumer
+//! is entitled to treat a one-sided assertion as an error — which
+//! [`crate::rcstream::util::IqCombine`] and
+//! [`crate::dsp::mixer::complex::ComplexMixer`] both do, via
+//! `frame_mismatch`.
+//!
+//! Two crossings behind one consumer stay in lockstep, because their
+//! state is a deterministic function of identical inputs. Two crossings
+//! behind *different* consumers, or with different backpressure, do not.
+//!
+//! **The rule that follows: cross once, as one `Item`.** Not because a
+//! crossing is lossy, but because one crossing cannot be drained
+//! asymmetrically with itself. Concretely, for a complex stream:
+//!
+//! ```text
+//!   right:  ... -> RCStreamCdc<Iq<W>, SyncMark, W, R, N> -> IqSplit -> ...
+//!   wrong:  ... -> IqSplit -> two RCStreamCdc -> IqCombine -> ...
+//! ```
+//!
+//! `drainage_not_depth_sets_the_cycle_a_mark_emerges_on` carries the
+//! measurement behind both paragraphs. [`crate::dsp::ddc`] is single-
+//! domain throughout and so cannot get this wrong; nothing in the type
+//! system prevents a caller from doing so.
+//!
 //!# The two handshake hazards
 //!
 //! Both sides need care; neither is a naive wire-up.
@@ -474,6 +523,206 @@ mod tests {
         assert_eq!(
             received, COUNT,
             "every item must cross exactly once (got {received} of {COUNT})"
+        );
+    }
+
+    /// **What sets the cycle a marker emerges on is the *drainage*, not
+    /// the crossing.**
+    ///
+    /// Measured, and it refuted the guess it was written to confirm. The
+    /// guess was that a crossing perturbs the cycle a mark lands on, so
+    /// that `dsp::sync`'s *same-cycle* alignment contract could not
+    /// survive one. It does not: crossing the same stimulus through
+    /// crossings of **different depth** yields marks on **identical**
+    /// read-domain cycles, because a saturating source keeps the FIFO
+    /// full and the read side's backpressure alone sets the cadence.
+    /// Depth is invisible under saturation.
+    ///
+    /// What *does* move the cycle is asymmetric drainage. So the hazard
+    /// for two `SyncMark` streams crossing together is not the crossing —
+    /// it is being drained by different consumers, or with different
+    /// backpressure. Two crossings behind one consumer stay in lockstep
+    /// because their state is a deterministic function of identical
+    /// inputs.
+    ///
+    /// That is why the module docs say to cross *once*, as one `Item`:
+    /// not because a crossing is lossy, but because one crossing cannot
+    /// be drained asymmetrically with itself.
+    #[test]
+    fn drainage_not_depth_sets_the_cycle_a_mark_emerges_on() {
+        use crate::dsp::sync::SyncMark;
+
+        /// Read-domain cycles on which marked items were accepted.
+        ///
+        /// `N` is the crossing depth; `every` is the sink's backpressure
+        /// period — ready on all but every `every`-th cycle.
+        fn emergence<const N: usize>(every: u32) -> Vec<u64>
+        where
+            rhdl::bits::W<N>: BitWidth,
+        {
+            let uut = RCStreamCdc::<b8, SyncMark, Red, Blue, N>::default();
+            let marked = |n: u128| n % 7 == 3;
+            let mut next_to_send: u128 = 0;
+            let mut phase: u32 = 0;
+            let mut cycle: u64 = 0;
+            let mut at: Vec<u64> = Vec::new();
+
+            let samples = run_async_red_blue(
+                &uut,
+                |output, input| {
+                    if next_to_send < 40 {
+                        input.data = signal(Some(Item::<b8, SyncMark> {
+                            data: bits::<8>(next_to_send),
+                            frame: SyncMark {
+                                sync: marked(next_to_send),
+                            },
+                        }));
+                        if output.ready.val() {
+                            next_to_send += 1;
+                        }
+                    } else {
+                        input.data = signal(None);
+                    }
+                },
+                |output, input| {
+                    cycle += 1;
+                    phase = phase.wrapping_add(1);
+                    let want = !phase.is_multiple_of(every);
+                    input.ready = signal(false);
+                    if want && output.data.val().is_some() {
+                        input.ready = signal(true);
+                        if output.data.val().unwrap().frame.sync {
+                            at.push(cycle);
+                        }
+                    }
+                },
+                50,
+                78,
+                |red, blue, input| {
+                    input.cr_w = red;
+                    input.cr_r = blue;
+                },
+            );
+            for _ in samples.take_while(|t| t.time < 400_000) {}
+            at
+        }
+
+        let deep = emergence::<4>(3);
+        let shallow = emergence::<3>(3);
+        let throttled = emergence::<4>(2);
+
+        assert!(!deep.is_empty(), "nothing crossed, so nothing was measured");
+        assert_eq!(
+            deep.len(),
+            shallow.len(),
+            "the same marks must cross either way"
+        );
+
+        // Depth is invisible: identical cycles, not merely the same
+        // count. This is the assertion that refuted the guess.
+        assert_eq!(
+            deep, shallow,
+            "a deeper crossing moved the marks, so depth is not invisible \
+             after all and the module docs need revisiting"
+        );
+
+        // Drainage is what moves them.
+        assert_ne!(
+            deep, throttled,
+            "different backpressure produced identical cycles, which would \
+             mean drainage does not set the cadence either"
+        );
+    }
+
+    /// **Tier 2 — the framing marker crosses attached to its own item.**
+    ///
+    /// The crossing is a single `AsyncFIFO<Item<T, F>, W, R, N>`, so the
+    /// marker is a *field of the same `Digital` value* as the payload and
+    /// cannot be separated from it. That is correct by construction — and
+    /// construction was the only thing guaranteeing it, because every
+    /// other test in this module uses `F = ()`, as does the example. A
+    /// refactor that narrowed the FIFO to the payload and carried framing
+    /// alongside it would have passed the entire suite while landing marks
+    /// on the wrong items.
+    ///
+    /// So this asserts the marker against *the received payload's own*
+    /// index, not against a cycle count: after a domain crossing the cycle
+    /// is meaningless and the item identity is the only thing left. See
+    /// the module docs on what a crossing does and does not preserve.
+    #[test]
+    fn the_framing_marker_crosses_with_its_item() {
+        use crate::dsp::sync::SyncMark;
+
+        const COUNT: u128 = 40;
+        /// Marked on this residue, chosen coprime to the sink's
+        /// three-cycle backpressure period so a mark lands on both
+        /// accepted and stalled cycles.
+        const MARK_EVERY: u128 = 7;
+        let marked = |n: u128| n % MARK_EVERY == 3;
+
+        let uut = RCStreamCdc::<b8, SyncMark, Red, Blue, 4>::default();
+        let framed = |n: u128| Item::<b8, SyncMark> {
+            data: bits::<8>(n),
+            frame: SyncMark { sync: marked(n) },
+        };
+
+        let mut next_to_send: u128 = 0;
+        let mut expect_next: u128 = 0;
+        let mut phase: u32 = 0;
+        let mut received: u128 = 0;
+        let mut marks_seen = 0usize;
+
+        let samples = run_async_red_blue(
+            &uut,
+            |output, input| {
+                if next_to_send < COUNT {
+                    input.data = signal(Some(framed(next_to_send)));
+                    if output.ready.val() {
+                        next_to_send += 1;
+                    }
+                } else {
+                    input.data = signal(None);
+                }
+            },
+            |output, input| {
+                phase = phase.wrapping_add(1);
+                let want = !phase.is_multiple_of(3);
+                input.ready = signal(false);
+                if want && output.data.val().is_some() {
+                    input.ready = signal(true);
+                    let got = output.data.val().unwrap();
+                    assert_eq!(got.data.raw(), expect_next, "payload out of order");
+                    // The whole point: this item's marker, not some
+                    // other item's.
+                    assert_eq!(
+                        got.frame.sync,
+                        marked(expect_next),
+                        "item {expect_next} arrived with the wrong marker"
+                    );
+                    if got.frame.sync {
+                        marks_seen += 1;
+                    }
+                    expect_next += 1;
+                    received += 1;
+                }
+            },
+            50,
+            78,
+            |red, blue, input| {
+                input.cr_w = red;
+                input.cr_r = blue;
+            },
+        );
+
+        for _ in samples.take_while(|t| t.time < 400_000) {}
+
+        assert!(received > 0, "nothing crossed, so nothing was checked");
+        // And marks were actually present, or the assertion above only
+        // ever compared false against false.
+        assert!(
+            marks_seen > 1,
+            "only {marks_seen} marks crossed out of {received} items -- the \
+             marker assertion never had anything to catch"
         );
     }
 

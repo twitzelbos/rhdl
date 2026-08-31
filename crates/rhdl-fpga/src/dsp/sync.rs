@@ -39,6 +39,22 @@
 //! [`ComplexMixer`](crate::dsp::mixer::complex::ComplexMixer)'s
 //! `frame_mismatch`, which reports exactly that.
 //!
+//! ## Across a clock domain
+//!
+//! The contract is about a *cycle*, and a cycle is a domain-local notion,
+//! so crossing needs a word. A
+//! [`RCStreamCdc`](crate::rcstream::cdc::RCStreamCdc) carries the marker
+//! atomically with its payload — one FIFO over the whole `Item` — so
+//! *which item* is marked always survives. Whether the *cycle* survives
+//! depends on the drainage, not on the crossing: two crossings behind one
+//! consumer stay in lockstep, two behind different consumers or different
+//! backpressure do not.
+//!
+//! **So cross a pair of aligned streams as one `Item`, not as two
+//! streams.** Combine first, cross once, split after. `rcstream::cdc`'s
+//! module docs carry the measurement and the concrete right-and-wrong
+//! shapes.
+//!
 //! This is what makes latency compensation checkable instead of merely
 //! documented. The scheduler issues a configuration change early by the
 //! self-reported latency; if it got the lead time wrong, the two
