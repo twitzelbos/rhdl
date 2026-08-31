@@ -31,6 +31,39 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-31 — The up-converter's book chapter, and an RCStream inventory that turned up three gaps
+
+**Paths:** `doc/book/src/dsp/duc.md` (new), `doc/book/src/code/src/dsp/duc.rs` (new), `doc/book/src/SUMMARY.md`, `notes/rcstream-widget-review.md` (new).
+
+**Why this, why now:** Two asks. The up-converter shipped in PR #116/#117 with full rustdoc and no book chapter — `dsp/ddc.md` covered the receive side only, so the manual described half the DSP chain. And "how many RCStream widgets do we have, and what framings do they support" was a question nobody could answer without reading nineteen files.
+
+**Design decisions:**
+
+- **The chapter's numbers are generated and pinned, not copied.** Every figure in the `text` blocks comes from `doc/book/src/code/src/dsp/duc.rs`, and four tests assert them — including the two blocks verbatim. The same treatment `dsp/delay.md` got, for the same reason: a hand-copied designer output drifts the moment the cost model changes and nothing notices. `dsp/design.md`'s block had in fact already drifted (it quoted an `alternative` the designer no longer picks) before this convention existed.
+- **The chapter leads with the transpose failures, not the assembly.** Anyone arriving from the receive side carries three wrong intuitions: that Hogenauer pruning applies (it does not — it is a decimator result about noise that later stages attenuate, and reversing the chain reverses the attenuation), that width tapering costs noise (it does not — an interpolator's taper is bounded by growth, so the tapered widget is *bit-identical*), and that more compensator taps improve image rejection (they cannot — a pre-compensator is periodic at the envelope rate, so it lifts every image exactly as much as the signal). Those three are the chapter's spine.
+- **The reachability trade is stated as a trade, with the counter-intuitive direction asserted.** `arbitrary_rate: true` forbids the split and reaches all 124 rates; it is **smaller** (351 state bits against 614) and **more expensive** (2.010e10 against 9.665e9 rate-weighted), because one deep CIC needs fewer registers but clocks all of them at the converter rate. `the_single_stage_is_smaller_and_more_expensive` pins it, because it is the sentence in the chapter a reader is most likely to disbelieve and a cost-model change that reversed it would leave the chapter confidently wrong.
+- **The RCStream review replaces the question it was asked.** "What framings do they support" has one answer for all nineteen widgets — any `F: Digital`, because there is no `Framing` trait and no widget constrains `F`. The axis that discriminates is *what each widget does to the framing*: pass through (12), transform (`chunked` → `[F; N]`, `flatten` → `(F, bool)`), carry two (`zip` → `(F, G)`, `tee`), replicate (`IqSplit`), or **validate** (`IqCombine`, the only one that checks two markers agree and reports when they do not). The note is a table of that, not of capability.
+
+**Surprises and gotchas:**
+
+- **Three widgets do not meet the five-clause contract.** `rcstream::util::{split, combine, constant}` have a schematic symbol, Tier 1, Tier 2 and Tier 4 — and **no Tier 3 snapshot, no Tier 5 digest, no example and no committed trace**. Every other RCStream widget has all five plus both artifacts. `IqCombine` is the worst one to leave un-snapshotted, because it is the one with behaviour to regress: the framing comparison and `frame_mismatch`.
+- **`RCStreamFanout` is not re-exported at `rcstream::`** though it is a flat module exactly like `filter` and `map`, is named in the module docs, and has an example and full tiers. The `credit`/`util`/`axi_stream` widgets are also absent from the top level, but those re-export at their own sub-module level, which is a defensible grouping. `fanout` was just missed.
+- **Only two concrete framing types exist in the whole tree**: `SyncMark` (41 uses) and `LtcFrame` (2). The `bool` / enum / `b8` / sideband-struct idioms in `bus.rs`'s table are supported and documented but unexercised outside doc text. Not a defect — a user brings their own — but the table is design intent, not a report of use.
+- **The framing-transform rules are documented per widget and nowhere together.** Chaining `chunked → flatten` round-trips the framing type to `([F; N], bool)`, not back to `F`, so `flatten ∘ chunked` is the identity on payload and *not* on framing. Each module explains its own rule well; nothing states the composition.
+- **`InterpDesign` has no `Display`** where `ChainDesign` does, which is why the chapter's snippet formats fields by hand instead of quoting a report. Cosmetic asymmetry, worth closing.
+
+**Validation:** Four new tests in the book-code crate pin every figure the chapter quotes, including both `text` blocks verbatim; `book_integrity` confirms the new chapter is listed, reachable and that both its anchors resolve. The RCStream note's claims were each checked against the tree rather than recalled — widget count, per-widget test-tier grep, trace existence for all sixteen non-`util` widgets, re-export lists, and framing behaviour read from the source.
+
+**Follow-ups:**
+
+- Give `rcstream::util::{split, combine, constant}` their missing Tier 3, Tier 5, examples and traces. Three widgets, mechanical, and `IqCombine` should go first.
+- Re-export `RCStreamFanout` at `rcstream::`.
+- A composition table for the framing transforms, in `rcstream::mod` or a book section.
+- `impl Display for InterpDesign`, matching `ChainDesign`.
+- The chain designers are slow, and now measured: cost is roughly `factorisations(R, parts) × 10^parts × R`. Two causes — `depth_assignments` is a blind Cartesian product (`max_stages × 2` choices per stage, so `10^parts`), and `cascade_image_db` / `response::worst_alias_db` scan **every** image or alias band, `for k in 1..=(r/2)` × 257 steps, for every candidate. Measured: 0.251 ms per call at R=64 rising linearly to 5.04 ms at R=1250, and `design` at `R=500, parts=3` takes 116 s. Note `R=125, parts=3` (1.33 s) is *faster* than `R=64, parts=3` (6.32 s), because 5³ has one three-way ordered factorisation and 2⁶ has ten — so a power of two is the worse case for its size. The fixes are memoising `cascade_magnitude` per shape across candidates and bounding the depth search by monotonicity in `N`; neither is attempted here.
+
+---
+
 ## 2026-08-28 — Group delay: the requirement a control loop is bound by, and the term the pipelining quietly added
 
 **Paths:** `crates/rhdl-dsp-design/src/cic/delay.rs` (new), `crates/rhdl-dsp-design/src/cic/{chain.rs,interp_chain.rs,mod.rs}`, `crates/rhdl-fpga/src/doc/{delay_budget.rs (new),report.rs,interp_report.rs}`, `crates/rhdl-fpga/src/dsp/cic/{decimator.rs,interpolator.rs,mod.rs}` (docs), `crates/rhdl-macro-core/src/cic_chain.rs`, `crates/rhdl-fpga/examples/cic_delay_budget.rs` (new), `doc/book/src/dsp/delay.md` (new), `doc/book/src/code/src/dsp/delay.rs` (new), all five report PDFs regenerated.

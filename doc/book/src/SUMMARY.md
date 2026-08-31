@@ -89,6 +89,7 @@
 	- [FIR Filters](dsp/fir.md)
 	- [Compensation](dsp/compensation.md)
 	- [The Down-Converter](dsp/ddc.md)
+	- [The Up-Converter](dsp/duc.md)
 	- [Specifying a chain](dsp/design.md)
 	- [Delay and control loops](dsp/delay.md)
 - [Finite State Machines](fsm/summary.md)
