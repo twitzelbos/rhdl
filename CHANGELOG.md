@@ -53,6 +53,8 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 **Validation:** 198 `rcstream` tests pass. The three new digests were confirmed stable across two consecutive runs, and the three `.vcd.rhdl` sidecars are committed (`.vcd` itself is gitignored). Every seeded snapshot was read before being committed — `rcstream_constant`'s emits no `always @(posedge …)` block, which is the expected shape for a widget whose value lives in a `Constant`.
 
+**Correction to the up-converter chapter (same day).** The chapter's "More taps will not improve image rejection" section closed with *"A compensator at the converter rate **would** work … and costs a FIR running at the full clock"* — subjunctive, implying no such widget exists. **`PostCompensatedInterp` has shipped since PR #117**, so the chapter was describing a shipped widget as hypothetical. Rewritten as "The knobs that do work on images", naming the widget, giving the four knobs in cost order with the measured rejection-per-stage figure (~57 dB), and carrying `post_compensator_taps`' own table: the transition band is `(1 − 2·edge)/R` wide so the tap count is linear in `R`, reaching **755 taps at `R = 125`**, which is why the pre-compensator is the default and the post-compensator belongs *between chain stages* where the local `R` is small. Found by being asked "is the compensation pre or post now" — a question the chapter should have answered and instead answered wrongly. Worth noting for the next author: the chapter's *numbers* are pinned by tests, and this was prose, which nothing checks.
+
 **Follow-ups:**
 
 - Nothing about fmax is measured anywhere in this repository; that still needs a machine with Vivado, and it is the one gap no further design work closes.
