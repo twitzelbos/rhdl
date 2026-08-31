@@ -253,16 +253,45 @@ pub fn framed<P>(cr: ClockReset, i: PolicyIn<P::Frame>, q: Q<P>)
 where P: FramingPolicy + Default { ... }
 ```
 
-**Verified end to end**: this builds, `descriptor()` succeeds, the policy
+**So yes — the trait brings its own kernel.** `SynchronousIO::Kernel` is
+part of the bound, so each implementor supplies one and the parent gets
+whichever the instantiated policy carries. Two policies over the same
+parent widget produce different observable behaviour, which is what
+`the_policy_supplies_the_behaviour` asserts.
+
+**But the parent's kernel does not *call* it.** The framework *wires* it:
+the parent writes `d.policy` and reads `q.policy`, and the policy's kernel
+runs as its own circuit. That distinction is the whole content of the two
+failures above — dispatch is structural, at instantiation, not a call.
+
+**Verified end to end**: builds, `descriptor()` succeeds, the policy
 appears as a real `top_policy` submodule rather than being inlined away,
 and it passes the `iverilog` round-trip on *both* the RTL and the NTL
 path, plus an iterator simulation. The associated type flows through
 `SynchronousDQ`'s generated `Q`/`D` without special handling.
 
-**The cost is that it is structural, not zero-cost.** The policy is a
-submodule and holds its own registers. If what you wanted was
-caller-supplied *combinational* logic folded into the parent's kernel,
-there is no route to it — see the two failures above.
+## What it costs — measured, not assumed
+
+An earlier draft of this section said the policy "holds its own
+registers". That is wrong as a general claim. **A policy holds whatever
+registers it declares, and a stateless one declares none:** the same
+parent composed over a `DFF`-holding policy emits one
+`always @(posedge …)` block, and composed over a purely combinational
+policy emits **zero**. Both round-trip through `iverilog` on RTL and NTL.
+`a_stateless_policy_costs_no_flops` pins it.
+
+So the cost is a *module boundary* in the emitted Verilog, not silicon
+state. Caller-supplied combinational framing logic is therefore
+expressible after all — as a stateless policy widget, at zero register
+cost — just not as logic folded into the parent's own kernel body.
+
+**One ergonomics wrinkle.** Generic *helper* code over the policy
+parameter needs more bounds than the widget does: the simulator wants
+bounds on `P::S` that `FramingPolicy` does not imply, so a helper written
+as `fn boundaries<P: FramingPolicy>(uut: &Framed<P>)` does not compile
+where the widget itself does. The test suite worked around it with a
+macro. Widget code is fine; test scaffolding generic over the parameter is
+where this bites.
 
 ## What this means for the three gaps
 
