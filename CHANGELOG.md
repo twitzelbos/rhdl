@@ -31,6 +31,35 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-31 — RCStream housekeeping: three widgets brought up to contract, a missing re-export, and a rejected trait
+
+**Paths:** `crates/rhdl-fpga/src/rcstream/util/{split.rs,combine.rs,constant.rs}`, `crates/rhdl-fpga/src/rcstream/mod.rs`, three new examples and traces, three new VCD sidecars, `notes/rcstream-widget-review.md`.
+
+**Why this, why now:** The RCStream review in #118 found three gaps. All three are closed here — but the third is closed differently from the way the review proposed, and that is the substance of this entry.
+
+**Design decisions:**
+
+- **`util::{split, combine, constant}` now meet the five-clause contract.** They had a schematic symbol, Tier 1, Tier 2 and Tier 4 but no Tier 3 snapshot, no Tier 5 digest, no example and no committed trace — the only RCStream widgets in that state, which per CLAUDE.md §12 rule 2 made them incomplete rather than stylistically different.
+- **`IqCombine`'s digest uses `F = SyncMark`, and its stimulus includes a disagreeing cycle.** The rest of that module tests with `F = ()`, and a digest taken with unit framing cannot detect a change to the only logic in the widget worth protecting: the framing comparison and `frame_mismatch`. This is the lesson from the CDC work in #118 applied before it bit rather than after.
+- **The examples use `SyncMark` too**, so the traces show real framing instead of an always-empty field. `iq_split` shows the marker replicated onto both halves and `ready` dropping while one consumer stalls; `iq_combine` shows `frame_mismatch` firing on exactly the disagreeing cycle; `rcstream_constant` shows that reset does not disturb a value that lives in a `Constant` rather than a register.
+- **`RCStreamFanout` is re-exported**, and `every_flat_widget_is_re_exported` names the entire set as `use` statements so the next omission is a compile error. The grouped sub-modules (`credit`, `util`, `axi_stream`) stay out of the top level deliberately — they re-export at their own level, which keeps `rcstream::` from becoming a flat namespace of everything.
+- **The framing-composition traits were designed and rejected.** `ChunkFraming<N>` / `FlattenFraming` were proposed in #118's addendum on the argument that they would make the composition "machine-checked instead of documented". That argument does not survive contact: the rule *is* already machine-checked, because `type O = RCStream<[T; N], [F; N]>` is the rule and the compiler enforces it at every connection; a trait with one blanket impl states no additional fact; the composed spelling `<<F as ChunkFraming<N>>::Chunked as FlattenFraming>::Flattened` reads worse than `([F; N], bool)`; and there is no use site, because a trait would only pay for a generic pipeline widget that must state its output framing without knowing its stages, and the `dsp::ddc` pattern shows you pin `I` and `O` at the bound instead. What was missing was **discoverability**, not checking.
+
+**Surprises and gotchas:**
+
+- **The gap was mis-diagnosed in the review, by me, one addendum earlier.** "Machine-checked instead of documented" sounded right and was wrong; the type system was already doing the checking and the two rules simply lived in two files with nothing stating their composition. The cost of noticing late was a design that had to be talked out of rather than built.
+- **Chunk-then-flatten does not return the framing to `F`.** The payload round-trips and the framing accumulates: `F → [F; N] → ([F; N], bool)`. `chunk_then_flatten_accumulates_framing` pins it as a type equality and was verified to stop compiling when either rule changes — the only place the two widgets' rules are considered together.
+- **`RCStreamConstant`'s input type is `()`, not `bool`.** Its example failed to compile against `(0..12).map(|_| true)`; an infinite source ignores backpressure, so there is nothing for an input to carry.
+
+**Validation:** 198 `rcstream` tests pass. The three new digests were confirmed stable across two consecutive runs, and the three `.vcd.rhdl` sidecars are committed (`.vcd` itself is gitignored). Every seeded snapshot was read before being committed — `rcstream_constant`'s emits no `always @(posedge …)` block, which is the expected shape for a widget whose value lives in a `Constant`.
+
+**Follow-ups:**
+
+- Nothing about fmax is measured anywhere in this repository; that still needs a machine with Vivado, and it is the one gap no further design work closes.
+- The chain designers remain slow at three-stage splits of composite rates; cost is `factorisations(R, parts) × 10^parts × R` and the fixes are memoising `cascade_magnitude` per shape and bounding the depth search by monotonicity in `N`.
+
+---
+
 ## 2026-08-31 — The up-converter's book chapter, and an RCStream inventory that turned up three gaps
 
 **Paths:** `doc/book/src/dsp/duc.md` (new), `doc/book/src/code/src/dsp/duc.rs` (new), `doc/book/src/SUMMARY.md`, `notes/rcstream-widget-review.md` (new).
