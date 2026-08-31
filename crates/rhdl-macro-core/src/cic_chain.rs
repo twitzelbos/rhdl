@@ -176,6 +176,17 @@ fn unmet_message(u: &Unmet) -> String {
              Unpruned is the quietest this shape can be, so `out_w` is the constraint, \
              not the pruning schedule."
         ),
+        Unmet::GroupDelay { best_s, needed_s } => format!(
+            "cannot meet the group-delay bound: asked for {:.3} us, the shortest any split \
+             achieves is {:.3} us.\n\
+             Delay and selectivity trade directly -- a filter that rejects an alias must \
+             average over enough samples to see it. Which term dominates depends on the \
+             configuration, so design once with `max_group_delay_s = 0.0` and read the \
+             `group_delay` breakdown before choosing a knob: fewer `max_stages`, fewer \
+             `max_taps`, a different split, or less rejection.",
+            needed_s * 1e6,
+            best_s * 1e6
+        ),
         Unmet::BandwidthTooWide { passband } => format!(
             "the requested bandwidth is {:.3} of the output Nyquist, which no filter can \
              deliver.\n`2 * alias_free_bw * decimate` must be less than `fs`.",

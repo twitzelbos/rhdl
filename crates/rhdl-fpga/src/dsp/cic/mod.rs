@@ -58,5 +58,5 @@ pub use interpolator::CicInterpolate;
 // `$crate::dsp::cic::prune::stage_width` paths -- see no difference.
 pub use rhdl_dsp_design::cic::{
     accumulator_width, accumulator_width_is_sufficient, chain, compensator, counter_width, dc_gain,
-    gain_bits, interp, interp_chain, prune, response,
+    delay, gain_bits, interp, interp_chain, prune, response,
 };

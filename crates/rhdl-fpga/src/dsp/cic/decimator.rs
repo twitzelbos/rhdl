@@ -51,6 +51,26 @@
 //! That makes the widget correct on a gated stream as well as an
 //! isochronous one.
 //!
+//! # Both cascades are one adder deep, and what that costs
+//!
+//! Combinational depth does not care how often the logic is used. A comb
+//! cascade chained combinationally is `STAGES` subtractors between
+//! registers and has to settle inside one clock period whether its
+//! registers move every cycle or one cycle in `R` — so both sections
+//! read the previous stage's *registered* value, and the depth is one
+//! adder however deep the cascade.
+//!
+//! **The cost is `(STAGES - 1) · R` input samples of group delay**,
+//! because the comb section runs at the output rate. At `N = 3,
+//! R = 1250` that is 2500 samples against the filter's own 1875: the
+//! pipelining more than doubles the delay. For a receiver that is
+//! listening it is free. Inside a control loop it is phase margin, and
+//! it is frequently the *largest single term* in the loop's delay.
+//!
+//! [`super::delay`] has the arithmetic, a breakdown that names which
+//! term dominates, and the book chapter "Delay and control loops" works
+//! through a lock-in loop where this term is half the total.
+//!
 //!# Example
 //!
 //!```

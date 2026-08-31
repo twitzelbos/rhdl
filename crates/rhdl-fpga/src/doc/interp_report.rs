@@ -37,8 +37,11 @@ use super::pdf::{Align, Font, Page, Pdf};
 // two things to keep in step, and the one in `report` already carries
 // the reasoning about separators and the right page edge.
 use super::plot::{Axes, Frame, PALETTE, Series, draw};
-use super::report::wrap_values;
-use crate::dsp::cic::{compensator, interp, interp_chain, response};
+use super::report::{
+    BLOCK_BODY_Y, BLOCK_HEAD_Y, CENTRE_X, LINE_STEP, MARGIN_X, PAGE_H, PLOT_BOTTOM_Y, PLOT_H,
+    PLOT_TOP_Y, PLOT_W, SUBTITLE_Y, TEXT_WIDTH, TITLE_Y, page, wrap_values,
+};
+use crate::dsp::cic::{compensator, delay, interp, interp_chain, response};
 
 /// A hand-specified interpolator to report on.
 ///
@@ -159,6 +162,12 @@ pub fn as_design(cfg: InterpReport) -> Option<interp_chain::InterpDesign> {
         // restricted.
         rate_min: 2,
         arbitrary_rate: true,
+        // Nothing was asked, so nothing is claimed; the delay is
+        // reported below as what this shape happens to cost.
+        max_group_delay_s: 0.0,
+        // Matches the built `CicInterpolate`, whose comb cascade is
+        // pipelined.
+        pipelined_combs: true,
     };
 
     Some(interp_chain::InterpDesign {
@@ -197,6 +206,7 @@ pub fn as_design(cfg: InterpReport) -> Option<interp_chain::InterpDesign> {
         mid_width_in_band: in_band,
         compensator_l1: l1,
         compensator_peak: peak,
+        group_delay: delay::interpolation_chain_breakdown(&[(n, r, m)], quantised.taps.len(), true),
         alternative: None,
     })
 }
@@ -215,6 +225,7 @@ pub fn render(d: &interp_chain::InterpDesign, provenance: &str) -> Pdf {
     let mut doc = Pdf::new();
     doc.push(page_one(d, provenance));
     doc.push(page_two(d));
+    doc.push(page_three(d));
     doc
 }
 
@@ -229,19 +240,19 @@ fn real_taps(d: &interp_chain::InterpDesign) -> Vec<f64> {
 }
 
 fn page_one(d: &interp_chain::InterpDesign, provenance: &str) -> Page {
-    let mut p = Page::a4();
+    let mut p = page();
     p.fill_style((0.0, 0.0, 0.0));
     p.text(
-        297.5,
-        800.0,
+        CENTRE_X,
+        TITLE_Y,
         16.0,
         Font::Bold,
         Align::Centre,
         &format!("Interpolation Chain - {provenance}"),
     );
     p.text(
-        297.5,
-        784.0,
+        CENTRE_X,
+        SUBTITLE_Y,
         9.0,
         Font::Regular,
         Align::Centre,
@@ -305,10 +316,10 @@ fn page_one(d: &interp_chain::InterpDesign, provenance: &str) -> Page {
     draw(
         &mut p,
         Frame {
-            x: 60.0,
-            y: 545.0,
-            w: 470.0,
-            h: 200.0,
+            x: MARGIN_X,
+            y: PLOT_TOP_Y,
+            w: PLOT_W,
+            h: PLOT_H,
         },
         &axes,
         &s,
@@ -372,8 +383,15 @@ fn page_one(d: &interp_chain::InterpDesign, provenance: &str) -> Page {
 
     // ---- the stages ----
     p.fill_style((0.0, 0.0, 0.0));
-    p.text(60.0, 235.0, 10.0, Font::Bold, Align::Left, "Stages");
-    let mut y = 220.0;
+    p.text(
+        MARGIN_X,
+        BLOCK_HEAD_Y,
+        10.0,
+        Font::Bold,
+        Align::Left,
+        "Stages",
+    );
+    let mut y = BLOCK_BODY_Y;
     for (k, c) in d.cics.iter().enumerate() {
         for line in [
             format!(
@@ -413,19 +431,19 @@ fn page_one(d: &interp_chain::InterpDesign, provenance: &str) -> Page {
 }
 
 fn page_two(d: &interp_chain::InterpDesign) -> Page {
-    let mut p = Page::a4();
+    let mut p = page();
     p.fill_style((0.0, 0.0, 0.0));
     p.text(
-        297.5,
-        800.0,
+        CENTRE_X,
+        TITLE_Y,
         16.0,
         Font::Bold,
         Align::Centre,
         "Compensation and Result",
     );
     p.text(
-        297.5,
-        784.0,
+        CENTRE_X,
+        SUBTITLE_Y,
         9.0,
         Font::Regular,
         Align::Centre,
@@ -476,10 +494,10 @@ fn page_two(d: &interp_chain::InterpDesign) -> Page {
     draw(
         &mut p,
         Frame {
-            x: 60.0,
-            y: 545.0,
-            w: 470.0,
-            h: 200.0,
+            x: MARGIN_X,
+            y: PLOT_TOP_Y,
+            w: PLOT_W,
+            h: PLOT_H,
         },
         &axes,
         &s,
@@ -526,19 +544,55 @@ fn page_two(d: &interp_chain::InterpDesign) -> Page {
     draw(
         &mut p,
         Frame {
-            x: 60.0,
-            y: 300.0,
-            w: 470.0,
-            h: 180.0,
+            x: MARGIN_X,
+            y: PLOT_BOTTOM_Y,
+            w: PLOT_W,
+            h: PLOT_H,
         },
         &axes,
         &s,
     );
 
+    p
+}
+
+/// The figures, and the two things a reader gets wrong.
+///
+/// A page of its own because it did not fit on page two. The committed
+/// PDF ran to `y = -90` — several hundred points below the bottom of an
+/// A4 page — so the headroom warning and the "more taps will not improve
+/// image rejection" note, which are the two most important paragraphs in
+/// the report, were rendered off the paper and had been for as long as
+/// they existed. Nothing checked, because nothing knew the page had a
+/// bottom.
+fn page_three(d: &interp_chain::InterpDesign) -> Page {
+    let mut p = page();
+    p.fill_style((0.0, 0.0, 0.0));
+    p.text(
+        CENTRE_X,
+        TITLE_Y,
+        16.0,
+        Font::Bold,
+        Align::Centre,
+        "Figures and Cautions",
+    );
     // ---- the figures ----
     p.fill_style((0.0, 0.0, 0.0));
-    p.text(60.0, 250.0, 10.0, Font::Bold, Align::Left, "Figures");
-    let mut y = 235.0;
+    let droop = response::passband_droop_db(
+        d.passband,
+        d.cics[0].stages,
+        d.cics[0].interpolate,
+        d.cics[0].delay,
+    );
+    p.text(
+        MARGIN_X,
+        PAGE_H - 72.0,
+        10.0,
+        Font::Bold,
+        Align::Left,
+        "Figures",
+    );
+    let mut y = PAGE_H - 87.0;
     let mut lines: Vec<String> = vec![
         format!(
             "images ............... {:.1} dB down  (asked >= {:.1})",
@@ -586,11 +640,19 @@ fn page_two(d: &interp_chain::InterpDesign) -> Page {
             }
         ),
         format!("worst image at rate .. {}", d.worst_image_rate),
-        format!(
-            "adder depth .......... {} deep in the combs, 1 in the integrators",
-            d.cics.iter().map(|c| c.stages).max().unwrap_or(0)
-        ),
+        // Both cascades read the previous stage's *registered* output
+        // (`dsp::cic::interpolator`), so the depth is one however deep
+        // the cascade. The report said "N deep in the combs" until the
+        // group-delay work went looking for where the delay came from --
+        // a stale claim that had been printed into a committed PDF.
+        "adder depth .......... 1 in the combs, 1 in the integrators (both pipelined)".to_string(),
     ];
+    lines.push(String::new());
+    lines.extend(crate::doc::report::delay_lines(
+        &d.group_delay,
+        d.spec.fs_hz,
+        "converter",
+    ));
     if let Some(a) = &d.alternative {
         lines.push(format!(
             "runner-up ............ split {:?} N={:?} M={:?}, {} register bits",
@@ -599,12 +661,17 @@ fn page_two(d: &interp_chain::InterpDesign) -> Page {
     }
     for line in &lines {
         p.text(60.0, y, 8.0, Font::Regular, Align::Left, line);
-        y -= 11.0;
+        y -= LINE_STEP;
     }
     y -= 6.0;
-    for line in wrap_values("taps ................. ", &d.compensator.taps, 475.0, 8.0) {
+    for line in wrap_values(
+        "taps ................. ",
+        &d.compensator.taps,
+        TEXT_WIDTH,
+        8.0,
+    ) {
         p.text(60.0, y, 8.0, Font::Regular, Align::Left, &line);
-        y -= 11.0;
+        y -= LINE_STEP;
     }
 
     // ---- headroom, which is easy to under-read ----
@@ -660,6 +727,44 @@ fn page_two(d: &interp_chain::InterpDesign) -> Page {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **Every glyph the TX reports place is on the paper.**
+    ///
+    /// This test is the reason page three exists: the committed PDF had
+    /// its headroom warning and its "more taps will not help" note at
+    /// `y = -90`, off the bottom of an A4 page, and had done since they
+    /// were written. `render` returning `Ok` proved only that bytes were
+    /// produced.
+    #[test]
+    fn the_tx_reports_fit_on_their_pages() {
+        let cfg = InterpReport::default();
+        let d = as_design(cfg).expect("designable");
+        crate::doc::report::assert_all_text_on_page(&render(&d, "Test"), "interp_report");
+        crate::doc::report::assert_all_text_on_page(
+            &interp_chain_report(&d),
+            "interp_chain_report",
+        );
+    }
+
+    /// **The group delay is reported, with its parts**, and the adder
+    /// depth claim matches the built widget.
+    #[test]
+    fn the_report_states_the_group_delay_and_the_real_adder_depth() {
+        let d = as_design(InterpReport::default()).expect("designable");
+        let text = String::from_utf8_lossy(&render(&d, "Test").to_bytes()).to_string();
+        assert!(text.contains("group delay"), "no delay line");
+        assert!(text.contains("comb pipeline"), "no breakdown");
+        // Both cascades read a registered value, so the depth is one.
+        // The report claimed `N` until the group-delay work went looking.
+        assert!(
+            text.contains("1 in the combs"),
+            "the adder-depth claim does not match dsp::cic::interpolator"
+        );
+        assert!(
+            !text.contains("deep in the combs"),
+            "the stale claim is back"
+        );
+    }
 
     /// The default hand-specified configuration renders.
     #[test]
@@ -765,6 +870,8 @@ mod tests {
             method: compensator::Method::LeastSquares,
             rate_min: 2,
             arbitrary_rate: true,
+            max_group_delay_s: 0.0,
+            pipelined_combs: true,
         };
         let derived = interp_chain::design(spec).expect("designable");
         assert_eq!(derived.split(), vec![cfg.rate]);

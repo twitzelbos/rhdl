@@ -36,7 +36,10 @@ register bits ......... 269 (rate-weighted cost 89.6)
 achieved ripple ....... 0.0689 dB (asked <= 0.100)
 achieved alias reject . 67.3 dB (asked >= 60.0)
 achieved SNR .......... 84.6 dB (asked >= 80.0)
-alternative ........... [122, 4] cost 97.3 (feasible, but costlier)
+group delay ........... 6862 input samples = 54.9 us
+  cascade 2427, int pipe 33, comb pipe 1960, out reg 2, comp 2440
+  largest is the compensator at 2440; loop bandwidth ~ 1.8 kHz
+alternative ........... [4, 61, 2] cost 96.8 (feasible, but costlier by the rate-weighted model)
 ```
 
 Everything below the line is derived. Several of those derivations are

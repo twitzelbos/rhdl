@@ -221,6 +221,37 @@ pub struct InterpSpec {
     pub max_chain_stages: usize,
     /// Compensator design method.
     pub method: compensator::Method,
+    /// Worst permitted group delay, in seconds, referred to the converter
+    /// rate. Zero means unconstrained.
+    ///
+    /// Matters for a transmit chain inside a loop — a modulator whose
+    /// output is measured and corrected. See [`super::delay`].
+    pub max_group_delay_s: f64,
+    /// Does the *implementation* pipeline its comb cascades?
+    ///
+    /// `true` describes RHDL's `CicDecimate` / `CicInterpolate`, whose
+    /// comb cascades read the previous stage's registered output so the
+    /// critical path is one subtractor however deep the cascade.
+    ///
+    /// `false` describes an implementation with no such registers — a
+    /// software CIC in an ARM real-time thread, a vendor IP core, a
+    /// hand-written block. That is not a hypothetical: the fabric-versus-
+    /// processor comparison for a control loop turns on exactly this
+    /// term, and it is the one contribution that differs between the two.
+    ///
+    /// It is deliberately *not* a knob on the shipped widgets. Selecting
+    /// with `const PIPELINE_COMBS: bool` and an `if` was considered and
+    /// rejected for the reason recorded in `dsp::mixer`: `if` lowers to a
+    /// mux where **both branches always evaluate**, so the unselected
+    /// combinational cascade would still be in the netlist — and the
+    /// *default* path would silently lose the fmax the pipelining exists
+    /// to buy. [`super::delay::Breakdown::comb_pipeline`] prices the alternative
+    /// without anyone having to build it.
+    ///
+    /// An interpolator's comb pipelining costs `N·R` output samples --
+    /// one register more than a decimator's `(N-1)·R`, for the handover
+    /// into the integrator section -- so the direction matters.
+    pub pipelined_combs: bool,
 }
 
 impl Default for InterpSpec {
@@ -242,6 +273,8 @@ impl Default for InterpSpec {
             max_taps: 21,
             max_chain_stages: 2,
             method: compensator::Method::LeastSquares,
+            max_group_delay_s: 0.0,
+            pipelined_combs: true,
         }
     }
 }
@@ -383,6 +416,8 @@ pub struct InterpDesign {
     pub compensator_l1: f64,
     /// Largest passband gain the compensator asks for.
     pub compensator_peak: f64,
+    /// Where the chain's group delay comes from, in converter samples.
+    pub group_delay: super::delay::Breakdown,
     /// The runner-up, when there was one.
     pub alternative: Option<Alternative>,
 }
@@ -672,6 +707,13 @@ pub enum Unmet {
     BandwidthTooWide {
         /// Fraction of envelope Nyquist the request implies.
         passband: f64,
+    },
+    /// No candidate meets the group-delay bound.
+    GroupDelay {
+        /// Shortest delay found, in seconds.
+        best_s: f64,
+        /// What was asked.
+        needed_s: f64,
     },
     /// The spec is not self-consistent.
     Invalid {
@@ -1184,6 +1226,7 @@ pub fn design(spec: InterpSpec) -> Result<InterpDesign, Unmet> {
 
     let mut best_image = f64::NEG_INFINITY;
     let mut best_ripple = f64::INFINITY;
+    let mut best_delay_s = f64::INFINITY;
     let mut touched_null = false;
     let mut feasible: Vec<InterpDesign> = Vec::new();
 
@@ -1323,6 +1366,27 @@ pub fn design(spec: InterpSpec) -> Result<InterpDesign, Unmet> {
             let (mid_any, mid_band, l1, peak) =
                 compensator_headroom_of(spec.input_width, &dequantised(&quantised), passband);
 
+            let stage_tuples: Vec<(usize, usize, usize)> = stages_out
+                .iter()
+                .map(|c| (c.stages, c.interpolate, c.delay))
+                .collect();
+            let group_delay = super::delay::interpolation_chain_breakdown(
+                &stage_tuples,
+                quantised.taps.len(),
+                spec.pipelined_combs,
+            );
+            if spec.max_group_delay_s > 0.0
+                && super::delay::seconds(group_delay.total(), spec.fs_hz) > spec.max_group_delay_s
+            {
+                if super::delay::seconds(group_delay.total(), spec.fs_hz) < best_delay_s {
+                    best_delay_s = super::delay::seconds(group_delay.total(), spec.fs_hz);
+                }
+                continue;
+            }
+            if super::delay::seconds(group_delay.total(), spec.fs_hz) < best_delay_s {
+                best_delay_s = super::delay::seconds(group_delay.total(), spec.fs_hz);
+            }
+
             feasible.push(InterpDesign {
                 spec: spec.clone(),
                 cics: stages_out,
@@ -1341,6 +1405,7 @@ pub fn design(spec: InterpSpec) -> Result<InterpDesign, Unmet> {
                 tapered_register_bits: tapered_bits,
                 built_register_bits: built_bits,
                 mid_width_any_input: mid_any,
+                group_delay,
                 mid_width_in_band: mid_band,
                 compensator_l1: l1,
                 compensator_peak: peak,
@@ -1350,6 +1415,15 @@ pub fn design(spec: InterpSpec) -> Result<InterpDesign, Unmet> {
     }
 
     if feasible.is_empty() {
+        if spec.max_group_delay_s > 0.0
+            && best_delay_s.is_finite()
+            && best_delay_s > spec.max_group_delay_s
+        {
+            return Err(Unmet::GroupDelay {
+                best_s: best_delay_s,
+                needed_s: spec.max_group_delay_s,
+            });
+        }
         if best_image < spec.min_image_rejection_db {
             return Err(Unmet::ImageRejection {
                 best_db: best_image,
@@ -1385,6 +1459,156 @@ pub fn design(spec: InterpSpec) -> Result<InterpDesign, Unmet> {
 
 #[cfg(test)]
 mod tests {
+
+    /// **A transmit chain reports its group delay, referred to the
+    /// converter rate.**
+    ///
+    /// An interpolation chain's stages run at *different* rates, and the
+    /// only rate every contribution can share is the converter's. Getting
+    /// the referral backwards is the mistake this test exists to catch --
+    /// it cost a factor of 125 once, silently, because the wrong formula
+    /// has the same shape as the right one.
+    #[test]
+    fn a_transmit_chain_reports_its_group_delay() {
+        let d = design(InterpSpec::default()).expect("designable");
+        let b = d.group_delay;
+        assert_eq!(
+            b.total(),
+            b.cic_body
+                + b.integrator_pipeline
+                + b.comb_pipeline
+                + b.output_registers
+                + b.compensator
+        );
+        // The delay in output samples cannot be shorter than the last
+        // stage's own body, and cannot exceed a few times the whole
+        // chain's rate change -- a sanity band wide enough to admit any
+        // legitimate design and narrow enough to catch a rate-referral
+        // error.
+        let total: usize = d.split().iter().product();
+        assert!(
+            b.total() > 0.0 && b.total() < 100.0 * total as f64,
+            "{:?} for a rate change of {total}",
+            b
+        );
+        let (name, size) = b.dominant();
+        assert!(size > 0.0, "something must dominate: {name}");
+    }
+
+    /// **The comb pipelining dominates the default transmit chain**, not
+    /// the compensator.
+    ///
+    /// Worth pinning because it is the opposite of what the single-stage
+    /// arithmetic suggests, and because the pipelining was added for
+    /// fmax by someone (me) who did not then measure what it cost the
+    /// delay. Both terms live at the envelope rate, so the comparison is
+    /// `n` against `(taps-1)/2` per stage — and the designer chooses a
+    /// short compensator here, which makes the cascade the slow part.
+    ///
+    /// `super::delay::a_short_compensator_reverses_the_ordering` pins the
+    /// other direction, so neither reading can drift into a rule.
+    #[test]
+    fn the_comb_pipelining_dominates_the_default_transmit_chain() {
+        let d = design(InterpSpec::default()).expect("designable");
+        let b = d.group_delay;
+        assert_eq!(b.dominant().0, "comb pipeline", "breakdown was {b:?}");
+        assert!(b.comb_pipeline > b.compensator, "{b:?}");
+        // And it is the *early* stage that costs, because it runs
+        // slowest -- so the actionable move is depth in the last stage,
+        // not the first.
+        let stages: Vec<(usize, usize, usize)> = d
+            .cics
+            .iter()
+            .map(|c| (c.stages, c.interpolate, c.delay))
+            .collect();
+        let parts = super::super::delay::interpolation_stage_breakdowns(&stages, true);
+        assert!(
+            parts[0].comb_pipeline > parts[parts.len() - 1].comb_pipeline,
+            "{parts:?}"
+        );
+    }
+
+    /// **A delay bound is honoured, and reported when it cannot be.**
+    #[test]
+    fn a_transmit_delay_bound_is_honoured() {
+        let base = InterpSpec::default();
+        let unbounded = design(base.clone()).expect("designable");
+        let actual = super::super::delay::seconds(unbounded.group_delay.total(), base.fs_hz);
+
+        let ok = InterpSpec {
+            max_group_delay_s: actual * 2.0,
+            ..base.clone()
+        };
+        let d = design(ok).expect("designable under a generous bound");
+        assert!(super::super::delay::seconds(d.group_delay.total(), base.fs_hz) <= actual * 2.0);
+
+        let tight = InterpSpec {
+            max_group_delay_s: actual / 1000.0,
+            ..base.clone()
+        };
+        match design(tight) {
+            Err(Unmet::GroupDelay { best_s, needed_s }) => {
+                assert_eq!(needed_s, actual / 1000.0);
+                assert!(best_s > needed_s, "{best_s} vs {needed_s}");
+                assert!(best_s.is_finite());
+            }
+            other => panic!("expected GroupDelay, got {other:?}"),
+        }
+    }
+
+    /// **A bound that binds without being impossible changes the
+    /// design**, rather than being quietly ignored.
+    ///
+    /// The failure mode this catches is a constraint that is checked but
+    /// never used to *choose*: if the search still returns its
+    /// cheapest candidate and the bound only ever rejects, then a bound
+    /// slightly tighter than the cheapest design would report
+    /// infeasible when a slower-but-shorter split existed.
+    #[test]
+    fn a_binding_bound_selects_a_different_design() {
+        // A modest rate and two stages, deliberately: at
+        // `interpolate = 1250, max_chain_stages = 3` this same test takes
+        // eight minutes, because the split search is exponential in the
+        // rate's factorisations. The selection behaviour under test does
+        // not depend on the size of the search.
+        let base = InterpSpec {
+            interpolate: 250,
+            // The bandwidth has to follow the rate, or the request is
+            // wider than the envelope's own Nyquist.
+            image_free_bw_hz: 50e3,
+            max_chain_stages: 2,
+            ..InterpSpec::default()
+        };
+        let free = design(base.clone()).expect("designable");
+        let free_s = super::super::delay::seconds(free.group_delay.total(), base.fs_hz);
+
+        // Ask for less than the unconstrained design achieves. At this
+        // configuration a shorter split exists, so the designer must
+        // *find* it -- reporting `GroupDelay` here would mean the bound
+        // only ever rejects the cheapest candidate instead of choosing
+        // among all of them.
+        let bound = free_s * 0.9;
+        let tight = InterpSpec {
+            max_group_delay_s: bound,
+            ..base.clone()
+        };
+        let d = design(tight).expect("a shorter split exists at this configuration");
+        let s = super::super::delay::seconds(d.group_delay.total(), base.fs_hz);
+        assert!(s <= bound, "returned {s} against a bound of {bound}");
+        assert_ne!(
+            d.split(),
+            free.split(),
+            "a bound that binds must change the design"
+        );
+        // Paid for in the currency the search otherwise minimises.
+        assert!(
+            d.cost >= free.cost,
+            "a shorter design should not also be cheaper: {} vs {}",
+            d.cost,
+            free.cost
+        );
+    }
+
     use super::*;
 
     /// **The image metric is the alias metric.**
