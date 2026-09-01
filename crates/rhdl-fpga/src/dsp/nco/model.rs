@@ -834,6 +834,481 @@ pub fn worst_exact_spur_in_band(
 
 #[cfg(test)]
 mod tests {
+
+    /// Spur spectrum with a phase offset, **complex**, so a phase cycle
+    /// can be averaged coherently.
+    ///
+    /// [`exact_spur_spectrum_offset`] returns magnitudes, which is enough
+    /// to answer "does the offset change the spur levels" (for an odd
+    /// word it does not — the offset is a pure time shift) and not enough
+    /// to answer "does a phase cycle *cancel* them", which is a question
+    /// about their phases.
+    fn complex_error_spectrum(
+        arch: PhaseToAmp,
+        phase_w: u32,
+        word: u64,
+        phase_offset: u64,
+    ) -> (Vec<f64>, Vec<f64>) {
+        let v = word.trailing_zeros().min(phase_w);
+        let t = 1usize << (phase_w - v);
+        let mask = (1u64 << phase_w) - 1;
+        let mut re: Vec<f64> = (0..t)
+            .map(|n| {
+                let ph = ((n as u64).wrapping_mul(word).wrapping_add(phase_offset)) & mask;
+                arch.sin_error(ph, phase_w)
+            })
+            .collect();
+        let mut im = vec![0.0; t];
+        fft(&mut re, &mut im);
+        (re, im)
+    }
+
+    /// dBc of a line, matching [`exact_spur_spectrum_offset`]'s scaling.
+    fn line_dbc(re: f64, im: f64, t: usize) -> f64 {
+        let mag = (re * re + im * im).sqrt() / t as f64;
+        if mag > 0.0 {
+            20.0 * (2.0 * mag).log10()
+        } else {
+            f64::NEG_INFINITY
+        }
+    }
+
+    /// **What NMR-style phase cycling does to the oscillator's spurs:
+    /// it annihilates all of them except the harmonics `m ≡ 1 (mod K)`,
+    /// which it leaves untouched.**
+    ///
+    /// The `nmr_receiver` chapter raised this as untested and declined to
+    /// budget for it. This is the measurement, and the answer is sharper
+    /// than "it helps on average".
+    ///
+    /// # The mechanism, and why it is exact
+    ///
+    /// For an odd tuning word `W` is invertible mod `2^B`, so adding a
+    /// phase offset `Δ` is exactly a time shift by `n₀` with
+    /// `n₀·W ≡ Δ` — which is why
+    /// [`exact_spur_spectrum_offset`] can document that magnitudes are
+    /// preserved. A time shift preserves magnitudes and rotates each
+    /// line's phase by `2π f n₀`.
+    ///
+    /// A phase cycle aligns the *carrier*, so it de-rotates by
+    /// `φ_k = 2π f₁ n_k`. A spur at the `m`-th harmonic of the carrier
+    /// sits at `f = m·f₁`, so its residual phase after de-rotation is
+    ///
+    /// ```text
+    ///   2π (m·f₁ − f₁) n_k  =  (m − 1) · φ_k
+    /// ```
+    ///
+    /// and for the standard `K`-step cycle `φ_k = 2πk/K` the averaging
+    /// factor is
+    ///
+    /// ```text
+    ///   S(m) = (1/K) · Σ_k exp( j (m−1) 2πk/K )
+    ///        = 1  if  m ≡ 1 (mod K),  else  0
+    /// ```
+    ///
+    /// **Exactly one or exactly zero.** Not `1/√K`. So a phase cycle is a
+    /// comb in harmonic order, not a statistical average, and the
+    /// consequence for a receiver budget is uncomfortable: the spurs it
+    /// removes are removed perfectly, and the ones it keeps get no help
+    /// at all — including, in this measurement, the worst one.
+    #[test]
+    fn a_phase_cycle_annihilates_all_spurs_except_harmonics_one_mod_k() {
+        // The mechanism is a property of the tuning word and the cycle,
+        // not of the table, so a small architecture measures it exactly.
+        let arch = PhaseToAmp::Hybrid {
+            coarse_w: 6,
+            fine_w: 8,
+        };
+        let phase_w = 16u32;
+        let word = 0b0101_1010_0011_0111u64;
+        assert_eq!(word % 2, 1, "the time-shift argument needs an odd word");
+        let t = 1usize << phase_w;
+
+        for cycle in [2usize, 4, 8] {
+            let offsets: Vec<u64> = (0..cycle)
+                .map(|k| k as u64 * (1u64 << phase_w) / cycle as u64)
+                .collect();
+
+            let (r0, i0) = complex_error_spectrum(arch, phase_w, word, 0);
+            let mut acc_re = vec![0.0f64; t];
+            let mut acc_im = vec![0.0f64; t];
+            for &off in &offsets {
+                let (re, im) = complex_error_spectrum(arch, phase_w, word, off);
+                let phi = std::f64::consts::TAU * off as f64 / (1u64 << phase_w) as f64;
+                let (c, s) = ((-phi).cos(), (-phi).sin());
+                for j in 0..t {
+                    acc_re[j] += re[j] * c - im[j] * s;
+                    acc_im[j] += re[j] * s + im[j] * c;
+                }
+            }
+            for j in 0..t {
+                acc_re[j] /= cycle as f64;
+                acc_im[j] /= cycle as f64;
+            }
+
+            // Which harmonic does line `j` belong to? The carrier
+            // completes `word` cycles over the `t`-sample period, so
+            // harmonic `m` lands at `(m·word) mod t` — and because `word`
+            // is odd and `t` a power of two, that map is a *bijection*,
+            // so every line has exactly one harmonic.
+            //
+            // **Do not fold the spectrum.** Folding `j` and `t − j`
+            // together assumes conjugate symmetry, which the de-rotation
+            // deliberately breaks: the receiver is complex, so the two
+            // halves are independent lines with different harmonics. An
+            // earlier version folded and misclassified half the lines,
+            // which read as the law being wrong.
+            let mut harmonic_of = vec![0usize; t];
+            for m in 1..t {
+                harmonic_of[(m as u64 * word) as usize % t] = m;
+            }
+
+            let mut survivors_wrong_class = 0usize;
+            let mut removed_wrong_class = 0usize;
+            let mut checked = 0usize;
+            let mut worst_before = f64::NEG_INFINITY;
+            let mut worst_after = f64::NEG_INFINITY;
+            for j in 1..t {
+                let before = line_dbc(r0[j], i0[j], t);
+                let after = line_dbc(acc_re[j], acc_im[j], t);
+                worst_before = worst_before.max(before);
+                worst_after = worst_after.max(after);
+                // Only lines carrying a real spur say anything.
+                if before < -240.0 {
+                    continue;
+                }
+                let m = harmonic_of[j];
+                if m == 0 {
+                    continue;
+                }
+                checked += 1;
+                let should_survive = m % cycle == 1 % cycle;
+                let did_survive = after > before - 60.0;
+                if should_survive && !did_survive {
+                    removed_wrong_class += 1;
+                }
+                if !should_survive && did_survive {
+                    survivors_wrong_class += 1;
+                }
+            }
+            println!(
+                "  K={cycle}: worst spur {worst_before:.1} -> {worst_after:.1} dBc; \
+                 {checked} classified lines, {survivors_wrong_class} unexpected survivors, \
+                 {removed_wrong_class} unexpected removals"
+            );
+            assert!(checked > 20, "K={cycle}: only {checked} lines classified");
+            assert_eq!(
+                survivors_wrong_class, 0,
+                "K={cycle}: a spur outside the m = 1 (mod K) class survived, so the law is wrong"
+            );
+            assert_eq!(
+                removed_wrong_class, 0,
+                "K={cycle}: a spur in the m = 1 (mod K) class was removed, so the law is wrong"
+            );
+        }
+    }
+
+    /// **What NMR-style phase cycling does to a DDS spur, exactly.**
+    ///
+    /// The `nmr_receiver` chapter raised this as untested and declined to
+    /// budget for it. This is the measurement, and it vindicates the
+    /// caution for a much sharper reason than ignorance.
+    ///
+    /// # The mechanism, measured rather than assumed
+    ///
+    /// For an odd tuning word `W` is invertible mod `2^B`, so a phase
+    /// offset `Δ` is exactly a time shift by `n₀` with `n₀·W ≡ Δ` — which
+    /// is why [`exact_spur_spectrum_offset`] documents that magnitudes are
+    /// preserved. A time shift preserves magnitude and rotates phase.
+    ///
+    /// A phase cycle aligns the *carrier*, de-rotating by
+    /// `φ_k = 2π·Δ_k/2^B`. A line at the `m`-th harmonic then retains a
+    /// residual phase of exactly `(m − 1)·φ_k`, so a `K`-step cycle
+    /// multiplies it by
+    ///
+    /// ```text
+    ///   S(m) = (1/K) · Σ_k exp( j (m−1) φ_k )
+    /// ```
+    ///
+    /// This test asserts both halves of that: magnitudes unchanged by the
+    /// offset, and the residual phase equal to `(m−1)·φ_k`.
+    ///
+    /// # Why it does not help
+    ///
+    /// The dominant spur of an interpolating architecture sits at
+    /// harmonic `m = 2^coarse_w + 1`, so `m − 1 = 2^coarse_w` and
+    ///
+    /// ```text
+    ///   (m−1)·φ_k = 2^coarse_w · 2πk/K
+    /// ```
+    ///
+    /// is a multiple of `2π` for every `k` whenever `K` divides
+    /// `2^coarse_w`. **So every power-of-two cycle length gives exactly
+    /// zero suppression** — and NMR phase cycles are 2, 4, 8 or 16 steps.
+    /// A 3- or 5-step cycle removes the same spur by ~58 dB.
+    #[test]
+    fn a_power_of_two_phase_cycle_cannot_touch_the_dominant_dds_spur() {
+        const COARSE: u32 = 6;
+        let arch = PhaseToAmp::Hybrid {
+            coarse_w: COARSE,
+            fine_w: 8,
+        };
+        let phase_w = 16u32;
+        let word = 0b0101_1010_0011_0111u64;
+        assert_eq!(word % 2, 1, "the time-shift argument needs an odd word");
+        let t = 1usize << phase_w;
+
+        // The dominant spur's harmonic, and the line it occupies.
+        let m = (1usize << COARSE) + 1;
+        let line = (m as u64 * word) as usize % t;
+
+        // Baseline, and the mechanism.
+        let (r0, i0) = complex_error_spectrum(arch, phase_w, word, 0);
+        let base_mag = (r0[line] * r0[line] + i0[line] * i0[line]).sqrt();
+        assert!(base_mag > 0.0, "the dominant spur must be present");
+
+        let cycled = |cycle: usize| -> f64 {
+            let (mut acc_re, mut acc_im) = (0.0f64, 0.0f64);
+            for k in 0..cycle {
+                let off = (k as u64 * (1u64 << phase_w)) / cycle as u64;
+                let (re, im) = complex_error_spectrum(arch, phase_w, word, off);
+                // Magnitude is preserved: the offset is a time shift.
+                let mag = (re[line] * re[line] + im[line] * im[line]).sqrt();
+                assert!(
+                    (mag - base_mag).abs() < 1e-9 * base_mag.max(1.0),
+                    "a phase offset must not change a magnitude: {mag} vs {base_mag}"
+                );
+                let phi = std::f64::consts::TAU * off as f64 / (1u64 << phase_w) as f64;
+                let (c, s) = ((-phi).cos(), (-phi).sin());
+                let rr = re[line] * c - im[line] * s;
+                let ii = re[line] * s + im[line] * c;
+                // The residual phase is (m-1)*phi, exactly.
+                let arg = ii.atan2(rr);
+                let expected = (m - 1) as f64 * phi;
+                let delta =
+                    ((arg - i0[line].atan2(r0[line])) - expected).rem_euclid(std::f64::consts::TAU);
+                let delta = delta.min(std::f64::consts::TAU - delta);
+                assert!(
+                    delta < 1e-6,
+                    "residual phase should be (m-1)*phi; off by {} rad at k={k}",
+                    delta
+                );
+                acc_re += rr;
+                acc_im += ii;
+            }
+            acc_re /= cycle as f64;
+            acc_im /= cycle as f64;
+            let mag = (acc_re * acc_re + acc_im * acc_im).sqrt();
+            20.0 * (mag / base_mag).log10()
+        };
+
+        // Every power-of-two cycle dividing 2^COARSE: exactly nothing.
+        for cycle in [2usize, 4, 8, 16, 32, 64] {
+            let sup = cycled(cycle);
+            assert!(
+                sup.abs() < 1e-9,
+                "K={cycle} is a power of two dividing 2^{COARSE}, so it must give \
+                 exactly zero suppression; got {sup:.3} dB"
+            );
+        }
+        // And two cycle lengths that do work.
+        for cycle in [3usize, 5] {
+            let sup = cycled(cycle);
+            assert!(
+                sup < -50.0,
+                "K={cycle} should annihilate the dominant spur; got {sup:.1} dB"
+            );
+        }
+    }
+
+    /// **How often does a tall spur land in a narrow output band?**
+    ///
+    /// About one carrier in a thousand — and the arithmetic is cheap
+    /// enough to check per carrier, because the tall harmonics are
+    /// *word-independent*.
+    ///
+    /// Measured at the shipped `Default` widths: the tall lines sit at
+    /// harmonics `m = 255, 257` (−96.4 / −96.3 dBc) and `511, 513`
+    /// (−108.6 / −108.2), identically for every tuning word — only their
+    /// *positions* move, because harmonic `m` sits at offset
+    /// `(m − 1)·word mod 2^B`. So the in-band question is pure arithmetic
+    /// once the harmonic list is known, with no FFT per carrier.
+    ///
+    /// # Do not sample adversarial words and call it a rate
+    ///
+    /// An earlier measurement took eight *hand-picked* words — `0x100001`,
+    /// `0x155555`, `0x3FFFFF` and friends — and found a tall spur in band
+    /// for six of them, which read as "the decimator never helps". Those
+    /// are exactly the structured words `adversarial_words` exists to
+    /// generate: `0x100001` has its low fourteen bits equal to one, which
+    /// puts harmonic 257 at 256 bins from the carrier by construction. A
+    /// representative sweep gives a completely different answer, and the
+    /// difference is the sampling, not the physics.
+    #[test]
+    fn a_tall_spur_lands_in_a_narrow_band_about_one_carrier_in_a_thousand() {
+        const PHASE_W: u32 = 22;
+        const T: u64 = 1 << PHASE_W;
+        const F_CLK: f64 = 125e6;
+        // The measured tall harmonics at the `Default` widths.
+        const TALL: [u32; 4] = [255, 257, 511, 513];
+
+        let bin_hz = F_CLK / T as f64;
+        let half_band_bins = (10e3 / bin_hz) as u64;
+
+        let in_band = |word: u64| -> bool {
+            TALL.iter().any(|m| {
+                [*m as u64, T - *m as u64].iter().any(|mm| {
+                    let off = ((mm - 1).wrapping_mul(word)) % T;
+                    off.min(T - off) <= half_band_bins
+                })
+            })
+        };
+
+        // A representative sweep: every odd word from 1 to 60 MHz.
+        let lo = (1e6 / F_CLK * T as f64) as u64 | 1;
+        let hi = (60e6 / F_CLK * T as f64) as u64;
+        let mut bad = 0usize;
+        let mut total = 0usize;
+        let mut w = lo;
+        while w < hi {
+            total += 1;
+            if in_band(w) {
+                bad += 1;
+            }
+            w += 2;
+        }
+        let pct = 100.0 * bad as f64 / total as f64;
+        assert!(
+            (0.05..0.2).contains(&pct),
+            "expected about a tenth of a percent, got {pct:.3}% of {total} words"
+        );
+
+        // And the adversarial words really are adversarial, which is why
+        // sampling them is not a rate.
+        for w in [0x100001u64, 0x155555, 0x3FFFFF] {
+            assert!(in_band(w), "{w:x} should be a bad word");
+        }
+    }
+
+    /// **The carrier's own line is not a spur**, and the shipped spur
+    /// search does not distinguish them.
+    ///
+    /// The error spectrum has a component at the carrier frequency
+    /// itself — harmonic `m = 1`. Added to the ideal output it is a gain
+    /// and static-phase error, not an artifact: it scales the signal and
+    /// shifts its phase by a constant, which an NMR spectrum corrects in
+    /// post-processing and which averaging preserves harmlessly.
+    ///
+    /// [`worst_exact_spur_for`] filters lines by distance from the
+    /// carrier and so *includes* that line. At the shipped `Default`
+    /// widths and one adversarial word it is the tallest line in the
+    /// spectrum, 4.4 dB above the worst genuine spur — so the published
+    /// SFDR figures are pessimistic by a few dB, not badly wrong.
+    ///
+    /// Recorded rather than fixed: the figures are used as a *budget*, and
+    /// a budget being a few dB conservative is the safe direction.
+    #[test]
+    fn the_carrier_line_is_a_gain_error_not_a_spur() {
+        let arch = PhaseToAmp::Hybrid {
+            coarse_w: 6,
+            fine_w: 8,
+        };
+        let phase_w = 16u32;
+        let word = 0b0101_1010_0011_0111u64;
+        let t = 1usize << phase_w;
+        let (re, im) = complex_error_spectrum(arch, phase_w, word, 0);
+
+        let mut harm = vec![0usize; t];
+        for m in 1..t {
+            harm[(m as u64 * word) as usize % t] = m;
+        }
+        let mut worst_any = (0usize, f64::NEG_INFINITY);
+        let mut worst_genuine = (0usize, f64::NEG_INFINITY);
+        for j in 1..t {
+            let d = line_dbc(re[j], im[j], t);
+            if d > worst_any.1 {
+                worst_any = (harm[j], d);
+            }
+            // `m` and `t − m` are the carrier line and its
+            // negative-frequency image; both are the same gain error.
+            let order = harm[j].min(t - harm[j]);
+            if order >= 2 && d > worst_genuine.1 {
+                worst_genuine = (order, d);
+            }
+        }
+        assert_eq!(
+            worst_any.0.min(t - worst_any.0),
+            1,
+            "the tallest line should be the carrier's own"
+        );
+        assert!(
+            worst_genuine.1 < worst_any.1,
+            "the worst genuine spur must be below the carrier line: {:.1} vs {:.1}",
+            worst_genuine.1,
+            worst_any.1
+        );
+        // And it is the interpolator's signature harmonic.
+        assert_eq!(worst_genuine.0, (1usize << 6) + 1);
+    }
+
+    /// **The carrier survives the cycle**, which is the control.
+    ///
+    /// If de-rotation did not preserve the fundamental, the experiment
+    /// above would be measuring a broken averaging scheme rather than
+    /// spur behaviour.
+    #[test]
+    fn the_phase_cycle_preserves_the_carrier() {
+        let phase_w = 12u32;
+        let word = 0b0101_1010_0111u64;
+        let t = 1usize << phase_w;
+        let offsets: Vec<u64> = (0..4).map(|k| k * (1u64 << phase_w) / 4).collect();
+
+        // The *ideal* oscillator, which is what the cycle must keep.
+        let ideal = |off: u64| -> (Vec<f64>, Vec<f64>) {
+            let mask = (1u64 << phase_w) - 1;
+            let mut re: Vec<f64> = (0..t)
+                .map(|n| {
+                    let ph = ((n as u64).wrapping_mul(word).wrapping_add(off)) & mask;
+                    (std::f64::consts::TAU * ph as f64 / (1u64 << phase_w) as f64).sin()
+                })
+                .collect();
+            let mut im = vec![0.0; t];
+            fft(&mut re, &mut im);
+            (re, im)
+        };
+
+        let (r0, i0) = ideal(0);
+        let mut acc_re = vec![0.0f64; t];
+        let mut acc_im = vec![0.0f64; t];
+        for &off in &offsets {
+            let (re, im) = ideal(off);
+            let phi = std::f64::consts::TAU * off as f64 / (1u64 << phase_w) as f64;
+            let (c, s) = ((-phi).cos(), (-phi).sin());
+            for j in 0..t {
+                acc_re[j] += re[j] * c - im[j] * s;
+                acc_im[j] += re[j] * s + im[j] * c;
+            }
+        }
+        for j in 0..t {
+            acc_re[j] /= offsets.len() as f64;
+            acc_im[j] /= offsets.len() as f64;
+        }
+
+        // Find the fundamental and check it is intact.
+        let fund = (1..t / 2)
+            .max_by(|a, b| {
+                let ma = r0[*a] * r0[*a] + i0[*a] * i0[*a];
+                let mb = r0[*b] * r0[*b] + i0[*b] * i0[*b];
+                ma.partial_cmp(&mb).unwrap()
+            })
+            .unwrap();
+        let before = (r0[fund] * r0[fund] + i0[fund] * i0[fund]).sqrt();
+        let after = (acc_re[fund] * acc_re[fund] + acc_im[fund] * acc_im[fund]).sqrt();
+        assert!(
+            (after / before - 1.0).abs() < 1e-9,
+            "the cycle must preserve the carrier exactly: {before} -> {after}"
+        );
+    }
     use super::*;
 
     const F_CLK: f64 = 125.0e6;

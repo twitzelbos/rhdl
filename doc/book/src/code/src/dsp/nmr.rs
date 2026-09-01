@@ -285,3 +285,136 @@ mod tests {
         assert_eq!(narrow.register_bits - wide.register_bits, 171);
     }
 }
+
+/// SNR set by sampling aperture jitter, in dB.
+///
+/// `-20·log10(2π·f_in·σ_t)`. Depends on the **input** frequency, not the
+/// sample rate, so it is a direct-sampling constraint. Broadband and
+/// random, so unlike an oscillator spur it does average down — but it
+/// caps the single transient, and no digital design can lift it.
+pub fn jitter_snr_db(f_in_hz: f64, sigma_t_s: f64) -> f64 {
+    -20.0 * (std::f64::consts::TAU * f_in_hz * sigma_t_s).log10()
+}
+
+/// Jitter, in seconds rms, that puts the jitter floor exactly at a
+/// `bits`-bit converter's own SNR at `f_in_hz`.
+pub fn jitter_budget_s(bits: usize, f_in_hz: f64) -> f64 {
+    10f64.powf(-ideal_adc_snr_db(bits) / 20.0) / (std::f64::consts::TAU * f_in_hz)
+}
+
+#[cfg(test)]
+mod jitter_tests {
+    use super::*;
+
+    /// **The jitter table the chapter quotes.**
+    #[test]
+    fn the_jitter_table_is_what_the_chapter_says() {
+        for (sigma, f, want) in [
+            (10e-12f64, 1e6f64, "84"),
+            (10e-12, 10e6, "64"),
+            (10e-12, 50e6, "50"),
+            (10e-12, 100e6, "44"),
+            (1e-12, 10e6, "84"),
+            (100e-15, 100e6, "84"),
+            (10e-15, 50e6, "110"),
+        ] {
+            assert_eq!(
+                format!("{:.0}", jitter_snr_db(f, sigma)),
+                want,
+                "sigma={sigma} f={f}"
+            );
+        }
+    }
+
+    /// **The budget the chapter states: better than 1 ps at 10 MHz for 16
+    /// bits, about 100 fs at 100 MHz, ~3 ps at 10 MHz for 14 bits.**
+    #[test]
+    fn the_jitter_budget_is_what_the_chapter_says() {
+        // 199 fs. An earlier draft of the chapter said "better than
+        // 1 ps", which is wrong by 5x -- and 5x on a jitter spec is the
+        // difference between an ordinary oscillator and an expensive one.
+        let b16_10m = jitter_budget_s(16, 10e6);
+        assert_eq!(format!("{:.0}", b16_10m * 1e15), "199");
+        let b16_100m = jitter_budget_s(16, 100e6);
+        assert_eq!(format!("{:.1}", b16_100m * 1e15), "19.9");
+        let b14_10m = jitter_budget_s(14, 10e6);
+        assert_eq!(format!("{:.0}", b14_10m * 1e15), "794");
+        // And it scales inversely with input frequency, which is the
+        // property that makes direct sampling hard.
+        assert!((jitter_budget_s(16, 10e6) / jitter_budget_s(16, 100e6) - 10.0).abs() < 1e-6);
+    }
+}
+
+/// Level of an oscillator-spur *ghost* relative to the noise floor, in dB.
+///
+/// The mixer multiplies, so `out = in × ideal + in × err`: a spur adds a
+/// displaced **ghost of the signal** at `−SFDR` relative to the signal
+/// that cast it, not a fixed-level tone. So the ghost is visible when the
+/// achieved SNR of the strongest peak exceeds the SFDR.
+///
+/// `peak_dbfs` is negative (dB below full scale), `sigma_lsb` the analog
+/// noise, `bits` the converter, `r` the decimation, `n` the averages.
+pub fn ghost_above_noise_db(
+    bits: usize,
+    sigma_lsb: f64,
+    peak_dbfs: f64,
+    r: usize,
+    n: usize,
+    sfdr_dbc: f64,
+) -> f64 {
+    // Full scale above the analog noise, in dB.
+    let fs_to_noise = 20.0 * (2f64.powi(bits as i32 - 1) / sigma_lsb).log10();
+    let peak_snr = fs_to_noise + peak_dbfs + processing_gain_db(r) + averaging_gain_db(n);
+    peak_snr + sfdr_dbc
+}
+
+#[cfg(test)]
+mod ghost_tests {
+    use super::*;
+
+    /// **The ghost table the chapter quotes.**
+    ///
+    /// 16-bit, `σ = 1` LSB, `R = 2500`, SFDR −96.3 dBc.
+    #[test]
+    fn the_ghost_table_is_what_the_chapter_says() {
+        for (peak, n, want) in [
+            (0.0f64, 1usize, "28.0"),
+            (-20.0, 1, "8.0"),
+            (-40.0, 1, "-12.0"),
+            (-60.0, 1, "-32.0"),
+            (0.0, 256, "52.1"),
+            (-40.0, 256, "12.1"),
+            (-60.0, 256, "-7.9"),
+        ] {
+            assert_eq!(
+                format!("{:.1}", ghost_above_noise_db(16, 1.0, peak, 2500, n, -96.3)),
+                want,
+                "peak={peak} n={n}"
+            );
+        }
+    }
+
+    /// **The chapter's conclusion: the oscillator choice depends on
+    /// headroom and averaging depth, not on the converter alone.**
+    #[test]
+    fn headroom_and_averaging_decide_the_oscillator() {
+        // The boundary is exact and memorable: on the 9 Kbit table, a
+        // 16-bit chain at sigma = 1 LSB and R = 2500 puts the ghost
+        // precisely at the noise floor when the strongest peak is 40 dB
+        // below full scale and 16 transients are averaged.
+        let boundary = ghost_above_noise_db(16, 1.0, -40.0, 2500, 16, -96.3);
+        assert_eq!(format!("{boundary:.1}"), "0.0");
+        // Either parameter relaxed by one step buries it.
+        assert!(ghost_above_noise_db(16, 1.0, -50.0, 2500, 16, -96.3) < -9.0);
+        assert!(ghost_above_noise_db(16, 1.0, -40.0, 2500, 4, -96.3) < -5.0);
+        // Demanding use: it does not.
+        let demanding = ghost_above_noise_db(16, 1.0, 0.0, 2500, 256, -96.3);
+        assert!(demanding > 40.0, "got {demanding:.1} dB");
+        // And the bigger table fixes the demanding case.
+        let with28 = ghost_above_noise_db(16, 1.0, 0.0, 2500, 256, -164.5);
+        assert!(
+            with28 < 0.0,
+            "SinCosLinearInterp28 should bury it, got {with28:.1}"
+        );
+    }
+}
