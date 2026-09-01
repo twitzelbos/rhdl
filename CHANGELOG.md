@@ -31,6 +31,68 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-31 — A receiver-chain white paper, built around what averaging cannot fix
+
+**Paths:** `doc/book/src/dsp/nmr_receiver.md` (new), `doc/book/src/code/src/dsp/nmr.rs` (new), `doc/book/src/SUMMARY.md`.
+
+**Why this, why now:** Asked for a white paper on an NMR receive chain — what the NCO, mixer and CIC each have to be so the digital chain does not degrade fidelity, SNR, phase or dynamic range — with the specific request to cover **the ability to improve signal by averaging**, because the quantisation of the noise floor bears on it. That last clause is the right organising principle for the whole document, and it inverts the usual priority order.
+
+**Design decisions:**
+
+- **The paper is built on one requirement, not a survey.** Averaging splits every error into *incoherent* (averages down as `10·log10(N)`) and *coherent* (averages down not at all, ever). So: every quantisation must be dithered by noise of at least ~1 LSB at that point, and anything not dithered sets a permanent floor. Each section is then "what that costs here, and which knob controls it".
+- **It is a book chapter rather than a root-level document**, so its figures inherit the pinning convention. Eight tests in the book-code crate pin every number the prose quotes; the chapter reads standalone.
+- **The ADC section is a gain setting, not a chip choice.** Computed: below ~0.2 LSB rms of analog noise a repeated transient digitises to identical codes and averaging fails outright; above ~1 LSB the quantiser adds under 0.4 dB and every further LSB is dynamic range spent for nothing. Target `σ ≈ 0.5–1` LSB.
+- **The NCO section chooses a widget variant by averaging depth**, which is the concrete form of "spurs get no help from averaging". Using `sin_cos_linear_interp`'s own measured SFDR figures against a 16-bit front end's 132.1 dB in-band floor: the *default* variant is already spur-limited at `N = 1`; `24` lasts ~7 averages; `28` lasts ~1754; `32` lasts ~450 000. Stated with the caveat that comparing a discrete spur in dBc against an integrated in-band SNR is the *lenient* comparison — per-bin noise is a further `10·log10(M)` down, so a spur stands out more, not less.
+- **Phase cycling is raised and explicitly not budgeted for.** Spur positions and phases move with the tuning word and starting phase, and NMR already cycles receiver phase, so truncation spurs *might* partially average. That is testable with the bit-accurate `dsp::nco::model` and has not been tested, so the paper says do not budget for it without measuring.
+
+**Surprises and gotchas:**
+
+- **`min_snr_db: 0.0` is a live hazard, and I walked into it.** The first computation run reported 4–8 dB of chain SNR for a 16-bit chain and non-monotonic in output width, which looked like a designer bug. It is not: `max_budget` climbs the pruning budget until SNR falls below the *stated* requirement, so asking for 0 dB instructs the designer to prune until nothing is left. A chain pruned to 4.5 dB looks healthy on one transient's spectrum and cannot average. The fix is cheap — 120 dB costs 36% more register bits than 0 dB and changes nothing else, the split and alias rejection being identical — which is why the paper gives it a table of its own.
+- **A wider output word is better *and* cheaper.** At a fixed 100 dB requirement, going from 16 to 28 output bits gains 7.6 dB *and saves 171 register bits* (480 → 309). The output quantisation floor is `1/12` LSB² of an *output* LSB, so a narrow output has a high absolute floor and leaves the schedule no room to prune — the stage widths must stay large. So size the output from the processing gain, not from the ADC.
+- **The mixer's recorded rounding decision inverts under averaging, and the paper says so.** `dsp::mixer` rejects dither because it "buys 1.1 dB of spur for 13 dB of floor, which is the wrong trade for a sensitivity-limited instrument" — correct for a *single* transient. After 4096 averages the floor has fallen 36 dB and the spur has not moved: every rule is spur-limited, the floor penalty is free, and dither's spur is 1.1 dB better. The conclusion barely changes (1.1 dB is not worth a redesign) but the reasoning does, and anyone re-opening it for a heavily-averaged instrument needs the inverted version.
+- **Compensation is indicated on receive and was not on transmit.** Opposite conclusions from the same maths, and worth the contrast: a transmit pulse can be narrowband against its envelope rate (a 2.5 ms sinc occupies 0.3% of it, droop ~1e-4 dB) whereas a receive chain's output rate *is* the spectral width, so the band is full — 0.4 of output Nyquist here, 1.2 to 3.5 dB of tilt. And a receive-side compensator sits after the fold, so its stopband is part of the alias budget: taps buy rejection there and cannot on transmit.
+
+**Validation:** Eight tests pin the chapter's figures, including the worked chain's exact split, depths, SNR, alias rejection, ripple and register count; the quantiser-penalty table plus a monotonicity check; the NCO variant crossover points as displayed strings; and the width table's quoted 7.6 dB / 171-bit deltas. `book_integrity` confirms the chapter is listed, reachable and that its anchor resolves.
+
+**Follow-ups:**
+
+- Test whether phase cycling decorrelates NCO truncation spurs, using `dsp::nco::model`. If it does, the oscillator requirement relaxes considerably and the paper's NCO table is pessimistic.
+- The paper's checklist has no entry for sampling clock jitter, which on a 16-bit converter at 125 Msps is frequently the real limit and which nothing in this repository models.
+- Still nothing measured about fmax.
+
+---
+
+## 2026-08-31 — RCStream housekeeping: three widgets brought up to contract, a missing re-export, and a rejected trait
+
+**Paths:** `crates/rhdl-fpga/src/rcstream/util/{split.rs,combine.rs,constant.rs}`, `crates/rhdl-fpga/src/rcstream/mod.rs`, three new examples and traces, three new VCD sidecars, `notes/rcstream-widget-review.md`.
+
+**Why this, why now:** The RCStream review in #118 found three gaps. All three are closed here — but the third is closed differently from the way the review proposed, and that is the substance of this entry.
+
+**Design decisions:**
+
+- **`util::{split, combine, constant}` now meet the five-clause contract.** They had a schematic symbol, Tier 1, Tier 2 and Tier 4 but no Tier 3 snapshot, no Tier 5 digest, no example and no committed trace — the only RCStream widgets in that state, which per CLAUDE.md §12 rule 2 made them incomplete rather than stylistically different.
+- **`IqCombine`'s digest uses `F = SyncMark`, and its stimulus includes a disagreeing cycle.** The rest of that module tests with `F = ()`, and a digest taken with unit framing cannot detect a change to the only logic in the widget worth protecting: the framing comparison and `frame_mismatch`. This is the lesson from the CDC work in #118 applied before it bit rather than after.
+- **The examples use `SyncMark` too**, so the traces show real framing instead of an always-empty field. `iq_split` shows the marker replicated onto both halves and `ready` dropping while one consumer stalls; `iq_combine` shows `frame_mismatch` firing on exactly the disagreeing cycle; `rcstream_constant` shows that reset does not disturb a value that lives in a `Constant` rather than a register.
+- **`RCStreamFanout` is re-exported**, and `every_flat_widget_is_re_exported` names the entire set as `use` statements so the next omission is a compile error. The grouped sub-modules (`credit`, `util`, `axi_stream`) stay out of the top level deliberately — they re-export at their own level, which keeps `rcstream::` from becoming a flat namespace of everything.
+- **The framing-composition traits were designed and rejected.** `ChunkFraming<N>` / `FlattenFraming` were proposed in #118's addendum on the argument that they would make the composition "machine-checked instead of documented". That argument does not survive contact: the rule *is* already machine-checked, because `type O = RCStream<[T; N], [F; N]>` is the rule and the compiler enforces it at every connection; a trait with one blanket impl states no additional fact; the composed spelling `<<F as ChunkFraming<N>>::Chunked as FlattenFraming>::Flattened` reads worse than `([F; N], bool)`; and there is no use site, because a trait would only pay for a generic pipeline widget that must state its output framing without knowing its stages, and the `dsp::ddc` pattern shows you pin `I` and `O` at the bound instead. What was missing was **discoverability**, not checking.
+
+**Surprises and gotchas:**
+
+- **The gap was mis-diagnosed in the review, by me, one addendum earlier.** "Machine-checked instead of documented" sounded right and was wrong; the type system was already doing the checking and the two rules simply lived in two files with nothing stating their composition. The cost of noticing late was a design that had to be talked out of rather than built.
+- **Chunk-then-flatten does not return the framing to `F`.** The payload round-trips and the framing accumulates: `F → [F; N] → ([F; N], bool)`. `chunk_then_flatten_accumulates_framing` pins it as a type equality and was verified to stop compiling when either rule changes — the only place the two widgets' rules are considered together.
+- **`RCStreamConstant`'s input type is `()`, not `bool`.** Its example failed to compile against `(0..12).map(|_| true)`; an infinite source ignores backpressure, so there is nothing for an input to carry.
+
+**Validation:** 198 `rcstream` tests pass. The three new digests were confirmed stable across two consecutive runs, and the three `.vcd.rhdl` sidecars are committed (`.vcd` itself is gitignored). Every seeded snapshot was read before being committed — `rcstream_constant`'s emits no `always @(posedge …)` block, which is the expected shape for a widget whose value lives in a `Constant`.
+
+**Correction to the up-converter chapter (same day).** The chapter's "More taps will not improve image rejection" section closed with *"A compensator at the converter rate **would** work … and costs a FIR running at the full clock"* — subjunctive, implying no such widget exists. **`PostCompensatedInterp` has shipped since PR #117**, so the chapter was describing a shipped widget as hypothetical. Rewritten as "The knobs that do work on images", naming the widget, giving the four knobs in cost order with the measured rejection-per-stage figure (~57 dB), and carrying `post_compensator_taps`' own table: the transition band is `(1 − 2·edge)/R` wide so the tap count is linear in `R`, reaching **755 taps at `R = 125`**, which is why the pre-compensator is the default and the post-compensator belongs *between chain stages* where the local `R` is small. Found by being asked "is the compensation pre or post now" — a question the chapter should have answered and instead answered wrongly. Worth noting for the next author: the chapter's *numbers* are pinned by tests, and this was prose, which nothing checks.
+
+**Follow-ups:**
+
+- Nothing about fmax is measured anywhere in this repository; that still needs a machine with Vivado, and it is the one gap no further design work closes.
+- The chain designers remain slow at three-stage splits of composite rates; cost is `factorisations(R, parts) × 10^parts × R` and the fixes are memoising `cascade_magnitude` per shape and bounding the depth search by monotonicity in `N`.
+
+---
+
 ## 2026-08-31 — The up-converter's book chapter, and an RCStream inventory that turned up three gaps
 
 **Paths:** `doc/book/src/dsp/duc.md` (new), `doc/book/src/code/src/dsp/duc.rs` (new), `doc/book/src/SUMMARY.md`, `notes/rcstream-widget-review.md` (new).

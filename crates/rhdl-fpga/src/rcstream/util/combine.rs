@@ -28,6 +28,15 @@
 //! scheduler's arithmetic. In the timed domain both sides are
 //! isochronous, so a one-sided cycle is a design error rather than a
 //! condition to handle.
+//!
+//!# Example
+//!
+//!```
+#![doc = include_str!("../../../examples/iq_combine.rs")]
+//!```
+//!
+//! The trace below demonstrates the result.
+#![doc = include_str!("../../../doc/iq_combine.md")]
 
 use rhdl::prelude::*;
 
@@ -365,6 +374,196 @@ mod tests {
             recombined, values,
             "split followed by combine must return exactly what went in"
         );
+    }
+
+    /// Tier 3 — the emitted top module is the contract.
+    ///
+    /// Of the three `util` widgets this is the one worst to leave
+    /// un-snapshotted: it is the only one with behaviour to regress,
+    /// namely the framing comparison and `frame_mismatch`.
+    #[test]
+    fn hdl_emission_snapshot() -> miette::Result<()> {
+        let uut = Uut::default();
+        let desc = uut.descriptor("iq_combine".into())?;
+        let hdl = desc.hdl()?;
+        let top = hdl
+            .modules
+            .modules
+            .iter()
+            .find(|m| m.name == "iq_combine")
+            .expect("top module must be emitted");
+        let expect = expect_test::expect![[r#"
+            module iq_combine(input wire [1:0] clock_reset, input wire [38:0] i, output wire [39:0] o);
+               wire [39:0] od;
+               assign o = od[39:0];
+               assign od = kernel_iq_combine_kernel(clock_reset, i);
+               function [39:0] kernel_iq_combine_kernel(input reg [1:0] arg_0, input reg [38:0] arg_1);
+                     reg [18:0] r0;
+                     reg [38:0] r1;
+                     reg [0:0] r2;
+                     // have_re
+                     reg [0:0] r3;
+                     reg [18:0] r4;
+                     reg [0:0] r5;
+                     // have_im
+                     reg [0:0] r6;
+                     reg [18:0] r7;
+                     reg [0:0] r8;
+                     reg [17:0] r9;
+                     reg [18:0] r10;
+                     reg [0:0] r11;
+                     reg [17:0] r12;
+                     reg [0:0] r13;
+                     // frame_mismatch
+                     reg [0:0] r14;
+                     reg [35:0] r15;
+                     reg [35:0] r16;
+                     reg [35:0] r17;
+                     reg [36:0] r18;
+                     reg [35:0] r19;
+                     // frame_mismatch
+                     reg [0:0] r20;
+                     // out_data
+                     reg [36:0] r21;
+                     // frame_mismatch
+                     reg [0:0] r22;
+                     // out_data
+                     reg [36:0] r23;
+                     reg [0:0] r24;
+                     reg [0:0] r25;
+                     reg [37:0] r26;
+                     reg [37:0] r27;
+                     reg [39:0] r28;
+                     reg [39:0] r29;
+                     reg [39:0] r30;
+                     reg [1:0] r31;
+                     localparam l0 = 1'b1;
+                     localparam l1 = 1'b1;
+                     localparam l2 = 1'b0;
+                     localparam l3 = 1'b1;
+                     localparam l4 = 1'b1;
+                     localparam l5 = 1'b0;
+                     localparam l6 = 1'b0;
+                     localparam l7 = 1'b1;
+                     localparam l8 = 1'b0;
+                     localparam l9 = 36'b000000000000000000000000000000000000;
+                     localparam l10 = 36'b000000000000000000000000000000000000;
+                     localparam l11 = 1'b1;
+                     localparam l12 = 1'b1;
+                     localparam l13 = 37'b0000000000000000000000000000000000000;
+                     localparam l14 = 1'b1;
+                     localparam l15 = 38'b00000000000000000000000000000000000000;
+                     localparam l16 = 40'b0000000000000000000000000000000000000000;
+                     begin
+                        r31 = arg_0;
+                        r1 = arg_1;
+                        r0 = r1[18:0];
+                        r2 = r0[18:18];
+                        case (r2)
+                           1'b1 : r3 = l1;
+                           default : r3 = l2;
+                        endcase
+                        r4 = r1[37:19];
+                        r5 = r4[18:18];
+                        case (r5)
+                           1'b1 : r6 = l4;
+                           default : r6 = l5;
+                        endcase
+                        r7 = r1[18:0];
+                        r8 = r7[18:18];
+                        r9 = r7[17:0];
+                        r10 = r1[37:19];
+                        r11 = r10[18:18];
+                        r12 = r10[17:0];
+                        r13 = l6;
+                        r14 = r13 ? l7 : l8;
+                        r15 = l9;
+                        r15[17:0] = r9;
+                        r16 = r15;
+                        r16[35:18] = r12;
+                        r17 = l10;
+                        r17[35:0] = r16;
+                        r19 = r17[35:0];
+                        r18 = {l11, r19};
+                        case (r11)
+                           1'b1 : r20 = r14;
+                           default : r20 = l8;
+                        endcase
+                        case (r11)
+                           1'b1 : r21 = r18;
+                           default : r21 = l13;
+                        endcase
+                        case (r8)
+                           1'b1 : r22 = r20;
+                           default : r22 = l8;
+                        endcase
+                        case (r8)
+                           1'b1 : r23 = r21;
+                           default : r23 = l13;
+                        endcase
+                        r24 = r3 != r6;
+                        r25 = r1[38:38];
+                        r26 = l15;
+                        r26[36:0] = r23;
+                        r27 = r26;
+                        r27[37:37] = r25;
+                        r28 = l16;
+                        r28[37:0] = r27;
+                        r29 = r28;
+                        r29[38:38] = r24;
+                        r30 = r29;
+                        r30[39:39] = r22;
+                        kernel_iq_combine_kernel = r30;
+                     end
+               endfunction
+            endmodule"#]];
+        expect.assert_eq(&top.pretty());
+        Ok(())
+    }
+
+    /// Tier 5 — a waveform digest, on a stream that exercises the
+    /// framing comparison rather than only the datapath.
+    ///
+    /// `F = SyncMark` here where the rest of this module uses `()`. A
+    /// digest taken with unit framing could not detect a change to the
+    /// one piece of logic worth protecting.
+    #[test]
+    fn trace_digest() {
+        use crate::dsp::sync::SyncMark;
+        let uut = IqCombine::<W, SyncMark>::default();
+        let seq: Vec<In<W, SyncMark>> = (0..16i128)
+            .map(|k| In::<W, SyncMark> {
+                real: Some(Item::<Real<W>, SyncMark> {
+                    data: Real::<W> {
+                        v: signed::<W>((k - 8) * 800),
+                    },
+                    frame: SyncMark {
+                        sync: k == 4 || k == 9,
+                    },
+                }),
+                imag: Some(Item::<Imag<W>, SyncMark> {
+                    data: Imag::<W> {
+                        v: signed::<W>((8 - k) * 600),
+                    },
+                    // Disagrees on k = 9, so the digest covers a flagged
+                    // cycle as well as agreeing ones.
+                    frame: SyncMark { sync: k == 4 },
+                }),
+                downstream_ready: true,
+            })
+            .collect();
+        let vcd = uut
+            .run(seq.into_iter().with_reset(1).clock_pos_edge(100))
+            .collect::<VcdFile>();
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("vcd")
+            .join("iq_combine");
+        std::fs::create_dir_all(&root).unwrap();
+        let expect = expect_test::expect![
+            "c13f01f11c13840a7a932ee5a76b6e73765073f9b7ebee121a94bd40de3160a6"
+        ];
+        let digest = vcd.dump_to_file(root.join("iq_combine.vcd")).unwrap();
+        expect.assert_eq(&digest);
     }
 
     /// Tier 4 — emitted Verilog agrees with the Rust simulation.
