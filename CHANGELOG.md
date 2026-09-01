@@ -31,6 +31,37 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-08-31 — A receiver-chain white paper, built around what averaging cannot fix
+
+**Paths:** `doc/book/src/dsp/nmr_receiver.md` (new), `doc/book/src/code/src/dsp/nmr.rs` (new), `doc/book/src/SUMMARY.md`.
+
+**Why this, why now:** Asked for a white paper on an NMR receive chain — what the NCO, mixer and CIC each have to be so the digital chain does not degrade fidelity, SNR, phase or dynamic range — with the specific request to cover **the ability to improve signal by averaging**, because the quantisation of the noise floor bears on it. That last clause is the right organising principle for the whole document, and it inverts the usual priority order.
+
+**Design decisions:**
+
+- **The paper is built on one requirement, not a survey.** Averaging splits every error into *incoherent* (averages down as `10·log10(N)`) and *coherent* (averages down not at all, ever). So: every quantisation must be dithered by noise of at least ~1 LSB at that point, and anything not dithered sets a permanent floor. Each section is then "what that costs here, and which knob controls it".
+- **It is a book chapter rather than a root-level document**, so its figures inherit the pinning convention. Eight tests in the book-code crate pin every number the prose quotes; the chapter reads standalone.
+- **The ADC section is a gain setting, not a chip choice.** Computed: below ~0.2 LSB rms of analog noise a repeated transient digitises to identical codes and averaging fails outright; above ~1 LSB the quantiser adds under 0.4 dB and every further LSB is dynamic range spent for nothing. Target `σ ≈ 0.5–1` LSB.
+- **The NCO section chooses a widget variant by averaging depth**, which is the concrete form of "spurs get no help from averaging". Using `sin_cos_linear_interp`'s own measured SFDR figures against a 16-bit front end's 132.1 dB in-band floor: the *default* variant is already spur-limited at `N = 1`; `24` lasts ~7 averages; `28` lasts ~1754; `32` lasts ~450 000. Stated with the caveat that comparing a discrete spur in dBc against an integrated in-band SNR is the *lenient* comparison — per-bin noise is a further `10·log10(M)` down, so a spur stands out more, not less.
+- **Phase cycling is raised and explicitly not budgeted for.** Spur positions and phases move with the tuning word and starting phase, and NMR already cycles receiver phase, so truncation spurs *might* partially average. That is testable with the bit-accurate `dsp::nco::model` and has not been tested, so the paper says do not budget for it without measuring.
+
+**Surprises and gotchas:**
+
+- **`min_snr_db: 0.0` is a live hazard, and I walked into it.** The first computation run reported 4–8 dB of chain SNR for a 16-bit chain and non-monotonic in output width, which looked like a designer bug. It is not: `max_budget` climbs the pruning budget until SNR falls below the *stated* requirement, so asking for 0 dB instructs the designer to prune until nothing is left. A chain pruned to 4.5 dB looks healthy on one transient's spectrum and cannot average. The fix is cheap — 120 dB costs 36% more register bits than 0 dB and changes nothing else, the split and alias rejection being identical — which is why the paper gives it a table of its own.
+- **A wider output word is better *and* cheaper.** At a fixed 100 dB requirement, going from 16 to 28 output bits gains 7.6 dB *and saves 171 register bits* (480 → 309). The output quantisation floor is `1/12` LSB² of an *output* LSB, so a narrow output has a high absolute floor and leaves the schedule no room to prune — the stage widths must stay large. So size the output from the processing gain, not from the ADC.
+- **The mixer's recorded rounding decision inverts under averaging, and the paper says so.** `dsp::mixer` rejects dither because it "buys 1.1 dB of spur for 13 dB of floor, which is the wrong trade for a sensitivity-limited instrument" — correct for a *single* transient. After 4096 averages the floor has fallen 36 dB and the spur has not moved: every rule is spur-limited, the floor penalty is free, and dither's spur is 1.1 dB better. The conclusion barely changes (1.1 dB is not worth a redesign) but the reasoning does, and anyone re-opening it for a heavily-averaged instrument needs the inverted version.
+- **Compensation is indicated on receive and was not on transmit.** Opposite conclusions from the same maths, and worth the contrast: a transmit pulse can be narrowband against its envelope rate (a 2.5 ms sinc occupies 0.3% of it, droop ~1e-4 dB) whereas a receive chain's output rate *is* the spectral width, so the band is full — 0.4 of output Nyquist here, 1.2 to 3.5 dB of tilt. And a receive-side compensator sits after the fold, so its stopband is part of the alias budget: taps buy rejection there and cannot on transmit.
+
+**Validation:** Eight tests pin the chapter's figures, including the worked chain's exact split, depths, SNR, alias rejection, ripple and register count; the quantiser-penalty table plus a monotonicity check; the NCO variant crossover points as displayed strings; and the width table's quoted 7.6 dB / 171-bit deltas. `book_integrity` confirms the chapter is listed, reachable and that its anchor resolves.
+
+**Follow-ups:**
+
+- Test whether phase cycling decorrelates NCO truncation spurs, using `dsp::nco::model`. If it does, the oscillator requirement relaxes considerably and the paper's NCO table is pessimistic.
+- The paper's checklist has no entry for sampling clock jitter, which on a 16-bit converter at 125 Msps is frequently the real limit and which nothing in this repository models.
+- Still nothing measured about fmax.
+
+---
+
 ## 2026-08-31 — RCStream housekeeping: three widgets brought up to contract, a missing re-export, and a rejected trait
 
 **Paths:** `crates/rhdl-fpga/src/rcstream/util/{split.rs,combine.rs,constant.rs}`, `crates/rhdl-fpga/src/rcstream/mod.rs`, three new examples and traces, three new VCD sidecars, `notes/rcstream-widget-review.md`.
