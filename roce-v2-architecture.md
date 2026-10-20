@@ -3,18 +3,30 @@
 **Status: scope document. No code written. The staging in §9 needs explicit
 sign-off before Phase 0 starts** — see §12.
 
-RoCEv2 lets a remote machine's network card write directly into this
-machine's memory, and vice versa, with no CPU on either end in the data
-path. On an FPGA that means an instrument can deposit acquired samples
-into a host application's buffer at line rate, with no driver, no socket,
-no copy, and no interrupt per transfer.
+RoCEv2 lets a network card write directly into a remote machine's memory
+with no CPU in the data path — and on a host with `nvidia-peermem`
+loaded, directly into **GPU memory**, bypassing host RAM entirely. The
+target application is an instrument that deposits acquired samples
+straight into a GPU buffer for processing, with no driver, no socket, no
+copy and no interrupt per transfer.
 
-This document scopes what it would take to build that in RHDL. It is a
-plan, not a proposal to start tomorrow: the honest total for a full
-Reliable Connection implementation is **13–18 months for one engineer**,
-and the useful subset is **4.5–6 months**. Both numbers include the
-dependencies RHDL does not have yet, which are most of the near-term
-cost.
+**The sender does not have to be an RDMA NIC.** That is the single most
+important fact in this document and §4.3 is built on it: a RoCEv2 RDMA
+WRITE is an ordinary UDP datagram, the *receiving* NIC's engine does the
+placement, and the sender only has to emit correctly-formed packets. This
+is why the architecture works on a Red Pitaya, whose Ethernet is wired to
+the processing system rather than to the fabric.
+
+Three things are in scope from the outset, in this order: **RDMA WRITE
+send**, then **RDMA WRITE receive**, and throughout, **independence from
+whatever carries the frames** — the hard PS GEM and an own MAC are
+interchangeable adapters on one boundary (§5.1), not two versions of the
+stack.
+
+It is a plan, not a proposal to start tomorrow. Samples landing in host
+GPU memory is **3–4.5 months**; adding the receive direction takes it to
+**4.5–6 months**; a full Reliable Connection stack with every verb is
+**14–20 months for one engineer**.
 
 ---
 
@@ -332,122 +344,285 @@ is a genuinely useful widget on its own that the roadmap already wants.
 construction, the IPv4 header checksum, and — for the ICRC — the ability
 to re-serialise those headers with specific fields masked.
 
-### Hardware: what this runs on, and why not a Red Pitaya
+### 4.3 — Hardware: the sender does not need to be an RNIC
 
-**Short answer: a Red Pitaya cannot do this, and the reason is in the
-schematic rather than in the fabric size.**
+**A Red Pitaya can do this.** An earlier draft of this document said it
+could not, and that was wrong — it mis-sited where the offload has to
+live.
 
-On the STEMlab 125-14, the Ethernet PHY's RGMII bus is wired directly to
-the processing system's hard MIO pins in bank 501 — from the V1.1
-schematic:
+The reasoning that led to the error was: the PL cannot reach the Ethernet
+PHY, therefore the CPU is in the data path, therefore RDMA is pointless.
+The first clause is true and the third does not follow. **The RDMA
+offload that matters is on the *receiving* side.** A RoCEv2 RDMA WRITE is
+an ordinary UDP datagram to port 4791 with a structured payload; the host
+NIC's RDMA engine is what parses it and places the data, and on a host
+with `nvidia-peermem` loaded it places that data **directly into GPU
+memory** with no host CPU and no staging through host RAM. The sender
+only has to emit correctly-formed packets. It does not need a queue pair
+in hardware, does not need to be an RNIC, and does not need to be an
+FPGA at all.
+
+This is established practice, not a workaround. CERN's FERoCE has the
+server create the QP and send the QP parameters to the FPGA over UDP —
+the FPGA is a sender-only endpoint by design. The CTAO-LST camera readout
+does the same thing at 10 GbE, validated against a PC running Soft-RoCE.
+
+### What the Red Pitaya architecture looks like
 
 ```text
-  PS_MIO16_501 -> ETH_TXCLK      PS_MIO22_501 -> ETH_RXCLK
-  PS_MIO17_501 -> ETH_TXD0       PS_MIO23_501 -> ETH_RXD0
-  PS_MIO18_501 -> ETH_TXD1       PS_MIO24_501 -> ETH_RXD1
-  PS_MIO19_501 -> ETH_TXD2       PS_MIO25_501 -> ETH_RXD2
-  PS_MIO20_501 -> ETH_TXD3       PS_MIO26_501 -> ETH_RXD3
-  PS_MIO21_501 -> ETH_TXCTL      PS_MIO27_501 -> ETH_RXCTL
-  PS_MIO52_501 -> ETH_MDC        PS_MIO53_501 -> ETH_MDIO
+  PL                                          |  PS              |  wire
+  ----------------------------------------    |  --------------  |  ------
+  ADC -> dsp::ddc -> RCStream<Iq,_>           |                  |
+            |                                 |                  |
+            v                                 |                  |
+   roce::qp::uc_write_sq   (segment by PMTU,  |                  |
+            |              PSN counter)       |                  |
+            v                                 |                  |
+   roce::headers::generate (Eth+IP+UDP+BTH    |                  |
+            |              +RETH)             |                  |
+            v                                 |                  |
+   roce::icrc  (byte-wide CRC-32)             |                  |
+            |                                 |                  |
+            v                                 |                  |
+   complete frame -> AXI-HP -> DDR ring buffer |                 |
+                                   |          |                  |
+                                   +--------> | post GEM         |
+                                              | descriptor  -----+--> GEM
+                                              | (no protocol     |    adds FCS
+                                              |  work at all)    |    sends
 ```
 
-That is GEM0 on MIO. **The programmable logic has no electrical path to
-the PHY**, and there is no workaround: EMIO solves the opposite problem
-(routing a PS GEM *out* to PL pins, when the PHY is on PL pins), and
-Zynq-7000's GEM has no PL-side streaming interface. The only PL-to-wire
-path is PL → AXI-HP → DDR → PS → GEM, which puts the CPU back in the
-data path and thereby deletes the entire reason for doing RDMA. **RoCEv2
-on a Red Pitaya is not hard, it is pointless.**
+The PL builds the **entire frame including the ICRC**. The PS does no
+protocol work whatsoever — it points a GEM scatter-gather descriptor at a
+buffer the PL has already filled and clears the used bit. GEM appends the
+Ethernet FCS in hardware and transmits. The CPU cost per packet is a
+couple of memory writes, not a protocol stack.
 
-Two further blockers, each independently sufficient:
+### This makes the project substantially smaller
 
-- **Fabric.** The XC7Z010 has **17,600 LUTs, 35,200 FFs, 60 BRAM36
-  (2.1 Mb) and 80 DSP slices**, and the existing design already spends a
-  large share of that on the ADC/DAC interface and the `dsp::` chain —
-  the CORDIC alone measured 101 adders and 553 register declarations. A
-  MAC plus a parallel CRC-32 plus a queue pair will not fit beside it.
-  The 7020 (53,200 LUTs) on the PRO/SIGNALlab variants is less absurd
-  but still tight, and still has the MIO problem.
-- **No transceivers.** Zynq-7000's 7010 and 7020 have no PL gigabit
-  transceivers at all (they start at the 7015/7030), so 10G is off the
-  table on any Red Pitaya regardless of the above.
+Five of the hardest items in the original plan disappear, because the PS
+GEM *is* the MAC:
 
-### What hardware is actually needed
+| Originally needed | Status on this architecture |
+|---|---|
+| `net::mac` — GMII/RGMII, preamble/SFD, IFG, recovered-clock CDC | **Not needed.** GEM is the MAC. This was the 5-week Phase-0 item. |
+| Ethernet FCS generation | **Not needed.** GEM does it in hardware. |
+| ARP | **Not needed.** The host's MAC is a connection-setup parameter. |
+| Parallel CRC-32 at 512 bits / 322 MHz | **Byte-wide at 125 MHz suffices** — 8 bits/cycle *is* 1 Gbps. A modest XOR tree, not a generated monster. |
+| ACK path, retransmission buffer, PSN window | **Not needed for UC** — a monotonic PSN counter is the whole of it. |
 
-The requirement is simply **a board whose programmable logic owns an
-Ethernet interface**, with enough fabric beside it. `verilog-ethernet`'s
-validated example designs are the useful shortlist, because they are the
-boards on which the MAC we would model Phase 0 on is known to work:
+What remains is the part RHDL is actually good at and that no amount of
+board selection removes: the typed headers, the ICRC, the PMTU
+segmenter, and the queue-pair context.
+
+### The constraint that actually bites: packets per second
+
+The PL side is easy. The real question is how fast the PS can retire
+descriptors, and there is a hard limit in the way.
+
+**The Zynq-7000 PS GEM supports a maximum frame size of 1522 bytes** —
+jumbo frames are a PL-side AXI Ethernet feature, not a PS GEM one. With
+58 bytes of Eth+IP+UDP+BTH headers plus a 4-byte ICRC, that caps the
+RoCEv2 PMTU at **1024** (2048 would need a 2106-byte frame). So at full
+line rate:
+
+```text
+  frame on wire = 1024 payload + 58 hdr + 4 ICRC + 4 FCS + 20 preamble/IFG
+                = 1110 bytes
+  1 Gbit/s / 1110 bytes  ~=  113,000 packets/s
+```
+
+113k descriptors/s on a 667 MHz Cortex-A9 is the open question. For
+calibration, Express Logic measured 910–940 Mbps of *TCP* on a Zynq-7000
+using one A9 core — but with checksum offload and a PL-side DMA engine,
+and at 1500-byte frames (~80k pps). Our per-packet work is far cheaper
+than a TCP stack, so it is plausible; it is not proven.
+
+**Mitigations, in order of preference:** a pre-populated descriptor ring
+the PL fills and the PS only advances; batching; a dedicated core;
+`AF_XDP` if going through the kernel at all. And the honest one — see
+below — most likely not needing line rate.
+
+**This is measurable today, before any HDL exists.** Blast pre-built
+1086-byte frames from a userspace loop on the Red Pitaya through
+`AF_PACKET`/`AF_XDP` and count what the PS retires. That experiment costs
+an afternoon and is the single highest-value thing to do before
+committing to this plan — it is the one result that could invalidate the
+architecture, and it needs no RHDL at all. **It should be Phase −1.**
+
+### And the bandwidth reality
+
+1 GbE is 125 MB/s. That bounds what this can carry:
+
+- **Post-DDC data: comfortable, and the pps problem evaporates.** The
+  whole point of the decimation chain is 125 MSPS down to kHz-range
+  bandwidth. At, say, 5 MB/s you need ~5k packets/s, which the PS will
+  retire without noticing. **For the NMR use case as it stands, the
+  throughput question is moot** — which is also why the value here is
+  latency, determinism and host-CPU freedom rather than bandwidth.
+- **Raw 2-channel 14-bit at 125 MSPS is 437 MB/s** — 3.5× over 1 GbE,
+  and no protocol choice changes that. If the raw stream is the
+  requirement, this needs a different board, and §4.4's list applies.
+
+### 4.4 — If and when 1 GbE is not enough
+
+Then the original analysis applies and the requirement becomes a board
+whose PL owns the Ethernet interface. `verilog-ethernet`'s validated
+examples are the useful shortlist, since they are the boards on which the
+MAC we would model `net::mac` on is known to work:
 
 | Rate | Board | Device | Notes |
 |---|---|---|---|
-| 1 GbE | **Nexys Video** | Artix-7 200T | RGMII PHY on PL. Cheapest sane Phase-0/2 target. |
-| 1 GbE | **KC705** | Kintex-7 325T | Has GMII, RGMII *and* SGMII examples — the best MAC reference. |
-| 1 GbE | ZCU102 / ZCU106 | Zynq US+ | PL-side Ethernet, and a PS for the control plane. |
-| 10G | **KR260** | Zynq US+ K26 | 4× RJ45 1G + **1× SFP+ 10G**. RoCKS's board — the cheapest hardware that already runs a real RoCEv2 stack. |
-| 10/25G | VCU118 | Virtex US+ VU9P | FERoCE's board. Expensive. |
-| 100G | Alveo U50/U55/U280 | | BALBOA's class of target; needs HBM for retransmission. |
+| 1 GbE | **Nexys Video** | Artix-7 200T | RGMII PHY on PL. |
+| 1 GbE | **KC705** | Kintex-7 325T | GMII, RGMII *and* SGMII examples — the best MAC reference. |
+| 1 GbE | ZCU102 / ZCU106 | Zynq US+ | PL-side Ethernet plus a PS for the control plane. |
+| 10G | **KR260** | Zynq US+ K26 | 4× RJ45 1G + 1× SFP+ 10G. RoCKS's board — cheapest hardware that already runs a reference stack. |
+| 10/25G | VCU118 | Virtex US+ VU9P | FERoCE's board. |
+| 100G | Alveo U50/U55/U280 | | BALBOA's class; needs HBM for retransmission. |
 
-For this project a **Nexys Video or KC705 at 1 GbE** is the Phase-0
-through Phase-2 target, and a **KR260** is the natural second step
-because it is the one board where a reference implementation can be run
-side by side with ours for comparison.
+Note what does *not* change: the RoCE layer is the same widgets. Only
+`net::mac` gets added underneath and the datapath widens, which is
+exactly where §8's alignment problem arrives.
 
-### And for the instrument itself: probably none of this
+### 4.5 — What the host side needs
 
-Stated plainly, because the question "what hardware is needed" has an
-uncomfortable answer for the use case that prompted it. If the goal is
-getting NMR acquisition data off a Red Pitaya, then:
+This is a procurement constraint, and it is not negotiable by anything
+on the FPGA:
 
-- **The data rate after the DDC is small.** The entire purpose of the
-  `dsp::` decimation chain is to take 125 MSPS down to a signal bandwidth
-  measured in kHz. 1 GbE via the PS's ordinary network stack has ample
-  headroom for that, and the CPU cost that motivates RDMA is not being
-  paid in the first place.
-- **If the raw 125 MSPS stream is wanted**, that is ~350 MB/s for two
-  14-bit channels, which exceeds 1 GbE regardless of protocol. The answer
-  there is a different board, and quite possibly PCIe DMA rather than
-  RDMA, which is simpler and faster when the host is adjacent.
-- **RoCEv2's value here is strategic, not utilitarian** — it is the
-  capability demonstration described in §1, and it should be scheduled on
-  that basis. It is not the fix for an acquisition bottleneck on existing
-  hardware.
+- **An RDMA-capable NIC** — ConnectX-3 VPI or newer for
+  `nvidia-peermem`. RoCE is explicitly supported, not just InfiniBand.
+- **`nvidia-peermem` loaded**, plus kernel RDMA peer-memory support
+  (via MLNX_OFED or a patched kernel, or the newer DMA-BUF path). It
+  does not auto-load; `modprobe nvidia-peermem`. If the NVIDIA driver
+  was installed before MLNX_OFED it must be reinstalled so the module
+  compiles against MOFED's RDMA API.
+- **NIC and GPU on the same PCIe root complex** for best performance.
+- **A GPU that NVIDIA supports for GPUDirect RDMA.** The support matrix
+  is datacenter/professional parts; **consumer GeForce is not officially
+  supported** and should be verified before being designed around. This
+  is the most likely procurement surprise in the whole project.
 
-## 5 — Scope decision: UC RDMA WRITE first
+### 4.6 — The alternative that needs no protocol work at all
 
-**Decision recorded: the first endpoint that moves data is UC
-(Unreliable Connection) RDMA WRITE, transmit side, at 1 GbE.** RC,
-READ, SEND/RECV, atomics and congestion control are later phases,
-explicitly staged, not silently dropped.
+Worth knowing before committing, because it moves the whole problem to
+the host: **NVIDIA DOCA GPUNetIO** (and its predecessor, DPDK's
+`gpudev`) receives **plain Ethernet/UDP** packets directly into GPU
+memory. It uses GPUDirect RDMA underneath — `nvidia-peermem` is still
+required — but the *wire protocol is ordinary UDP*.
+
+| | RoCEv2 | DOCA GPUNetIO |
+|---|---|---|
+| FPGA work | headers, ICRC, PMTU segmenter, QP context | **none** — send plain UDP |
+| Host work | none in the data path; the NIC places the data | a poll-mode driver on a dedicated core; reassembly in a CUDA kernel |
+| Host hardware | RDMA NIC + peermem + supported GPU | NVIDIA NIC (ConnectX/BlueField) + peermem + supported GPU |
+| Ordering/loss handling | the protocol's, for free | yours to write |
+| Determinism | NIC hardware places it | depends on the poll loop |
+
+If the goal is purely "samples in GPU memory, soon," GPUNetIO gets there
+with no FPGA protocol work and should be the baseline that any RoCEv2
+effort is measured against. RoCEv2 wins on host CPU (truly zero in the
+data path), on not owning the reassembly logic, and on the §1 strategic
+grounds. **It is an honest comparison that should be made explicitly
+rather than assumed away**, and it belongs in §12's decisions.
+
+## 5 — Scope decision: send first, then receive, link-agnostic throughout
+
+Three decisions recorded, in priority order.
+
+### 5.1 — The RoCE core is independent of the Ethernet interface
+
+**Decision recorded: the RoCE layer presents a framed byte-stream
+boundary in both directions and knows nothing about what carries it.**
+The hard GEM path and an own-MAC path are two interchangeable *adapter
+widgets* on that boundary, not two versions of the stack.
+
+This is a requirement from the outset, not a later generalisation, and it
+is the one that most shapes the code. It is also cheap to honour if
+designed in and expensive to retrofit, because an implementation that
+assumes a MAC underneath tends to leak frame timing, FCS handling and
+backpressure semantics into the header and segmenter logic.
+
+The boundary type is `RCStream<Beat<W>, FrameMark>` — the same bus
+everything else in the library speaks, which means the core can be tested
+end-to-end with no link at all, driven from a vector file (§10 Tier 6).
+`W` is the beat width: 8 for the GEM path and for GMII at 1 GbE, 64 at
+10G, with §8's alignment caveat applying only above 8.
+
+**The adapter is chosen by composition, not by a type parameter.** No
+RoCE widget carries a `Link` generic. This follows the decision already
+recorded in `vendor-primitive-architecture.md` — widgets are written once
+and do not thread a target generic through their API; the choice is made
+at the composition site. Here the composition site instantiates
+`roce::link::GemRing` or `roce::link::MacPhy` as a sibling widget and
+wires it to the core's framed-stream ports.
+
+### 5.2 — Send before receive
+
+**Decision recorded: RDMA WRITE *send* is built first; RDMA WRITE
+*receive* second.** Both are in scope and neither is optional; the order
+is send-first because:
+
+1. **Send is what the sensor use case needs**, and it is the direction
+   that delivers a working system end to end — samples arriving in host
+   GPU memory.
+2. **Send is the clean direction on the GEM path and receive is not**
+   (see §5.4). Building send first means the architecture's weakest seam
+   is discovered against a working baseline rather than at the start.
+3. **Receive reuses everything send builds** — the same headers, the
+   same ICRC engine (checking rather than generating), the same QP
+   context — plus a memory-region table and local placement. It is an
+   extension, not a parallel effort.
+
+### 5.3 — UC before RC
+
+**Decision recorded: the Unreliable Connection transport comes before
+Reliable Connection**, in both directions. RC, READ, SEND/RECV, atomics
+and congestion control are later phases, explicitly staged, not silently
+dropped.
 
 CLAUDE.md's anti-sliver rule requires justifying this rather than
 asserting it, because "ship the easy transport first" is exactly the
-shape that rule forbids. The justification:
+shape that rule forbids:
 
-1. **UC RDMA WRITE is the operation the use case needs.** An instrument
-   streaming acquisition data into a pre-registered host buffer is a
-   one-directional WRITE. It never issues a READ, never needs an
-   incoming SEND, and has no use for atomics.
-2. **It is a complete, externally-verifiable deliverable, not a
-   fraction of one.** A UC WRITE endpoint interoperates with an
-   unmodified Linux RDMA stack. It can be pointed at a real host, and
-   data appears in a real application's memory. That is a whole thing
-   that works, which is the test the anti-sliver rule actually applies.
-3. **UC is not a degraded RC on this topology.** On a direct
-   instrument-to-host link there is no switch to drop frames; UC's lack
-   of acknowledgement costs nothing that the fabric was going to provide
-   anyway. On a shared, congested fabric this would be the wrong choice
-   and RC's absence would be a real gap — §11 records that.
-4. **It defers precisely the third of the problem that the reference
-   implementation's file sizes identify as the expensive third** (§3),
-   and nothing else.
-5. **The precedent exists**: FERoCE is a deployed, published, TX-only
-   endpoint.
+1. **UC WRITE is a complete, externally-verifiable deliverable.** It
+   interoperates with an unmodified Linux RDMA stack; the acceptance test
+   is a host application reading its own GPU buffer. That is a whole
+   thing that works, which is what the anti-sliver rule actually asks.
+2. **UC is not a degraded RC on this topology.** On a direct or
+   single-switch instrument link there is nothing to drop frames; UC's
+   lack of acknowledgement costs nothing the fabric was going to provide.
+   And UC's failure mode suits streaming sensor data exactly — a PSN gap
+   loses the remainder of one message and resynchronises on the next
+   FIRST/ONLY, rather than tearing down the connection.
+3. **It defers precisely the third of the problem that §3's file sizes
+   identify as the expensive third**, and nothing else.
+4. **The precedent exists**: FERoCE is a deployed, published WRITE-only
+   endpoint; CTAO-LST ships the same shape at 10 GbE.
 
-What this explicitly does *not* license: calling Phase 2 "RoCEv2
-support" without qualification, or opening Phase 3 before Phase 2 is
-interoperable against real hardware. The CHANGELOG entry for Phase 2
-names the transport and the direction in its title.
+What this does *not* license: calling any phase "RoCEv2 support" without
+qualification, or opening the RC phase before the UC phases are
+interoperable against real hardware. Each CHANGELOG entry names the
+transport and the direction in its title.
+
+### 5.4 — The honest asymmetry between the two directions on GEM
+
+Worth recording because it is the strongest technical argument for why
+§5.1's abstraction has to exist:
+
+- **Sending through the PS GEM is clean.** The PL builds complete frames
+  autonomously into a DDR ring; the PS only advances descriptors. The CPU
+  is not in the data path in any meaningful sense.
+- **Receiving through the PS GEM is not.** GEM DMAs an arriving frame
+  into DDR and the PS must then be notified and hand it to the PL. The
+  CPU *is* in the receive data path, per packet, with the latency and
+  jitter that implies.
+
+For a sensor this is tolerable, because the receive direction carries
+control, configuration and — once RC lands — acknowledgements, all of
+which are low-rate. **But high-rate RDMA receive is the case that
+justifies the own-MAC path**, and that is exactly why the link boundary
+is a first-class design decision rather than a portability nicety. The
+same core, a different adapter, no rewrite.
 
 ---
 
@@ -469,13 +644,19 @@ crates/rhdl-roce/
       opcode.rs              transport-and-operation enums; illegal states absent
       bth.rs  reth.rs  aeth.rs
       serde.rs               to/from a byte-beat stream, width-generic
-    icrc.rs                  the masked-field CRC32 (see §7)
+    icrc.rs                  the masked-field CRC32 (see §7), gen + check
     qp/
       context.rs             queue-pair context table (RAM-backed)
       uc_write_sq.rs         UC send queue: segmenter + packet assembler
-      rc_sq.rs  rc_rq.rs     Phase 3
-      retry.rs               Phase 3
-    cc/                      Phase 5: ECN, CNP, rate limiter
+      uc_write_rq.rs         UC receive: place payload at RETH address
+      mr.rs                  memory-region table; rkey check + translation
+      rc_sq.rs  rc_rq.rs     RC phase
+      retry.rs               RC phase
+    link/                    §5.1 -- the interchangeable interface adapters
+      mod.rs                 the RCStream<Beat<W>, FrameMark> boundary
+      gem_ring.rs            AXI-HP master <-> DDR ring the PS GEM serves
+      mac_phy.rs             net::mac::{Tx,Rx} on our own MAC
+    cc/                      congestion-control phase: ECN, CNP, rate limiter
   examples/                  per-widget traces, per CLAUDE.md §6 Layer C
   doc/                       committed waveform + FSM markdown
   tests/
@@ -499,26 +680,37 @@ proposed, not assumed.
 
 ### How the pieces compose
 
+On the Red Pitaya target (§4.3) there is no MAC and no PHY domain — the
+pipeline ends at a DDR ring buffer:
+
 ```text
-   PHY (RGMII, 125 MHz recovered clock)
+   payload RCStream (from dsp::ddc, &c.)
+            |
+            v
+   roce::qp::uc_write_sq      segment by PMTU, advance PSN
+            |
+            v
+   roce::headers::generate    Eth + IP + UDP + BTH + RETH
+            |
+            +--> roce::icrc   byte-wide CRC-32, see §7
+            |
+            v
+   roce::tx::ddr_ring         AXI-HP master; complete frames
+                              into a buffer ring the PS owns
+```
+
+**Everything above the dashed line is the same widgets in both cases.**
+On a board whose PL owns the MAC (§4.4) only the adapter changes, and
+only then does the asynchronous PHY domain and its CDC appear:
+
+```text
+   PHY (RGMII, recovered clock) -- Circuit family, the only cross-domain edge
      |
-     |  Circuit (asynchronous) -- the only cross-domain boundary
-     v
-  net::mac::Rx ---> AsyncFIFO ---> system clock domain
-     |                                  |
-  net::mac::Tx <--- AsyncFIFO <---------+
-                                        |
-                        RCStream<Beat<W>, PacketFrame>
-                                        |
-              +-------------------------+-------------------------+
-              |                                                   |
-      roce::headers::parse                              roce::headers::generate
-      (RX: ACK/NAK/CNP only in Ph.2)                     (TX: BTH + RETH)
-              |                                                   |
-              v                                                   v
-      roce::qp::uc_write_sq  <--- payload RCStream from dsp::ddc etc.
-              |
-              +--> roce::icrc (runs alongside assembly, see §7)
+  net::mac::{Rx,Tx} <--> AsyncFIFO <--> system clock domain
+                                             |
+                               roce::headers::{parse,generate}
+                                             |
+                                   roce::qp::uc_write_sq
 ```
 
 The payload arriving as an `RCStream` is the point. A DDC's output
@@ -653,54 +845,103 @@ examples, traces and CHANGELOG entries that every widget in this
 repository carries — which is roughly 3× the raw-RTL effort and is not
 optional.
 
-### Phase 0 — The dependencies (8–10 weeks)
+### Phase −1 — Measure the send path (one afternoon, no RHDL)
 
-Nothing RoCEv2-specific. All three are already wanted by
-`widget-roadmap.md` and are useful whether or not this project continues.
+Blast pre-built 1086-byte frames from userspace on the Red Pitaya through
+`AF_PACKET`/`AF_XDP` and count what the PS actually retires. §4.3 needs
+~113k packets/s for line rate and far less for the real data rate.
 
-1. **`core::crc32`** — parallel CRC-32, generic over bytes-per-cycle,
-   with byte-enable for a ragged final beat, reflection and final
-   XOR-out. Validated against the standard CRC-32 check value and
-   against `core::crc`'s bit-serial engine on random messages. *(~2 wk)*
-2. **`net::mac`** — roadmap item 59. GMII/RGMII frontend, preamble and
-   SFD, FCS append/check, inter-frame gap, the recovered-clock CDC. The
-   first genuinely asynchronous `Circuit`-family widget of real size.
-   Validated by loopback against itself and by replaying captured
-   frames. *(~5 wk)*
-3. **`net::ipv4` + `net::udp`** — header construction and parsing,
-   IPv4 header checksum, and the masked re-serialisation §7 needs.
-   *(~2 wk)*
+*Gate: a number.* This is the only experiment that can invalidate the
+whole architecture, it costs nothing, and it requires no RHDL. **Do it
+first.** If the PS cannot retire enough descriptors, the answer is a
+board from §4.4 and Phase 0 grows the MAC back.
 
-*Gate: a frame generated by RHDL is accepted by a real NIC and shows up
-in `tcpdump`.* Until that is true, nothing above it can be debugged.
+### Phase 0 — The dependencies (3–4 weeks on the Red Pitaya target)
 
-### Phase 1 — Packet level, stateless (4–6 weeks)
+1. **`core::crc32`** — CRC-32 generic over bytes-per-cycle, with
+   byte-enable for a ragged final beat, reflection and final XOR-out.
+   Byte-wide is enough here (8 bits/cycle at 125 MHz *is* 1 Gbps), but
+   the widget should be width-generic for §4.4's sake. Validated against
+   the standard check value and against `core::crc`'s bit-serial engine
+   on random messages. On the roadmap already. *(~2 wk)*
+2. **`net::ipv4` + `net::udp`** — header construction, the IPv4 header
+   checksum, and the masked re-serialisation §7 needs. *(~2 wk)*
+
+**`net::mac` is not in Phase 0 on this architecture** — the PS GEM is the
+MAC. It returns only if §4.4 applies, and it stays on the roadmap as item
+59 on its own merits.
+
+*Gate: a frame built by RHDL, handed to GEM, shows up correctly in
+`tcpdump` on the host.*
+
+### Phase 1 — Packet level and the link boundary (4–6 weeks)
 
 BTH/RETH/AETH/ImmDt as `Digital` types with the opcode enums of §2;
-byte-serial parse and generate; the ICRC engine and the §7 decision.
-No queue pair, no state, no memory.
+byte-serial parse **and** generate; the ICRC engine in both directions
+(generate and check) and the §7 decision; and the §5.1
+`RCStream<Beat<W>, FrameMark>` boundary defined, with a vector-file
+driver standing in for a link. No queue pair, no state, no memory.
+
+Parse and check are built here rather than deferred to the receive phase
+because they cost almost nothing alongside generate — the header types
+are shared — and because the Tier-6 oracle needs both directions to be
+useful at all.
 
 *Gate: RHDL parses every packet Scapy generates, and Scapy validates the
 ICRC of every packet RHDL generates, over a vector set covering all
 implemented opcodes. Plus the §8 write-up.*
 
 This phase is where the project is cheapest to cancel, and it produces
-the academic-paper-level artifact (a verified parser/generator) on its
+the academic-paper-level artifact — a verified parser/generator — on its
 own.
 
-### Phase 2 — UC RDMA WRITE, transmit (6–8 weeks)
+### Phase 2 — UC RDMA WRITE, send, over the GEM adapter (6–8 weeks)
 
-Queue-pair context table; message segmenter over PMTU; PSN counter;
-packet assembler; out-of-band connection setup (a UDP connection
-manager, as FERoCE does); the minimal receive path needed to consume
-and ignore what UC does not use.
+The first deliverable that moves data. Queue-pair context table; message
+segmenter over PMTU; PSN counter; packet assembler; `link::gem_ring`
+(AXI-HP master into a DDR ring) plus the thin PS-side descriptor poster;
+out-of-band connection setup over UDP, as FERoCE does.
 
 *Gate: an RHDL endpoint writes into a buffer registered by an unmodified
-Linux host, verified by the host reading its own memory. §10 Tier 7.*
+Linux host, verified by the host reading its own memory — and then, with
+`nvidia-peermem` loaded and the buffer allocated with `cudaMalloc`,
+verified by a CUDA kernel reading its own GPU memory. §10 Tier 7.*
 
-**This is the deliverable the use case needs.** 18–24 weeks cumulative.
+**This is the deliverable the sensor use case needs.** 13–18 weeks
+cumulative, on existing Red Pitaya hardware.
 
-### Phase 3 — Reliable Connection (16–24 weeks)
+### Phase 3 — UC RDMA WRITE, receive (6–8 weeks)
+
+The other direction, per §5.2. Reuses Phase 1's parse and ICRC check and
+Phase 2's QP context, and adds what receiving requires: `qp::mr` — the
+memory-region table, R_Key validation and address translation — and the
+local placement path that writes an incoming payload to the address the
+RETH names. Still UC, so still no acknowledgements.
+
+Note that on the GEM adapter this direction has the CPU in the data path
+per §5.4, so the acceptance target is correctness and modest rate, not
+line rate. Line-rate receive is what Phase 4 unlocks.
+
+*Gate: an unmodified Linux host issues `ibv_post_send` of an RDMA WRITE
+to the RHDL endpoint and the payload appears at the expected local
+address, with a deliberately corrupted ICRC rejected.*
+
+### Phase 4 — The own-MAC adapter (5–7 weeks, hardware-gated)
+
+`net::mac` — roadmap item 59 — plus `link::mac_phy`. GMII/RGMII
+frontend, preamble and SFD, FCS append and check, inter-frame gap, and
+the recovered-clock CDC. The first genuinely asynchronous
+`Circuit`-family widget of real size.
+
+This phase is the **proof of §5.1**: if the RoCE core needs any change to
+run behind its own MAC, the abstraction was wrong and that is the finding.
+It also unlocks line-rate receive (§5.4) and is the prerequisite for any
+rate above 1 GbE.
+
+*Gate: Phases 2 and 3 pass their own gates unchanged, with only the
+adapter swapped.*
+
+### Phase 5 — Reliable Connection, both directions (16–24 weeks)
 
 ACK/NAK generation and consumption, PSN window tracking, the
 retransmission buffer and its timers, duplicate detection, RNR-NAK, and
@@ -711,35 +952,43 @@ the receive-queue request handler. This is the third of the problem that
 with zero retransmission errors, and completes again with deliberately
 injected loss.*
 
-### Phase 4 — READ, SEND/RECV, completions, memory regions (12–16 weeks)
+### Phase 6 — READ, SEND/RECV, completions (12–16 weeks)
 
-An RDMA READ responder needs local memory reads and therefore R_Key
-validation and address translation — the protection domain machinery
-Phases 2–3 avoid entirely. Work-completion generation makes the endpoint
+An RDMA READ responder reads local memory, which Phase 3's `qp::mr`
+already provides; what is new is the read-response generator and the
+duplicate-read cache. Work-completion generation makes the endpoint
 usable from ordinary verbs code.
 
-### Phase 5 — Congestion control (8–12 weeks)
+### Phase 7 — Congestion control (8–12 weeks)
 
 ECN marking, CNP generation and consumption, and the DCQCN rate-limiter
-control loop. Only needed on a shared fabric; on a point-to-point link
-it is dead logic. Sequence it when a real deployment needs it, and note
-that the rate controller is a DSP control loop, which this repository is
-now well equipped to build and test.
+control loop. Only needed on a shared fabric; on a point-to-point link it
+is dead logic. Sequence it when a real deployment needs it, and note that
+the rate controller is a DSP control loop, which this repository is now
+well equipped to build and test.
 
 ### Totals
 
 | Target | Cumulative |
 |---|---|
-| Phase 0 — a frame on the wire | 8–10 weeks |
-| Phase 1 — verified packet parser/generator | 12–16 weeks |
-| **Phase 2 — UC WRITE endpoint, data in host memory** | **18–24 weeks (4.5–6 months)** |
-| Phase 3 — Reliable Connection | 34–48 weeks |
-| Phase 4 — full verb set | 46–64 weeks |
-| Phase 5 — congestion control | 54–76 weeks (13–18 months) |
+| Phase −1 — a measured packets-per-second number | one afternoon |
+| Phase 0 — CRC-32, IPv4, UDP | 3–4 weeks |
+| Phase 1 — verified parser/generator + link boundary | 7–10 weeks |
+| **Phase 2 — UC WRITE send: samples in host GPU memory** | **13–18 weeks (3–4.5 months)** |
+| **Phase 3 — UC WRITE receive** | **19–26 weeks (4.5–6 months)** |
+| Phase 4 — own-MAC adapter, line-rate receive, >1 GbE possible | 24–33 weeks |
+| Phase 5 — Reliable Connection | 40–57 weeks |
+| Phase 6 — full verb set | 52–73 weeks |
+| Phase 7 — congestion control | 60–85 weeks (14–20 months) |
 
-The 13–18 months for the full stack is consistent with blue-rdma's
-26 kLOC and with `tier-c-flagship-cores.md`'s 18–24 months for
-comparable projects.
+Two things to note about these numbers versus the first draft. **Phase 2
+got cheaper** — 13–18 weeks instead of 18–24 — because the hard GEM
+removes `net::mac` from the critical path and drops the CRC-32 width
+requirement from 512 bits to 8. **The full stack got slightly longer**,
+because receive-direction WRITE and the own-MAC adapter are now explicit
+phases rather than being folded into later ones. The full-stack figure
+remains consistent with blue-rdma's 26 kLOC and with
+`tier-c-flagship-cores.md`'s 18–24 months for comparable projects.
 
 ---
 
@@ -783,12 +1032,28 @@ decision, because it converts "we believe this is RoCEv2" into "an
 independent implementation agrees." It should be built in Phase 1, used
 in anger in Phase 2, and is the acceptance gate for every phase after.
 
-### Tier 8 — On hardware against a commodity NIC (Phase 2 exit, hardware-gated)
+### Tier 8 — On hardware against a commodity NIC (Phase 2 exit)
 
-An FPGA board whose PL owns a MAC, on a direct link to a host with any
-ConnectX-class NIC or just a plain NIC running `rxe`. Bandwidth and
-latency measured with `perftest`. Blocked until §4's board question is
-answered.
+A Red Pitaya on a direct link to a host with a ConnectX-class NIC, or any
+NIC running `rxe`. Bandwidth and latency measured with `perftest`. **No
+new board is required for this** — §4.3 — which means Tier 8 is reachable
+in Phase 2 rather than being hardware-gated indefinitely.
+
+The acceptance check has two steps, and the second is the actual goal:
+
+1. The host application reads its own registered **host** buffer and
+   finds the expected samples.
+2. With `nvidia-peermem` loaded and the buffer from `cudaMalloc`, a CUDA
+   kernel reads its own **GPU** memory and finds them. Host RAM is never
+   touched.
+
+### Tier 9 — Adapter equivalence (Phase 4 gate)
+
+The test that §5.1 is real rather than aspirational: **Phases 2 and 3
+pass their own gates with only `link::gem_ring` swapped for
+`link::mac_phy`, and no change to any widget above the boundary.** If a
+RoCE-layer widget needs editing to pass, the abstraction leaked and that
+is the finding to report, not to paper over.
 
 ---
 
@@ -798,38 +1063,51 @@ answered.
    kernel subset (§8). Mitigated by starting byte-serial; the Phase 1
    write-up is the decision point, and the answer is an input to
    `kernel-language-extensions.md` either way.
-2. **The board question is answered, and the answer is a new board**
-   (§4.3). A Red Pitaya physically cannot do this — the PHY is on PS
-   MIO pins — so Phase 0 needs a Nexys Video, a KC705 or similar where
-   the PL owns the MAC. Phase 0 can be developed and simulated without
-   hardware, but Tier 8 cannot happen until a board is bought, and
-   nothing should reach Phase 2 without one.
-3. **UC is only safe on the topology we have.** If the instrument ever
-   lands on a shared, congested fabric, Phase 3 stops being optional and
-   becomes a correctness requirement, not a performance one. Recorded
-   here so it is not a surprise.
-4. **The retransmission buffer is a bandwidth-delay product.** At 1 GbE
+2. **The PS descriptor rate is the one risk that can invalidate the
+   architecture** (§4.3). Line rate on the GEM path needs ~113k
+   packets/s retired by a 667 MHz Cortex-A9, and the PS GEM's 1522-byte
+   frame ceiling caps PMTU at 1024 so the packet count cannot be reduced
+   by using bigger frames. Mitigated by Phase −1, which measures it in
+   an afternoon for free. Mitigated again by the real data rate, which
+   after decimation is far below line rate.
+3. **Receiving through the PS GEM puts the CPU in the data path**
+   (§5.4). Unavoidable on that adapter: GEM DMAs into DDR and the PS
+   must hand the buffer over. Fine for control and acknowledgements,
+   wrong for high-rate receive. The mitigation is Phase 4's own-MAC
+   adapter, and the reason §5.1's abstraction is a day-one requirement
+   rather than a later generalisation.
+4. **GPUDirect RDMA is a host procurement constraint, and consumer
+   GeForce is not officially supported** (§4.5). It also needs
+   ConnectX-3 VPI or newer, `nvidia-peermem` with kernel peer-memory
+   support, and ideally NIC and GPU on one PCIe root complex. This is
+   the most likely procurement surprise in the project and it should be
+   verified with `perftest` on the intended host **before** Phase 2.
+5. **UC is only safe on the topology we have.** If the instrument ever
+   lands on a shared, congested fabric, the RC phase stops being
+   optional and becomes a correctness requirement, not a performance
+   one. Recorded here so it is not a surprise.
+6. **The retransmission buffer is a bandwidth-delay product.** At 1 GbE
    it is block RAM; at 10G and above it is external memory and the
    project acquires a memory-controller dependency it does not have
    today.
-5. **`rhdl-rule` has not been used at this scale.** Three pilot widgets
+7. **`rhdl-rule` has not been used at this scale.** Three pilot widgets
    is not a 26 kLOC core. Phase 2's send queue is the first real test,
    and discovering a rule-scheduler limitation there is a plausible
    outcome — which is a reason to do it, but the schedule should hold
    slack for it.
-6. **Copyleft proximity — for the RoCE layer only.** Phase 0's
+8. **Copyleft proximity — for the RoCE layer only.** Phase 0's
    reference, `verilog-ethernet`, is MIT and may be read freely. The
    RoCE-layer references are not: blue-rdma, RoCKS and Scapy are
    GPL-family. For those the discipline is read for architecture, use as
    oracles, write our own from the IBTA specification, and keep
    `roce-subset-spec.md` as the evidence of independent derivation.
-7. **No reference implementation runs at 1 GbE** (§3). Every one runs
+9. **No reference implementation runs at 1 GbE** (§3). Every one runs
    at 10G or above. The byte-serial ICRC and the 8-bit segmentation path
    would be ours alone, with no prior art to diff against — which is why
    §10's Tier 6 and Tier 7 are not optional niceties but the only thing
    standing between us and a plausible-looking stack that no NIC accepts.
 
-8. **An unoptimised 1 GbE datapath is 8 bits at 125 MHz.** That should
+10. **An unoptimised 1 GbE datapath is 8 bits at 125 MHz.** That should
    close comfortably, but the ICRC and FCS paths are the long ones, and
    `auto-pipelining-plan.md` has not shipped. Expect hand-placed relay
    stations and note where they are.
@@ -838,27 +1116,43 @@ answered.
 
 ## 12 — What is being asked for
 
-This document commits nothing. Before Phase 0 begins, three decisions
-are needed:
+This document commits nothing. The architecture question is now settled —
+it runs on existing hardware (§4.3) — so what remains is scheduling and
+two verifications.
 
-1. **Does this project get scheduled at all,** given it is
-   Tier-C-scale and competes with RV32I, the Alto and the Tier 0–4
-   widget library?
-2. **Is the §9 staging agreed as staging?** CLAUDE.md's anti-sliver rule
-   requires explicit sign-off on splitting work this size across PRs,
-   and Phase 2 shipping as "UC RDMA WRITE transmit at 1 GbE" rather than
-   as "RoCEv2" is part of what is being agreed.
-3. **Is a `net` category in `rhdl-fpga` acceptable** (§6), or should the
-   Ethernet/IP/UDP layers live elsewhere? This is an `architecture.md`
-   question and is the one structural decision Phase 0 cannot start
-   without.
-4. **Is a board going to be bought** (§4.3)? Phase 0 and Phase 1 can be
-   done entirely in simulation, so this does not block starting — but
-   Tier 8 is impossible without one, and the honest framing is that a
-   Nexys Video or KC705 at ~1 GbE is the Phase-2 target and a KR260 is
-   what makes side-by-side comparison against RoCKS possible.
+**Do these two before any code:**
 
-Phase 0 is independently worthwhile: a parallel CRC-32 and an Ethernet
-MAC are both on the roadmap on their own merits, and the MAC is
-described there as "the killer demo." If the answer to (1) is no, Phase 0
-is still worth doing.
+1. **Run Phase −1.** Blast pre-built 1086-byte frames from userspace on
+   the Red Pitaya and count what the PS retires. One afternoon, no RHDL,
+   and it is the only experiment that can invalidate the architecture.
+2. **Verify the host side.** Confirm the intended PC's NIC and GPU
+   support GPUDirect RDMA — ConnectX-3 VPI or newer, `nvidia-peermem`
+   loadable, and a GPU on NVIDIA's support matrix (§4.5: consumer
+   GeForce is not officially supported). `ib_write_bw` between two hosts,
+   with `--use_cuda`, proves the receiving half independently of anything
+   we build.
+
+**Then three decisions:**
+
+3. **Does this get scheduled**, given it is Tier-C-scale and competes
+   with RV32I, the Alto and the Tier 0–4 widget library? Phase 0's
+   widgets — CRC-32, IPv4, UDP — are on the roadmap on their own merits
+   and are worth doing either way.
+4. **Is the §9 staging agreed *as staging*?** CLAUDE.md's anti-sliver
+   rule requires explicit sign-off on splitting work this size, and part
+   of what is being agreed is that Phase 2 ships as "UC RDMA WRITE send"
+   rather than as "RoCEv2."
+5. **Is a `net` category in `rhdl-fpga` acceptable** (§6) for the
+   IPv4/UDP widgets in Phase 0 and `net::mac` in Phase 4? This is an
+   `architecture.md` question and is the one structural decision Phase 0
+   cannot start without.
+
+**And one comparison that should be made rather than assumed:**
+
+6. **Is DOCA GPUNetIO rejected, and on what grounds?** (§4.6) It gets
+   samples into GPU memory with *no* FPGA protocol work — the sensor
+   sends plain UDP — at the cost of a host poll-mode driver on a
+   dedicated core and owning the reassembly logic yourself. RoCEv2 wins
+   on host CPU, on not writing reassembly, and on the §1 strategic
+   grounds. If the goal is purely "samples in GPU memory, soon," that
+   deserves a straight answer before committing 3–4.5 months.

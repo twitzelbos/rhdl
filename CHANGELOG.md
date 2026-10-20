@@ -31,19 +31,19 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
-## 2026-10-20 — RoCEv2: a scope document, and the three things that have to exist first
+## 2026-10-20 — RoCEv2: scoping an FPGA-to-GPU-memory sensor path, and why the sender need not be an RNIC
 
 **Path:** `roce-v2-architecture.md` (scope document only — no code)
 
-**Why this, why now:** RDMA over Converged Ethernet lets a remote host's
-memory be written directly from the FPGA with no CPU, driver or socket in
-the data path. For the NMR/MRI console driving the `dsp::` track that
-removes the host from the acquisition path entirely, and it is the
-transport that comparable instruments (CTAO-LST's camera readout, CERN's
-FERoCE) already chose. The question asked was "what would it take" — so
-this entry records the answer rather than an implementation, because the
-answer turned out to be large enough that starting to code would have
-violated CLAUDE.md's anti-sliver rule on the first commit.
+**Why this, why now:** the goal is a Red Pitaya acting as a sensor that
+writes acquired samples by RDMA **directly into a PC's GPU memory** over
+RoCEv2 — no host CPU, no driver, no socket, no staging through host RAM.
+Comparable instruments already do this (CTAO-LST's camera readout, CERN's
+FERoCE). The question asked was "what would it take", so this entry
+records the answer rather than an implementation: the answer is large
+enough that starting to code would have violated CLAUDE.md's anti-sliver
+rule on the first commit, and the first two drafts of the answer were
+wrong in ways worth preserving below.
 
 **Design decisions:**
 
@@ -51,8 +51,11 @@ violated CLAUDE.md's anti-sliver rule on the first commit.
   project**, following the `rhdl-rv32i` / `rhdl-alto` precedent. It is
   not a widget and should be scheduled against RV32I and the Alto, not
   alongside the Tier 0–4 library.
-- **First endpoint that moves data is UC (Unreliable Connection) RDMA
-  WRITE, transmit side, at 1 GbE.** Justified at length in §5 rather
+- **Scope order: WRITE send first, then WRITE receive, with UC before
+  RC throughout** (§5.2, §5.3). Both directions are in scope and neither
+  is optional; send is first because it is what the sensor needs, it is
+  the clean direction on the GEM adapter, and receive reuses everything
+  send builds plus a memory-region table. Justified at length in §5 rather
   than asserted, because "easy transport first" is exactly the shape the
   anti-sliver rule forbids. The short version: it is the operation the
   use case actually needs, it interoperates with an unmodified Linux
@@ -146,31 +149,74 @@ violated CLAUDE.md's anti-sliver rule on the first commit.
   differently** (a 64-bit dummy LRH versus 8 bytes replacing the GRH).
   They are the same eight bytes; RoCEv2 carries neither header on the
   wire. Scapy's `contrib/roce.py` is the tiebreaker.
-- **A Red Pitaya physically cannot run this, and the schematic settles
-  it.** The STEMlab 125-14 V1.1 schematic wires the PHY's RGMII to PS
-  MIO bank 501 — `PS_MIO16..27_501` carry `ETH_TXCLK/TXD0-3/TXCTL` and
-  `ETH_RXCLK/RXD0-3/RXCTL`, `PS_MIO52/53` carry `ETH_MDC/MDIO`. That is
-  GEM0 on MIO, and the PL has **no electrical path to the PHY**. EMIO
-  does not help (it solves the opposite problem) and Zynq-7000's GEM has
-  no PL-side streaming interface, so the only PL-to-wire route is
-  PL → AXI-HP → DDR → PS → GEM, which puts the CPU back in the data path
-  and deletes the entire reason for doing RDMA. **It is not hard, it is
-  pointless.** Two further independent blockers: the XC7Z010 has 17,600
-  LUTs / 60 BRAM36 / 80 DSP and the ADC/DAC plus `dsp::` chain already
-  spends much of it; and 7010/7020 have no PL gigabit transceivers at
-  all, so 10G is impossible on any Red Pitaya. The document now carries
-  a shortlist of boards whose PL does own a MAC, drawn from
-  `verilog-ethernet`'s validated examples.
-- **And for the instrument that prompted the question, the honest answer
-  is that none of this is needed.** The whole point of the `dsp::`
-  decimation chain is to take 125 MSPS down to kHz-range bandwidth, so
-  1 GbE through the PS's ordinary stack has ample headroom and the CPU
-  cost that motivates RDMA is never paid. If the *raw* stream is wanted
-  that is ~350 MB/s, which exceeds 1 GbE regardless of protocol and
-  points at a different board and quite possibly PCIe DMA instead.
-  RoCEv2's value here is the §1 capability demonstration, not a fix for
-  an acquisition bottleneck on existing hardware. Written into §4.3 so
-  the next reader does not have to rediscover it.
+- **The "a Red Pitaya cannot do this" conclusion was wrong, and the
+  error is instructive.** The schematic fact is real — the STEMlab 125-14
+  wires the PHY's RGMII to PS MIO bank 501 (`PS_MIO16..27_501` carry
+  `ETH_TXCLK/TXD0-3/TXCTL` and `ETH_RXCLK/RXD0-3/RXCTL`, `PS_MIO52/53`
+  carry `ETH_MDC/MDIO`), so the PL genuinely has no electrical path to
+  the PHY. The inference from it was not: "therefore the CPU is in the
+  data path, therefore RDMA is pointless" **mis-sites where the offload
+  has to live.** The RDMA offload that matters is on the *receiving*
+  side. A RoCEv2 WRITE is an ordinary UDP datagram; the host NIC's engine
+  parses it and places the payload, and with `nvidia-peermem` it places
+  it straight into GPU memory with no host CPU and no staging through
+  host RAM. **The sender needs only to emit correct packets — it does not
+  need to be an RNIC.** The PL builds complete frames including the ICRC
+  into a DDR ring and the PS merely advances GEM descriptors, doing no
+  protocol work at all. This is established practice, not a workaround:
+  FERoCE has the *server* create the QP and send its parameters to the
+  FPGA over UDP, and CTAO-LST ships the same sender-only shape at 10 GbE.
+- **Siting it correctly made the project substantially smaller.** The PS
+  GEM *is* the MAC, so five of the hardest items evaporate: `net::mac`
+  (the 5-week Phase-0 item), Ethernet FCS generation, ARP, the
+  512-bit-wide CRC-32 (byte-wide at 125 MHz *is* 1 Gbps), and — because
+  UC needs no acknowledgements — the ACK path, retransmission buffer and
+  PSN window. Phase 0 drops from 8–10 weeks to 3–4, and samples in host
+  GPU memory from 18–24 weeks to 13–18.
+- **The real constraint moved to the PS, and there is a hard ceiling in
+  the way.** The Zynq-7000 PS GEM supports a maximum frame size of
+  **1522 bytes** — jumbo frames are a PL-side AXI Ethernet feature, not a
+  PS GEM one — which caps the RoCEv2 PMTU at 1024 and therefore fixes the
+  packet count at ~113k/s for line rate. That cannot be reduced by using
+  bigger frames. Whether a 667 MHz Cortex-A9 can retire 113k descriptors
+  per second is the one open question that could invalidate the
+  architecture, so it became **Phase −1: measure it from userspace in an
+  afternoon, with no RHDL involved.** It is also largely moot for the
+  real use case, since post-decimation data rates are far below line
+  rate.
+- **The link boundary is a day-one requirement, and §5.4 is why.**
+  Sending through the PS GEM is clean — the PL builds frames
+  autonomously and the PS only advances descriptors. *Receiving* through
+  it is not: GEM DMAs into DDR and the PS must hand the buffer over, so
+  the CPU is genuinely in the receive data path per packet. That
+  asymmetry is the strongest argument for making the RoCE core
+  interface-agnostic from the start rather than generalising later: the
+  same core behind a different adapter is what makes high-rate receive
+  possible without a rewrite. Recorded as a decision — the core speaks
+  only `RCStream<Beat<W>, FrameMark>`, and the adapter
+  (`link::gem_ring` or `link::mac_phy`) is chosen by **composition, not
+  by a type parameter**, which follows `vendor-primitive-architecture.md`'s
+  existing decision that widgets do not thread a target generic through
+  their API. Tier 9 is the test that it is real: Phases 2 and 3 must pass
+  unchanged with only the adapter swapped.
+- **There is a credible alternative that needs no FPGA protocol work at
+  all.** NVIDIA DOCA GPUNetIO (and DPDK's `gpudev` before it) receives
+  plain Ethernet/UDP straight into GPU memory — it still uses GPUDirect
+  RDMA underneath, so `nvidia-peermem` is still required, but the wire
+  protocol is ordinary UDP and the sensor would need no RoCEv2 at all.
+  The cost is a host poll-mode driver on a dedicated core and owning
+  packet reassembly yourself. Written into §4.6 as an explicit
+  comparison and into §12 as a decision, because "samples in GPU memory,
+  soon" has a much cheaper answer than three to four months of HDL and
+  that deserves a straight refusal rather than silence.
+- **GPUDirect RDMA is a host procurement constraint.** ConnectX-3 VPI or
+  newer, `nvidia-peermem` plus kernel peer-memory support (MLNX_OFED, a
+  patched kernel, or the newer DMA-BUF path), no auto-load, reinstall the
+  GPU driver if it preceded MLNX_OFED, and NIC and GPU ideally on one
+  PCIe root complex. **Consumer GeForce is not on NVIDIA's support
+  matrix** — the most likely procurement surprise in the project, and
+  cheap to check with `ib_write_bw --use_cuda` between two hosts before
+  any FPGA work starts.
 
 **Validation:** No code, so no tiers. The document's own contribution to
 validation is §10, which adds **two tiers beyond CLAUDE.md §5 for
