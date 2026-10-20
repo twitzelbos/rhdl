@@ -47,16 +47,15 @@ Transport Header is a `#[derive(Digital)]` struct, the opcode is an enum
 whose illegal encodings do not exist, and the packet is an `RCStream` of
 a sum type. The protocol *wants* to be written this way.
 
-Second, and more pointedly: **the most complete open-source RoCEv2 core
-is written in Bluespec** (§3). RHDL now ships `rhdl-rule` — Bluespec-style
-guarded atomic rules, 7.6 kLOC across three crates with ~20 integration
-tests and three pilot widgets. A RoCEv2 core is the canonical workload
-for that extension, and porting a known-good Bluespec design is a
-*translation* exercise with a reference oracle rather than a
-from-scratch protocol implementation. That combination — hard real
-protocol, existing BSV reference, RHDL's rule layer ready — is a
-strong publication and the best available proof that `rhdl-rule` was
-worth building.
+Second, there is a measurement in §3 that makes the case better than
+any argument could. The deliberately-minimal, WRITE-only reference
+implementation is **1.05 MB of SystemVerilog**; the *full* Reliable
+Connection implementation is **909 KB of Bluespec**. A far smaller
+feature set costs more code in the lower-level language. RHDL now ships
+`rhdl-rule` — Bluespec-style guarded atomic rules, 7.6 kLOC across three
+crates with ~20 integration tests and three pilot widgets — so a RoCEv2
+queue pair is both the canonical workload for that extension and a
+direct, publishable test of whether the saving reproduces.
 
 ### The caveat, stated plainly
 
@@ -163,41 +162,125 @@ Segmentation plus `padcount` is the whole variable-length problem, and
 
 ---
 
-## 3 — Reference implementations
+## 3 — Reference implementations, compared
 
-The user's note that "there are sample implementations on GitHub" is
-correct and they are unusually good. Surveyed:
+The samples on GitHub are unusually good, and they do not all deserve
+the same weight. Sizes below are `git` blob bytes from each repository's
+tree — a crude proxy for complexity, but a consistent one.
 
-| Project | Language | Scope | Use to us |
-|---|---|---|---|
-| **[datenlord/blue-rdma](https://github.com/datenlord/blue-rdma)** | Bluespec SV | Full RC: send/receive queues, retry, duplicate-read cache, work completions | **The primary reference.** Bluespec ≈ `rhdl-rule`. Gives us a module decomposition that is known to work and a semantics that translates. |
-| **[fpgasystems/fpga-network-stack](https://github.com/fpgasystems)** + **RoCE BALBOA** | Vitis HLS | 100G, RDMA WRITE + READ, HBM-backed retransmission, DCQCN, Coyote shell | Architecture reference for the *pipeline shape* and for what congestion control costs. Tied to Coyote and to HBM boards. |
-| **[ETH-PBL/RoCKS](https://github.com/ETH-PBL/RoCKS)** | Verilog + HLS core | RoCEv2 on a Kria KR260, bundles verilog-ethernet and a Linux driver | The *integration* reference: what the host side and the board plumbing look like. GPL-3.0 — read, do not copy. |
-| **[CodeByRachit/Lightweight-RoCEv2-Stack](https://github.com/CodeByRachit/Lightweight-RoCEv2-Stack)** (FERoCE) | SystemVerilog | TX-only RC WRITE/SEND, minimal RX for ACK/NAK/CNP, URAM/HBM retransmit buffer, UDP connection manager, 10G–400G | **The scope reference for our Phase 2–3.** Proves a deliberately minimal endpoint is a real, publishable, deployed thing. Ships Wireshark dissectors and a Rust reference receiver (`feroce-rs`). |
-| **[secdev/scapy](https://github.com/secdev/scapy/blob/master/scapy/contrib/roce.py)** `contrib/roce.py` | Python | Full header definitions + working ICRC | **The test oracle.** See §10. GPL-2.0: we use it as an external vector generator, we do not vendor it. |
+| Project | Language | Scope actually implemented | Core size | Rate, measured on |
+|---|---|---|---|---|
+| **FERoCE** / [Lightweight-RoCEv2-Stack](https://github.com/CodeByRachit/Lightweight-RoCEv2-Stack) | SystemVerilog | RDMA WRITE + WRITE_WITH_IMM, **TX only**; RX decodes ACKs only; retransmission; UDP connection manager | **39 files, 1.05 MB** (own RTL, excluding vendored libs) | 10G and 25G on VCU118 |
+| [blue-rdma](https://github.com/datenlord/blue-rdma) | Bluespec SV | **Full RC**: send + receive queues, retry, duplicate-read cache, work completions, atomics | **22 files, 909 KB** | not stated |
+| [Coyote](https://github.com/fpgasystems/Coyote) / RoCE BALBOA | Vitis HLS + SV | WRITE + READ, retransmission, DCQCN | HLS core ~11 KB + ~450 KB SV plumbing, **of which `icrc.sv` alone is 304 KB** | 100G, Alveo + HBM |
+| [RoCKS](https://github.com/ETH-PBL/RoCKS) | packaging | *Is* Coyote's stack — byte-identical 305 KB `icrc.sv` — plus a Linux driver and a Yocto layer | — | 10/25G over KR260's SFP+ |
+| [scapy `contrib/roce.py`](https://github.com/secdev/scapy/blob/master/scapy/contrib/roce.py) | Python | headers + ICRC | — | test oracle |
 
-Two measurements worth writing down, because they set expectations:
+### FERoCE is the primary reference — not blue-rdma
 
-- **blue-rdma's `src/` is ~909 KB of Bluespec across 22 files** —
-  roughly 26 kLOC. Of that, `ReqHandleRQ.bsv` alone is 160 KB,
-  `RespHandleSQ.bsv` 74 KB, `RetryHandleSQ.bsv` 28 KB. **Nearly a third
-  of the implementation is the reliable-transport state machinery** —
-  receive-queue request handling, send-queue response handling, retry.
-  That is the part §5 defers, and the file sizes are why.
-- **BALBOA needs HBM for its retransmission buffer** at 100G. A
-  retransmission buffer must hold one bandwidth-delay product; at 100G
-  and 10 µs that is 125 KB and climbing, at 1 GbE and 100 µs it is
-  12.5 KB. **1 GbE is the rate at which this project fits in block RAM**,
-  which is a strong independent reason to start there.
+The first draft of this document had that the wrong way round. blue-rdma
+is the most *complete* implementation, which made it look like the one to
+follow; but completeness is not what we need a reference for. **FERoCE's
+scope is exactly the Phase-2 target**, in its authors' own words:
 
-Licensing: blue-rdma, RoCKS and Scapy are copyleft (GPL-family). We read
-them for architecture and use them as oracles. No code is copied. The
-IBTA specification itself is the normative source for field layouts, and
-`tier-c-flagship-cores.md` §3.4's "specification rewrite" discipline
-applies: the deliverable includes our own prose statement of the subset
-we implement.
+> RoCEv2 is a complex protocol, but not all its features are required
+> for this project. [...] The goal is only to push data and initiate the
+> RDMA transfer, for this reason only RDMA WRITE is considered.
 
----
+It supports WRITE and WRITE_WITH_IMMEDIATE; an FSM splits the input
+stream into ONLY/FIRST/MIDDLE/LAST by PMTU; the RX path decodes only ACK
+packets; QP parameters are set in FPGA registers from a UDP
+connection-manager exchange. That is Phase 2 of §9, already built and
+already measured against a commodity NIC. It is also *motivated by the
+same problem we have* — it is a CERN DAQ project, and its opening
+premise is that a large fraction of CPU is consumed by moving acquired
+data.
+
+Its module decomposition is therefore the one to study, and it maps
+cleanly onto §6:
+
+| FERoCE module | Size | RHDL counterpart |
+|---|---|---|
+| `RoCE_tx_engine.sv` | 73 KB | `qp::uc_write_sq` |
+| `RoCE_rtr_read_module.sv` + `RoCE_retransmission_module_v2.sv` | 122 KB | Phase 3 `qp::retry` |
+| `RoCE_tx_header_producer.sv` | 45 KB | `headers::generate` |
+| `RoCE_reth_bth_tx.sv`, `RoCE_immdh_reth_tx.sv`, `RoCE_bth_udp_tx.sv` | 80 KB | `headers::{bth,reth}` + `serde` |
+| `RoCE_realign_frame_fifo.sv` | 35 KB | **§8's alignment problem, as a module** |
+| `axis_RoCE_icrc_insert.v` | 28 KB | `icrc.rs` |
+| `RoCE_qp_state_module.sv` | 28 KB | `qp::context` |
+| `udp_RoCE_connection_manager*.sv` | 72 KB | Phase 2 connection setup |
+| `RoCE_bth_udp_rx.sv` | 27 KB | `headers::parse` (ACK path) |
+
+### The measurement that argues for `rhdl-rule`
+
+Put the first two rows of the table together:
+
+- **FERoCE** — WRITE-only, transmit-only, one transport — is
+  **1.05 MB of SystemVerilog across 39 files**.
+- **blue-rdma** — full Reliable Connection, both directions, retry,
+  duplicate-read cache, work completions, atomics — is **909 KB of
+  Bluespec across 22 files**.
+
+A **much smaller feature set costs more code in SystemVerilog than a
+much larger feature set costs in Bluespec.** That is the strongest
+argument in this document for writing the queue-pair logic in
+`rhdl-rule`, and it is a measurement rather than an opinion. blue-rdma's
+role here is to be that comparison, and to be the Phase-3 reference once
+reliable transport is on the table — its
+`ReqHandleRQ` + `RespHandleSQ` + `RetryHandleSQ` are ~262 KB, nearly a
+third of it, which is what sets Phase 3 at 16–24 weeks.
+
+### Nobody writes their own parallel CRC-32
+
+FERoCE's `lib/` has exactly three vendored dependencies, and **two of
+the three are CRC**: `FAST_CRC32`, `Tbps_CRC`, and `eth`. Its own slides
+say it plainly — for 10/25G, CRC-32 must be computed over 64-bit words
+at 156.25 or 390.625 MHz, and *"new module for 100G, parallel
+computation is needed here. CRC computed for 512b data words at 322.266
+MHz, not that easy."*
+
+Coyote agrees by construction: `icrc.sv` at **304 KB is the single
+largest RTL file in its entire RDMA directory**, dwarfing
+`roce_stack.sv` at 21 KB. At a 512-bit datapath a parallel CRC-32 is a
+vast unrolled XOR tree, and it is generated, not written.
+
+This is the clearest possible confirmation of §4's gap 2 and of §7: the
+ICRC is the hard part of a RoCEv2 implementation, everyone treats it as a
+separate engineering artifact, and RHDL's bit-serial `core::crc` is not a
+starting point for it.
+
+### The third dependency is MIT, which changes the licensing picture
+
+`eth` is [Alex Forencich's **verilog-ethernet**](https://github.com/alexforencich/verilog-ethernet)
+— **MIT licensed**, 3.1k stars, and the de-facto standard open Ethernet
+MAC + ARP + IP + UDP stack for FPGAs. Both FERoCE and RoCKS build on it.
+It ships validated example designs for GMII, RGMII *and* SGMII
+(`KC705/fpga_{gmii,rgmii,sgmii}`), which is precisely the Phase-0
+`net::mac` surface.
+
+So the blanket "all the references are copyleft" in the first draft was
+wrong, and the distinction matters:
+
+- **Phase 0 (MAC, IP, UDP) has a permissively-licensed reference** we may
+  read freely and model our architecture on.
+- **Phase 1+ (the RoCE layer) does not.** blue-rdma, RoCKS and Scapy are
+  GPL-family; Coyote is its own licence. For those we read for
+  architecture, use as oracles, and write our own from the IBTA
+  specification, keeping `roce-subset-spec.md` as the evidence of
+  independent derivation.
+
+### No reference implementation runs at 1 GbE
+
+Worth stating, because it cuts against §5. Every one of these runs at
+10G or above: FERoCE on a VCU118 at 10/25G, RoCKS over KR260's 10G SFP+,
+BALBOA at 100G on Alveo. FERoCE lists *"scalable 1/10/100 Gb/s"* as a
+requirement and implemented 10 and 25.
+
+A 1 GbE RoCEv2 endpoint is therefore **unprecedented among the
+references**. That is simultaneously why it is tractable for us (§8) and
+a risk: the byte-serial ICRC and the 8-bit segmentation path would be
+ours alone, with no prior art to check against. §10's interoperability
+tiers are the mitigation, and Soft-RoCE works happily over 1 GbE.
 
 ## 4 — What RHDL has, and the three things it does not
 
@@ -249,18 +332,86 @@ is a genuinely useful widget on its own that the roadmap already wants.
 construction, the IPv4 header checksum, and — for the ICRC — the ability
 to re-serialise those headers with specific fields masked.
 
-### A fourth gap that is not RHDL's problem but is ours
+### Hardware: what this runs on, and why not a Red Pitaya
 
-No board in `rhdl-bsp` has a high-speed transceiver; the supported
-targets are the OpalKelly XEM7010 (Artix-7) and Lattice parts. There is
-no 10G-capable board support, which reinforces 1 GbE as the starting
-rate. And for the instrument use case specifically: on a Red Pitaya the
-Ethernet PHY is wired to the Zynq PS's hard GEM, not to the PL — so the
-PL does not own a MAC and RoCEv2 is **not** a drop-in there. Confirm
-against the board schematic before planning any hardware bring-up; this
-may well mean the first real target is a different board.
+**Short answer: a Red Pitaya cannot do this, and the reason is in the
+schematic rather than in the fabric size.**
 
----
+On the STEMlab 125-14, the Ethernet PHY's RGMII bus is wired directly to
+the processing system's hard MIO pins in bank 501 — from the V1.1
+schematic:
+
+```text
+  PS_MIO16_501 -> ETH_TXCLK      PS_MIO22_501 -> ETH_RXCLK
+  PS_MIO17_501 -> ETH_TXD0       PS_MIO23_501 -> ETH_RXD0
+  PS_MIO18_501 -> ETH_TXD1       PS_MIO24_501 -> ETH_RXD1
+  PS_MIO19_501 -> ETH_TXD2       PS_MIO25_501 -> ETH_RXD2
+  PS_MIO20_501 -> ETH_TXD3       PS_MIO26_501 -> ETH_RXD3
+  PS_MIO21_501 -> ETH_TXCTL      PS_MIO27_501 -> ETH_RXCTL
+  PS_MIO52_501 -> ETH_MDC        PS_MIO53_501 -> ETH_MDIO
+```
+
+That is GEM0 on MIO. **The programmable logic has no electrical path to
+the PHY**, and there is no workaround: EMIO solves the opposite problem
+(routing a PS GEM *out* to PL pins, when the PHY is on PL pins), and
+Zynq-7000's GEM has no PL-side streaming interface. The only PL-to-wire
+path is PL → AXI-HP → DDR → PS → GEM, which puts the CPU back in the
+data path and thereby deletes the entire reason for doing RDMA. **RoCEv2
+on a Red Pitaya is not hard, it is pointless.**
+
+Two further blockers, each independently sufficient:
+
+- **Fabric.** The XC7Z010 has **17,600 LUTs, 35,200 FFs, 60 BRAM36
+  (2.1 Mb) and 80 DSP slices**, and the existing design already spends a
+  large share of that on the ADC/DAC interface and the `dsp::` chain —
+  the CORDIC alone measured 101 adders and 553 register declarations. A
+  MAC plus a parallel CRC-32 plus a queue pair will not fit beside it.
+  The 7020 (53,200 LUTs) on the PRO/SIGNALlab variants is less absurd
+  but still tight, and still has the MIO problem.
+- **No transceivers.** Zynq-7000's 7010 and 7020 have no PL gigabit
+  transceivers at all (they start at the 7015/7030), so 10G is off the
+  table on any Red Pitaya regardless of the above.
+
+### What hardware is actually needed
+
+The requirement is simply **a board whose programmable logic owns an
+Ethernet interface**, with enough fabric beside it. `verilog-ethernet`'s
+validated example designs are the useful shortlist, because they are the
+boards on which the MAC we would model Phase 0 on is known to work:
+
+| Rate | Board | Device | Notes |
+|---|---|---|---|
+| 1 GbE | **Nexys Video** | Artix-7 200T | RGMII PHY on PL. Cheapest sane Phase-0/2 target. |
+| 1 GbE | **KC705** | Kintex-7 325T | Has GMII, RGMII *and* SGMII examples — the best MAC reference. |
+| 1 GbE | ZCU102 / ZCU106 | Zynq US+ | PL-side Ethernet, and a PS for the control plane. |
+| 10G | **KR260** | Zynq US+ K26 | 4× RJ45 1G + **1× SFP+ 10G**. RoCKS's board — the cheapest hardware that already runs a real RoCEv2 stack. |
+| 10/25G | VCU118 | Virtex US+ VU9P | FERoCE's board. Expensive. |
+| 100G | Alveo U50/U55/U280 | | BALBOA's class of target; needs HBM for retransmission. |
+
+For this project a **Nexys Video or KC705 at 1 GbE** is the Phase-0
+through Phase-2 target, and a **KR260** is the natural second step
+because it is the one board where a reference implementation can be run
+side by side with ours for comparison.
+
+### And for the instrument itself: probably none of this
+
+Stated plainly, because the question "what hardware is needed" has an
+uncomfortable answer for the use case that prompted it. If the goal is
+getting NMR acquisition data off a Red Pitaya, then:
+
+- **The data rate after the DDC is small.** The entire purpose of the
+  `dsp::` decimation chain is to take 125 MSPS down to a signal bandwidth
+  measured in kHz. 1 GbE via the PS's ordinary network stack has ample
+  headroom for that, and the CPU cost that motivates RDMA is not being
+  paid in the first place.
+- **If the raw 125 MSPS stream is wanted**, that is ~350 MB/s for two
+  14-bit channels, which exceeds 1 GbE regardless of protocol. The answer
+  there is a different board, and quite possibly PCIe DMA rather than
+  RDMA, which is simpler and faster when the host is adjacent.
+- **RoCEv2's value here is strategic, not utilitarian** — it is the
+  capability demonstration described in §1, and it should be scheduled on
+  that basis. It is not the fix for an acquisition bottleneck on existing
+  hardware.
 
 ## 5 — Scope decision: UC RDMA WRITE first
 
@@ -647,9 +798,12 @@ answered.
    kernel subset (§8). Mitigated by starting byte-serial; the Phase 1
    write-up is the decision point, and the answer is an input to
    `kernel-language-extensions.md` either way.
-2. **No board currently owns a MAC in the PL** (§4). Phase 0 can be
-   developed and simulated without one, but Tier 8 cannot happen and the
-   project should not reach Phase 2 without this answered.
+2. **The board question is answered, and the answer is a new board**
+   (§4.3). A Red Pitaya physically cannot do this — the PHY is on PS
+   MIO pins — so Phase 0 needs a Nexys Video, a KC705 or similar where
+   the PL owns the MAC. Phase 0 can be developed and simulated without
+   hardware, but Tier 8 cannot happen until a board is bought, and
+   nothing should reach Phase 2 without one.
 3. **UC is only safe on the topology we have.** If the instrument ever
    lands on a shared, congested fabric, Phase 3 stops being optional and
    becomes a correctness requirement, not a performance one. Recorded
@@ -663,11 +817,19 @@ answered.
    and discovering a rule-scheduler limitation there is a plausible
    outcome — which is a reason to do it, but the schedule should hold
    slack for it.
-6. **Copyleft proximity.** The best references are GPL-family. The
-   discipline is: read for architecture, use as oracles, write our own
-   from the IBTA specification, and keep `roce-subset-spec.md` as the
-   evidence of independent derivation.
-7. **An unoptimised 1 GbE datapath is 8 bits at 125 MHz.** That should
+6. **Copyleft proximity — for the RoCE layer only.** Phase 0's
+   reference, `verilog-ethernet`, is MIT and may be read freely. The
+   RoCE-layer references are not: blue-rdma, RoCKS and Scapy are
+   GPL-family. For those the discipline is read for architecture, use as
+   oracles, write our own from the IBTA specification, and keep
+   `roce-subset-spec.md` as the evidence of independent derivation.
+7. **No reference implementation runs at 1 GbE** (§3). Every one runs
+   at 10G or above. The byte-serial ICRC and the 8-bit segmentation path
+   would be ours alone, with no prior art to diff against — which is why
+   §10's Tier 6 and Tier 7 are not optional niceties but the only thing
+   standing between us and a plausible-looking stack that no NIC accepts.
+
+8. **An unoptimised 1 GbE datapath is 8 bits at 125 MHz.** That should
    close comfortably, but the ICRC and FCS paths are the long ones, and
    `auto-pipelining-plan.md` has not shipped. Expect hand-placed relay
    stations and note where they are.
@@ -690,6 +852,11 @@ are needed:
    Ethernet/IP/UDP layers live elsewhere? This is an `architecture.md`
    question and is the one structural decision Phase 0 cannot start
    without.
+4. **Is a board going to be bought** (§4.3)? Phase 0 and Phase 1 can be
+   done entirely in simulation, so this does not block starting — but
+   Tier 8 is impossible without one, and the honest framing is that a
+   Nexys Video or KC705 at ~1 GbE is the Phase-2 target and a KR260 is
+   what makes side-by-side comparison against RoCKS possible.
 
 Phase 0 is independently worthwhile: a parallel CRC-32 and an Ethernet
 MAC are both on the roadmap on their own merits, and the MAC is

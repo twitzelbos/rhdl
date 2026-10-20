@@ -86,12 +86,45 @@ violated CLAUDE.md's anti-sliver rule on the first commit.
   the three Phase 0 dependencies were already on the roadmap on their
   own merits, which is why Phase 0 is worth doing even if the RoCE
   project is never scheduled.
-- **blue-rdma's file sizes are the most useful estimate input found.**
-  Its `src/` is ~909 KB of Bluespec across 22 files (~26 kLOC), and
-  `ReqHandleRQ.bsv` + `RespHandleSQ.bsv` + `RetryHandleSQ.bsv` are
-  ~262 KB of that — nearly a third of the implementation is
-  reliable-transport state machinery. That measurement, not a guess, is
-  what sets Phase 3 at 16–24 weeks and justifies deferring it.
+- **The first draft picked the wrong primary reference, and measuring
+  the alternatives fixed it.** blue-rdma is the most *complete* RoCEv2
+  core, which made it look like the one to follow. But FERoCE's scope is
+  *exactly* the Phase-2 target in its authors' own words — "the goal is
+  only to push data and initiate the RDMA transfer, for this reason only
+  RDMA WRITE is considered" — it is motivated by the same DAQ problem,
+  and it has published measurements against a commodity NIC. Its module
+  decomposition is now mapped module-by-module onto §6. blue-rdma is
+  demoted to the Phase-3 reference and to the language comparison below.
+- **The language comparison is the best argument for `rhdl-rule` in the
+  document, and it is a measurement.** FERoCE — WRITE-only,
+  transmit-only, one transport — is **1.05 MB of SystemVerilog across 39
+  files**. blue-rdma — full Reliable Connection, both directions, retry,
+  duplicate-read cache, work completions, atomics — is **909 KB of
+  Bluespec across 22 files**. A far smaller feature set costs more code
+  in the lower-level language. blue-rdma's
+  `ReqHandleRQ` + `RespHandleSQ` + `RetryHandleSQ` are ~262 KB, nearly a
+  third of it, which is what sets Phase 3 at 16–24 weeks.
+- **Nobody writes their own parallel CRC-32, and the ICRC is the biggest
+  file in the field.** Coyote's `icrc.sv` is **304 KB — the single
+  largest RTL file in its entire RDMA directory**, against 21 KB for
+  `roce_stack.sv` itself; RoCKS ships a byte-identical copy, which also
+  revealed that RoCKS *is* Coyote's stack plus a Linux driver rather than
+  an independent implementation. FERoCE vendors two separate CRC
+  libraries (`FAST_CRC32`, `Tbps_CRC`) out of three total dependencies,
+  and its slides say "not that easy" about 512-bit CRC outright. Gap 2
+  is confirmed from three directions.
+- **The blanket "all the references are copyleft" was wrong.** FERoCE's
+  third dependency is Alex Forencich's **`verilog-ethernet`, which is
+  MIT** — the de-facto standard open MAC/ARP/IP/UDP stack, with
+  validated GMII, RGMII *and* SGMII examples, i.e. exactly the Phase-0
+  surface. So Phase 0 has a permissively-licensed reference and Phase 1+
+  does not, and the document now says so separately.
+- **No reference implementation runs at 1 GbE.** FERoCE on VCU118 at
+  10/25G, RoCKS over KR260's 10G SFP+, BALBOA at 100G on Alveo. FERoCE
+  lists "scalable 1/10/100 Gb/s" as a requirement and implemented 10 and
+  25. A 1 GbE endpoint is unprecedented among the references — which is
+  both why it is tractable for us and a real risk, since the byte-serial
+  ICRC would have no prior art to diff against. Added as its own risk.
 - **1 GbE is the right starting rate for three independent reasons**,
   which only became clear while writing §8. The retransmission buffer is
   a bandwidth-delay product and fits in block RAM at 1 GbE but needs HBM
@@ -113,10 +146,31 @@ violated CLAUDE.md's anti-sliver rule on the first commit.
   differently** (a 64-bit dummy LRH versus 8 bytes replacing the GRH).
   They are the same eight bytes; RoCEv2 carries neither header on the
   wire. Scapy's `contrib/roce.py` is the tiebreaker.
-- **On a Red Pitaya the PHY is wired to the Zynq PS's hard GEM, not to
-  the PL**, so the PL does not own a MAC and this is not a drop-in on
-  the board the `dsp::` work targets. Needs confirming against the
-  schematic, and may mean the first real target is a different board.
+- **A Red Pitaya physically cannot run this, and the schematic settles
+  it.** The STEMlab 125-14 V1.1 schematic wires the PHY's RGMII to PS
+  MIO bank 501 — `PS_MIO16..27_501` carry `ETH_TXCLK/TXD0-3/TXCTL` and
+  `ETH_RXCLK/RXD0-3/RXCTL`, `PS_MIO52/53` carry `ETH_MDC/MDIO`. That is
+  GEM0 on MIO, and the PL has **no electrical path to the PHY**. EMIO
+  does not help (it solves the opposite problem) and Zynq-7000's GEM has
+  no PL-side streaming interface, so the only PL-to-wire route is
+  PL → AXI-HP → DDR → PS → GEM, which puts the CPU back in the data path
+  and deletes the entire reason for doing RDMA. **It is not hard, it is
+  pointless.** Two further independent blockers: the XC7Z010 has 17,600
+  LUTs / 60 BRAM36 / 80 DSP and the ADC/DAC plus `dsp::` chain already
+  spends much of it; and 7010/7020 have no PL gigabit transceivers at
+  all, so 10G is impossible on any Red Pitaya. The document now carries
+  a shortlist of boards whose PL does own a MAC, drawn from
+  `verilog-ethernet`'s validated examples.
+- **And for the instrument that prompted the question, the honest answer
+  is that none of this is needed.** The whole point of the `dsp::`
+  decimation chain is to take 125 MSPS down to kHz-range bandwidth, so
+  1 GbE through the PS's ordinary stack has ample headroom and the CPU
+  cost that motivates RDMA is never paid. If the *raw* stream is wanted
+  that is ~350 MB/s, which exceeds 1 GbE regardless of protocol and
+  points at a different board and quite possibly PCIe DMA instead.
+  RoCEv2's value here is the §1 capability demonstration, not a fix for
+  an acquisition bottleneck on existing hardware. Written into §4.3 so
+  the next reader does not have to rediscover it.
 
 **Validation:** No code, so no tiers. The document's own contribution to
 validation is §10, which adds **two tiers beyond CLAUDE.md §5 for
