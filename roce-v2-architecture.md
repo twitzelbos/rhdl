@@ -1,14 +1,23 @@
 # RoCEv2 — RDMA over Converged Ethernet v2 for RHDL
 
-**Status: the plan, plus the first two phases of it.** `crates/rhdl-roce`
-now implements the transport headers, the Invariant CRC and the
-message-to-packet segmenter, all validated byte-for-byte against Scapy
-(§10 Tier 6). What is **not** built: the Ethernet/IPv4/UDP wrapping, the
-link adapters, and everything to do with reliable transport. So it
-decides and builds *packets*; it does not yet put one on a wire.
-**The remaining staging in §9 still needs explicit sign-off** — see §12,
-and note that §12's structural question about a `net` category is now
-the thing actually blocking progress.
+**Status: the plan, plus Phase 1 and most of Phase 2's send side.**
+`crates/rhdl-roce` implements the transport headers, the Invariant CRC,
+the message-to-packet segmenter, and the Ethernet/IPv4/UDP framing — so
+a **complete RoCEv2 frame is generated and matches Scapy byte-for-byte**,
+over eight curated vectors and a 2000-case differential fuzz corpus
+(§10 Tier 6).
+
+What is **not** built: the link adapter that hands a finished frame to
+something that transmits (`link::gem_ring`), and everything to do with
+reliable transport — acknowledgements, sequence-number windows,
+retransmission. So it builds correct frame *bytes*; nothing puts them on
+a wire yet.
+
+**The remaining staging in §9 still needs explicit sign-off** — see §12.
+Note that §12's structural question about a `net` category is no longer
+blocking: the Ethernet/IPv4/UDP widgets were written inside
+`rhdl-roce::frame` instead, which touches nothing in `rhdl-fpga`'s
+structure and is a rename away from migrating once the decision lands.
 
 RoCEv2 lets a network card write directly into a remote machine's memory
 with no CPU in the data path — and on a host with `nvidia-peermem`
