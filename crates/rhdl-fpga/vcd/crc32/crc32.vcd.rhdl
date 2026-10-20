@@ -1,0 +1,1 @@
+TraceInfo({"top.clock":Clock,"top.input":Struct((name:"rhdl_fpga::core::crc32::In",fields:[(name:"byte",ty:Bits(8)),(name:"enable",ty:Bits(1)),(name:"clear",ty:Bits(1))])),"top.outputs":Bits(32),"top.remainder.dff.input":Bits(32),"top.remainder.dff.output":Bits(32),"top.reset":Reset})

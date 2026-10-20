@@ -31,6 +31,94 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-10-20 — `core::crc32`: the byte-parallel CRC that a wire needs
+
+**Path:** `crates/rhdl-fpga/src/core/crc32.rs`,
+`examples/crc32.rs`, `doc/crc32.md`, `vcd/crc32/`
+
+**Why this, why now:** roadmap item 16 shipped `core::crc` as a
+*bit-serial* engine, and that engine cannot be used for anything on an
+Ethernet wire. Both the Ethernet FCS and the RoCEv2 Invariant CRC are
+CRC-32 at datapath width; at 1 Gbit/s a bit-serial engine would have to
+run at 1 GHz. This is the first of the two Phase-0 dependencies in
+`roce-v2-architecture.md`, and it is the one every other piece of the
+RoCEv2 send path waits on. It is also useful on its own merits —
+Ethernet, zlib, PNG and gzip all want exactly this checksum.
+
+**Design decisions:**
+
+- **One byte per cycle, which is the whole point.** 8 bits/cycle at
+  125 MHz is exactly 1 Gbit/s, so this closes timing at line rate on the
+  hardware in hand. The widget is width-generic-*ready* in shape but not
+  in fact; widening it to 64 bits for 10G is a later, separate change.
+- **Deliberately *not* parameterised, unlike `core::crc`.** CRC-32 is one
+  named algorithm with a fixed parameter set — reflected in and out,
+  init `0xFFFFFFFF`, final XOR `0xFFFFFFFF`, polynomial `0x04C11DB7`.
+  Every one of those is a chance to be subtly wrong in a way whose only
+  symptom is a peer silently discarding packets, so all four are baked in
+  and the output is the *finished* checksum rather than the raw
+  remainder. This is the opposite of the choice `core::crc` made, and the
+  module docs say so and why.
+- **The eight-iteration step is a constant-bound `for` loop.** It unrolls
+  into a combinational XOR network — the "CRC table" of software
+  implementations, except that in hardware the table *is* the network and
+  there is no memory to look up. Confirmed in the Tier-3 snapshot:
+  `0xEDB88320` appears as eight separate `localparam`s with a
+  shift-right-and-conditional-XOR chain between them.
+- **`crc32_step` is exposed as a kernel in its own right**, because the
+  ICRC path needs the primitive and not the registered widget.
+- **`Default` is hand-written, not derived.** A derived `Default` would
+  give a zero remainder, which computes a different, wrong checksum
+  silently instead of failing.
+
+**Surprises and gotchas:**
+
+- **The non-zero-DFF-reset divergence bit again, exactly as recorded.**
+  Tier 4 failed at time 0 with "expected `11111111...`, got `00000000...`"
+  — Verilog's `initial` block sets the register while the Rust simulator
+  starts from `dont_care`. `core::crc` already hits this and the fix is
+  the same `TestBenchOptions::default().skip(2)`. The CHANGELOG entry
+  from 2026-08-?? that documented this saved the diagnosis entirely;
+  worth noting as a case where the build narrative paid for itself.
+- **`TracedSample` has `output`, not `value.N`.** Minor, but the
+  compiler error (`no field 'value'`) lists the available fields, so it
+  is self-correcting.
+- **The published check value is the test that matters.** `"123456789"`
+  → `0xCBF43926` is the standard check constant for this parameter set,
+  and it is what pins reflection, init and XOR-out simultaneously. A
+  software reference written independently from the algorithm agrees with
+  it, and with the widget, over every single-byte message and lengths
+  0–24.
+- **A single zero byte is not the empty message.** Tested explicitly,
+  because the natural implementation bug — treating `enable` with a zero
+  byte as a no-op — produces exactly that confusion and nothing else
+  would catch it.
+
+**Validation:** Tiers 1–5, 14 tests. Tier 1 covers the published check
+value, the empty message, the single-zero-byte case, agreement with an
+independent software reference across lengths 0–24 and all 256
+single-byte messages, reset, `clear`-beats-`enable`, and idle hold.
+Tier 2 runs four messages through the assembled widget plus a
+two-messages-separated-by-`clear` case, which is the shape the ICRC path
+will use. The `crc32_step` kernel additionally gets
+`test_kernel_vm_and_verilog_synchronous` per CLAUDE.md §4, since a direct
+Rust call is more permissive than the kernel VM and this kernel is
+shift-heavy. Tier 3 snapshot audited by eye rather than blessed — the
+polynomial constant and the eight unrolled stages were read and
+confirmed. Tier 4 RTL+NTL round-trips with `.skip(2)`. Tier 5 digest
+committed. Example deterministic, trace committed.
+
+**Follow-ups:**
+
+- **Width-generic CRC-32** for 10G and above (64 bits/cycle), which is
+  where `roce-v2-architecture.md` §8's alignment problem starts to bite
+  and where Coyote's 304 KB generated `icrc.sv` lives. Not needed for
+  1 GbE.
+- The Ethernet FCS has the same polynomial and parameters, so a future
+  `net::mac` reuses this widget unchanged.
+
+---
+
 ## 2026-10-20 — RoCEv2: scoping an FPGA-to-GPU-memory sensor path, and why the sender need not be an RNIC
 
 **Path:** `roce-v2-architecture.md` (scope document only — no code)
