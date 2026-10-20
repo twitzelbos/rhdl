@@ -490,3 +490,216 @@ fn the_ethernet_header_is_not_covered() {
         );
     }
 }
+
+// ---------------------------------------------------------------------
+// Segmenter
+// ---------------------------------------------------------------------
+
+/// **The segmenter against real packets.** The vector set contains a
+/// 600-byte message at a 256-byte path MTU as three Scapy-generated
+/// packets — `uc_write_first_256`, `uc_write_middle_256` and
+/// `uc_write_last_88`. The segmenter is asked for the same message and
+/// every field of its plan is checked against what is actually on those
+/// wires: the opcode byte, the sequence number, the payload length, the
+/// pad count, and the RETH that only the first packet carries.
+///
+/// This is what makes the segmenter's correctness a claim about the
+/// protocol rather than about my own arithmetic. The three vectors were
+/// generated independently of this code and of each other.
+#[test]
+fn the_segmenter_reproduces_a_real_multi_packet_message() {
+    use rhdl_roce::headers::{Transport, carries_reth, encode_write_opcode};
+    use rhdl_roce::qp::context::{MessageRequest, Pmtu, QpContext};
+    use rhdl_roce::qp::segmenter::{In as SegIn, WriteSegmenter};
+
+    let all = vectors();
+    let expected: Vec<&Vector> = [
+        "uc_write_first_256",
+        "uc_write_middle_256",
+        "uc_write_last_88",
+    ]
+    .iter()
+    .map(|n| {
+        all.iter()
+            .find(|v| v.name == *n)
+            .unwrap_or_else(|| panic!("vector {n} is missing"))
+    })
+    .collect();
+
+    // Every vector in the message must agree on the total length, or
+    // the premise of the test is wrong.
+    let total: usize = expected.iter().map(|v| v.payload.len()).sum();
+    assert_eq!(
+        total, 600,
+        "the three vectors should carry 600 bytes in all"
+    );
+
+    let idle = SegIn {
+        start: false,
+        msg: MessageRequest {
+            va: bits(expected[0].va as u128),
+            length: bits(total as u128),
+        },
+        ctx: QpContext {
+            dqpn: bits(expected[0].dqpn as u128),
+            transport: Transport::Uc,
+            pmtu: Pmtu::B256,
+            rkey: bits(expected[0].rkey as u128),
+            pkey: bits(0xFFFF),
+        },
+        psn_start: bits(expected[0].psn as u128),
+        ready: true,
+    };
+    let mut stream = vec![SegIn {
+        start: true,
+        ..idle
+    }];
+    for _ in 0..12 {
+        stream.push(idle);
+    }
+
+    let uut = WriteSegmenter::default();
+    let input = stream.into_iter().with_reset(1).clock_pos_edge(100);
+    let plans: Vec<_> = uut
+        .run(input)
+        .synchronous_sample()
+        .filter_map(|s| s.output.plan)
+        .collect();
+
+    assert_eq!(
+        plans.len(),
+        expected.len(),
+        "expected {} packets, got {}",
+        expected.len(),
+        plans.len()
+    );
+
+    for (plan, want) in plans.iter().zip(&expected) {
+        // The opcode, compared as the byte that actually goes on the
+        // wire rather than as an enum, so the encoding is in scope too.
+        assert_eq!(
+            encode_write_opcode(Transport::Uc, plan.opcode).raw() as u8,
+            want.opcode,
+            "{}: opcode byte",
+            want.name
+        );
+        assert_eq!(plan.psn.raw() as u32, want.psn, "{}: PSN", want.name);
+        assert_eq!(
+            plan.payload_bytes.raw() as usize,
+            want.payload.len(),
+            "{}: payload length",
+            want.name
+        );
+        assert_eq!(
+            plan.padcount.raw() as u8,
+            want.padcount,
+            "{}: pad count",
+            want.name
+        );
+        assert_eq!(
+            plan.carries_reth, want.has_reth,
+            "{}: RETH presence",
+            want.name
+        );
+        assert_eq!(
+            carries_reth(plan.opcode),
+            want.has_reth,
+            "{}: carries_reth disagrees with the opcode",
+            want.name
+        );
+        if want.has_reth {
+            // The RETH holds the message's base address and *total*
+            // length -- 600, not this packet's 256. The single field
+            // most easily got wrong.
+            assert_eq!(plan.reth.va.raw() as u64, want.va, "{}: RETH va", want.name);
+            assert_eq!(
+                plan.reth.rkey.raw() as u32,
+                want.rkey,
+                "{}: RETH rkey",
+                want.name
+            );
+            assert_eq!(
+                plan.reth.dma_len.raw() as u32,
+                want.dma_len,
+                "{}: RETH dma_len should be the whole message",
+                want.name
+            );
+        }
+    }
+}
+
+/// The single-packet vectors are reproduced too, including the ragged
+/// 13-byte one whose pad count is 3 and the zero-length one.
+#[test]
+fn the_segmenter_reproduces_every_single_packet_vector() {
+    use rhdl_roce::headers::{Transport, encode_write_opcode};
+    use rhdl_roce::qp::context::{MessageRequest, Pmtu, QpContext};
+    use rhdl_roce::qp::segmenter::{In as SegIn, WriteSegmenter};
+
+    for v in vectors() {
+        // Only the ONLY packets are whole messages on their own.
+        if v.opcode & 0x1F != 0x0A {
+            continue;
+        }
+        let transport = if v.opcode & 0xE0 == 0x20 {
+            Transport::Uc
+        } else {
+            Transport::Rc
+        };
+        // `dma_len` is the message length; the payload on the wire
+        // includes the pad bytes, so it can be longer.
+        let idle = SegIn {
+            start: false,
+            msg: MessageRequest {
+                va: bits(v.va as u128),
+                length: bits(v.dma_len as u128),
+            },
+            ctx: QpContext {
+                dqpn: bits(v.dqpn as u128),
+                transport,
+                pmtu: Pmtu::B1024,
+                rkey: bits(v.rkey as u128),
+                pkey: bits(0xFFFF),
+            },
+            psn_start: bits(v.psn as u128),
+            ready: true,
+        };
+        let mut stream = vec![SegIn {
+            start: true,
+            ..idle
+        }];
+        for _ in 0..4 {
+            stream.push(idle);
+        }
+        let uut = WriteSegmenter::default();
+        let input = stream.into_iter().with_reset(1).clock_pos_edge(100);
+        let plans: Vec<_> = uut
+            .run(input)
+            .synchronous_sample()
+            .filter_map(|s| s.output.plan)
+            .collect();
+
+        assert_eq!(plans.len(), 1, "{}: should be a single packet", v.name);
+        let p = &plans[0];
+        assert_eq!(
+            encode_write_opcode(transport, p.opcode).raw() as u8,
+            v.opcode,
+            "{}: opcode byte",
+            v.name
+        );
+        assert_eq!(p.psn.raw() as u32, v.psn, "{}: PSN", v.name);
+        assert_eq!(
+            p.payload_bytes.raw() as u32,
+            v.dma_len,
+            "{}: payload length",
+            v.name
+        );
+        assert_eq!(p.padcount.raw() as u8, v.padcount, "{}: pad count", v.name);
+        assert_eq!(
+            p.reth.dma_len.raw() as u32,
+            v.dma_len,
+            "{}: RETH dma_len",
+            v.name
+        );
+    }
+}

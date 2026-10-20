@@ -31,6 +31,134 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-10-20 — `rhdl-roce::qp`: the segmenter, or the difference between a packet and a message
+
+**Path:** `crates/rhdl-roce/src/qp/{mod,context,segmenter}.rs`,
+`examples/segmenter.rs`, `doc/segmenter.md`, `vcd/segmenter/`
+
+**Why this, why now:** the packet level that landed earlier today can
+build a correct RoCEv2 packet, which is not the same as being able to
+send a *message*. An application asks to write N bytes at a remote
+address; the path MTU decides how many packets that takes and the IBTA
+decides what each one is called. This is the decision logic for that —
+`roce-v2-architecture.md` Phase 2's send queue, minus the link adapter
+and the Ethernet/IP/UDP wrapping that is still waiting on the `net`
+category question.
+
+**Design decisions:**
+
+- **`PacketPlan` separates deciding from emitting.** The segmenter
+  decides everything about a packet — opcode, PSN, payload length, pad
+  count, whether a RETH is carried and what is in it — and a downstream
+  byte generator then makes no decisions at all. That split is what
+  makes the hard part testable without any byte-level machinery, and it
+  is why the Tier-6 test below can exist before the header-emission path
+  does.
+- **`Pmtu` is an enum, not a number.** The IBTA defines exactly five
+  values and a queue pair negotiates one; an enum makes an
+  un-negotiable MTU unconfigurable and keeps the arithmetic to a shift.
+  Its docs record which values are actually *reachable*: the PS GEM's
+  1522-byte frame ceiling makes `B1024` the largest on that path, so
+  `B2048` and `B4096` are there for the own-MAC adapter and for jumbo
+  frames.
+- **Bundled state, per CLAUDE.md §3.1**, since this is one state machine
+  with several internal registers rather than a composition of
+  independent sub-circuits.
+- **Deliberately no state enum and no `FsmWidget` derive.** The only
+  sequential state is "a message is in progress", and a two-state
+  diagram would convey nothing the `busy` output does not. More to the
+  point, the interesting logic — which opcode this packet is — is a
+  function of `first` and `last` rather than of a state register, so an
+  FSM diagram would actively mislead by implying otherwise. Recorded
+  because §12 rule 14 makes the derive-plus-diagram pairing mandatory
+  and the reason for *not* opting in belongs on the record.
+- **`start` during an active message restarts it, and that is
+  documented rather than policed.** Policing it would add an error path
+  for a condition a correct caller cannot produce; the caller waits for
+  `busy` to fall.
+- **The plan is held, not dropped, when the sink is not ready** — the
+  same backpressure convention the rest of the library's streaming
+  widgets use.
+
+**Surprises and gotchas:**
+
+- **The RETH carries the *message's* length, not the packet's.** On a
+  FIRST packet of a 600-byte message segmented at 256, `dma_len` is 600
+  and the payload is 256. This is the single field most easily got
+  wrong, and the mutation check below confirms the tests catch it.
+- **A message of exactly one MTU is ONLY, not FIRST+LAST.** The boundary
+  is `<=`, and an off-by-one there doubles the packet count for every
+  aligned message — which is the most common case in practice, so it
+  would be a very expensive bug to ship.
+- **A zero-length message is still one packet.** It is a legal RDMA
+  WRITE that moves no data, and the natural implementation emits nothing
+  at all. Pinned by its own test and present in the vector set.
+- **`(4 - (len & 3)) & 3` needs the outer mask**, or an already-aligned
+  payload gets a pad count of 4 rather than 0. Verified exhaustively
+  over the whole 13-bit payload range rather than at the four residues,
+  because the exhaustive version costs nothing.
+- **Inside `mod tests`, `super::` is the widget's module**, so
+  `super::context::Pmtu` does not resolve from `qp::segmenter::tests` —
+  it is `crate::qp::context::Pmtu`. Trivial, but the error message
+  points at the import rather than at the nesting.
+- **`+=` and `-=` work fine inside a `#[kernel]`**, and lower
+  identically to the long form — the Tier-3 snapshot is byte-identical
+  either way. Worth recording because `dsp::fir::{general,symmetric}`
+  both carry `#[allow(clippy::assign_op_pattern)]` on their kernels,
+  which reads as evidence that compound assignment is unsupported. It
+  is not; `cdc::cross_counter` and `tristate::simple::sender` already
+  use it. Those two `allow`s look like they can be dropped, which is a
+  small follow-up for whoever is next in `dsp::fir`.
+
+**Validation:** 18 tests on this module, and the ones that matter are in
+`tests/vectors.rs`. **`the_segmenter_reproduces_a_real_multi_packet_message`
+asks for the same 600-byte message that vectors `uc_write_first_256`,
+`uc_write_middle_256` and `uc_write_last_88` represent, and checks every
+field of every plan against what is actually on those three
+Scapy-generated wires** — the opcode compared as the emitted *byte*
+rather than as an enum, the PSN, the payload length, the pad count, and
+the RETH. `the_segmenter_reproduces_every_single_packet_vector` does the
+same for the ONLY vectors, including the ragged 13-byte one and the
+zero-length one. So the segmenter's correctness is a claim about the
+protocol rather than about my arithmetic.
+
+`segmentation_invariants_hold_across_lengths_and_mtus` covers three MTUs
+× eleven lengths and asserts the properties that must hold for any
+input: payload bytes sum to the message, packet count is
+`ceil(length/mtu)` with a floor of one, PSNs are consecutive, exactly
+the first packet carries a RETH, every non-final packet is full and
+unpadded, and `dma_len` is the message length throughout.
+
+**Verified able to fail, not merely to pass.** Three mutations were
+applied and each was caught by a specific assertion with a useful
+message: `dma_len = this_len` → *"uc_write_first_256: RETH dma_len
+should be the whole message"*; `<=` → `<` → *"pmtu 256, length 256:
+wrong packet count"*; removing the PSN increment → *"pmtu 256, length
+257: PSN not consecutive"*. All restored and green.
+
+Tiers 1–5 present. Tier 3 audited rather than blessed: the five PMTU
+discriminants map to 256/512/1024/2048/4096 in order, the pad
+arithmetic appears as the expected `& 3` / `4 -` / `& 3` chain, and only
+the four opcodes the segmenter can select are emitted — the two
+`WithImmediate` variants correctly absent. Tier 4 stimulus includes a
+not-ready cycle so backpressure is in the round-trip rather than tied
+off.
+
+**Follow-ups:**
+
+- **The byte generator is the next piece**: turn a `PacketPlan` plus a
+  `QpContext` into the frame bytes, which needs the Ethernet/IPv4/UDP
+  headers and therefore the `net` category decision.
+- **`link::gem_ring`** — the AXI-HP master writing complete frames into
+  the DDR ring the PS GEM serves. After that, Phase 2's gate (data in a
+  host's registered buffer) is reachable.
+- The `WithImmediate` opcodes are representable but never selected; the
+  segmenter has no immediate-data input yet.
+- Reliable transport remains out of scope — no ACK path, no PSN window,
+  no retransmission buffer.
+
+---
+
 ## 2026-10-20 — `rhdl-roce`: the RoCEv2 transport headers and the Invariant CRC
 
 **Path:** `crates/rhdl-roce/` (new crate) — `src/headers.rs`,

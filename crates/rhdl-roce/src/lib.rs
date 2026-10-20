@@ -19,13 +19,20 @@
 //!
 //! # What is here, and what is not
 //!
-//! This is the stateless packet level — the first phase of
-//! `roce-v2-architecture.md`. There is **no queue pair, no state and no
-//! memory** here yet: given a header record you get its wire bytes, and
-//! given a frame's bytes you get its ICRC. Message segmentation over
-//! the path MTU, the PSN counter, the queue-pair context and the link
-//! adapters are the next phase and are deliberately absent rather than
-//! half-present.
+//! Two phases of `roce-v2-architecture.md` are present. The packet
+//! level is complete: given a header record you get its wire bytes, and
+//! given a frame's bytes you get its ICRC. The send queue's decision
+//! logic is complete too — [`qp::segmenter`] turns a message into the
+//! right sequence of packets with the right opcodes, sequence numbers
+//! and pad counts.
+//!
+//! What is **not** here, and is deliberately absent rather than
+//! half-present: the Ethernet, IPv4 and UDP header generation that
+//! wraps a packet into a frame; the link adapter that puts a frame
+//! somewhere a MAC can send it; and everything to do with reliable
+//! transport — acknowledgements, sequence-number windows and
+//! retransmission. So this decides and builds *packets*; it does not
+//! yet put one on a wire.
 //!
 //! The direction built first is **send** — see that document's §5.2.
 //! Parsing is partially present because the header records and their
@@ -53,3 +60,4 @@
 
 pub mod headers;
 pub mod icrc;
+pub mod qp;

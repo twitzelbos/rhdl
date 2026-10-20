@@ -1,7 +1,14 @@
 # RoCEv2 — RDMA over Converged Ethernet v2 for RHDL
 
-**Status: scope document. No code written. The staging in §9 needs explicit
-sign-off before Phase 0 starts** — see §12.
+**Status: the plan, plus the first two phases of it.** `crates/rhdl-roce`
+now implements the transport headers, the Invariant CRC and the
+message-to-packet segmenter, all validated byte-for-byte against Scapy
+(§10 Tier 6). What is **not** built: the Ethernet/IPv4/UDP wrapping, the
+link adapters, and everything to do with reliable transport. So it
+decides and builds *packets*; it does not yet put one on a wire.
+**The remaining staging in §9 still needs explicit sign-off** — see §12,
+and note that §12's structural question about a `net` category is now
+the thing actually blocking progress.
 
 RoCEv2 lets a network card write directly into a remote machine's memory
 with no CPU in the data path — and on a host with `nvidia-peermem`
