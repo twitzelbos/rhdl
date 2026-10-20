@@ -10,13 +10,32 @@ use rhdl::prelude::*;
 use std::path::PathBuf;
 
 #[doc(hidden)]
+/// Render a waveform as the self-contained inline-SVG markdown fragment
+/// that widget rustdoc includes with `include_str!`.
+///
+/// Separated from [`write_svg_as_markdown`] so that crates other than
+/// `rhdl-fpga` can produce the same artifact in their *own* `doc/`
+/// directory. The writer below resolves its path against
+/// `rhdl-fpga`'s manifest directory, which is correct for this crate's
+/// widgets and silently wrong for a sibling crate's.
+pub fn render_svg_markdown(vcd: SvgFile, options: SvgOptions) -> anyhow::Result<String> {
+    Ok(format!("\n\n<p>\n{}\n</p>", vcd.to_string(&options)?))
+}
+
+#[doc(hidden)]
+/// Write a waveform into **`rhdl-fpga`'s** `doc/` directory.
+///
+/// For a widget living in another crate, use [`render_svg_markdown`]
+/// and write the result relative to that crate's own
+/// `CARGO_MANIFEST_DIR`.
+///
 /// Useful for testing, but otherwise, probably not for end users
 pub fn write_svg_as_markdown(vcd: SvgFile, name: &str, options: SvgOptions) -> anyhow::Result<()> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let path = path.join("doc");
     std::fs::create_dir_all(&path)?;
     let path = path.join(name);
-    std::fs::write(path, format!("\n\n<p>\n{}\n</p>", vcd.to_string(&options)?))?;
+    std::fs::write(path, render_svg_markdown(vcd, options)?)?;
     Ok(())
 }
 

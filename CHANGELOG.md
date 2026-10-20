@@ -31,6 +31,162 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-10-20 — `rhdl-roce`: the RoCEv2 transport headers and the Invariant CRC
+
+**Path:** `crates/rhdl-roce/` (new crate) — `src/headers.rs`,
+`src/icrc.rs`, `tests/vectors.rs`, `tests/vectors/write_vectors.txt`,
+`tools/gen_vectors.py`, `examples/icrc.rs`, `doc/icrc.md`;
+`crates/rhdl-fpga/src/doc/mod.rs` gains `render_svg_markdown`
+
+**Why this, why now:** the ask was to implement and validate RoCEv2
+*sending*. Phase −1 (measuring the PS descriptor rate) and the host-side
+GPUDirect verification both need hardware that is not available yet, so
+this is everything in the send path that can be validated in pure
+simulation — which turns out to be the hard part. It is **Phase 1 of
+`roce-v2-architecture.md`**: the stateless packet level, whose gate in
+that document is exactly "Scapy validates the ICRC of every packet RHDL
+generates."
+
+**This is one phase of several, and the rest is absent rather than
+half-present.** There is no message segmenter, no PSN counter, no
+queue-pair context, no link adapter and no Ethernet/IP/UDP generation.
+Those are Phase 2 and they are listed under Follow-ups. Per CLAUDE.md's
+rule against shipping a sliver: the staging here is the staging already
+written down and submitted for sign-off in that document, not a
+convenient subset invented after the fact.
+
+**Design decisions:**
+
+- **A new crate, `rhdl-roce`**, following the `rhdl-rv32i` / `rhdl-alto`
+  precedent for project-scale work that is not a widget. This also
+  sidesteps the one genuinely blocked decision — whether `rhdl-fpga`
+  gets a `net` category for the IPv4/UDP layers — rather than
+  prejudging it.
+- **Opcodes are a type.** The IBTA opcode is a transport in the top
+  three bits and an operation in the low five, and the legal
+  combinations are not the cross product: UC supports SEND and RDMA
+  WRITE and nothing else. `Transport` and `WriteOpcode` make the
+  implemented combinations the only nameable ones — there is no
+  `WriteOpcode::ReadRequest` to pass by mistake. This is the concrete
+  cash-out of the "RoCEv2 wants to be written in a type system"
+  argument in that document's §1.
+- **But `Bth` still carries a raw `Bits<8>` opcode**, because it is a
+  *wire-format* record and the receive direction has to be able to hold
+  an opcode we do not implement. `encode_write_opcode` is the only
+  construction path, so the distinction costs nothing.
+- **Serialisation packs once and indexes**, rather than muxing
+  individually-assembled bytes. Cheaper in hardware and it puts every
+  field offset in one auditable place.
+- **Both byte selectors clamp their index**, which is the CLAUDE.md §4
+  lesson applied before it bit: the natural expression
+  `shift by 8 * (len - 1 - index)` underflows on an unsigned index and
+  produces a shift past the operand width, which the kernel VM rejects.
+  In a mux both arms evaluate, so the *operand* has to be clamped and
+  not merely the result.
+- **`Out` carries both `crc` and `wire`.** The on-wire ICRC field is the
+  CRC value little-endian, which is the opposite of every other
+  multi-byte field in the packet. Returning only the value would leave
+  that as a trap for the caller, so the byte-reversed form is a named
+  output.
+- **Scapy is the oracle, not a reference of my own writing.**
+  `scapy.contrib.roce` is an independent implementation used in practice
+  to dissect real RoCE traffic; agreement with it is evidence about the
+  protocol rather than about my reading of the spec. The vectors are
+  committed and the tests only read them, so a full run leaves the tree
+  clean (§8); `tools/gen_vectors.py` is run deliberately.
+- **The vector file records `icrc_input` as well as the frame.** That is
+  the exact byte sequence the CRC is computed over, so a mismatch is
+  localisable to either the *masking* or the *CRC* — two independent
+  failure modes that would otherwise be indistinguishable. It paid for
+  itself immediately as a debugging affordance even though nothing
+  failed.
+
+**Surprises and gotchas:**
+
+- **The ICRC's eight-byte all-ones prefix is free.** It is constant, so
+  its contribution to the CRC is constant: folding it into a fresh
+  CRC-32 always leaves the remainder at `0xDEBB20E3`. Seeding the
+  register with that is exactly equivalent to streaming the bytes, so
+  the engine has **no startup cycles and no prefix logic at all** —
+  against the 8-cycle-per-packet stall the obvious implementation
+  takes. Verified numerically against all eight vectors before any RHDL
+  was written, and pinned by a test that streams the prefix the long way
+  and compares.
+- **And that constant is the CRC-32 residue**, the same `0xDEBB20E3`
+  that appears in every CRC-32 implementation's magic-number table. Not
+  a coincidence — it is the same algebra read in the other direction —
+  but a satisfying confirmation that the arithmetic is right.
+- **Scapy sets `resv6 = 0xff` on a 6-bit field**, which truncates to
+  `0x3F`; combined with `fecn = becn = 1` the whole BTH byte 4 reads
+  `0xFF` to the CRC. So the rule is cleaner than the field list
+  suggests: it is one masked *byte*, not three masked fields.
+- **`write_svg_as_markdown` silently writes into `rhdl-fpga`'s `doc/`**
+  no matter which crate calls it, because it resolves `CARGO_MANIFEST_DIR`
+  at its own definition site. A sibling crate's example therefore
+  produces its trace in the wrong tree and the `include_str!` next to the
+  widget fails. Fixed by splitting out `render_svg_markdown`, which
+  returns the fragment and lets the caller choose the path;
+  `write_svg_as_markdown` is now a thin wrapper and documents the
+  restriction. No sibling crate had written a trace before, which is why
+  this had not surfaced.
+- **A zero-length payload broke my own vector parser.** The generator
+  writes `payload = ` with nothing after it, and after trimming there is
+  no `" = "` left to split on, so the field vanished and every test
+  failed with "no entry found for key". Splitting on `'='` rather than
+  `" = "` fixes it. Worth recording because the symptom pointed at the
+  wrong record entirely.
+- **The non-zero-DFF-reset divergence, for the third time this session.**
+  The seed is `0xDEBB20E3`, so Tier 4 needs `.skip(2)` exactly as
+  `core::crc` and `core::crc32` do.
+- **The masked offsets are absolute, which bakes in "IPv4, no VLAN
+  tag".** A VLAN tag shifts every one of them by four and IPv6 changes
+  both the length and the field set. Rather than leave that implicit,
+  `the_frame_layout_the_masking_assumes_actually_holds` pins the
+  EtherType, the IP version, the IHL, the protocol number and the UDP
+  port across every vector, so a future vector set that violates the
+  assumption fails there instead of silently producing a wrong ICRC.
+
+**Validation:** 24 tests. Tier 1 covers the mask over every offset in
+both directions, that exactly seven offsets are masked, that the
+host-side predicate and the kernel agree (two expressions of one rule
+that could otherwise drift), byte-reversal as an involution, the prefix
+constant derived the long way, reset, and `start`-beats-`enable`. Tier 2
+reproduces a real frame's ICRC. Both shift-heavy kernels get
+`test_kernel_vm_and_verilog_synchronous` per §4. Tiers 3–5 present; the
+Tier-3 snapshot was **audited rather than blessed** — the seven masked
+offsets, the `0xFF` substitution, the eight unrolled `0xEDB88320` stages
+and the `0xDEBB20E3` seed were each read out of the emitted Verilog and
+checked.
+
+Tier 6, the interoperability tier that §10 of the architecture document
+adds for network work, is `tests/vectors.rs`: **every BTH and RETH
+serialises byte-identically to Scapy's, and every one of the eight
+reference frames' ICRCs is reproduced exactly.** It also tests the
+contrapositive — flipping each covered byte in turn must change the
+ICRC, and flipping a *masked* byte must not — which is what distinguishes
+a working engine from one stuck at a plausible constant. Ethernet-header
+bytes are confirmed to be outside coverage.
+
+**Follow-ups:**
+
+- **Phase 2 is the rest of sending**: the PMTU segmenter and its
+  ONLY/FIRST/MIDDLE/LAST selection, the PSN counter, the queue-pair
+  context table, and `link::gem_ring`. Until those exist this generates
+  *packets*, not *messages*, and cannot put anything on a wire.
+- **Ethernet/IPv4/UDP generation is not here**, pending the `net`
+  category decision in that document's §12. The ICRC takes frame bytes
+  from its caller, so nothing is blocked on it except end-to-end
+  emission.
+- **VLAN tags and IPv6** would need `icrc_mask` to take layer offsets as
+  inputs rather than baking them in. Deliberate limitation, documented
+  in the module docs and pinned by a test.
+- **The receive direction** reuses these header records and the ICRC in
+  checking mode; it needs the memory-region table and local placement.
+- `crc32` is byte-wide only; above 1 GbE it needs to widen, and that is
+  where §8's alignment problem starts.
+
+---
+
 ## 2026-10-20 — `core::crc32`: the byte-parallel CRC that a wire needs
 
 **Path:** `crates/rhdl-fpga/src/core/crc32.rs`,

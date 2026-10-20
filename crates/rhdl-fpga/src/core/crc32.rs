@@ -272,7 +272,9 @@ mod tests {
     #[test]
     fn step_agrees_with_software_reference() {
         for len in 0..=24usize {
-            let data: Vec<u8> = (0..len).map(|i| (i as u8).wrapping_mul(31).wrapping_add(7)).collect();
+            let data: Vec<u8> = (0..len)
+                .map(|i| (i as u8).wrapping_mul(31).wrapping_add(7))
+                .collect();
             let mut crc = bits::<32>(INIT);
             for &b in &data {
                 crc = crc32_step(crc, bits(b as u128));
@@ -287,7 +289,11 @@ mod tests {
         for b in 0u8..=255 {
             let crc = crc32_step(bits(INIT), bits(b as u128));
             let finished = (crc ^ bits::<32>(XOR_OUT)).raw() as u32;
-            assert_eq!(finished, crc32_ref(&[b]), "mismatch for single byte {b:#04x}");
+            assert_eq!(
+                finished,
+                crc32_ref(&[b]),
+                "mismatch for single byte {b:#04x}"
+            );
         }
     }
 
