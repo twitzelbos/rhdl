@@ -31,6 +31,122 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-10-20 — RoCEv2: a scope document, and the three things that have to exist first
+
+**Path:** `roce-v2-architecture.md` (scope document only — no code)
+
+**Why this, why now:** RDMA over Converged Ethernet lets a remote host's
+memory be written directly from the FPGA with no CPU, driver or socket in
+the data path. For the NMR/MRI console driving the `dsp::` track that
+removes the host from the acquisition path entirely, and it is the
+transport that comparable instruments (CTAO-LST's camera readout, CERN's
+FERoCE) already chose. The question asked was "what would it take" — so
+this entry records the answer rather than an implementation, because the
+answer turned out to be large enough that starting to code would have
+violated CLAUDE.md's anti-sliver rule on the first commit.
+
+**Design decisions:**
+
+- **Scoped as a separate crate (`crates/rhdl-roce`) and a Tier-C-scale
+  project**, following the `rhdl-rv32i` / `rhdl-alto` precedent. It is
+  not a widget and should be scheduled against RV32I and the Alto, not
+  alongside the Tier 0–4 library.
+- **First endpoint that moves data is UC (Unreliable Connection) RDMA
+  WRITE, transmit side, at 1 GbE.** Justified at length in §5 rather
+  than asserted, because "easy transport first" is exactly the shape the
+  anti-sliver rule forbids. The short version: it is the operation the
+  use case actually needs, it interoperates with an unmodified Linux
+  host so it is externally verifiable, and on a point-to-point
+  instrument link UC's lack of acknowledgement costs nothing the fabric
+  was going to provide. It is deliberately *not* licence to call Phase 2
+  "RoCEv2 support" unqualified.
+- **Queue-pair logic in `rhdl-rule`; headers, serialisation and ICRC as
+  plain `#[kernel]` widgets.** Rules buy atomicity over shared state,
+  which a send queue needs and a datapath does not. This is also the
+  first real test of the rule layer at scale.
+- **Ethernet/IP/UDP do not live in the RoCE crate.** They are
+  general-purpose and belong in `rhdl-fpga`, which means proposing a new
+  `net` top-level category — flagged as an `architecture.md` decision
+  that Phase 0 cannot start without, not assumed.
+- **ICRC masking strategy deliberately left open** between a shadow
+  serialiser (each header widget emits wire bytes and ICRC bytes) and a
+  byte-mask side-channel into the CRC engine, with the shadow
+  serialiser the presumption. To be decided by measuring both. Written
+  down so the question is not rediscovered in Phase 2.
+
+**Surprises and gotchas:**
+
+- **`core::crc` cannot be used for this at all.** It is bit-serial — one
+  bit per cycle — and both the Ethernet FCS and the RoCEv2 ICRC need
+  CRC-32 at datapath width. At 1 GbE the existing engine would have to
+  run at 1 GHz. A parallel CRC-32 generic over bytes-per-cycle is a
+  prerequisite, not an optimisation.
+- **There is no Ethernet MAC in the tree**, and `widget-roadmap.md` item
+  59 has been describing one as "the killer demo" the whole time. Two of
+  the three Phase 0 dependencies were already on the roadmap on their
+  own merits, which is why Phase 0 is worth doing even if the RoCE
+  project is never scheduled.
+- **blue-rdma's file sizes are the most useful estimate input found.**
+  Its `src/` is ~909 KB of Bluespec across 22 files (~26 kLOC), and
+  `ReqHandleRQ.bsv` + `RespHandleSQ.bsv` + `RetryHandleSQ.bsv` are
+  ~262 KB of that — nearly a third of the implementation is
+  reliable-transport state machinery. That measurement, not a guess, is
+  what sets Phase 3 at 16–24 weeks and justifies deferring it.
+- **1 GbE is the right starting rate for three independent reasons**,
+  which only became clear while writing §8. The retransmission buffer is
+  a bandwidth-delay product and fits in block RAM at 1 GbE but needs HBM
+  at 100G (which is why BALBOA requires it); the only boards in
+  `rhdl-bsp` have no high-speed transceivers; and — the real one — at
+  8 bits per cycle every beat is one byte, so the variable-length
+  alignment problem that RHDL's constant-bound-loop subset would
+  struggle with simply does not arise. Headers land on beat boundaries
+  and segmentation becomes a counter.
+- **The width-generic datapath is a genuine open question, not a
+  refactor.** Above 8 bits, headers straddle beats and extraction needs
+  a runtime-amount barrel shift. Runtime indexing has already bitten
+  this project twice (the CORDIC's `ATAN_TABLE[k]`, and the CIC comb
+  delay line). Phase 1's exit criterion is a written answer to whether
+  the width-generic version is expressible, because learning that from a
+  4-week phase is much cheaper than from a stalled Phase 2 — and either
+  answer is a `kernel-language-extensions.md` input.
+- **Two sources in the literature describe the ICRC's all-ones prefix
+  differently** (a 64-bit dummy LRH versus 8 bytes replacing the GRH).
+  They are the same eight bytes; RoCEv2 carries neither header on the
+  wire. Scapy's `contrib/roce.py` is the tiebreaker.
+- **On a Red Pitaya the PHY is wired to the Zynq PS's hard GEM, not to
+  the PL**, so the PL does not own a MAC and this is not a drop-in on
+  the board the `dsp::` work targets. Needs confirming against the
+  schematic, and may mean the first real target is a different board.
+
+**Validation:** No code, so no tiers. The document's own contribution to
+validation is §10, which adds **two tiers beyond CLAUDE.md §5 for
+network work**: Tier 6, vector interoperability against Scapy-generated
+reference packets in both directions (committed vectors, pinned
+generator, so §8's clean-tree rule holds); and Tier 7, interoperability
+against Linux `rxe` (Soft-RoCE) via pcap replay over a tap interface,
+with the host application reading its own registered buffer as the
+acceptance check. The reasoning is that `iverilog` agreeing with the Rust
+simulator proves only that RHDL is self-consistent and says nothing about
+whether a real NIC will accept the packet. Tier 7 should be built in
+Phase 1 and is the acceptance gate for every phase after.
+
+**Follow-ups:**
+
+- Three decisions are needed before Phase 0 starts, listed in §12:
+  whether the project is scheduled at all; whether the §9 staging is
+  agreed *as staging* (the anti-sliver rule requires explicit sign-off
+  on a split this size); and whether a `net` category in `rhdl-fpga` is
+  acceptable.
+- `CLAUDE.md` §1's list of root-level strategic design documents should
+  gain a line for `roce-v2-architecture.md`. Not done here because
+  CLAUDE.md is deliberately not committed in this workspace.
+- `widget-roadmap.md` item 59 (Ethernet MAC frontend) now has a named
+  downstream consumer; cross-referenced there.
+- Phase 0's three widgets — parallel CRC-32, Ethernet MAC, IPv4/UDP —
+  are worth doing on their own merits regardless of the outcome of §12.
+
+---
+
 ## 2026-08-31 — The up-converter's book chapter, and an RCStream inventory that turned up three gaps
 
 **Paths:** `doc/book/src/dsp/duc.md` (new), `doc/book/src/code/src/dsp/duc.rs` (new), `doc/book/src/SUMMARY.md`, `notes/rcstream-widget-review.md` (new).
