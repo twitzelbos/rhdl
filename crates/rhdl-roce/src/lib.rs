@@ -26,13 +26,16 @@
 //! right sequence of packets with the right opcodes, sequence numbers
 //! and pad counts.
 //!
+//! [`frame`] wraps a packet into an Ethernet/IPv4/UDP frame, so the whole
+//! header block of a real RoCEv2 frame is generated here and validated
+//! byte-for-byte.
+//!
 //! What is **not** here, and is deliberately absent rather than
-//! half-present: the Ethernet, IPv4 and UDP header generation that
-//! wraps a packet into a frame; the link adapter that puts a frame
-//! somewhere a MAC can send it; and everything to do with reliable
-//! transport — acknowledgements, sequence-number windows and
-//! retransmission. So this decides and builds *packets*; it does not
-//! yet put one on a wire.
+//! half-present: the link adapter that puts a finished frame somewhere a
+//! MAC can send it, and everything to do with reliable transport —
+//! acknowledgements, sequence-number windows and retransmission. So
+//! this builds complete frame *bytes*; it does not yet hand them to
+//! anything that transmits.
 //!
 //! The direction built first is **send** — see that document's §5.2.
 //! Parsing is partially present because the header records and their
@@ -58,6 +61,7 @@
 //! to dissect real RoCE traffic. The vectors are committed; the
 //! generator is `tools/gen_vectors.py` and is run deliberately.
 
+pub mod frame;
 pub mod headers;
 pub mod icrc;
 pub mod qp;

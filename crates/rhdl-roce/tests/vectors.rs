@@ -24,6 +24,8 @@ use rhdl_roce::headers::{
     Bth, Reth, Transport, WriteOpcode, bth_byte, encode_write_opcode, reth_byte,
 };
 use rhdl_roce::icrc::{COVERAGE_START, Icrc, In as IcrcIn};
+use rhdl_roce::qp::context::{Pmtu, QpContext};
+use rhdl_roce::qp::segmenter::PacketPlan;
 
 // ---------------------------------------------------------------------
 // The vector file
@@ -36,6 +38,13 @@ struct Vector {
     name: String,
     /// The generator's one-line description, quoted back on failure.
     note: String,
+    src_mac: u64,
+    dst_mac: u64,
+    src_ip: u32,
+    dst_ip: u32,
+    sport: u16,
+    ip_id: u16,
+    ttl: u8,
     opcode: u8,
     dqpn: u32,
     psn: u32,
@@ -88,6 +97,13 @@ fn vectors() -> Vec<Vector> {
         out.push(Vector {
             name: f["name"].clone(),
             note: f["note"].clone(),
+            src_mac: num(&f["src_mac"]) as u64,
+            dst_mac: num(&f["dst_mac"]) as u64,
+            src_ip: num(&f["src_ip"]) as u32,
+            dst_ip: num(&f["dst_ip"]) as u32,
+            sport: num(&f["sport"]) as u16,
+            ip_id: num(&f["ip_id"]) as u16,
+            ttl: num(&f["ttl"]) as u8,
             opcode: num(&f["opcode"]) as u8,
             dqpn: num(&f["dqpn"]) as u32,
             psn: num(&f["psn"]) as u32,
@@ -701,5 +717,252 @@ fn the_segmenter_reproduces_every_single_packet_vector() {
             "{}: RETH dma_len",
             v.name
         );
+    }
+}
+
+// ---------------------------------------------------------------------
+// Whole-frame header assembly
+// ---------------------------------------------------------------------
+
+impl Vector {
+    fn frame_config(&self) -> rhdl_roce::frame::FrameConfig {
+        rhdl_roce::frame::FrameConfig {
+            dst_mac: bits(self.dst_mac as u128),
+            src_mac: bits(self.src_mac as u128),
+            src_ip: bits(self.src_ip as u128),
+            dst_ip: bits(self.dst_ip as u128),
+            src_port: bits(self.sport as u128),
+            ip_id: bits(self.ip_id as u128),
+            ttl: bits(self.ttl as u128),
+        }
+    }
+
+    fn qp_context(&self) -> QpContext {
+        QpContext {
+            dqpn: bits(self.dqpn as u128),
+            transport: self.transport(),
+            pmtu: Pmtu::B1024,
+            rkey: bits(self.rkey as u128),
+            pkey: bits(0xFFFF),
+        }
+    }
+
+    fn transport(&self) -> Transport {
+        if self.opcode & 0xE0 == 0x20 {
+            Transport::Uc
+        } else {
+            Transport::Rc
+        }
+    }
+
+    /// The plan this frame corresponds to, built from the recorded
+    /// fields rather than from the segmenter, so that a frame-assembly
+    /// failure cannot be blamed on the segmenter.
+    fn plan(&self) -> PacketPlan {
+        PacketPlan {
+            opcode: self.write_opcode(),
+            psn: bits(self.psn as u128),
+            // `payload` on the wire includes the pad bytes; the plan's
+            // `payload_bytes` is the data length.
+            payload_bytes: bits((self.payload.len() - self.padcount as usize) as u128),
+            padcount: bits(self.padcount as u128),
+            carries_reth: self.has_reth,
+            reth: self.reth(),
+        }
+    }
+
+    fn write_opcode(&self) -> WriteOpcode {
+        match self.opcode & 0x1F {
+            0x06 => WriteOpcode::First,
+            0x07 => WriteOpcode::Middle,
+            0x08 => WriteOpcode::Last,
+            0x09 => WriteOpcode::LastWithImmediate,
+            0x0A => WriteOpcode::Only,
+            0x0B => WriteOpcode::OnlyWithImmediate,
+            other => panic!("{}: unexpected operation {other:#04x}", self.name),
+        }
+    }
+}
+
+/// **Complete frame headers, byte for byte, against Scapy.**
+///
+/// Everything from the first Ethernet byte up to the payload: the
+/// Ethernet II header, the IPv4 header *including its checksum*, the UDP
+/// header with its mandated zero checksum and computed length, the BTH,
+/// and the RETH where the opcode carries one. This is the strongest
+/// statement available about the send path short of putting a frame on
+/// a wire — the only bytes not generated here are the payload, which
+/// comes from a stream, and the ICRC, which has its own test.
+#[test]
+fn whole_frame_headers_match_scapy() {
+    use rhdl_roce::frame::{header_byte, header_bytes};
+    for v in vectors() {
+        let cfg = v.frame_config();
+        let ctx = v.qp_context();
+        let plan = v.plan();
+        let n = header_bytes(plan).raw() as usize;
+        assert_eq!(
+            n,
+            if v.has_reth { 70 } else { 54 },
+            "{}: header length",
+            v.name
+        );
+        let got: Vec<u8> = (0..n)
+            .map(|i| header_byte(cfg, ctx, plan, v.ackreq, bits(i as u128)).raw() as u8)
+            .collect();
+        let expected = &v.frame[..n];
+        assert_eq!(
+            got, expected,
+            "{} ({}): header block mismatch\n  got      {:02x?}\n  expected {:02x?}",
+            v.name, v.note, got, expected
+        );
+    }
+}
+
+/// The IPv4 header checksum is computed, not copied.
+///
+/// Called out separately because it is the one field in the header block
+/// whose value is arithmetic rather than a parameter, and because a
+/// router drops a frame with a bad header checksum long before the ICRC
+/// is ever looked at.
+#[test]
+fn the_ipv4_header_checksum_is_correct() {
+    use rhdl_roce::frame::ipv4_checksum;
+    for v in vectors() {
+        let want = u16::from_be_bytes([v.frame[IP_OFF + 10], v.frame[IP_OFF + 11]]);
+        let got = ipv4_checksum(v.frame_config(), v.plan()).raw() as u16;
+        assert_eq!(got, want, "{}: IPv4 header checksum", v.name);
+        // And the standard property: the one's-complement sum over the
+        // whole header, checksum included, is zero.
+        let mut acc: u32 = 0;
+        for i in (0..20).step_by(2) {
+            acc += u16::from_be_bytes([v.frame[IP_OFF + i], v.frame[IP_OFF + i + 1]]) as u32;
+        }
+        while acc >> 16 != 0 {
+            acc = (acc & 0xFFFF) + (acc >> 16);
+        }
+        assert_eq!(acc, 0xFFFF, "{}: header does not sum to zero", v.name);
+    }
+}
+
+/// The length fields agree with the frame that was actually built.
+///
+/// An off-by-one in either makes the peer's stack discard the packet,
+/// and neither is covered by the ICRC — the ICRC masks the IPv4
+/// checksum but not the lengths.
+#[test]
+fn the_length_fields_match_the_frame() {
+    use rhdl_roce::frame::{ip_total_length, payload_on_wire, udp_length};
+    for v in vectors() {
+        let plan = v.plan();
+        let want_ip = u16::from_be_bytes([v.frame[IP_OFF + 2], v.frame[IP_OFF + 3]]);
+        let want_udp = u16::from_be_bytes([v.frame[UDP_OFF + 4], v.frame[UDP_OFF + 5]]);
+        assert_eq!(
+            ip_total_length(plan).raw() as u16,
+            want_ip,
+            "{}: IP total length",
+            v.name
+        );
+        assert_eq!(
+            udp_length(plan).raw() as u16,
+            want_udp,
+            "{}: UDP length",
+            v.name
+        );
+        // Both must also agree with the frame's real size.
+        assert_eq!(
+            want_ip as usize,
+            v.frame.len() - IP_OFF,
+            "{}: IP total length disagrees with the frame",
+            v.name
+        );
+        assert_eq!(
+            payload_on_wire(plan).raw() as usize,
+            v.payload.len(),
+            "{}: padded payload length",
+            v.name
+        );
+    }
+}
+
+/// **The capstone: every byte of a complete RoCEv2 frame.**
+///
+/// Header block from [`rhdl_roce::frame::header_byte`], payload from the
+/// vector (it would come from a stream in hardware), ICRC from the
+/// [`Icrc`] widget driven over the bytes just assembled — not over
+/// Scapy's frame. So the ICRC is computed from RHDL's own output, which
+/// means a header byte that is wrong in a way the ICRC covers would
+/// produce *two* differences rather than cancelling out.
+///
+/// This is as close to "RHDL emits a valid RoCEv2 frame" as it is
+/// possible to get without a wire: the only thing between this and a
+/// NIC accepting the packet is the Ethernet FCS, which the MAC appends.
+#[test]
+fn a_complete_frame_matches_scapy_byte_for_byte() {
+    use rhdl_roce::frame::{header_byte, header_bytes};
+    for v in vectors() {
+        let cfg = v.frame_config();
+        let ctx = v.qp_context();
+        let plan = v.plan();
+        let n = header_bytes(plan).raw() as usize;
+
+        // 1. the header block, from the frame generator
+        let mut frame: Vec<u8> = (0..n)
+            .map(|i| header_byte(cfg, ctx, plan, v.ackreq, bits(i as u128)).raw() as u8)
+            .collect();
+        // 2. the payload, including its pad bytes
+        frame.extend_from_slice(&v.payload);
+        // 3. the ICRC, computed over what we just built
+        let covered: Vec<u8> = frame[COVERAGE_START as usize..].to_vec();
+        let mut stream: Vec<IcrcIn> = vec![IcrcIn {
+            byte: bits(0),
+            frame_index: bits(0),
+            enable: false,
+            start: true,
+        }];
+        for (k, &byte) in covered.iter().enumerate() {
+            stream.push(IcrcIn {
+                byte: bits(byte as u128),
+                frame_index: bits((COVERAGE_START as usize + k) as u128),
+                enable: true,
+                start: false,
+            });
+        }
+        stream.push(IcrcIn {
+            byte: bits(0),
+            frame_index: bits(0),
+            enable: false,
+            start: false,
+        });
+        let uut = Icrc::default();
+        let input = stream.into_iter().with_reset(1).clock_pos_edge(100);
+        let wire = uut
+            .run(input)
+            .synchronous_sample()
+            .map(|s| s.output.wire.raw() as u32)
+            .last()
+            .unwrap();
+        frame.extend_from_slice(&wire.to_be_bytes());
+
+        assert_eq!(
+            frame.len(),
+            v.frame.len(),
+            "{}: frame length {} vs expected {}",
+            v.name,
+            frame.len(),
+            v.frame.len()
+        );
+        if frame != v.frame {
+            // Report the first difference rather than two hex dumps.
+            let at = frame
+                .iter()
+                .zip(&v.frame)
+                .position(|(a, b)| a != b)
+                .unwrap();
+            panic!(
+                "{} ({}): frames differ at offset {} (got {:#04x}, expected {:#04x})\n  got      {:02x?}\n  expected {:02x?}",
+                v.name, v.note, at, frame[at], v.frame[at], frame, v.frame
+            );
+        }
     }
 }

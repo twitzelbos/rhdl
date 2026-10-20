@@ -131,6 +131,192 @@ add("rc_write_only_alt_ids", "RC RDMA_WRITE_ONLY with unrelated QPN/PSN/rkey/VA"
     payload=b"\xde\xad\xbe\xef")
 
 
+# ---------------------------------------------------------------------
+# Differential fuzz corpus
+# ---------------------------------------------------------------------
+#
+# The eight curated vectors above pin the shapes that matter. They do
+# not explore the input space, and that gap is not theoretical: a
+# mutation deleting the IPv4 checksum's second carry fold survived every
+# one of them, because none of the eight drives the accumulator into the
+# window where the first fold carries.
+#
+# This generates a large corpus of randomised frames from a fixed seed
+# and lets Scapy -- an independent implementation -- say what each one's
+# bytes should be. The corpus is committed, so the Rust side is
+# deterministic and needs no Python at test time.
+#
+# Records are compact on purpose: the payload is *derived* from a seed
+# by a formula both sides compute, so a 4 KB payload costs 8 characters
+# in the file rather than 8192.
+
+FUZZ_SEED = 0x5EED_1234
+FUZZ_COUNT = 2000
+
+
+class Lcg:
+    """A tiny deterministic generator, so the corpus is reproducible
+    without depending on Python's `random` implementation details."""
+
+    def __init__(self, seed):
+        self.s = seed & 0xFFFFFFFF
+
+    def next(self):
+        # Numerical Recipes LCG constants.
+        self.s = (self.s * 1664525 + 1013904223) & 0xFFFFFFFF
+        return self.s
+
+    def below(self, n):
+        return self.next() % n
+
+    def bits(self, n):
+        """n random bits.  The obvious loop is easy to get wrong -- an
+        earlier version returned 16 bits for n=48, which showed up as
+        suspiciously small MAC addresses in the corpus."""
+        v = 0
+        got = 0
+        while got < n:
+            v = (v << 32) | self.next()
+            got += 32
+        return v & ((1 << n) - 1)
+
+
+def payload_byte(seed, i):
+    """The formula both the generator and the Rust test use, so the
+    payload need not be stored."""
+    return (seed + i * 31 + (i >> 3) * 7) & 0xFF
+
+
+def derive_payload(seed, data_len, pad):
+    return bytes(payload_byte(seed, i) for i in range(data_len)) + b"\x00" * pad
+
+
+FUZZ_OPS = [
+    ("First", WRITE_FIRST), ("Middle", WRITE_MIDDLE), ("Last", WRITE_LAST),
+    ("LastWithImmediate", WRITE_LAST_IMM), ("Only", WRITE_ONLY),
+    ("OnlyWithImmediate", WRITE_ONLY_IMM),
+]
+
+
+def gen_fuzz(out):
+    rng = Lcg(FUZZ_SEED)
+    out.write("# --- differential fuzz corpus ---\n")
+    out.write(f"# {FUZZ_COUNT} randomised frames, LCG seed {FUZZ_SEED:#010x}.\n")
+    out.write("# `payload` is NOT stored: byte i is\n")
+    out.write("#   (payload_seed + i*31 + (i>>3)*7) & 0xFF\n")
+    out.write("# for i < data_len, then `pad` zero bytes.  Only the header\n")
+    out.write("# block and the ICRC are recorded, which is what the frame\n")
+    out.write("# generator and the ICRC engine actually produce.\n")
+    out.write("#\n")
+    out.write("# One case per line, space separated, in this column order:\n")
+    out.write("#   name op opcode src_mac dst_mac src_ip dst_ip sport\n")
+    out.write("#   ip_id ttl dqpn psn ackreq has_reth va rkey dma_len\n")
+    out.write("#   data_len pad payload_seed header_hex icrc_hex\n")
+    out.write(f"corpus_size = {FUZZ_COUNT}\n\n")
+
+    for n in range(FUZZ_COUNT):
+        op_name, op = FUZZ_OPS[rng.below(len(FUZZ_OPS))]
+        transport = UC if rng.below(2) else RC
+        has_reth = op in (WRITE_FIRST, WRITE_ONLY, WRITE_ONLY_IMM)
+        # FIRST and MIDDLE always carry a whole MTU, so never pad.
+        if op in (WRITE_FIRST, WRITE_MIDDLE):
+            data_len = 4 * rng.below(257)
+        else:
+            data_len = rng.below(1025)
+        pad = (4 - data_len % 4) % 4
+        payload_seed = rng.below(256)
+        payload = derive_payload(payload_seed, data_len, pad)
+
+        # Uniform random never reaches the IPv4 checksum's second carry
+        # fold: `acc` has to land in one of about twenty values out of a
+        # ~450,000 range, so 2000 uniform cases hit it zero times --
+        # measured, not assumed. A fuzzer that does not know where the
+        # cliffs are will not find them, so every tenth case is *solved*
+        # into the window by choosing `ip_id` to suit.
+        force_carry = (n % 10) == 7
+
+        src_mac = rng.bits(48)
+        dst_mac = rng.bits(48)
+        src_ip = rng.bits(32)
+        dst_ip = rng.bits(32)
+        sport = rng.bits(16)
+        ip_id = rng.bits(16)
+        ttl = rng.below(256)
+        dqpn = rng.bits(24)
+        psn = rng.bits(24)
+        ackreq = rng.below(2)
+        va = rng.bits(64)
+        rkey = rng.bits(32)
+        dma_len = rng.bits(32) if has_reth else 0
+
+        def mac(v):
+            b = v.to_bytes(6, "big")
+            return ":".join(f"{x:02x}" for x in b)
+
+        def ip(v):
+            return ".".join(str(x) for x in v.to_bytes(4, "big"))
+
+        if force_carry:
+            # total_length is 20 IP + 8 UDP + 12 BTH + 4 ICRC + RETH? + padded
+            totlen = 44 + (16 if has_reth else 0) + data_len + pad
+            fixed = (0x4500 + totlen + ((ttl << 8) | 17)
+                     + (src_ip >> 16) + (src_ip & 0xFFFF)
+                     + (dst_ip >> 16) + (dst_ip & 0xFFFF))
+            # fold1 carries out of bit 15 only for these accumulator values
+            for k in range(1, 7):
+                for target in range((k + 1) * 0x10000 - k, (k + 1) * 0x10000):
+                    cand = target - fixed
+                    if 0 <= cand <= 0xFFFF:
+                        ip_id = cand
+                        break
+                else:
+                    continue
+                break
+
+        body = (struct.pack("!QII", va, rkey, dma_len) if has_reth else b"") + payload
+        pkt = (Ether(src=mac(src_mac), dst=mac(dst_mac))
+               / IP(src=ip(src_ip), dst=ip(dst_ip), ttl=ttl, id=ip_id)
+               / UDP(sport=sport, dport=DPORT, chksum=0)
+               / BTH(opcode=transport | op, dqpn=dqpn, psn=psn, pkey=0xffff,
+                     padcount=pad, ackreq=ackreq)
+               / Raw(body))
+        frame = raw(pkt)
+        hdr_len = 54 + (16 if has_reth else 0)
+
+        # One positional line per case; the column order is documented
+        # in the corpus header. Key=value for 22 fields x 2000 cases
+        # doubled the file size for no added clarity in a generated file.
+        out.write(
+            " ".join(
+                [
+                    f"fuzz{n:05d}",
+                    op_name,
+                    f"{transport | op:#04x}",
+                    f"{src_mac:#014x}",
+                    f"{dst_mac:#014x}",
+                    f"{src_ip:#010x}",
+                    f"{dst_ip:#010x}",
+                    f"{sport:#06x}",
+                    f"{ip_id:#06x}",
+                    str(ttl),
+                    f"{dqpn:#08x}",
+                    f"{psn:#08x}",
+                    str(ackreq),
+                    str(1 if has_reth else 0),
+                    f"{va:#018x}",
+                    f"{rkey:#010x}",
+                    str(dma_len),
+                    str(data_len),
+                    str(pad),
+                    str(payload_seed),
+                    frame[:hdr_len].hex(),
+                    frame[-4:].hex(),
+                ]
+            )
+            + "\n"
+        )
+
+
 def main():
     out = sys.stdout
     out.write("# RoCEv2 RDMA WRITE reference vectors.\n")
@@ -151,6 +337,15 @@ def main():
         ic_in = icrc_input(frame)
         out.write(f"name = {name}\n")
         out.write(f"note = {note}\n")
+        # The connection parameters, repeated per record so a test does
+        # not have to parse the header comments or hard-code them.
+        out.write(f"src_mac = 0x{SRC_MAC.replace(':', '')}\n")
+        out.write(f"dst_mac = 0x{DST_MAC.replace(':', '')}\n")
+        out.write("src_ip = 0x%02x%02x%02x%02x\n" % tuple(int(x) for x in SRC_IP.split(".")))
+        out.write("dst_ip = 0x%02x%02x%02x%02x\n" % tuple(int(x) for x in DST_IP.split(".")))
+        out.write(f"sport = {SPORT:#06x}\n")
+        out.write(f"ip_id = {IP_ID:#06x}\n")
+        out.write(f"ttl = {TTL}\n")
         out.write(f"opcode = {kw['opcode']:#04x}\n")
         out.write(f"dqpn = {kw['dqpn']:#08x}\n")
         out.write(f"psn = {kw['psn']:#08x}\n")
@@ -168,6 +363,7 @@ def main():
         out.write(f"icrc = {frame[-4:].hex()}\n")
         out.write(f"frame = {frame.hex()}\n")
         out.write("\n")
+    gen_fuzz(out)
 
 
 if __name__ == "__main__":

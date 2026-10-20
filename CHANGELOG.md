@@ -31,6 +31,230 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-10-20 — `rhdl-roce::frame`: Ethernet, IPv4 and UDP, and a complete frame byte-for-byte
+
+**Path:** `crates/rhdl-roce/src/frame.rs`,
+`crates/rhdl-roce/tests/vectors.rs`
+
+**Why this, why now:** with the transport headers, the ICRC and the
+segmenter in place, the only thing between a `PacketPlan` and a real
+frame was the ordinary networking underneath — RoCEv2's whole trick is
+that it is a UDP datagram to port 4791. This adds that, and with it the
+strongest statement available short of a wire:
+**`a_complete_frame_matches_scapy_byte_for_byte` assembles the entire
+frame — headers from this module, payload, ICRC computed over what this
+crate itself produced — and compares all of it to Scapy's bytes.** The
+only thing missing before a NIC would accept the packet is the Ethernet
+FCS, which the MAC appends.
+
+**Design decisions:**
+
+- **It lives in `rhdl-roce` for now, and the module says why.** Ethernet,
+  IPv4 and UDP generation belongs in `rhdl-fpga` under a `net` category
+  — `roce-v2-architecture.md` §6 proposes exactly that — but adding a
+  top-level category is one of the decisions `architecture.md` requires
+  sign-off for, and that is still outstanding. Keeping it here does not
+  touch `rhdl-fpga`'s structure, and moving a module later is a rename.
+  This is the conservative option, not a land-grab.
+- **The ICRC computes over the frame, so the frame generator must not
+  compute the ICRC.** `header_byte` produces header bytes only; the
+  payload comes from a stream and the ICRC from `crate::icrc`. Keeping
+  that boundary is what lets the capstone test feed RHDL's own output
+  into the ICRC rather than Scapy's, which is a materially stronger
+  check.
+- **`ackreq` is a parameter of `bth_from_plan`, not a `PacketPlan`
+  field.** It is a reliable-transport concern and UC never
+  acknowledges, so the send queue has no opinion about it yet. When the
+  RC phase lands it becomes the requester's per-packet decision.
+- **The UDP checksum is hard-zero** (RoCEv2 requires it; the ICRC
+  already covers the same bytes) and the **IPv4 header checksum is
+  real**, because a router drops a bad header checksum long before the
+  ICRC is looked at. Both are pinned by tests.
+
+**Surprises and gotchas:**
+
+- **`Bits<N>` is defined only for `N` in `1..=128`** — `rhdl_bits`
+  generates the `BitWidth` impls with `seq_macro::seq!(N in 1..=128)`.
+  So the 160-bit IPv4 header **cannot** be packed into a single value
+  the way the 96-bit BTH and 128-bit RETH are. It is handled as a 96-bit
+  head plus the two 32-bit addresses, which they already were in
+  `FrameConfig`. Worth knowing before reaching for `Bits<160>` and
+  getting a confusing trait-bound error.
+- **Clamping has to happen before narrowing, and this cost a real bug.**
+  `header_byte`'s RETH sub-index was `(index - 54).resize::<5>()`, and
+  `resize` *truncates* rather than saturating — so index 86 gave
+  `86 - 54 = 32`, which narrows to 0, returning RETH byte **0** instead
+  of the last byte. Caught by `selectors_clamp_out_of_range_indices`,
+  which existed precisely because CLAUDE.md §4 warns about this family.
+  The rule is sharper than §4 states it: clamp the operand *and* clamp
+  before any narrowing conversion.
+- **Every branch of a mux evaluates, and in `ipv4_byte` that is not
+  academic.** The address branches compute `3 - sub_index` while the
+  head branch is selected; without per-branch clamping of each
+  sub-index, the head case produces a shift of up to 120 on a 32-bit
+  operand, which the kernel VM rejects outright. Each of the three
+  ranges gets its own clamped sub-index for that reason, which looks
+  defensive and is not.
+- **The second carry fold in the IPv4 checksum survived every test.**
+  Documented fully in the fuzzing entry above; the short version is that
+  a mutation deleting it passed all sixteen curated vector tests,
+  because the eight Scapy vectors never drive the accumulator into the
+  window where the first fold carries. Two tests now cover it: a
+  hand-solved case here and 199 solved cases in the fuzz corpus.
+- **`cfg` is a terrible name for a local in a crate that also has
+  `#[cfg]`.** Harmless, but it reads badly in the test module and is
+  worth avoiding next time.
+
+**Validation:** 10 tests in the module plus 4 in `tests/vectors.rs`.
+Module tests cover the checksum against an independently-written RFC 1071
+loop (including the double-carry cases), the all-ones header-sum
+property, the zero UDP checksum, the destination port and its byte
+order, length arithmetic with and without a RETH and with padding, the
+clamping of every selector including the frame-level dispatcher, and
+agreement between this module's layer offsets and `icrc::COVERAGE_START`
+— two modules naming the same boundary being exactly how they drift.
+
+Tier 3+4 for the combinational kernels is
+`test_kernel_vm_and_verilog_synchronous` on `ipv4_checksum`, `ipv4_byte`
+and `eth_byte`, which the 2026-08 CHANGELOG notes is the right cover for
+a pure kernel.
+
+In `tests/vectors.rs`: `whole_frame_headers_match_scapy` (every header
+byte of all eight vectors), `the_ipv4_header_checksum_is_correct`,
+`the_length_fields_match_the_frame`, and the capstone
+`a_complete_frame_matches_scapy_byte_for_byte`.
+
+**Verified able to fail.** Four mutations: a wrong EtherType (caught, at
+offset 12), a non-zero UDP checksum (caught, offset 40), an off-by-one
+UDP length (caught, offset 17, *and* via the IPv4 checksum), and the
+deleted carry fold (**not** caught by the curated vectors — see above).
+That one escape is why the fuzzing entry exists.
+
+**Follow-ups:**
+
+- **Migrate to `rhdl-fpga::net`** once §12's category decision lands.
+- **No VLAN tag and no IPv6.** The ICRC's masked offsets are absolute,
+  so both would need layer offsets threaded through instead of baked in.
+  Pinned by `the_frame_layout_the_masking_assumes_actually_holds`.
+- **`link::gem_ring` is the last piece before Phase 2's gate** — an
+  AXI-HP master writing these bytes into the DDR ring the PS GEM serves.
+  Everything above it now exists and is validated.
+- The frame generator is combinational and index-driven; the sequential
+  widget that walks the index, splices the payload stream and appends
+  the ICRC is still to be written.
+
+---
+
+## 2026-10-20 — Differential fuzzing against Scapy, and why uniform random was not enough
+
+**Path:** `crates/rhdl-roce/tests/fuzz.rs`,
+`crates/rhdl-roce/tests/vectors/write_vectors.txt` (now carries a
+2000-case corpus), `tools/gen_vectors.py`
+
+**Why this, why now:** asked directly whether there was "real fuzz
+testing for this", and the honest answer was no — eight curated vectors
+and some small enumerated sweeps. The question landed at exactly the
+right moment, because a mutation check had just shown the gap was not
+theoretical: **deleting the second carry fold from the IPv4 checksum
+survived every test in the crate.** This closes that, and the *shape* of
+the fix is the interesting part.
+
+**Design decisions:**
+
+- **Differential against Scapy, not against a model of my own.** 2000
+  randomised frames; Scapy says what the bytes should be. A Rust
+  reference model would catch arithmetic slips but not a
+  misunderstanding of the protocol, which is the failure mode that
+  matters here.
+- **The corpus is committed, not generated at test time.** Deterministic,
+  no Python dependency in `cargo test`, and a clean tree (§8).
+  `tools/gen_vectors.py` is run deliberately. The cost is 592 KB in the
+  repository, which is small against a 6.3 MB committed waveform.
+- **Payloads are derived, not stored.** Byte `i` is
+  `(payload_seed + i*31 + (i>>3)*7) & 0xFF`, computed on both sides, so
+  a 1 KB payload costs eight characters instead of 2048. That is what
+  keeps the corpus affordable while letting payload length range over
+  0–1024.
+- **Positional single-line records.** Key/value for 22 fields × 2000
+  cases doubled the file for no added clarity in a generated file.
+- **The fuzz tests use the `icrc_mask` and `crc32_step` kernels
+  directly** rather than simulating the `Icrc` widget 2000 times.
+  `vectors.rs` already drives the widget over real frames; a kilobyte of
+  simulated cycles per case to re-test the register around a function is
+  not a good trade. Total fuzz runtime is ~1.4 s.
+- **The corpus is structure-aware, not uniform.** See below — this is
+  the load-bearing decision.
+
+**Surprises and gotchas:**
+
+- **Uniform random fuzzing does not find the carry-fold bug. At all.**
+  The IPv4 checksum's first carry fold only carries out of bit 15 when
+  the accumulator lands in roughly twenty values out of a ~450,000
+  range, so the expected hit count in 2000 uniform draws is about 0.09.
+  **Measured: zero of 2000.** So every tenth case is now *solved* into
+  that window by choosing the IPv4 identification field to suit, which
+  takes coverage from 0 to 199 cases.
+- **And the thing that told us where the cliff was, was mutation testing
+  rather than fuzzing.** The honest ordering is: mutation testing found
+  that a fold could be deleted undetected; arithmetic said where the
+  reachable window was; the fuzzer was then *told* about it. A fuzzer
+  that does not know where the cliffs are will not find them. This is
+  worth internalising before reaching for fuzzing as a general answer.
+- **The demonstration, for the record.** With the second fold deleted:
+  the sixteen curated vector tests **still all pass**; the hand-solved
+  test in `frame.rs` fails; and the fuzz corpus fails at `fuzz00007` —
+  one of the solved cases — reporting *"header differs at offset 25"*,
+  which is the IPv4 checksum's low byte. Three levels of test, and only
+  the two that were built deliberately for this see it.
+- **`fuzz_count = 2000` shares a prefix with `fuzz00000`**, so a parser
+  that filtered records by `startswith("fuzz")` picked up the count line
+  and tripped over its field count. Renamed to `corpus_size`. A small
+  thing, but it cost a debugging cycle in the corpus-analysis script and
+  would have cost one in the Rust parser.
+- **An LCG width bug produced suspiciously small MAC addresses.**
+  `bits(48)` returned only 16 bits — the loop decremented past zero and
+  the final mask used the negative remainder. Visible only because
+  48-bit values printed as `0x00000000b61a`; a reviewer skimming the
+  corpus would have seen it, a test would not have. Fixed, and the
+  function now carries a comment saying what went wrong.
+- **Non-vacuity has to be asserted, not assumed.** Two tests exist
+  purely to stop the corpus quietly becoming worthless:
+  `the_corpus_still_covers_the_carry_window` (≥100 of 2000 cases must
+  reach the window) and `the_corpus_is_actually_varied` (all six WRITE
+  operations, both transports, all four pad counts, >500 distinct
+  payload lengths, a zero-length payload, both RETH states, both
+  `ackreq` states). This follows the 2026-08-16 "sweep for vacuous
+  assertions" entry: a corpus that collapsed to one opcode would still
+  pass every other test here.
+
+**Validation:** 5 tests. `fuzz_header_blocks_match_scapy` checks every
+header byte of all 2000 frames; `fuzz_icrcs_match_scapy` checks every
+ICRC, computed over the frame **this crate assembles** rather than over
+Scapy's bytes, so a header error that the ICRC covers produces two
+differences instead of cancelling out. Plus the two non-vacuity tests and
+a constants check. Corpus composition as generated: 434 FIRST, 240
+MIDDLE, 459 LAST, 220 LAST_WITH_IMM, 425 ONLY, 222 ONLY_WITH_IMM; 1318
+UC and 682 RC; pad counts 1010/346/327/317; 801 distinct payload lengths
+from 0 to 1024; 199 cases in the carry window.
+
+**Follow-ups:**
+
+- **This is a frozen corpus, not a coverage-guided fuzzer.** A real
+  `cargo-fuzz` target would explore continuously, but its oracle would
+  have to be a Rust model rather than Scapy, which gives up the
+  independence that makes this valuable. The better next step is more
+  *solved* cases for other narrow windows as they are identified —
+  mutation testing is how to find them.
+- **No fuzzing of the segmenter against Scapy yet.** Its invariants are
+  checked over three MTUs × eleven lengths, and the multi-packet message
+  is checked against three real vectors, but there is no randomised
+  message-level corpus. Worth adding when the byte generator consumes
+  plans end to end.
+- The corpus pins `Pmtu::B1024` throughout, since the path MTU does not
+  affect header bytes. A segmenter-level corpus would vary it.
+
+---
+
 ## 2026-10-20 — `rhdl-roce::qp`: the segmenter, or the difference between a packet and a message
 
 **Path:** `crates/rhdl-roce/src/qp/{mod,context,segmenter}.rs`,
