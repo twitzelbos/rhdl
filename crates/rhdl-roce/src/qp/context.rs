@@ -92,3 +92,19 @@ pub struct MessageRequest {
     /// legal single-packet RDMA WRITE that moves no data.
     pub length: Bits<32>,
 }
+
+/// One unit of work for the send path: a message, and the queue pair it
+/// belongs to.
+///
+/// The queue-pair number travels *with* the message rather than being
+/// endpoint state, so several queue pairs' messages can sit in one work
+/// queue and each is framed with its own context. Without it the queue
+/// would have to be per-connection, which is the arrangement a
+/// single-queue-pair endpoint has and a table makes pointless.
+#[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
+pub struct WorkRequest {
+    /// Which queue pair to send on. Indexes [`crate::qp::table::QpTable`].
+    pub qpn: Bits<24>,
+    /// The message itself.
+    pub msg: MessageRequest,
+}

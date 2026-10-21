@@ -1,21 +1,27 @@
 # RoCEv2 — RDMA over Converged Ethernet v2 for RHDL
 
-**Status: the plan, plus Phase 1 and most of Phase 2's send side.**
+**Status: the plan, plus Phases 1–3 of the send side.**
 `crates/rhdl-roce` implements the transport headers, the Invariant CRC,
 the message-to-packet segmenter, and the Ethernet/IPv4/UDP framing — so
 a **complete RoCEv2 frame is generated and matches Scapy byte-for-byte**,
 over eight curated vectors and a 2000-case differential fuzz corpus
 (§10 Tier 6).
 
-What is **not** built, and the list is longer than "the link adapter":
-there is no queue-pair state machine and no queue-pair *table* (the
-context is an input struct, so exactly one connection), no work queue
-(a second `start` abandons the message in flight), no connection
-manager, no receive path of any kind, no retransmission, and no
-congestion control. Nor is there a link adapter, so nothing reaches a
-wire. **§9's Phase 3 is the plan for turning this into an endpoint**;
-what exists today builds correct frame bytes for a single UC WRITE
-message on one queue pair.
+Phase 3 landed the endpoint: a queue-pair state machine that refuses to
+transmit outside `RTS`, a RAM-backed queue-pair context table, a work
+queue so several messages can be outstanding, and
+`endpoint::RoceWriteEndpoint` wiring them to the transmitter. Its gate
+is met — three queued messages produce three byte-exact frames, a second
+queue pair is framed with its own context, and nothing is emitted before
+`RTS`.
+
+What is **not** built: no connection manager, no receive path of any
+kind, no retransmission, no congestion control, and no arbiter (messages
+drain in posting order whatever queue pair they name). Queue-pair state
+is endpoint-level rather than per-queue-pair — a conservative
+approximation, documented in `endpoint`'s module docs, that can only
+refuse where a per-queue-pair gate would allow. And there is still no
+link adapter, so **nothing reaches a wire**.
 
 **The remaining staging in §9 still needs explicit sign-off** — see §12.
 Note that §12's structural question about a `net` category is no longer

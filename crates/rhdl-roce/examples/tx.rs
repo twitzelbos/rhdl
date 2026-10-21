@@ -78,6 +78,7 @@ fn main() -> Result<(), RHDLError> {
             dst_port: bits(4791),
             ip_id: bits(0),
             ttl: bits(64),
+            dscp_ecn: bits(0),
         },
         psn_start: bits(1),
         ackreq: false,

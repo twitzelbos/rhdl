@@ -31,6 +31,112 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-10-21 — `rhdl-roce::endpoint`: Phase 3's widgets wired to the transmitter, and its gate met
+
+**Path:** `crates/rhdl-roce/src/endpoint.rs`, `examples/endpoint.rs`,
+`doc/endpoint.md`, `vcd/endpoint/`; `qp::work_queue` becomes generic;
+`qp::context::WorkRequest` added; `roce-v2-architecture.md` status
+
+**Why this, why now:** Phase 3 was four widgets that existed and were
+tested in isolation — a queue-pair state machine nothing consulted, a
+work queue nothing drained, a context table nothing read. **Four unwired
+widgets is not an endpoint**, and §9's gate is deliberately written about
+the integrated behaviour rather than the parts. This is the wiring, and
+the gate now has a test per clause.
+
+**Design decisions:**
+
+- **`WorkQueue` became generic over its payload** so it can hold
+  `WorkRequest { qpn, msg }`. The queue-pair number travels *with* the
+  message rather than being endpoint state, which is what lets one queue
+  serve several connections — otherwise a context table is pointless,
+  since the queue itself would have to be per-connection.
+- **Message completion is the transmitter's `busy` falling edge, not
+  `end_of_frame`.** The transmitter reports framing per *packet*, so
+  retiring on `end_of_frame` would discard the rest of a multi-packet
+  message. That costs one registered bool (`was_busy`) and the mutation
+  that replaces it fails the three-message test.
+- **Posting is allowed in any state; sending is not.** Refusing work
+  during bring-up would make the queue useless exactly when an
+  application wants to prime it. `flush` (from the state machine's
+  `draining`) is the one case that refuses.
+- **Per-queue-pair state is deferred, and the approximation is
+  conservative rather than wrong.** The IBTA's state is per queue pair;
+  this endpoint has one state machine governing the whole endpoint while
+  the table holds a context per queue pair. An endpoint-level gate can
+  only refuse where a per-queue-pair gate would have allowed, never the
+  reverse — so no frame is emitted that a per-queue-pair implementation
+  would not also emit. A *lax* approximation would have been
+  unacceptable; a strict one costs only the ability to have one queue
+  pair sending while another is still in INIT. Doing it properly needs
+  the transition function as a pure kernel plus a read-modify-write
+  through the table's block RAM.
+- **The table's read address is driven from the queue head
+  continuously.** The head is held stable until the message completes, so
+  the registered read has long settled by the time it is needed and no
+  lookup state machine is required.
+
+**Surprises and gotchas:**
+
+- **`dont_care()` bit again, in the same shape as in `tx`.** The
+  work-queue head's fallback has to be `WorkRequest::default()`: it *is*
+  read on the idle path, because the table's read address is driven from
+  it every cycle, and reading a `dont_care()` aggregate is a partial read
+  (§12 rule 7). Second time this session; the pattern to internalise is
+  that a "fallback that is never used" usually is used, by something
+  evaluated unconditionally.
+- **The two-pass open-loop payload driver was reused deliberately.** The
+  closed-loop version is off by one against `run_fn` — documented at
+  length in the `tx` entry — and the saving grace is that payload
+  *content* does not affect control flow, so pass 1's `payload_advance`
+  positions are valid for pass 2.
+- **clippy wanted kernel-illegal constructs.** `.unwrap_or_default()`
+  and `if let` are not in the accepted subset, so the explicit matches
+  carry an `#[allow]` with the reason rather than being rewritten. Same
+  for `qp::state`'s nested flat matches and `single_match`, where the
+  shape is forced by `Some(Variant)` being unexpressible.
+
+**Validation:** 10 tests on this module, and the three that matter are
+§9's gate clauses:
+
+- **`three_queued_messages_produce_three_correct_frames`** — three
+  messages posted during bring-up, all three emerge, each **byte-exact
+  against Scapy vector `uc_write_only_16`**. Before the work queue, the
+  second and third `start` would have abandoned the message in flight.
+- **`a_second_queue_pair_is_framed_with_its_own_context`** — two
+  contexts configured, one message each. The `dqpn` and `rkey` bytes
+  differ, the ICRC differs, and **every byte the context does not touch
+  is identical**, which is what proves the table is read per message
+  rather than one context being latched.
+- **`nothing_is_transmitted_before_rts`** — checked from RESET, INIT and
+  RTR, with `reaching_rts_unblocks_transmission` as the companion so the
+  first cannot pass for a widget that never transmits at all.
+
+Supporting: an unconfigured queue pair reports `ctx_missing` and sends
+nothing rather than framing with a zeroed context; work may be posted
+before the queue pair is ready; reset clears everything. Tiers 3–5
+present, with `.skip(2)` for the two block RAMs and the non-zero ICRC
+seed.
+
+**Four mutations confirmed caught** by named assertions: dropping the
+`can_send` gate, dropping the `ctx_valid` gate, retiring messages
+unconditionally, and reading the table at a fixed address instead of the
+head's queue-pair number.
+
+**Follow-ups:**
+
+- **No arbiter.** Messages drain in posting order whatever queue pair
+  they name, so a long message on one connection delays another's.
+  FERoCE has a round-robin arbiter; it is not in this phase.
+- **Per-queue-pair state**, per the decision above.
+- **`ctx_missing` latches.** A message naming an unconfigured queue pair
+  blocks the head indefinitely, because it can be neither sent nor
+  retired. A real endpoint would complete it with an error, which needs
+  the work-completion machinery of a later phase.
+- Phase 4 is the receive path and the connection manager.
+
+---
+
 ## 2026-10-21 — Nested variant patterns: considered, measured, and deprioritised
 
 **Path:** `kernel-language-extensions.md` §4.6
@@ -213,6 +319,314 @@ a bug.
   is not established; that answer decides whether it is a one-line fix
   or a feature.
 - `-D warnings` on `rhdl-core` and `rhdl-fpga`, as its own change.
+
+## 2026-10-21 — Correction: the FSM extractor follows computed targets; the real defect is elsewhere
+
+**Path:** `crates/rhdl-roce/src/tx.rs`, `crates/rhdl-roce/src/qp/state.rs`
+(comments and module docs); two earlier entries in this file amended
+
+**Why this, why now:** asked whether the FSM extractor could be fixed to
+handle a computed state target. Investigating it showed **there is
+nothing to fix, because the claim was false.** I had restructured
+`tx.rs` away from an intermediate local *preemptively*, never tested it,
+and then wrote the limitation into two source files and two CHANGELOG
+entries as established fact. A future reader would have taken it as a
+constraint and restructured code around a restriction that does not
+exist.
+
+**What the extractor actually does**, measured with a three-state probe
+widget:
+
+- **A computed target through an intermediate local works.**
+  `let mut next = q.state; … ; d.state = next` over a three-state
+  machine extracted `[(A,A), (A,B), (B,A), (B,C), (C,A)]` — exactly
+  right, self-loop included. It works because the extractor **unions
+  `Select` branches**, and a mutable local assigned in match arms
+  lowers to precisely a `Select` chain. That capability is documented in
+  `extraction.rs` itself, which I had not read before asserting
+  otherwise.
+- **A target read straight from an input is not followed, and fails
+  silently.** `d.state = i.requested` returns `Ok` with **only
+  self-loops** — `[(A,A), (B,B), (C,C)]` — so the generated diagram
+  claims the machine never leaves its state. The truth is that it can go
+  anywhere.
+
+**The real defect, stated for whoever picks it up:**
+
+`extract_widget_transitions_strict` returns success with a *silently
+incomplete* transition set when the target comes from outside the
+kernel. `ExtractionResult` already carries an `unanalyzable: Vec<(&str,
+&str)>` field for exactly this situation, and the analysis pass already
+reports it as `FsmDiagnosticKind::Unanalyzable` — so the machinery
+exists and this path does not use it. **A silently wrong diagram is
+worse than a missing one**, especially under §12 rule 14, which makes
+the diagram load-bearing for FSM-aware review: a reviewer who trusts it
+would conclude a state machine is a set of isolated self-loops.
+
+That is a compiler-level change and therefore wants its own PR under
+§11.1 — one feature, tests at the IR level it touches, a Justification
+section, and a book/design-plan update. It is **not** bundled into
+Phase 3. The shape is small: recognise a state-field write whose source
+traces to an input rather than to literals, and route it into the
+existing `unanalyzable` channel so `_strict` fails loudly instead of
+succeeding quietly.
+
+**Surprises and gotchas:**
+
+- **I asserted a compiler limitation without testing it, then
+  documented it in four places.** The probe that disproved it took five
+  minutes. The lesson is narrow and worth keeping: a claim about what
+  the *compiler* cannot do is a claim about someone else's code, and it
+  needs a test, not a plausible mechanism.
+- **The adjacent limitation is real but different.** A variant pattern
+  nested inside `Some(…)` genuinely is rejected
+  (`UnsupportedPatternInBindPattern`, raised during lowering rather than
+  at `cargo check` time). That one is in `mir::compiler::bind_pattern`,
+  not the extractor, and is a `kernel-language-extensions.md` item
+  rather than an FSM one. Conflating the two is what let the false claim
+  look credible.
+
+**Validation:** the two probe widgets were throwaway and are not
+committed; their results are quoted above. All 13 `qp::state` tests
+still pass with the corrected comments, and no code changed — only the
+reasons given for it.
+
+**Follow-ups:**
+
+- The input-sourced-target defect, as its own compiler PR per §11.1.
+- `Some(Variant)` patterns in `bind_pattern`, separately, as a
+  kernel-language item. Worth checking whether the guard is protecting
+  against incorrect *matching* or merely missing a no-op binding case —
+  I have not established which, and the answer decides whether it is a
+  one-line fix or a real feature.
+
+---
+
+## 2026-10-21 — `rhdl-roce::qp::table`: the queue-pair context table §6 promised
+
+**Path:** `crates/rhdl-roce/src/qp/table.rs`, `examples/qp_table.rs`,
+`doc/qp_table.md`, `vcd/qp_table/`
+
+**Why this, why now:** `roce-v2-architecture.md` §6 promised a
+"queue-pair context table (RAM-backed)" and the first implementation
+shipped a plain struct passed in as an input — which means exactly one
+connection. This is the table. It is the last of Phase 3's four widgets.
+
+**Design decisions:**
+
+- **Validity is the `Option`, not a side flag.** The table stores
+  `Option<QpContext>`, so an unconfigured entry reads back as `None` and
+  `valid` is derived. A separate validity bitmap would be a second
+  source of truth that can disagree with the first, and the failure it
+  permits is the worst available here: transmitting with a stale context
+  to a queue pair the peer has torn down.
+- **Entries initialise to `None`, emphatically not
+  `QpContext::default()`.** A zeroed context is a *plausible* connection
+  to queue pair 0 — valid-looking `pkey`, a real PMTU — and transmitting
+  to it is worse than refusing to. The mutation that initialises to a
+  zeroed context is caught by `an_unconfigured_entry_is_none`.
+- **Tear-down writes `None`** rather than clearing a bit, which falls
+  out of the above and means there is one code path for configure and
+  unconfigure.
+- **The low `N` bits index the table, and aliasing is documented rather
+  than guarded.** A 24-bit queue-pair number cannot index 16 million
+  entries. Two queue pairs differing only above bit `N` alias; the host
+  allocates the numbers, so it is a control-plane constraint — but the
+  kind that gets discovered in the field if it is not written down.
+  `qpn_index` is the single place it happens and a test pins it.
+
+**Surprises and gotchas:**
+
+- **The read is registered, which is fine here and worth saying anyway.**
+  `ctx` arrives one cycle after `read_qpn`, because block RAM. It costs
+  nothing for the send path — the queue-pair number is constant for a
+  whole message, so the lookup happens once at message start and is long
+  settled before the first header byte. It would matter for a design
+  interleaving packets from different queue pairs cycle by cycle, which
+  nothing here does.
+- **Reset has to disable the write port, not just clear the outputs.**
+  Otherwise a write presented during reset lands in the RAM. Caught by
+  its own test, and the mutation that drops the line fails it.
+
+**Validation:** 11 tests. Tier 1 covers the fresh-table-is-`None`
+property across five addresses, the index/aliasing rule, the write port
+being driven and left disabled, tear-down writing `None`, and reset
+blocking a write. Tier 2 configures four queue pairs and reads each
+back — the test that actually distinguishes a table from a register —
+and tears one down and confirms it reads invalid again. Tiers 3–5
+present, with `.skip(2)` for the block-RAM reason and the Tier-3
+snapshot pinned by structure rather than text, as
+`core::ram::option_sync` does.
+
+Three mutations confirmed caught: zeroed-context initialisation,
+always-valid, and letting a write through during reset.
+
+**Follow-ups:**
+
+- **Phase 3 is not done.** All four widgets exist — the three debts,
+  `qp::state`, `qp::work_queue`, `qp::table` — but **none is wired into
+  `RoceWriteTx`**, which still takes a single `ctx` input and a single
+  `start`. Four unwired widgets is not an endpoint, and the phase gate
+  is explicitly about the integrated behaviour: several messages queued
+  back to back producing the right frame sequence, a second queue pair
+  interleaving, and transmission refused outside `RTS`. That integration
+  is the next commit.
+
+---
+
+## 2026-10-21 — `rhdl-roce::qp::work_queue`: a queue of messages, so `start` stops throwing them away
+
+**Path:** `crates/rhdl-roce/src/qp/work_queue.rs`,
+`examples/work_queue.rs`, `doc/work_queue.md`, `vcd/work_queue/`
+
+**Why this, why now:** Phase 3's second widget, and FERoCE's
+`RoCE_simple_work_queue` in RHDL terms. Until now `start` asserted while
+the transmitter was busy *abandoned* the message in flight — documented,
+but a documented sharp edge rather than a usable interface. An
+application posting three writes in quick succession would land two of
+them in the bin.
+
+**Design decisions:**
+
+- **The input is called `complete`, not `ready`.** A send path pulling
+  on a ready signal would advance the head when the *first* packet of a
+  multi-packet message was accepted, which is exactly wrong — the head
+  has to stay put until the whole message is on the wire. Naming the
+  input after the event rather than the handshake makes that hard to
+  misuse, and `the_head_advances_only_on_complete` pins it with six
+  idle cycles between posts.
+- **`flush` lives here rather than in the state machine.** SQD means
+  "finish what is outstanding, accept nothing new", and that is a
+  queue property: the head keeps draining while `accepted` stays low.
+  The composition drives it from the state machine's `draining`.
+- **A full queue refuses rather than drops.** Ordinary ready/valid: a
+  requester that ignores `accepted` loses work and one that honours it
+  cannot.
+- **Depth is a const generic over the FIFO's address width**, so the
+  usable depth is `2^N - 1` — one slot spent distinguishing full from
+  empty, as in every ring-buffer FIFO. Two to four entries is plenty
+  for a sensor pushing acquisition buffers and the cost is one block RAM
+  either way.
+
+**Surprises and gotchas:**
+
+- **`fifo::synchronous` has no `empty` output.** Emptiness is
+  `data == None`, because the head is an `Option`. That is the better
+  interface — the two cannot disagree — but it is worth recording once
+  rather than rediscovering, since the obvious `q.fifo.empty` simply
+  does not exist.
+- **`complete` on an empty queue must be a no-op, not an underflow.**
+  The FIFO exposes an `underflow` flag, so popping an empty queue is
+  detectable rather than silent, but the right behaviour is not to do
+  it. Gated on the head being present.
+
+**Validation:** 11 tests. Tier 1 covers the empty head, head-advances-
+only-on-`complete`, flush refusing work while the head drains, a full
+queue refusing, `complete` on empty being a no-op, and reset. Tier 2
+posts four messages and checks they emerge **in order with none lost**,
+plus a post-and-complete-on-the-same-cycle case. Tiers 3–5 present, with
+`.skip(2)` on the round trip for the usual block-RAM reason.
+
+Three mutations confirmed caught: advancing the head whenever non-empty,
+letting `flush` accept work, and popping an empty queue. The mutation
+script now asserts its anchor matched exactly once and says
+`ANCHOR FAILED` otherwise — after the state-machine entry's lesson that
+a silently-unapplied mutation reports "ok" and reads like survival.
+
+**Follow-ups:**
+
+- Not yet wired into `RoceWriteTx`; that happens with the QP table, when
+  the transmitter starts pulling messages from a queue instead of taking
+  a single `start`.
+- The RAM-backed `qp::context` table is the last piece of Phase 3.
+
+---
+
+## 2026-10-21 — `rhdl-roce::qp::state`: the queue-pair state machine
+
+**Path:** `crates/rhdl-roce/src/qp/state.rs`, `examples/qp_state.rs`,
+`doc/qp_state.md`, `doc/qp_state_fsm.md`, `vcd/qp_state/`
+
+**Why this, why now:** Phase 3's first real widget. A queue pair is not
+usable the moment it exists — the IBTA puts it through RESET → INIT →
+RTR → RTS as the two ends exchange parameters, and a requester may only
+transmit once it reaches RTS. Until now that rule lived in the caller's
+discipline: `RoceWriteTx` would happily build frames for a connection
+the peer had never heard of. `can_send` makes it a property of the
+hardware.
+
+**Design decisions:**
+
+- **SQE is deliberately absent.** It is entered when a work queue
+  element completes with an error on an unreliable queue pair, which
+  needs per-element completion status — that arrives with the work
+  completion machinery in a later phase. Adding the variant now would
+  produce a state nothing can enter, which is *worse* than omitting it:
+  it would show up in the generated diagram as an unreachable node and
+  imply a path that does not exist.
+  `every_state_is_reachable_and_there_are_no_orphans` enforces that.
+- **An illegal request is refused, not punished.** The state holds and
+  `rejected` pulses. Entering ERR instead would make a control-plane
+  bug indistinguishable from a wire error, and the two want different
+  responses.
+- **A datapath `error` overrides any request on the same cycle** and is
+  not reported as a rejection — a wire error is not something the
+  control plane gets to disagree with.
+- **`draining` is a separate output from `can_send`.** SQD means finish
+  what is outstanding and accept nothing new, which is a work-queue
+  concern rather than a datapath one, so the two are reported
+  separately rather than conflated.
+
+**Surprises and gotchas:**
+
+- **`Some(QpState::Init)` is not an expressible pattern.** A variant
+  pattern nested inside `Some(…)` is rejected with
+  `UnsupportedPatternInBindPattern` — notably *not* at `cargo check`
+  time, but when the kernel is actually lowered, which here meant the
+  example panicking inside `extract_widget_transitions_strict`. The fix
+  is three nested flat matches: unwrap the `Option` by its own match,
+  then match the inner value. Verbose, and it keeps the `q.state` match
+  outermost so the FSM extractor still finds the state field at the top
+  of the tree. This belongs in CLAUDE.md §4's list of what the kernel
+  subset rejects.
+- ~~**A computed state target defeats the FSM extractor.**~~
+  **This was wrong — see the 2026-10-21 correction entry.** Tested
+  afterwards: the extractor follows a computed target correctly, because
+  it unions `Select` branches and a mutable local lowers to exactly
+  that. Literal arms are kept because they read better, not because
+  they are required.
+- **Two of my three mutation checks silently did not apply**, because
+  the anchor strings I guessed did not match the generated code's
+  ordering. Both reported "ok", which I nearly read as "the mutation
+  survived" rather than "the mutation was never made". Mutation testing
+  needs its anchors asserted; the script now does `assert count == 1`
+  and says `ANCHOR FAILED` instead of running a no-op test.
+
+**Validation:** 13 tests. The centre is
+`the_transition_table_matches_the_ibta`, which walks all 36 (from, to)
+pairs against an **independently written** transition table — legal ones
+must take effect, illegal ones must hold and report `rejected`. Backed
+by `some_transitions_really_are_illegal`, which asserts at least ten
+pairs are refused so the first test cannot pass vacuously against a
+permissive table. Plus `can_send` in RTS only, error override from every
+state, ERR-recovers-only-through-RESET, idle hold, reset, and a Tier-2
+bring-up sequence that includes a refused request.
+
+Rule 14 satisfied: `FsmWidget` derive, the diagram generated from the
+kernel's own RHIF (6 states, 15 inter-state edges — exactly the 2+3+3+3+3+1
+the table defines), and a drift test. Tiers 3–5 present.
+
+Three mutations confirmed caught: `can_send` true while draining,
+RESET → RTS made legal, and ERR recovering straight to RTS.
+
+**Follow-ups:**
+
+- `qp::work_queue` and the RAM-backed `qp::context` table are the rest
+  of Phase 3; this widget is not yet wired into `RoceWriteTx`, so
+  `can_send` is not gating anything yet.
+- SQE when work completions land.
+
+---
 
 ## 2026-10-20 — RoCEv2 Phase 3 planned: what FERoCE has that we do not, and which of it can actually be built next
 

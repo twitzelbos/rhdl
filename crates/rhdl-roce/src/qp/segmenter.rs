@@ -90,6 +90,12 @@ pub struct PacketPlan {
     /// Which of the WRITE family this packet is.
     pub opcode: WriteOpcode,
     /// This packet's sequence number.
+    ///
+    /// 24 bits, and it **wraps** — `0xFFFFFF` is followed by `0x000000`.
+    /// That is the IBTA's behaviour, not an overflow: a `Bits<24>`
+    /// increment wraps in RHDL too, so the two agree without special
+    /// handling. Recorded because "the counter silently wraps" is
+    /// usually a bug and here it is the specification.
     pub psn: Bits<24>,
     /// How many payload bytes this packet carries, before padding.
     pub payload_bytes: Bits<13>,
@@ -552,6 +558,21 @@ mod tests {
             ]
         );
         assert_eq!(p[3].payload_bytes, bits::<13>(1000 - 768));
+    }
+
+    /// The 24-bit PSN wraps, and that is the IBTA's behaviour rather
+    /// than an overflow bug. `0xFFFFFF` is followed by `0x000000`.
+    #[test]
+    fn the_psn_wraps_at_24_bits() {
+        let p = plans(600, Pmtu::B256, 0xFF_FFFE);
+        assert_eq!(p.len(), 3);
+        assert_eq!(p[0].psn, bits::<24>(0xFF_FFFE));
+        assert_eq!(p[1].psn, bits::<24>(0xFF_FFFF));
+        assert_eq!(
+            p[2].psn,
+            bits::<24>(0x00_0000),
+            "the PSN must wrap to zero, not saturate or widen"
+        );
     }
 
     // ---------------- VM cross-validation ----------------

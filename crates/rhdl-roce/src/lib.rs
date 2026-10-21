@@ -61,6 +61,7 @@
 //! to dissect real RoCE traffic. The vectors are committed; the
 //! generator is `tools/gen_vectors.py` and is run deliberately.
 
+pub mod endpoint;
 pub mod frame;
 pub mod headers;
 pub mod icrc;
