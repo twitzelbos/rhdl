@@ -31,6 +31,92 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-10-20 — RoCEv2 Phase 3 planned: what FERoCE has that we do not, and which of it can actually be built next
+
+**Path:** `roce-v2-architecture.md` (§9 gains Phase 3; later phases
+renumbered; §3 and the Totals table reconciled)
+
+**Why this, why now:** asked whether the shipped transmitter was fully
+fledged, the honest answer was no, and the comparison that made the gap
+concrete was FERoCE's module list — five modules it ships that this
+crate lacks. The request was to plan all five as "Phase 3". Planning
+them revealed that **only two can go in one PR**, so the plan says that
+rather than pretending otherwise.
+
+**Design decisions:**
+
+- **Phase 3 is the two items with no unbuilt dependencies**: the IBTA
+  queue-pair state machine (`qp::state`, with `FsmWidget` and its
+  diagram) and a work queue (`qp::work_queue`, composing
+  `fifo::synchronous`). Plus making `qp::context` the RAM-backed,
+  QPN-indexed **table** that §6 promised and the first implementation
+  did not deliver — it is a plain input struct today, which is why the
+  endpoint supports exactly one connection.
+- **The other three are gated on infrastructure, not on effort**, and
+  each gets an honest home:
+  - **Retransmission → Phase 6.** A retransmission buffer exists to
+    hold packets until they are acknowledged; with no receive path
+    nothing retires them. The item *is* reliable transport.
+  - **Connection manager → Phase 4.** It is a UDP protocol
+    implementation that receives and parses datagrams, not a
+    configuration register, so it needs the receive path that phase
+    builds.
+  - **Realign FIFO → Phase 5.** This one is the interesting case: it is
+    **not a missing feature at all.** It is an artifact of FERoCE's 64-
+    and 512-bit datapaths, where a payload does not start on a beat
+    boundary. At one byte per cycle there is nothing to realign, so
+    building it now would produce a widget with no job until the
+    datapath widens — which is itself blocked on §8's open question
+    about runtime-amount shifts in the kernel subset.
+- **Three small debts ride with Phase 3** rather than drifting: generate
+  the pad bytes instead of requiring the caller to present zeros, handle
+  24-bit PSN wrap, and make the IPv4 DSCP configurable.
+- **Phase 3 is inserted rather than appended**, so the receive path, the
+  own-MAC adapter, RC, the verb set and congestion control shift to
+  4–8. Full stack goes from 13–18 to **15–21 months**; the first
+  deliverable anyone could reasonably call a transmitter is now Phase 3
+  at 17–24 weeks cumulative.
+
+**Surprises and gotchas:**
+
+- **The doc already carried stale phase cross-references from my own
+  earlier renumbering.** §3's module table pointed retransmission at
+  "Phase 3 `qp::retry`" and the connection manager at "Phase 2", and
+  two sentences sized "Phase 3" at 16–24 weeks — all of which described
+  the numbering *before* the receive-direction phase was inserted. Fixed
+  in the same pass. Renumbering phases in prose is exactly the kind of
+  change that rots silently, and this is the second time it has.
+- **The status line understated what was missing.** It said the gap was
+  "the link adapter and reliable transport", when the real list also
+  includes no QP state machine, no QP table, no work queue, no
+  connection manager and no receive path of any kind. Rewritten to say
+  so, because a reader was entitled to conclude rather more was built
+  than is.
+- **"Add the five things FERoCE has" is not a PR.** Taken literally it
+  spans Phases 3, 4, 5 and 6 — roughly six months — because three of
+  the five need either a receive path or a wider datapath first. The
+  plan records that explicitly so the next person does not re-derive it,
+  and so the scope question gets answered before code is written rather
+  than after, per the rule at the top of CLAUDE.md.
+
+**Validation:** documentation only; no code. The phase headings, the
+Totals table and the §3 module-mapping table were re-read against each
+other after renumbering, and the stale references checked by grep.
+
+**Follow-ups:**
+
+- Phase 3's gate is worth stating here too, since it is the first test
+  of "endpoint" rather than "packet builder": several messages queued
+  back to back on one queue pair produce the correct frame sequence
+  byte-exact against Scapy; a second queue pair with different
+  parameters interleaves correctly; and the state machine refuses to
+  transmit outside `RTS`.
+- Phase −1 (measure the PS descriptor rate) and the host GPUDirect
+  check are both still outstanding and both still cheap. Neither is
+  blocked by any of this.
+
+---
+
 ## 2026-10-20 — `rhdl-roce::tx`: the assembled transmitter, and closing the Verilog-coverage gap
 
 **Path:** `crates/rhdl-roce/src/tx.rs`, `examples/tx.rs`, `doc/tx.md`,
