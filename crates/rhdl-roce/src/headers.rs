@@ -249,6 +249,104 @@ pub fn bth_byte(h: Bth, index: Bits<4>) -> Bits<8> {
     ((packed >> shift.resize::<96>()) & bits(0xFF)).resize::<8>()
 }
 
+#[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
+/// A decoded RDMA WRITE opcode: which transport service, and which
+/// operation within it.
+///
+/// A struct rather than a tuple because a kernel matching
+/// `Some((t, op))` is a nested pattern, which the kernel language
+/// rejects; `Some(kind)` binds a whole struct and is accepted. See
+/// `kernel-language-extensions.md` §4.6.
+pub struct WriteKind {
+    /// The transport service, from the opcode's top three bits.
+    pub transport: Transport,
+    /// The operation, from the low five bits.
+    pub op: WriteOpcode,
+}
+
+#[kernel]
+/// Decode an opcode byte — the inverse of [`encode_write_opcode`].
+///
+/// `None` for any byte that is not an RDMA WRITE opcode of a transport
+/// service this crate implements, which on the receive path is a
+/// rejection rather than an error: the frame was addressed to us but
+/// asks for something we do not do.
+///
+/// Returning `Option` rather than saturating to a default is the point.
+/// An unrecognised opcode must not be silently read as `Only`, because
+/// `Only` carries a RETH and would make the parser consume 16 bytes of
+/// payload as an address.
+pub fn decode_write_opcode(b: Bits<8>) -> Option<WriteKind> {
+    let base = b & bits(0xE0);
+    let operation = b & bits(0x1F);
+    let mut kind = WriteKind::dont_care();
+    // Both halves must be recognised; `ok` is cleared by either.
+    let mut ok = true;
+    if base == bits(0x00) {
+        kind.transport = Transport::Rc;
+    } else if base == bits(0x20) {
+        kind.transport = Transport::Uc;
+    } else {
+        kind.transport = Transport::Rc;
+        ok = false;
+    }
+    if operation == bits(0x06) {
+        kind.op = WriteOpcode::First;
+    } else if operation == bits(0x07) {
+        kind.op = WriteOpcode::Middle;
+    } else if operation == bits(0x08) {
+        kind.op = WriteOpcode::Last;
+    } else if operation == bits(0x09) {
+        kind.op = WriteOpcode::LastWithImmediate;
+    } else if operation == bits(0x0A) {
+        kind.op = WriteOpcode::Only;
+    } else if operation == bits(0x0B) {
+        kind.op = WriteOpcode::OnlyWithImmediate;
+    } else {
+        kind.op = WriteOpcode::Only;
+        ok = false;
+    }
+    if ok { Some(kind) } else { None }
+}
+
+#[kernel]
+/// Unpack a [`Bth`] from its 96 wire bits — the inverse of
+/// [`bth_pack`].
+///
+/// The receive direction's entry point. Keeping it adjacent to
+/// `bth_pack` is deliberate: the two share one field-offset layout, and
+/// a layout change that updates only one of them is the defect this
+/// arrangement is meant to make obvious. `bth_round_trips` pins them
+/// against each other.
+pub fn bth_unpack(p: Bits<96>) -> Bth {
+    let mut h = Bth::dont_care();
+    h.opcode = ((p >> 88) & bits(0xFF)).resize::<8>();
+    h.solicited = ((p >> 87) & bits(1)) != bits(0);
+    h.migreq = ((p >> 86) & bits(1)) != bits(0);
+    h.padcount = ((p >> 84) & bits(3)).resize::<2>();
+    h.version = ((p >> 80) & bits(0xF)).resize::<4>();
+    h.pkey = ((p >> 64) & bits(0xFFFF)).resize::<16>();
+    h.fecn = ((p >> 63) & bits(1)) != bits(0);
+    h.becn = ((p >> 62) & bits(1)) != bits(0);
+    h.resv6 = ((p >> 56) & bits(0x3F)).resize::<6>();
+    h.dqpn = ((p >> 32) & bits(0xFF_FFFF)).resize::<24>();
+    h.ackreq = ((p >> 31) & bits(1)) != bits(0);
+    h.resv7 = ((p >> 24) & bits(0x7F)).resize::<7>();
+    h.psn = (p & bits(0xFF_FFFF)).resize::<24>();
+    h
+}
+
+#[kernel]
+/// Unpack a [`Reth`] from its 128 wire bits — the inverse of
+/// [`reth_pack`].
+pub fn reth_unpack(p: Bits<128>) -> Reth {
+    let mut h = Reth::dont_care();
+    h.va = ((p >> 64) & bits(0xFFFF_FFFF_FFFF_FFFF)).resize::<64>();
+    h.rkey = ((p >> 32) & bits(0xFFFF_FFFF)).resize::<32>();
+    h.dma_len = (p & bits(0xFFFF_FFFF)).resize::<32>();
+    h
+}
+
 #[kernel]
 /// Pack a [`Reth`] into its 128 wire bits, first wire byte most
 /// significant.
@@ -322,6 +420,276 @@ mod tests {
     // Rust and errors in the VM -- so the shift-heavy byte selectors
     // here are exactly the kind of kernel that can pass a Tier-1 test
     // and still be broken hardware.
+
+    /// **Pack and unpack are inverses.** The two share one field-offset
+    /// layout, and this is what stops a layout change updating only one
+    /// of them — which would be invisible on the transmit side and
+    /// corrupt every received header.
+    /// **Exhaustive over the whole input space.** Every one of the 256
+    /// opcode bytes is either rejected or decodes to a kind that
+    /// re-encodes to itself, and every constructible kind decodes back
+    /// to itself. There is no sampling here and so nothing to miss.
+    #[test]
+    fn opcode_decoding_is_exactly_the_inverse_of_encoding() {
+        let transports = [Transport::Rc, Transport::Uc];
+        let ops = [
+            WriteOpcode::First,
+            WriteOpcode::Middle,
+            WriteOpcode::Last,
+            WriteOpcode::LastWithImmediate,
+            WriteOpcode::Only,
+            WriteOpcode::OnlyWithImmediate,
+        ];
+        // Forward: every legal pair survives the round trip.
+        let mut legal = std::collections::BTreeSet::new();
+        for t in transports {
+            for op in ops {
+                let byte = encode_write_opcode(t, op);
+                legal.insert(byte.raw());
+                assert_eq!(
+                    decode_write_opcode(byte),
+                    Some(WriteKind { transport: t, op }),
+                    "{t:?}/{op:?} encoded to {byte:?} and did not decode back"
+                );
+            }
+        }
+        assert_eq!(legal.len(), 12, "two transports times six operations");
+
+        // Backward: acceptance is exactly that set, and an accepted
+        // byte re-encodes to itself.
+        for raw in 0u128..256 {
+            let b = bits::<8>(raw);
+            match decode_write_opcode(b) {
+                Some(k) => {
+                    assert!(
+                        legal.contains(&raw),
+                        "{raw:#04x} decoded to {k:?} but is not a legal WRITE opcode"
+                    );
+                    assert_eq!(
+                        encode_write_opcode(k.transport, k.op),
+                        b,
+                        "{raw:#04x} decoded to {k:?} which re-encodes differently"
+                    );
+                }
+                None => assert!(
+                    !legal.contains(&raw),
+                    "{raw:#04x} is a legal WRITE opcode but was rejected"
+                ),
+            }
+        }
+    }
+
+    /// The rejections that matter, named individually so a regression
+    /// says which one broke.
+    #[test]
+    fn opcode_decoding_rejects_the_neighbours_of_the_legal_set() {
+        for (raw, why) in [
+            (0x0Au128, "RC WRITE_ONLY is legal"),
+            (0x2A, "UC WRITE_ONLY is legal"),
+        ] {
+            assert!(decode_write_opcode(bits::<8>(raw)).is_some(), "{why}");
+        }
+        for (raw, why) in [
+            (0x00u128, "RC SEND_FIRST — a SEND, not a WRITE"),
+            (0x05, "RC immediately below WRITE_FIRST"),
+            (0x0C, "RC immediately above WRITE_ONLY_IMM"),
+            (0x40, "Reliable Datagram — a transport we do not implement"),
+            (0x60, "Unreliable Datagram"),
+            (0x80, "an unassigned transport"),
+            (0xFF, "all ones"),
+            (
+                0x1A,
+                "WRITE_ONLY operation bits, but an RC base of 0x00                     requires the top three bits clear — 0x1A has bit 4 set,                     which belongs to the operation field, so this is                     operation 0x1A and not a WRITE at all",
+            ),
+        ] {
+            assert_eq!(
+                decode_write_opcode(bits::<8>(raw)),
+                None,
+                "{raw:#04x} should be rejected: {why}"
+            );
+        }
+    }
+
+    #[test]
+    fn decode_write_opcode_kernel_vm_and_verilog() -> miette::Result<()> {
+        let inputs = (0u128..256).map(|raw| (bits::<8>(raw),));
+        test_kernel_vm_and_verilog_synchronous::<decode_write_opcode, _, _, _>(
+            decode_write_opcode,
+            inputs,
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn bth_round_trips_through_pack_and_unpack() {
+        for h in bths() {
+            let back = bth_unpack(bth_pack(h));
+            assert_eq!(back, h, "BTH did not survive pack/unpack: {h:?}");
+        }
+    }
+
+    /// And the sharper version: every field exercised at its extremes,
+    /// so a mask that is one bit too narrow or an offset one bit out
+    /// cannot hide behind the spread above.
+    #[test]
+    fn bth_round_trips_with_every_field_at_its_limits() {
+        let all_ones = Bth {
+            opcode: bits(0xFF),
+            solicited: true,
+            migreq: true,
+            padcount: bits(3),
+            version: bits(0xF),
+            pkey: bits(0xFFFF),
+            fecn: true,
+            becn: true,
+            resv6: bits(0x3F),
+            dqpn: bits(0xFF_FFFF),
+            ackreq: true,
+            resv7: bits(0x7F),
+            psn: bits(0xFF_FFFF),
+        };
+        assert_eq!(bth_unpack(bth_pack(all_ones)), all_ones, "all-ones");
+        let zero = Bth::default();
+        assert_eq!(bth_unpack(bth_pack(zero)), zero, "all-zeros");
+        // One field at a time, to localise a wrong offset.
+        for (name, h) in [
+            (
+                "opcode",
+                Bth {
+                    opcode: bits(0xA5),
+                    ..zero
+                },
+            ),
+            (
+                "padcount",
+                Bth {
+                    padcount: bits(2),
+                    ..zero
+                },
+            ),
+            (
+                "version",
+                Bth {
+                    version: bits(0x9),
+                    ..zero
+                },
+            ),
+            (
+                "pkey",
+                Bth {
+                    pkey: bits(0x1234),
+                    ..zero
+                },
+            ),
+            (
+                "resv6",
+                Bth {
+                    resv6: bits(0x2A),
+                    ..zero
+                },
+            ),
+            (
+                "dqpn",
+                Bth {
+                    dqpn: bits(0xAB_CDEF),
+                    ..zero
+                },
+            ),
+            (
+                "resv7",
+                Bth {
+                    resv7: bits(0x55),
+                    ..zero
+                },
+            ),
+            (
+                "psn",
+                Bth {
+                    psn: bits(0x12_3456),
+                    ..zero
+                },
+            ),
+            (
+                "solicited",
+                Bth {
+                    solicited: true,
+                    ..zero
+                },
+            ),
+            (
+                "migreq",
+                Bth {
+                    migreq: true,
+                    ..zero
+                },
+            ),
+            ("fecn", Bth { fecn: true, ..zero }),
+            ("becn", Bth { becn: true, ..zero }),
+            (
+                "ackreq",
+                Bth {
+                    ackreq: true,
+                    ..zero
+                },
+            ),
+        ] {
+            assert_eq!(bth_unpack(bth_pack(h)), h, "field {name} did not survive");
+        }
+    }
+
+    #[test]
+    fn reth_round_trips_through_pack_and_unpack() {
+        for h in reths() {
+            assert_eq!(reth_unpack(reth_pack(h)), h, "RETH did not survive: {h:?}");
+        }
+        let all_ones = Reth {
+            va: bits(0xFFFF_FFFF_FFFF_FFFF),
+            rkey: bits(0xFFFF_FFFF),
+            dma_len: bits(0xFFFF_FFFF),
+        };
+        assert_eq!(reth_unpack(reth_pack(all_ones)), all_ones);
+        // Each field alone, so a wrong shift cannot hide.
+        let z = Reth::default();
+        for (name, h) in [
+            (
+                "va",
+                Reth {
+                    va: bits(0x0123_4567_89AB_CDEF),
+                    ..z
+                },
+            ),
+            (
+                "rkey",
+                Reth {
+                    rkey: bits(0xDEAD_BEEF),
+                    ..z
+                },
+            ),
+            (
+                "dma_len",
+                Reth {
+                    dma_len: bits(0x1234_5678),
+                    ..z
+                },
+            ),
+        ] {
+            assert_eq!(reth_unpack(reth_pack(h)), h, "field {name} did not survive");
+        }
+    }
+
+    #[test]
+    fn bth_unpack_kernel_vm_and_verilog() -> miette::Result<()> {
+        let inputs = bths().map(|h| (bth_pack(h),));
+        test_kernel_vm_and_verilog_synchronous::<bth_unpack, _, _, _>(bth_unpack, inputs)?;
+        Ok(())
+    }
+
+    #[test]
+    fn reth_unpack_kernel_vm_and_verilog() -> miette::Result<()> {
+        let inputs = reths().map(|h| (reth_pack(h),));
+        test_kernel_vm_and_verilog_synchronous::<reth_unpack, _, _, _>(reth_unpack, inputs)?;
+        Ok(())
+    }
 
     #[test]
     fn bth_pack_kernel_vm_and_verilog() -> miette::Result<()> {
