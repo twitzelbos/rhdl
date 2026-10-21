@@ -31,6 +31,112 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-10-21 — `rhdl-roce::endpoint`: Phase 3's widgets wired to the transmitter, and its gate met
+
+**Path:** `crates/rhdl-roce/src/endpoint.rs`, `examples/endpoint.rs`,
+`doc/endpoint.md`, `vcd/endpoint/`; `qp::work_queue` becomes generic;
+`qp::context::WorkRequest` added; `roce-v2-architecture.md` status
+
+**Why this, why now:** Phase 3 was four widgets that existed and were
+tested in isolation — a queue-pair state machine nothing consulted, a
+work queue nothing drained, a context table nothing read. **Four unwired
+widgets is not an endpoint**, and §9's gate is deliberately written about
+the integrated behaviour rather than the parts. This is the wiring, and
+the gate now has a test per clause.
+
+**Design decisions:**
+
+- **`WorkQueue` became generic over its payload** so it can hold
+  `WorkRequest { qpn, msg }`. The queue-pair number travels *with* the
+  message rather than being endpoint state, which is what lets one queue
+  serve several connections — otherwise a context table is pointless,
+  since the queue itself would have to be per-connection.
+- **Message completion is the transmitter's `busy` falling edge, not
+  `end_of_frame`.** The transmitter reports framing per *packet*, so
+  retiring on `end_of_frame` would discard the rest of a multi-packet
+  message. That costs one registered bool (`was_busy`) and the mutation
+  that replaces it fails the three-message test.
+- **Posting is allowed in any state; sending is not.** Refusing work
+  during bring-up would make the queue useless exactly when an
+  application wants to prime it. `flush` (from the state machine's
+  `draining`) is the one case that refuses.
+- **Per-queue-pair state is deferred, and the approximation is
+  conservative rather than wrong.** The IBTA's state is per queue pair;
+  this endpoint has one state machine governing the whole endpoint while
+  the table holds a context per queue pair. An endpoint-level gate can
+  only refuse where a per-queue-pair gate would have allowed, never the
+  reverse — so no frame is emitted that a per-queue-pair implementation
+  would not also emit. A *lax* approximation would have been
+  unacceptable; a strict one costs only the ability to have one queue
+  pair sending while another is still in INIT. Doing it properly needs
+  the transition function as a pure kernel plus a read-modify-write
+  through the table's block RAM.
+- **The table's read address is driven from the queue head
+  continuously.** The head is held stable until the message completes, so
+  the registered read has long settled by the time it is needed and no
+  lookup state machine is required.
+
+**Surprises and gotchas:**
+
+- **`dont_care()` bit again, in the same shape as in `tx`.** The
+  work-queue head's fallback has to be `WorkRequest::default()`: it *is*
+  read on the idle path, because the table's read address is driven from
+  it every cycle, and reading a `dont_care()` aggregate is a partial read
+  (§12 rule 7). Second time this session; the pattern to internalise is
+  that a "fallback that is never used" usually is used, by something
+  evaluated unconditionally.
+- **The two-pass open-loop payload driver was reused deliberately.** The
+  closed-loop version is off by one against `run_fn` — documented at
+  length in the `tx` entry — and the saving grace is that payload
+  *content* does not affect control flow, so pass 1's `payload_advance`
+  positions are valid for pass 2.
+- **clippy wanted kernel-illegal constructs.** `.unwrap_or_default()`
+  and `if let` are not in the accepted subset, so the explicit matches
+  carry an `#[allow]` with the reason rather than being rewritten. Same
+  for `qp::state`'s nested flat matches and `single_match`, where the
+  shape is forced by `Some(Variant)` being unexpressible.
+
+**Validation:** 10 tests on this module, and the three that matter are
+§9's gate clauses:
+
+- **`three_queued_messages_produce_three_correct_frames`** — three
+  messages posted during bring-up, all three emerge, each **byte-exact
+  against Scapy vector `uc_write_only_16`**. Before the work queue, the
+  second and third `start` would have abandoned the message in flight.
+- **`a_second_queue_pair_is_framed_with_its_own_context`** — two
+  contexts configured, one message each. The `dqpn` and `rkey` bytes
+  differ, the ICRC differs, and **every byte the context does not touch
+  is identical**, which is what proves the table is read per message
+  rather than one context being latched.
+- **`nothing_is_transmitted_before_rts`** — checked from RESET, INIT and
+  RTR, with `reaching_rts_unblocks_transmission` as the companion so the
+  first cannot pass for a widget that never transmits at all.
+
+Supporting: an unconfigured queue pair reports `ctx_missing` and sends
+nothing rather than framing with a zeroed context; work may be posted
+before the queue pair is ready; reset clears everything. Tiers 3–5
+present, with `.skip(2)` for the two block RAMs and the non-zero ICRC
+seed.
+
+**Four mutations confirmed caught** by named assertions: dropping the
+`can_send` gate, dropping the `ctx_valid` gate, retiring messages
+unconditionally, and reading the table at a fixed address instead of the
+head's queue-pair number.
+
+**Follow-ups:**
+
+- **No arbiter.** Messages drain in posting order whatever queue pair
+  they name, so a long message on one connection delays another's.
+  FERoCE has a round-robin arbiter; it is not in this phase.
+- **Per-queue-pair state**, per the decision above.
+- **`ctx_missing` latches.** A message naming an unconfigured queue pair
+  blocks the head indefinitely, because it can be neither sent nor
+  retired. A real endpoint would complete it with an error, which needs
+  the work-completion machinery of a later phase.
+- Phase 4 is the receive path and the connection manager.
+
+---
+
 ## 2026-10-21 — Nested variant patterns: considered, measured, and deprioritised
 
 **Path:** `kernel-language-extensions.md` §4.6
