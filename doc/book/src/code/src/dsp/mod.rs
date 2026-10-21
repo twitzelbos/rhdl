@@ -7,3 +7,4 @@
 pub mod delay;
 pub mod design;
 pub mod duc;
+pub mod nmr;

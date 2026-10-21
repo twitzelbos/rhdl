@@ -530,9 +530,26 @@ fn possible_state_values_under_constraint(
     }
 
     let Some(definer) = find_definer(ops, slot) else {
-        // Slot is a function argument or unresolved literal; no
-        // state value flows from here.
-        return Ok(BTreeSet::new());
+        // No defining opcode in this kernel, so the slot is a function
+        // argument (or a literal the lookup could not resolve).
+        //
+        // Every slot this walker visits lies on the dataflow path into
+        // `d.<state_field>`, so a value arriving from outside the
+        // kernel *is* a state write — of a value we cannot name.
+        //
+        // This used to return `Ok(empty)`, which the caller reads as
+        // "no state write on this path" and converts into an implicit
+        // self-loop.  For `d.<state_field> = <an input>` that produces a
+        // diagram asserting the machine cannot leave the state, when in
+        // truth it can reach any state.  Under CLAUDE.md §12 rule 14 the
+        // diagram is load-bearing for review, so a silently wrong one is
+        // worse than none: report Unanalyzable and let the strict
+        // extractor fail loudly.
+        return Err(
+            "the state field is written from a value with no definer in this kernel \
+             (a kernel argument, or a literal that does not decode to a variant), \
+             so the target state cannot be determined",
+        );
     };
 
     match definer {
@@ -1541,6 +1558,160 @@ mod tests {
     /// Negative test: Enum opcode whose discriminant matches no
     /// variant.  The walker propagates the error; per-arm
     /// Unanalyzable is surfaced.
+    /// **Regression for the silently-wrong-diagram defect.**
+    ///
+    /// When the state field is written from a slot with no definer in
+    /// the kernel — a function argument, i.e. `d.state = i.requested` —
+    /// the target is genuinely unknowable. The walker used to return an
+    /// empty set for that, which the caller converts into an implicit
+    /// self-loop, so the emitted diagram asserted the machine could not
+    /// leave the state. It can in fact reach *any* state.
+    ///
+    /// Under CLAUDE.md §12 rule 14 the diagram is load-bearing for
+    /// FSM-aware review, so this must be an `Unanalyzable` and the
+    /// strict extractor must fail loudly rather than succeed quietly.
+    #[test]
+    fn state_written_from_an_argument_is_unanalyzable_not_a_self_loop() {
+        let q_reg = make_register(100);
+        let o_dummy = make_register(101);
+        // An *argument* slot: deliberately never defined by any opcode,
+        // which is exactly how a kernel argument appears in RHIF.
+        let arg_state = make_register(200);
+
+        let r_d_init = make_register(0);
+        let r_q_state = make_register(1);
+        let r_d_default = make_register(2);
+        let r_arm_idle = make_register(3);
+        let r_d_after_case = make_register(4);
+        let sl_dont_care = make_slot(50);
+        let lit_idle = make_slot(51);
+
+        let mut lookup = BTreeMap::new();
+        lookup.insert(sl_dont_care, lit_d_dont_care());
+        lookup.insert(lit_idle, lit_disc_unsigned(0, 2));
+
+        let mut ops = vec![
+            op_assign(r_d_init, sl_dont_care),
+            op_index(r_q_state, q_reg, state_path()),
+            op_splice(r_d_default, r_d_init, state_path(), r_q_state),
+            // The Idle arm writes the state from the argument.
+            op_splice(r_arm_idle, r_d_default, state_path(), arg_state),
+            op_case(
+                r_d_after_case,
+                r_q_state,
+                vec![
+                    (CaseArgument::Slot(lit_idle), r_arm_idle),
+                    (CaseArgument::Wild, r_d_default),
+                ],
+            ),
+        ];
+        let return_slot = wrap_return(&mut ops, 5, r_d_after_case, o_dummy);
+
+        let lookup_fn = make_lookup(lookup);
+        let result =
+            extract_canonical_transitions(&ops, return_slot, &three_state_descriptor(), &lookup_fn);
+
+        assert_eq!(
+            result.unanalyzable.len(),
+            1,
+            "Idle writes the state from an argument and must be Unanalyzable, \
+             got transitions {:?} and unanalyzable {:?}",
+            result.transitions,
+            result.unanalyzable
+        );
+        assert_eq!(result.unanalyzable[0].0, "Idle");
+        // The diagnostic has to say something a reader can act on.
+        let reason = result.unanalyzable[0].1;
+        assert!(
+            reason.contains("no definer"),
+            "the reason should name the cause, got {reason:?}"
+        );
+        // And crucially: Idle must NOT have been recorded as a self-loop.
+        assert!(
+            !result.transitions.contains(&Transition {
+                source_index: 0,
+                target_index: 0,
+            }),
+            "Idle must not be reported as a self-loop; that is the whole defect. \
+             transitions: {:?}",
+            result.transitions
+        );
+        // The other two variants still hold via the default path, so the
+        // change is scoped to the unresolvable arm.
+        let mut t = result.transitions.clone();
+        t.sort();
+        assert_eq!(
+            t,
+            vec![
+                Transition {
+                    source_index: 1,
+                    target_index: 1
+                },
+                Transition {
+                    source_index: 2,
+                    target_index: 2
+                },
+            ],
+            "only the Idle arm is unanalysable; Running and Done still self-loop"
+        );
+    }
+
+    /// The positive counterpart: a state written from a *literal* in the
+    /// same shape still extracts, so the change above has not made the
+    /// walker pessimistic.
+    #[test]
+    fn state_written_from_a_literal_still_extracts() {
+        let q_reg = make_register(100);
+        let o_dummy = make_register(101);
+
+        let r_d_init = make_register(0);
+        let r_q_state = make_register(1);
+        let r_d_default = make_register(2);
+        let r_running = make_register(3);
+        let r_arm_idle = make_register(4);
+        let r_d_after_case = make_register(5);
+        let sl_dont_care = make_slot(50);
+        let lit_idle = make_slot(51);
+
+        let mut lookup = BTreeMap::new();
+        lookup.insert(sl_dont_care, lit_d_dont_care());
+        lookup.insert(lit_idle, lit_disc_unsigned(0, 2));
+
+        let mut ops = vec![
+            op_assign(r_d_init, sl_dont_care),
+            op_index(r_q_state, q_reg, state_path()),
+            op_splice(r_d_default, r_d_init, state_path(), r_q_state),
+            op_enum(r_running, vec![], lit_disc_unsigned(1, 2)),
+            op_splice(r_arm_idle, r_d_default, state_path(), r_running),
+            op_case(
+                r_d_after_case,
+                r_q_state,
+                vec![
+                    (CaseArgument::Slot(lit_idle), r_arm_idle),
+                    (CaseArgument::Wild, r_d_default),
+                ],
+            ),
+        ];
+        let return_slot = wrap_return(&mut ops, 6, r_d_after_case, o_dummy);
+
+        let lookup_fn = make_lookup(lookup);
+        let result =
+            extract_canonical_transitions(&ops, return_slot, &three_state_descriptor(), &lookup_fn);
+        assert!(
+            result.unanalyzable.is_empty(),
+            "a literal target is analysable: {:?}",
+            result.unanalyzable
+        );
+        assert!(
+            result.transitions.contains(&Transition {
+                source_index: 0,
+                target_index: 1,
+            }),
+            "Idle -> Running should be extracted: {:?}",
+            result.transitions
+        );
+    }
+
     #[test]
     fn principled_enum_with_unknown_discriminant_yields_arm_unanalyzable() {
         let q_reg = make_register(100);

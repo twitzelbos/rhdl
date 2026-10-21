@@ -133,10 +133,54 @@ stopband is part of the alias budget. There, taps buy rejection. Here they
 buy flatness and nothing else, and asking a pre-compensator for a stopband
 spends taps on an attenuation that changes no number anyone cares about.
 
-The knobs for images are the CIC depth `N`, the interpolation factor `R`,
-and the signal bandwidth. A compensator at the *converter* rate would
-work, because it is no longer periodic in `u` — and costs a FIR running at
-the full clock.
+## The knobs that do work on images
+
+In order of what they cost:
+
+- **CIC depth `N`.** The primary knob, and it costs registers rather than
+  multipliers. Each stage multiplies the rejection: at a signal occupying
+  0.0028 of the envelope Nyquist and `R = 125`, rejection goes
+  114 / 171 / 228 / 285 dB for `N` = 2 / 3 / 4 / 5 — roughly 57 dB per
+  stage.
+- **Signal bandwidth, or equivalently the envelope rate.** The images sit
+  *centred* on multiples of the envelope rate, which is exactly where the
+  CIC's nulls are, so rejection is set by how far the image band's *edge*
+  reaches out of the null. Halving the occupied fraction buys a lot.
+- **Splitting the rate**, which moves where the intermediate nulls land
+  and — see below — is what makes the next item affordable.
+- **A post-compensator**, which is the *only* compensator that can touch
+  images.
+
+### The post-compensator, and why it is not the default
+
+[`PostCompensatedInterp`](https://docs.rs/rhdl-fpga) puts the FIR on the
+far side of the rate change. At the converter rate the response is no
+longer periodic in envelope-rate `u`, so `u` and `k + u` are different
+frequencies to it and a stopband requirement becomes a real image
+requirement instead of a no-op.
+
+The cost is that the filter's transition band is `(1 − 2·edge)/R` wide, so
+**the tap count grows linearly with `R`** — and every tap runs at the
+converter clock. From `interp_chain::post_compensator_taps`, at
+`passband = 0.4` and 60 dB:
+
+| `R` | 2 | 4 | 8 | 16 | 32 | 125 |
+|---|---|---|---|---|---|---|
+| taps | 12 | 24 | 48 | 97 | 195 | **755** |
+
+A 755-tap FIR at 125 MHz is not a widget anyone wants. **The useful
+reading is not "don't", it is "not here":** put the post-compensator
+between *chain stages*, where the local `R` is small. A `5 × 25` split
+compensated after its first stage runs a filter at 5 MHz against an `R` of
+5 — a couple of dozen taps. That is a second reason to split a transmit
+chain, beyond register bits.
+
+So the default is the pre-compensator
+([`CompensatedInterp`](https://docs.rs/rhdl-fpga), which is what
+`IqDuc` and `RealDuc` reference and what `interp_chain::design` designs):
+it is cheap, it flattens the band, and images are the cascade's job. Reach
+for the post-compensator deliberately, after checking
+`post_compensator_taps`.
 
 ## Reaching every rate
 

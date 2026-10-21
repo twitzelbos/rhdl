@@ -401,3 +401,65 @@ per-item value, not a per-cycle one. A domain-parameterised `F` would be
 claiming the marker means something about a clock, when what it means is
 "this item is the anchor". The cycle is where the domain enters, and the
 cycle is a property of the connection, not of the marker.
+
+---
+
+# Addendum: the three gaps, closed — and one of them differently than proposed
+
+*2026-08-31, after #118 merged.*
+
+## Gaps 1 and 2, as proposed
+
+`util::{split, combine, constant}` now have Tier 3 HDL snapshots, Tier 5
+VCD digests, runnable examples and committed traces, bringing them level
+with the other sixteen. Two details worth keeping:
+
+- **`IqCombine`'s digest uses `F = SyncMark`, not `()`.** The rest of that
+  module tests with unit framing, and a digest taken that way could not
+  detect a change to the one piece of logic worth protecting — the framing
+  comparison and `frame_mismatch`. The stimulus includes a *disagreeing*
+  cycle so the flagged path is inside the digest.
+- **The examples use `SyncMark` too**, so the committed traces show real
+  framing rather than a field that is always empty. `iq_split`'s trace
+  shows the marker replicated onto both halves and `ready` going low while
+  one consumer stalls; `iq_combine`'s shows `frame_mismatch` firing on
+  exactly the cycle the two sides disagree.
+
+`RCStreamFanout` is re-exported at `rcstream::`, and
+`every_flat_widget_is_re_exported` names the whole set so the next
+omission fails to compile rather than going unnoticed for a release.
+
+## Gap 3, differently: the traits were rejected
+
+The previous addendum proposed `ChunkFraming<N>` and `FlattenFraming` —
+associated-type traits stating the framing transforms — and argued they
+would make the composition "machine-checked instead of documented". **On
+inspection that argument was wrong**, and the traits are not being built.
+
+- **The rule is already machine-checked.** `type O = RCStream<[T; N],
+  [F; N]>` *is* the rule, stated in the type system and enforced at every
+  connection. A trait with exactly one blanket impl adds no fact.
+- **It would read worse.** The composed spelling becomes
+  `<<F as ChunkFraming<N>>::Chunked as FlattenFraming>::Flattened` against
+  `([F; N], bool)`.
+- **There is no use site.** A trait would pay only for a *generic
+  pipeline* widget that must state its output framing without knowing its
+  stages. No such widget exists, and the `dsp::ddc` pattern shows why one
+  is not needed: you pin the sub-widget's `I` and `O` at the bound.
+
+What was actually missing was **discoverability** — the two rules live in
+two files and nothing states their composition. So the fix is a table in
+`rcstream::mod`, where someone chaining widgets looks, plus
+`chunk_then_flatten_accumulates_framing`, which pins the composition as a
+type equality:
+
+```text
+  RCStream<T, F>
+    --chunked-->  RCStream<[T; N], [F; N]>
+    --flatten-->  RCStream<T, ([F; N], bool)>
+```
+
+The payload round-trips; the framing accumulates. Verified to stop
+compiling when either rule is changed. That is the one place the two
+widgets' rules are considered together, which is the thing that did not
+exist before.

@@ -273,6 +273,74 @@ A `while let` pattern with a compile-time-known iteration cap (the array length,
 
 The Phase-1 `?` extension restricts to identical-error-type cases. A future extension would allow `From`/`Into` conversion in the `?`-error-path, matching standard Rust idioms. This requires letting trait-method calls participate in kernel lowering, which intersects with §3.3.
 
+### 4.6 Nested variant patterns — *considered and deprioritised, 2026-10-21*
+
+Writing `Some(State::Init) => …` is rejected with
+`UnsupportedPatternInBindPattern`. This entry records why, and why it is
+**not** proposed as work, so the next person does not re-derive it.
+
+**The rejection is protecting correctness, not laziness.** An arm is
+represented as `ArmEnum { pat: Pat, discriminant: TypedBits }` — exactly
+**one** discriminant — and dispatch lowers to `OpCode::Case` whose
+`CaseArgument::Slot` matches one discriminant. Neither can express a
+two-level test. If `mir::compiler::bind_pattern` simply accepted the
+nested `PatKind::Path` (which binds nothing, so binding really is a
+no-op), the arm would dispatch on the **outer** tag alone and
+`Some(State::Init)` would silently match `Some(State::Rtr)` as well.
+That is precisely the class of silent loophole CLAUDE.md §11.1 exists to
+prevent, so the current loud rejection is the right behaviour given the
+IR.
+
+**What it would take.** Multi-level dispatch, which is the classic
+match-compilation problem: when no inner arm matches, control must fall
+through to a *later outer* arm, and a nested `Case` cannot express that
+without duplicating the remaining arms. The general solution is a
+decision-tree or backtracking-automaton compiler. A bounded version is
+tractable — restrict it to arm sets that partition the scrutinee
+exhaustively at every level, where nested `Case` opcodes suffice and no
+fallthrough arises — but it is still a new lowering stage with its own
+soundness argument, not a desugaring.
+
+**Why it is not worth that, measured rather than guessed.** The
+prediction was that this would recur constantly, since the library's
+dominant idiom is `Option`-encoded validity — `RCStream` is literally
+`Option<Item<T, F>>`. The corpus says otherwise:
+
+| | count |
+|---|---|
+| kernels matching on an `Option` at all | 25 |
+| of those, dispatching on the payload's *variant* | **2** |
+| occurrences in `rhdl-roce`, `rhdl-alto`, `rhdl-rv32i` | **0** |
+
+Every one of the 25 binds the payload and *uses* it — `Some(it) => (true,
+it)`, `Some(data) => (true, data)` — rather than dispatching on what it
+is. The two exceptions are in `stream::testing`, and one of those is not
+even this shape.
+
+**The workaround is mechanical and legible.** Unwrap the `Option` by its
+own match, then match the inner value:
+
+```rust
+QpState::Reset => match i.request {
+    Some(req) => match req {
+        QpState::Init => d.state = QpState::Init,
+        // …
+    },
+    None => {}
+},
+```
+
+In `rhdl_roce::qp::state` this cost roughly 35 extra lines across six
+states. Verbose, but each pattern is flat and the transition table reads
+as a table. Against that: a new lowering stage, a soundness argument,
+and §11.1's full test matrix, to save 35 lines in one widget and two
+lines in a test helper.
+
+**Revisit if** the count in the table above climbs — a protocol receiver
+dispatching on a command enum inside an `RCStream` item is the shape that
+would do it — or if a decision-tree lowering arrives for another reason
+and this falls out of it.
+
 ### 4.5 Iterator combinators on fixed-size arrays
 
 `array.iter().fold(...)`, `array.iter().sum()`, `array.iter().enumerate()`, `array.iter().zip(other)`. Each desugars to a const-bounded `for` loop, but the rules for what counts as a synthesizable iterator chain need careful definition. Could be a compelling demo of "RHDL kernels read like ordinary Rust."
