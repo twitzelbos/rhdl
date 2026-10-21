@@ -31,6 +31,88 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-10-21 — Correction: the FSM extractor follows computed targets; the real defect is elsewhere
+
+**Path:** `crates/rhdl-roce/src/tx.rs`, `crates/rhdl-roce/src/qp/state.rs`
+(comments and module docs); two earlier entries in this file amended
+
+**Why this, why now:** asked whether the FSM extractor could be fixed to
+handle a computed state target. Investigating it showed **there is
+nothing to fix, because the claim was false.** I had restructured
+`tx.rs` away from an intermediate local *preemptively*, never tested it,
+and then wrote the limitation into two source files and two CHANGELOG
+entries as established fact. A future reader would have taken it as a
+constraint and restructured code around a restriction that does not
+exist.
+
+**What the extractor actually does**, measured with a three-state probe
+widget:
+
+- **A computed target through an intermediate local works.**
+  `let mut next = q.state; … ; d.state = next` over a three-state
+  machine extracted `[(A,A), (A,B), (B,A), (B,C), (C,A)]` — exactly
+  right, self-loop included. It works because the extractor **unions
+  `Select` branches**, and a mutable local assigned in match arms
+  lowers to precisely a `Select` chain. That capability is documented in
+  `extraction.rs` itself, which I had not read before asserting
+  otherwise.
+- **A target read straight from an input is not followed, and fails
+  silently.** `d.state = i.requested` returns `Ok` with **only
+  self-loops** — `[(A,A), (B,B), (C,C)]` — so the generated diagram
+  claims the machine never leaves its state. The truth is that it can go
+  anywhere.
+
+**The real defect, stated for whoever picks it up:**
+
+`extract_widget_transitions_strict` returns success with a *silently
+incomplete* transition set when the target comes from outside the
+kernel. `ExtractionResult` already carries an `unanalyzable: Vec<(&str,
+&str)>` field for exactly this situation, and the analysis pass already
+reports it as `FsmDiagnosticKind::Unanalyzable` — so the machinery
+exists and this path does not use it. **A silently wrong diagram is
+worse than a missing one**, especially under §12 rule 14, which makes
+the diagram load-bearing for FSM-aware review: a reviewer who trusts it
+would conclude a state machine is a set of isolated self-loops.
+
+That is a compiler-level change and therefore wants its own PR under
+§11.1 — one feature, tests at the IR level it touches, a Justification
+section, and a book/design-plan update. It is **not** bundled into
+Phase 3. The shape is small: recognise a state-field write whose source
+traces to an input rather than to literals, and route it into the
+existing `unanalyzable` channel so `_strict` fails loudly instead of
+succeeding quietly.
+
+**Surprises and gotchas:**
+
+- **I asserted a compiler limitation without testing it, then
+  documented it in four places.** The probe that disproved it took five
+  minutes. The lesson is narrow and worth keeping: a claim about what
+  the *compiler* cannot do is a claim about someone else's code, and it
+  needs a test, not a plausible mechanism.
+- **The adjacent limitation is real but different.** A variant pattern
+  nested inside `Some(…)` genuinely is rejected
+  (`UnsupportedPatternInBindPattern`, raised during lowering rather than
+  at `cargo check` time). That one is in `mir::compiler::bind_pattern`,
+  not the extractor, and is a `kernel-language-extensions.md` item
+  rather than an FSM one. Conflating the two is what let the false claim
+  look credible.
+
+**Validation:** the two probe widgets were throwaway and are not
+committed; their results are quoted above. All 13 `qp::state` tests
+still pass with the corrected comments, and no code changed — only the
+reasons given for it.
+
+**Follow-ups:**
+
+- The input-sourced-target defect, as its own compiler PR per §11.1.
+- `Some(Variant)` patterns in `bind_pattern`, separately, as a
+  kernel-language item. Worth checking whether the guard is protecting
+  against incorrect *matching* or merely missing a no-op binding case —
+  I have not established which, and the answer decides whether it is a
+  one-line fix or a real feature.
+
+---
+
 ## 2026-10-21 — `rhdl-roce::qp::table`: the queue-pair context table §6 promised
 
 **Path:** `crates/rhdl-roce/src/qp/table.rs`, `examples/qp_table.rs`,
@@ -218,12 +300,12 @@ hardware.
   outermost so the FSM extractor still finds the state field at the top
   of the tree. This belongs in CLAUDE.md §4's list of what the kernel
   subset rejects.
-- **A computed state target defeats the FSM extractor.** `d.state =
-  req` compiles and produces correct hardware, but the extractor walks
-  RHIF for *writes of literal variants* to the state field, so the
-  generated diagram would be empty. Every arm therefore names its
-  target literally — which is what a real state machine looks like
-  anyway.
+- ~~**A computed state target defeats the FSM extractor.**~~
+  **This was wrong — see the 2026-10-21 correction entry.** Tested
+  afterwards: the extractor follows a computed target correctly, because
+  it unions `Select` branches and a mutable local lowers to exactly
+  that. Literal arms are kept because they read better, not because
+  they are required.
 - **Two of my three mutation checks silently did not apply**, because
   the anchor strings I guessed did not match the generated code's
   ordering. Both reported "ok", which I nearly read as "the mutation

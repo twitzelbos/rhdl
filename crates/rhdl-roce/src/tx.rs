@@ -248,10 +248,14 @@ pub fn roce_write_tx(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let icrc_shift = (safe_left.resize::<32>() - bits::<32>(1)) << 3;
     let icrc_byte = ((q.icrc.wire >> icrc_shift) & bits(0xFF)).resize::<8>();
 
-    // `d.phase` is assigned directly in each arm rather than through an
-    // intermediate: the `FsmWidget` extractor walks RHIF for writes to
-    // the state field, and a `let next_phase = ...; d.phase = next_phase`
-    // indirection hides them from it.
+    // `d.phase` is assigned directly in each arm. An earlier comment
+    // here claimed an intermediate local would hide the transitions
+    // from the `FsmWidget` extractor. **That was wrong** -- tested
+    // afterwards, and the extractor handles
+    // `let mut next = q.phase; ... ; d.phase = next` correctly, because
+    // it unions `Select` branches and that is exactly what a mutable
+    // local lowers to. The direct form is kept because it reads better
+    // for a phase machine, not because it is required.
     d.phase = q.phase;
     let mut emit = false;
     let mut byte = bits::<8>(0);

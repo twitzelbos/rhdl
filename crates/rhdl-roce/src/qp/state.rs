@@ -37,10 +37,11 @@ bool |                     can+---> bool
 //!
 //!# Legal transitions
 //!
-//! The arms below are written as literal targets rather than computed
-//! ones, which is both what a real state machine looks like and what
-//! the `FsmWidget` extractor requires — it walks RHIF for writes to the
-//! state field, and `d.state = <a runtime value>` tells it nothing.
+//! The arms below are written as literal targets because that is what a
+//! transition table *is*, not because the extractor requires it. An
+//! earlier version of this comment claimed the extractor could not
+//! follow a computed target; **that was wrong**, and §"What the
+//! extractor really does" below records what it actually does.
 //!
 //! They are also **three nested flat matches** rather than the more
 //! readable `Some(QpState::Init) => …`. A variant pattern nested inside
@@ -61,6 +62,24 @@ bool |                     can+---> bool
 //! alternative — entering ERR on an illegal request — would make a
 //! software bug in the control plane indistinguishable from a wire
 //! error, and the two want different responses.
+//!
+//!# What the extractor really does
+//!
+//! Tested rather than assumed, after an earlier comment here asserted
+//! the opposite:
+//!
+//! - **A computed target is followed correctly.**
+//!   `let mut next = q.state; … ; d.state = next` extracts the right
+//!   transition set, because the extractor unions `Select` branches and
+//!   a mutable local lowers to exactly that.
+//! - **A target read straight from an input is *not* followed, and
+//!   fails quietly.** `d.state = i.requested` yields `Ok` with only
+//!   self-loops — so the generated diagram claims the machine never
+//!   leaves its state, which is false. `ExtractionResult` has an
+//!   `unanalyzable` field for precisely this, and the strict extractor
+//!   does not surface it here. That is a real defect and is tracked
+//!   separately; it is also why this widget takes a *request* and maps
+//!   it through literal arms rather than assigning the input through.
 //!
 //!# Example
 //!
@@ -148,9 +167,9 @@ pub fn qp_state_machine(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     d.state = q.state;
     let mut rejected = false;
 
-    // Every arm names a literal target state. Verbose, and the reason
-    // is in the module docs: a computed target is invisible to the FSM
-    // extractor, so the generated diagram would be empty.
+    // Every arm names a literal target state, which is what a
+    // transition table is. Not an extractor requirement -- see the
+    // module docs.
     match q.state {
         QpState::Reset => match i.request {
             Some(req) => match req {
