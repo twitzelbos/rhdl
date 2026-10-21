@@ -311,6 +311,16 @@ This pushes the choice to the widget author.  Authors who use the canonical patt
 - `strict_mode_guarded_transition_emits_only_explicit_edge` — pins the can_master `Id`-arm shape under strict mode: only the explicit `Idle → Running` edge is emitted; the else-branch's implicit hold doesn't appear.
 - `strict_mode_explicit_self_loop_via_literal_is_preserved` — documents the design's trade-off: writing `d.state = State::A` literally inside arm `A` IS a real explicit self-loop and stays in the graph.
 
+#### Empty target sets have two causes, and conflating them was a defect
+
+The walker returns `Ok(empty)` to mean "no state-typed value flows from this slot", and §5.4.1's `allow_implicit` convention turns that into a `(s, s)` self-loop.  That is correct when the arm genuinely holds the state via the kernel-top default.  It was **also** being returned when the state field was written from a slot with no definer in the kernel — a kernel argument, i.e. `d.<state_field> = i.<something>`.
+
+Those are different facts.  In the second case the state *is* written; the target is merely unknowable, and the sound over-approximation is "any variant", not "this variant".  Emitting a self-loop asserted the opposite of the truth, and because Layer 3's diagrams are load-bearing for review (CLAUDE.md §12 rule 14), the failure mode was a *confidently wrong* diagram showing a state machine as isolated self-loops.
+
+Resolved by reporting `Unanalyzable` for the no-definer case, which routes it through the existing `ExtractionResult::unanalyzable` channel and makes `extract_widget_transitions_strict` fail loudly.  The alternative — emitting the sound over-approximation "any variant" — was rejected: a complete graph is technically sound and practically useless, and it would make a kernel that cannot be analysed indistinguishable from one that genuinely can reach every state.  Failing loudly puts the choice back with the author, whose fix is to map the incoming value through literal arms.
+
+Pinned by `state_written_from_an_argument_is_unanalyzable_not_a_self_loop` and `state_written_from_a_literal_still_extracts` in `fsm::extraction::tests`, and end to end by `crates/rhdl-fpga/tests/fsm_unanalyzable_target.rs`, which also guards against the fix becoming pessimistic: a computed target reached through an intermediate local must still extract completely, since a mutable local lowers to a `Select` chain that the walker unions.
+
 ### 5.4.2 Soundness rigor (status: items 1 + 2 shipped; item 3 deferred)
 
 The current extractor's soundness against the principled definition (§5.1) rests on three load-bearing claims that started as *structurally plausible* but not *provably sound*.  This PR resolves the first two:

@@ -166,8 +166,19 @@ After this PR, `Unanalyzable` is reserved exclusively for cases where the static
 
 - **Kernel-level**: the return shape isn't a recognised Tuple → D struct chain, OR the d-component chain never overrides the state field.  Surfaces a single `<kernel>`-named diagnostic.
 - **Per-arm**: an `Enum` opcode whose discriminant value matches no variant in the descriptor (the kernel emits a state value the type system says shouldn't exist).
+- **Per-arm**: the state field is written from a value with **no definer in the kernel** — a kernel argument, or a literal that doesn't decode to a variant. `d.state = i.requested` is the shape. The state *is* being written, so this is not a hold; the target simply cannot be named, and the honest answer is that it could be any state.
 
 Genuine "no transition info" (an arm that simply holds the state in place via the canonical kernel-top default) is *not* `Unanalyzable` — it's an implicit self-loop, which the principled algorithm computes correctly.
+
+### Why the last case is not a self-loop
+
+It used to be, and the result was a silently wrong diagram.
+
+An empty target set from the walker means "no state-typed value flows from this slot", and the caller converts that into an implicit self-loop under `allow_implicit`. For a value arriving from outside the kernel that reading is wrong: the state is written, with a value the analysis cannot see. The emitted diagram then claimed the machine could not leave the state it was in, when in truth it could reach any state — and because [State Diagrams](diagrams.md) are load-bearing for FSM-aware review, a reviewer trusting that picture would conclude a state machine was a set of isolated self-loops.
+
+So the two causes of "empty" are now distinguished: *nothing was written* (a hold, and a self-loop) versus *something unresolvable was written* (`Unanalyzable`). A missing diagram is recoverable; a confidently wrong one is not.
+
+If you hit this, the fix is in the kernel rather than the extractor: map the incoming value through literal arms, as a state machine validating a requested transition would anyway, so each target is named. `rhdl_roce::qp::state` is an example — it takes a *request* and maps it, rather than assigning it through.
 
 ## Validation tiers
 
