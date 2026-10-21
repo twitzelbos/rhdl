@@ -8,6 +8,7 @@ pub mod dsp;
 pub mod fifo;
 pub mod gray;
 pub mod lid;
+pub mod net;
 pub mod pipe;
 pub mod rcstream;
 pub mod reset;

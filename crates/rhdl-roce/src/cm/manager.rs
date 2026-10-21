@@ -105,6 +105,7 @@ use crate::qp::mr::{MemoryRegion, MrWrite};
 use crate::qp::table::QpWrite;
 use rhdl::prelude::*;
 use rhdl_fpga::core::dff;
+use rhdl_fpga::net::udp_rx::{UdpHeader, UdpRx, UdpRxVerdict};
 
 /// Frame offset where the connection-manager payload begins: after
 /// Ethernet, IPv4 and UDP.
@@ -120,8 +121,9 @@ pub enum CmPhase {
     #[default]
     /// Between datagrams.
     Idle,
-    /// Accumulating Ethernet, IPv4 and UDP headers, and checking them.
-    Header,
+    /// Inside the Ethernet, IPv4 and UDP headers, which
+    /// [`rhdl_fpga::net::udp_rx::UdpRx`] is taking apart.
+    Network,
     /// Accumulating the 40-byte connection-manager payload.
     Body,
     /// The datagram is not ours, or is malformed; consume the rest of
@@ -135,11 +137,14 @@ pub enum CmPhase {
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
 #[doc(hidden)]
 /// The manager's registers, bundled per CLAUDE.md §3.1.
+///
+/// Shorter than it was. The byte offset and the peer's MAC, address and
+/// port all moved into [`rhdl_fpga::net::udp_rx::UdpRx`], and so did
+/// the `identified` flag — see [`cm_manager`] on why that one needed no
+/// replacement.
 pub struct CmRegs {
-    /// Offset of the next byte expected in the request.
-    pub offset: Bits<16>,
-    /// Rolling accumulator. 64 bits is the widest single field — the
-    /// region's virtual address.
+    /// Rolling accumulator for the payload. 64 bits is the widest
+    /// single field — the region's virtual address.
     pub acc: Bits<64>,
     /// The request, as decoded so far.
     pub msg: CmMessage,
@@ -147,22 +152,10 @@ pub struct CmRegs {
     pub magic_ok: bool,
     /// Whether every coded field decoded to something we implement.
     pub params_ok: bool,
-    /// The peer's MAC, learned from the request so the reply can be
-    /// addressed without any configured knowledge of the peer.
-    pub peer_mac: Bits<48>,
-    /// The peer's IPv4 address, likewise.
-    pub peer_ip: Bits<32>,
-    /// The peer's UDP source port, which the reply is sent back to.
-    pub peer_port: Bits<16>,
-    /// Set once the datagram has been positively identified as ours —
-    /// IPv4, UDP, and the manager's own destination port.
-    ///
-    /// Load-bearing, and not the same thing as "no check has failed".
-    /// The port is at offset 37, so a frame shorter than that has
-    /// *passed* every check that ran while never having been shown to
-    /// be addressed here. Replying to one would make this widget an
-    /// amplifier: a one-byte frame in, an 82-byte reply out.
-    pub identified: bool,
+    /// The peer's address, captured from the network header at the
+    /// moment the request is decided, so the reply can still be
+    /// addressed after the parser has moved on.
+    pub peer: UdpHeader,
     /// The status the reply will carry.
     pub status: CmStatus,
     /// Index of the next reply byte.
@@ -174,6 +167,7 @@ pub struct CmRegs {
 #[fsm(state_field = "state", state_enum = CmPhase, allow_implicit)]
 /// The connection manager. See the [module docs](self).
 pub struct ConnectionManager {
+    udp: UdpRx,
     state: dff::DFF<CmPhase>,
     regs: dff::DFF<CmRegs>,
 }
@@ -263,16 +257,35 @@ pub fn cm_reply_byte(cfg: FrameConfig, msg: CmMessage, index: Bits<7>) -> Bits<8
 }
 
 #[kernel]
-// `if let` and match guards are not in the kernel-accepted subset, so
-// the single-arm matches below are the only spelling available. Same
-// reasoning as `crate::rx::endpoint`.
-#[allow(clippy::single_match, clippy::collapsible_match)]
+// Three clippy suggestions cannot be taken here, all for one reason:
+// `#[kernel]` lowers `match` on an `Option`, not `Option`'s methods or
+// sugar over them. `if let` is not accepted, `.unwrap_or_default()` is
+// not accepted, and a match guard is rejected outright. Same reasoning
+// and the same allows as `crate::rx::parse`.
+#[allow(
+    clippy::single_match,
+    clippy::collapsible_match,
+    clippy::manual_unwrap_or_default
+)]
 /// Kernel for [`ConnectionManager`].
 pub fn cm_manager(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let mut d = D::dont_care();
     let mut o = Out::dont_care();
-    d.state = q.state;
     let mut r = q.regs;
+    // The next phase goes into a local and reaches `d.state` once, at
+    // the end. A conditional write to `d.state` lowers to a `Select`
+    // over the whole of `d`, which would make `d.udp` -- the child's
+    // input -- depend on whatever the condition reads, and the
+    // reachability DRC would correctly report a combinational cycle
+    // through `udp`. See `crate::rx::parse` for the full account.
+    let mut next_state = q.state;
+
+    // ---- the network layers are UdpRx's job, and the port is ours.
+    d.udp.data = i.data;
+    d.udp.start_of_frame = i.start_of_frame;
+    d.udp.end_of_frame = i.end_of_frame;
+    d.udp.expect_port = i.port;
+    let u = q.udp;
 
     o.qp_write = None;
     o.mr_write = None;
@@ -281,30 +294,22 @@ pub fn cm_manager(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     o.reply_eof = false;
     o.status = q.regs.status;
     o.done = false;
-    o.busy = q.state != CmPhase::Idle;
+    o.busy = u.busy || q.state == CmPhase::Reply;
     o.phase = q.state;
-
-    let byte = match i.data {
-        Some(b) => b,
-        None => bits(0),
-    };
-    let valid = match i.data {
-        Some(_b) => true,
-        None => false,
-    };
 
     // ---------------------------------------------------- the reply
     //
-    // Emitted first in the kernel so the request path below can
-    // override `d.state` on a new start-of-frame, which is what lets a
-    // request arrive while a reply is still going out.
+    // Emitted first so the request path below can override the phase
+    // on a new start-of-frame, which is what lets a retry arrive while
+    // a reply is still going out.
     if q.state == CmPhase::Reply {
-        // The reply's destination is the request's source.
+        // The reply's destination is the request's source, so nothing
+        // about the peer need be configured anywhere.
         let mut rc = i.cfg;
-        rc.dst_mac = q.regs.peer_mac;
-        rc.dst_ip = q.regs.peer_ip;
+        rc.dst_mac = q.regs.peer.src_mac;
+        rc.dst_ip = q.regs.peer.src_ip;
         rc.src_port = i.port;
-        rc.dst_port = q.regs.peer_port;
+        rc.dst_port = q.regs.peer.src_port;
 
         let mut m = q.regs.msg;
         m.opcode = CmOpcode::Response;
@@ -316,7 +321,7 @@ pub fn cm_manager(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         if i.ready {
             if q.regs.reply_index == bits(CM_FRAME_BYTES - 1) {
                 r.reply_index = bits(0);
-                d.state = CmPhase::Idle;
+                next_state = CmPhase::Idle;
             } else {
                 r.reply_index = q.regs.reply_index + bits(1);
             }
@@ -324,244 +329,205 @@ pub fn cm_manager(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     }
 
     // -------------------------------------------------- the request
-    //
-    // Request bytes are taken only while a request is actually being
-    // parsed. `q.state != Idle` would have been the obvious condition
-    // and is wrong: it also admits bytes arriving during `Reply`, which
-    // would be folded into the request registers at whatever offset was
-    // left over and could manufacture a second decision from one
-    // datagram. A real link always marks a frame's start, so this never
-    // fired in practice -- which is exactly why it is worth closing
-    // rather than relying on.
-    let parsing =
-        q.state == CmPhase::Header || q.state == CmPhase::Body || q.state == CmPhase::Drain;
-    let taken = valid && (i.start_of_frame || parsing);
-    if taken {
-        if i.start_of_frame {
-            // A new request abandons whatever was in progress, reply
-            // included. A peer that retries before we have finished
-            // answering gets the answer to the retry.
-            r = CmRegs::default();
-            r.magic_ok = false;
-            r.params_ok = true;
-        }
-        let cur = r.offset;
-        let acc = (r.acc << 8) | byte.resize::<64>();
-        r.acc = acc;
-        r.offset = cur + bits(1);
+    if u.frame_start {
+        r = CmRegs::default();
+        r.params_ok = true;
+    }
 
-        let mut reject = q.state == CmPhase::Drain && !i.start_of_frame;
-
-        // --- Ethernet, IPv4 and UDP. See the module docs on why this
-        // is a second copy of these offsets.
-        if cur == bits(11) {
-            r.peer_mac = (acc & bits(0xFFFF_FFFF_FFFF)).resize::<48>();
-        }
-        if cur == bits(13) && (acc & bits(0xFFFF)) != bits(0x0800) {
-            reject = true;
-        }
-        if cur == bits(14) && (acc & bits(0xFF)) != bits(0x45) {
-            reject = true;
-        }
-        if cur == bits(23) && (acc & bits(0xFF)) != bits(17) {
-            reject = true;
-        }
-        if cur == bits(29) {
-            r.peer_ip = (acc & bits(0xFFFF_FFFF)).resize::<32>();
-        }
-        if cur == bits(35) {
-            r.peer_port = (acc & bits(0xFFFF)).resize::<16>();
-        }
-        if cur == bits(37) {
-            if (acc & bits(0xFFFF)) != i.port.resize::<64>() {
-                reject = true;
-            } else if !reject {
-                // Everything before this point has passed *and* the
-                // port is ours, so the datagram is now positively
-                // identified and is one we will answer.
-                r.identified = true;
+    // The payload, at indices that are the layout table's own offsets
+    // rather than those offsets plus forty-two.
+    match u.payload {
+        Some(b) => {
+            let k = u.payload_index;
+            let acc = (r.acc << 8) | b.resize::<64>();
+            r.acc = acc;
+            if k == bits(3) {
+                r.magic_ok = (acc & bits(0xFFFF_FFFF)) == bits(CM_MAGIC);
             }
-        }
-
-        // --- the connection-manager payload.
-        if cur == bits(45) {
-            r.magic_ok = (acc & bits(0xFFFF_FFFF)) == bits(CM_MAGIC);
-        }
-        if cur == bits(46) {
-            match decode_cm_opcode((acc & bits(0xFF)).resize::<8>()) {
-                Some(op) => {
-                    r.msg.opcode = op;
-                }
-                None => {
-                    r.params_ok = false;
+            if k == bits(4) {
+                match decode_cm_opcode(b) {
+                    Some(op) => {
+                        r.msg.opcode = op;
+                    }
+                    None => {
+                        r.params_ok = false;
+                    }
                 }
             }
-        }
-        if cur == bits(48) {
-            match decode_cm_transport((acc & bits(0xFF)).resize::<8>()) {
-                Some(t) => {
-                    r.msg.transport = t;
-                }
-                None => {
-                    r.params_ok = false;
-                }
-            }
-        }
-        if cur == bits(49) {
-            match decode_cm_pmtu((acc & bits(0xFF)).resize::<8>()) {
-                Some(p) => {
-                    r.msg.pmtu = p;
-                }
-                None => {
-                    r.params_ok = false;
+            if k == bits(6) {
+                match decode_cm_transport(b) {
+                    Some(t) => {
+                        r.msg.transport = t;
+                    }
+                    None => {
+                        r.params_ok = false;
+                    }
                 }
             }
+            if k == bits(7) {
+                match decode_cm_pmtu(b) {
+                    Some(p) => {
+                        r.msg.pmtu = p;
+                    }
+                    None => {
+                        r.params_ok = false;
+                    }
+                }
+            }
+            if k == bits(10) {
+                r.msg.qpn = (acc & bits(0xFF_FFFF)).resize::<24>();
+            }
+            if k == bits(14) {
+                r.msg.remote_qpn = (acc & bits(0xFF_FFFF)).resize::<24>();
+            }
+            if k == bits(18) {
+                r.msg.psn = (acc & bits(0xFF_FFFF)).resize::<24>();
+            }
+            if k == bits(23) {
+                r.msg.rkey = (acc & bits(0xFFFF_FFFF)).resize::<32>();
+            }
+            if k == bits(31) {
+                r.msg.va = acc;
+            }
+            if k == bits(35) {
+                r.msg.length = (acc & bits(0xFFFF_FFFF)).resize::<32>();
+            }
+            if k == bits(39) {
+                r.msg.local_base = (acc & bits(0xFFFF_FFFF)).resize::<32>();
+            }
         }
-        if cur == bits(52) {
-            r.msg.qpn = (acc & bits(0xFF_FFFF)).resize::<24>();
-        }
-        if cur == bits(56) {
-            r.msg.remote_qpn = (acc & bits(0xFF_FFFF)).resize::<24>();
-        }
-        if cur == bits(60) {
-            r.msg.psn = (acc & bits(0xFF_FFFF)).resize::<24>();
-        }
-        if cur == bits(65) {
-            r.msg.rkey = (acc & bits(0xFFFF_FFFF)).resize::<32>();
-        }
-        if cur == bits(73) {
-            r.msg.va = acc;
-        }
-        if cur == bits(77) {
-            r.msg.length = (acc & bits(0xFFFF_FFFF)).resize::<32>();
-        }
-        if cur == bits(81) {
-            r.msg.local_base = (acc & bits(0xFFFF_FFFF)).resize::<32>();
-        }
+        None => {}
+    }
 
-        // --- phases, as a match on the phase rather than one chain
-        // over offsets.
-        //
-        // Same reason as `crate::rx::parse`: the FSM extractor cannot
-        // narrow a target that does not depend on `q.state`, so a plain
-        // offset chain made it report all twenty edges on five nodes --
-        // `Idle -> Body` and `Idle -> Reply` among them, neither of
-        // which can happen, since the only byte that leaves `Idle` is a
-        // start-of-frame and that byte is offset zero. Matching on the
-        // phase makes each arm name only its reachable targets.
-        let after = cur + bits(1);
+    // Capture the peer's address while the header is still presented.
+    match u.header {
+        Some(h) => {
+            r.peer = h;
+        }
+        None => {}
+    }
+
+    let took = match u.byte {
+        Some(_b) => true,
+        None => false,
+    };
+    let net_ok = u.verdict == UdpRxVerdict::Accept;
+    if took {
         match q.state {
-            CmPhase::Idle => d.state = CmPhase::Header,
-            CmPhase::Header => {
-                if reject {
-                    d.state = CmPhase::Drain;
-                } else if after < bits(CM_PAYLOAD_AT) {
-                    d.state = CmPhase::Header;
+            CmPhase::Idle => next_state = CmPhase::Network,
+            CmPhase::Network => {
+                if !net_ok {
+                    next_state = CmPhase::Drain;
                 } else {
-                    d.state = CmPhase::Body;
+                    match u.payload {
+                        Some(_b) => next_state = CmPhase::Body,
+                        None => next_state = CmPhase::Network,
+                    }
                 }
             }
-            // No `Drain` from here: every check sits at an offset
-            // below 42, and `reject` is only carried forward from a
-            // `Drain` we are already in -- so it cannot become true
-            // once the payload has started.
-            CmPhase::Body => d.state = CmPhase::Body,
-            CmPhase::Drain => d.state = CmPhase::Drain,
+            CmPhase::Body => {
+                if net_ok {
+                    next_state = CmPhase::Body;
+                } else {
+                    next_state = CmPhase::Drain;
+                }
+            }
+            CmPhase::Drain => next_state = CmPhase::Drain,
             // Only reachable on a start-of-frame, handled just below.
-            CmPhase::Reply => d.state = CmPhase::Header,
+            CmPhase::Reply => next_state = CmPhase::Network,
         }
-        if i.start_of_frame {
-            d.state = CmPhase::Header;
-        }
+    }
+    if u.frame_start {
+        next_state = CmPhase::Network;
+    }
 
-        // --- the decision, at the end of the request.
-        if i.end_of_frame {
-            // Constrained on the phase as well as on the data. The
-            // data half is what actually decides; naming the phases
-            // lets the FSM extractor rule out a `Reply` edge from
-            // `Idle` and from `Drain`, which keeps the generated
-            // diagram tight as well as sound.
-            let replying =
-                (q.state == CmPhase::Header || q.state == CmPhase::Body) && !reject && r.identified;
-            if !replying {
-                // Not ours, or never shown to be ours. Say nothing.
-                //
-                // The `!identified` half is what stops a frame that
-                // ended before the port check at offset 37 from being
-                // answered -- see `CmRegs::identified`. Without it a
-                // one-byte frame draws an 82-byte reply, which is an
-                // amplification vector and was found by reading the
-                // generated state diagram: it showed an `Idle -> Reply`
-                // edge, which should not have existed.
-                d.state = CmPhase::Idle;
+    // ----------------------------------------------- the decision
+    if u.done {
+        // **The amplification guard, and it now comes for free.**
+        //
+        // A reply is only sent for a datagram `UdpRx` accepted, and
+        // acceptance requires the UDP destination port at frame offset
+        // 37 to have matched. A frame that ended before that offset is
+        // `Truncated`, not `Accept` -- so the `identified` flag this
+        // kernel used to carry is exactly what the network verdict
+        // already means. Answering an unidentified datagram would turn
+        // one byte into eighty-two.
+        // Constrained on the phase as well as on the network verdict.
+        // The verdict is what actually decides; naming the phases lets
+        // the FSM extractor rule out a `Reply` edge from `Idle` and
+        // from `Drain`, neither of which the hardware can take, and so
+        // keeps the generated diagram tight as well as sound.
+        let replying = (q.state == CmPhase::Network || q.state == CmPhase::Body) && net_ok;
+        if !replying {
+            next_state = CmPhase::Idle;
+        } else {
+            // Shorter than a connection-manager datagram. Taken from
+            // the IPv4 total length by way of the network header, which
+            // is the figure the frame's own extent was checked against.
+            let short = r.peer.payload_len < bits(CM_MSG_BYTES);
+            let mut status = CmStatus::Accepted;
+            let mut apply = false;
+            if short || !r.magic_ok {
+                status = CmStatus::BadMagic;
+            } else if !r.params_ok {
+                status = CmStatus::BadParameter;
+            } else if r.msg.opcode == CmOpcode::Response {
+                // A reply is not a request. Refusing to act on one is
+                // what stops two managers answering each other for
+                // ever.
+                status = CmStatus::BadOpcode;
+            } else if r.msg.opcode == CmOpcode::Connect && r.msg.length == bits(0) {
+                status = CmStatus::BadRegion;
             } else {
-                let short = after < bits(CM_FRAME_BYTES);
-                let mut status = CmStatus::Accepted;
-                let mut apply = false;
-                if short || !r.magic_ok {
-                    status = CmStatus::BadMagic;
-                } else if !r.params_ok {
-                    status = CmStatus::BadParameter;
-                } else if r.msg.opcode == CmOpcode::Response {
-                    // A reply is not a request. Refusing to act on one
-                    // is what stops two managers answering each other
-                    // for ever.
-                    status = CmStatus::BadOpcode;
-                } else if r.msg.opcode == CmOpcode::Connect && r.msg.length == bits(0) {
-                    status = CmStatus::BadRegion;
-                } else {
-                    // `status` is already `Accepted` from its
-                    // initialiser; assigning it again here would make
-                    // that initialiser dead.
-                    apply = true;
-                }
-
-                r.status = status;
-                o.status = status;
-                o.done = true;
-
-                if apply {
-                    let connect = r.msg.opcode == CmOpcode::Connect;
-                    let mut ctx = QpContext::dont_care();
-                    ctx.dqpn = r.msg.remote_qpn;
-                    ctx.transport = r.msg.transport;
-                    ctx.pmtu = r.msg.pmtu;
-                    ctx.rkey = r.msg.rkey;
-                    ctx.pkey = bits(0xFFFF);
-
-                    let mut reg = MemoryRegion::dont_care();
-                    reg.rkey = r.msg.rkey;
-                    reg.va_base = r.msg.va;
-                    reg.length = r.msg.length;
-                    reg.local_base = r.msg.local_base;
-                    reg.remote_write = true;
-
-                    let mut qw = QpWrite::dont_care();
-                    qw.qpn = r.msg.qpn;
-                    qw.ctx = if connect { Some(ctx) } else { None };
-                    o.qp_write = Some(qw);
-
-                    let mut mw = MrWrite::dont_care();
-                    mw.rkey = r.msg.rkey;
-                    mw.region = if connect { Some(reg) } else { None };
-                    o.mr_write = Some(mw);
-                }
-
-                // A malformed-but-identifiable request still gets an
-                // answer, because the sender is entitled to know why.
-                r.reply_index = bits(0);
-                d.state = CmPhase::Reply;
+                // `status` is already `Accepted` from its initialiser.
+                apply = true;
             }
-            // Either way the request is over, so its accumulators are
-            // cleared. `r.msg`, `r.peer_*` and `r.status` are kept --
-            // the reply is built from them.
-            r.offset = bits(0);
-            r.acc = bits(0);
+
+            r.status = status;
+            o.status = status;
+            o.done = true;
+
+            if apply {
+                let connect = r.msg.opcode == CmOpcode::Connect;
+                let mut ctx = QpContext::dont_care();
+                ctx.dqpn = r.msg.remote_qpn;
+                ctx.transport = r.msg.transport;
+                ctx.pmtu = r.msg.pmtu;
+                ctx.rkey = r.msg.rkey;
+                ctx.pkey = bits(0xFFFF);
+
+                let mut reg = MemoryRegion::dont_care();
+                reg.rkey = r.msg.rkey;
+                reg.va_base = r.msg.va;
+                reg.length = r.msg.length;
+                reg.local_base = r.msg.local_base;
+                reg.remote_write = true;
+
+                let mut qw = QpWrite::dont_care();
+                qw.qpn = r.msg.qpn;
+                qw.ctx = if connect { Some(ctx) } else { None };
+                o.qp_write = Some(qw);
+
+                let mut mw = MrWrite::dont_care();
+                mw.rkey = r.msg.rkey;
+                mw.region = if connect { Some(reg) } else { None };
+                o.mr_write = Some(mw);
+            }
+
+            // A malformed-but-identifiable request still gets an
+            // answer, because the sender is entitled to know why.
+            r.reply_index = bits(0);
+            next_state = CmPhase::Reply;
         }
+        r.acc = bits(0);
     }
 
     if cr.reset.any() {
-        d.state = CmPhase::Idle;
+        next_state = CmPhase::Idle;
+        // `d.udp` is deliberately not forced: the child consumes the
+        // implicit `ClockReset` and resets itself, and assigning it
+        // inside this conditional is what would create the phantom
+        // cycle described above.
         r = CmRegs::default();
         o.qp_write = None;
         o.mr_write = None;
@@ -573,6 +539,7 @@ pub fn cm_manager(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         o.busy = false;
         o.phase = CmPhase::Idle;
     }
+    d.state = next_state;
     d.regs = r;
     (o, d)
 }
@@ -658,9 +625,10 @@ mod tests {
     fn reset_returns_to_idle_and_emits_nothing() {
         let cr = clock_reset(clock(false), reset(true));
         let q = Q {
+            udp: Default::default(),
             state: CmPhase::Body,
             regs: CmRegs {
-                offset: bits(60),
+                acc: bits(0xDEAD_BEEF),
                 ..Default::default()
             },
         };
@@ -702,31 +670,35 @@ mod tests {
 
     /// The phases and the edges between them, pinned by name.
     ///
-    /// Fourteen edges, of which **two are over-approximations the
+    /// Fifteen edges, of which **two are over-approximations the
     /// extractor cannot rule out** and which the hardware cannot take:
     ///
     ///   - `Idle -> Reply` would need a frame that ended while still in
-    ///     `Idle`, having been positively identified as ours. Identity
-    ///     is established at offset 37, and a frame still in `Idle` has
-    ///     consumed one byte, so it cannot have been.
-    ///   - `Drain -> Reply` would need `reject` false in `Drain`, and
-    ///     `reject` is carried forward from being in `Drain` at all.
+    ///     `Idle` and was nevertheless accepted by the network parser.
+    ///     Acceptance requires the whole forty-two-byte header block,
+    ///     and a frame still in `Idle` has consumed one byte.
+    ///   - `Drain -> Reply` would need the network verdict to be
+    ///     `Accept` in `Drain`, and `Drain` is only entered because it
+    ///     is not.
     ///
-    /// Both depend on register values rather than on `q.state`, so a
-    /// walker over the RHIF cannot exclude them. That is the *sound*
-    /// direction to be wrong in — the diagram claims the machine might
-    /// do something it will not, never that it cannot do something it
-    /// can — but it is worth naming so a reader is not left wondering.
+    /// Both turn on the *network* verdict, which comes from the child
+    /// widget rather than from `q.state`, so a walker over this
+    /// kernel's RHIF cannot exclude them. Constraining the decision on
+    /// the phase as well removed the equivalent pair before this widget
+    /// composed `UdpRx`; it no longer helps, because the condition now
+    /// reads a sibling's output. That is the sound direction to be
+    /// wrong in — the diagram claims the machine *might* do something it
+    /// will not, never that it cannot do something it can.
     ///
-    /// Everything else here is real, including the ones that look
-    /// surprising: every parsing phase reaches `Header`, because a
-    /// start-of-frame restarts from anywhere, and `Reply -> Header` is
-    /// a peer retrying before its answer has finished going out.
+    /// Everything else is real, including the surprising ones: every
+    /// phase reaches `Network`, because a start-of-frame restarts from
+    /// anywhere, and `Reply -> Network` is a peer retrying before its
+    /// answer has finished going out.
     #[test]
     fn the_fsm_has_exactly_the_edges_the_protocol_implies() {
         let t = rhdl::core::fsm::extract_widget_transitions_strict::<ConnectionManager>()
             .expect("extracting transitions");
-        let name = ["Idle", "Header", "Body", "Drain", "Reply"];
+        let name = ["Idle", "Network", "Body", "Drain", "Reply"];
         let mut edges: Vec<String> = t
             .iter()
             .filter(|x| x.source_index != x.target_index)
@@ -735,20 +707,21 @@ mod tests {
         edges.sort();
         edges.dedup();
         let expect = expect![[r#"
-            Body -> Header
+            Body -> Drain
             Body -> Idle
+            Body -> Network
             Body -> Reply
-            Drain -> Header
             Drain -> Idle
+            Drain -> Network
             Drain -> Reply
-            Header -> Body
-            Header -> Drain
-            Header -> Idle
-            Header -> Reply
-            Idle -> Header
+            Idle -> Network
             Idle -> Reply
-            Reply -> Header
+            Network -> Body
+            Network -> Drain
+            Network -> Idle
+            Network -> Reply
             Reply -> Idle
+            Reply -> Network
         "#]];
         expect.assert_eq(&format!("{}\n", edges.join("\n")));
     }
@@ -809,7 +782,7 @@ mod tests {
             .join("vcd")
             .join("cm_manager");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["39d801287ec01742041946cbbffa60f32d3a4061849d498bc8507fc7bcb7a405"];
+        let expect = expect!["48dd1d9452c7004d9d79e06a1769b26897efbe175bff1e01f0e155d632c9ac4a"];
         let digest = vcd.dump_to_file(root.join("cm_manager.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())
