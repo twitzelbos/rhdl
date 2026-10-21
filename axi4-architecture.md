@@ -505,12 +505,11 @@ belongs there:
    templating — `architecture.md` is explicit, and a five-channel AXI4
    boundary is far too many slices to hand-write safely in any case.
 
-**Open question this raises, for decision before Phase 1 proceeds:**
-whether the wrapper generator lands as its own change first — it is
-reusable, it has users other than AXI4, and it is the sort of thing
-that gets worse if it grows up inside one consumer — or as part of
-Phase 1 with a note to extract it later. The first is cleaner and
-delays AXI4 by one PR.
+**Decided: the wrapper generator lands inside Phase 1**, with the
+expectation that it is extracted once a second consumer wants it. The
+argument for a separate change — that it is general infrastructure —
+is still true and is why it lives in its own module rather than inside
+the AXI4 types, so extraction is a file move rather than a rewrite.
 
 ---
 
@@ -537,9 +536,12 @@ delays AXI4 by one PR.
    shared surface is known rather than guessed.
 6. **The kernel subset has bitten every protocol widget so far** — no
    `if let`, no match guards, `resize` truncating rather than
-   saturating, `Bits<N>` only for N ≤ 128. A 512-bit AXI4 data bus is
-   **wider than `Bits<128>`**, so wide-bus support needs either an
-   array-of-words payload or a kernel-language change. **Open
-   question, and it bounds what "full" can mean**: resolve the
-   intended maximum bus width in Phase 1 before the beat structs are
-   fixed.
+   saturating, `Bits<N>` only for N ≤ 128.
+
+   **Decided: 128 bits is the maximum supported data width**, which is
+   exactly the `Bits<N>` ceiling and needs no array-of-words payload
+   and no kernel-language change. A `AXI4_MAX_DATA_BITS` constant
+   states it, and the beat structs are bounded by it rather than
+   silently failing at 129. Wider buses remain possible later by the
+   array route; nothing here forecloses it, and `AxSIZE` already tops
+   out at 4 for a 16-byte bus.
