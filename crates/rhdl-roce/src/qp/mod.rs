@@ -20,3 +20,4 @@
 pub mod context;
 pub mod segmenter;
 pub mod state;
+pub mod work_queue;

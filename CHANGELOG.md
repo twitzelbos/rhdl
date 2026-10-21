@@ -31,6 +31,74 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-10-21 — `rhdl-roce::qp::work_queue`: a queue of messages, so `start` stops throwing them away
+
+**Path:** `crates/rhdl-roce/src/qp/work_queue.rs`,
+`examples/work_queue.rs`, `doc/work_queue.md`, `vcd/work_queue/`
+
+**Why this, why now:** Phase 3's second widget, and FERoCE's
+`RoCE_simple_work_queue` in RHDL terms. Until now `start` asserted while
+the transmitter was busy *abandoned* the message in flight — documented,
+but a documented sharp edge rather than a usable interface. An
+application posting three writes in quick succession would land two of
+them in the bin.
+
+**Design decisions:**
+
+- **The input is called `complete`, not `ready`.** A send path pulling
+  on a ready signal would advance the head when the *first* packet of a
+  multi-packet message was accepted, which is exactly wrong — the head
+  has to stay put until the whole message is on the wire. Naming the
+  input after the event rather than the handshake makes that hard to
+  misuse, and `the_head_advances_only_on_complete` pins it with six
+  idle cycles between posts.
+- **`flush` lives here rather than in the state machine.** SQD means
+  "finish what is outstanding, accept nothing new", and that is a
+  queue property: the head keeps draining while `accepted` stays low.
+  The composition drives it from the state machine's `draining`.
+- **A full queue refuses rather than drops.** Ordinary ready/valid: a
+  requester that ignores `accepted` loses work and one that honours it
+  cannot.
+- **Depth is a const generic over the FIFO's address width**, so the
+  usable depth is `2^N - 1` — one slot spent distinguishing full from
+  empty, as in every ring-buffer FIFO. Two to four entries is plenty
+  for a sensor pushing acquisition buffers and the cost is one block RAM
+  either way.
+
+**Surprises and gotchas:**
+
+- **`fifo::synchronous` has no `empty` output.** Emptiness is
+  `data == None`, because the head is an `Option`. That is the better
+  interface — the two cannot disagree — but it is worth recording once
+  rather than rediscovering, since the obvious `q.fifo.empty` simply
+  does not exist.
+- **`complete` on an empty queue must be a no-op, not an underflow.**
+  The FIFO exposes an `underflow` flag, so popping an empty queue is
+  detectable rather than silent, but the right behaviour is not to do
+  it. Gated on the head being present.
+
+**Validation:** 11 tests. Tier 1 covers the empty head, head-advances-
+only-on-`complete`, flush refusing work while the head drains, a full
+queue refusing, `complete` on empty being a no-op, and reset. Tier 2
+posts four messages and checks they emerge **in order with none lost**,
+plus a post-and-complete-on-the-same-cycle case. Tiers 3–5 present, with
+`.skip(2)` on the round trip for the usual block-RAM reason.
+
+Three mutations confirmed caught: advancing the head whenever non-empty,
+letting `flush` accept work, and popping an empty queue. The mutation
+script now asserts its anchor matched exactly once and says
+`ANCHOR FAILED` otherwise — after the state-machine entry's lesson that
+a silently-unapplied mutation reports "ok" and reads like survival.
+
+**Follow-ups:**
+
+- Not yet wired into `RoceWriteTx`; that happens with the QP table, when
+  the transmitter starts pulling messages from a queue instead of taking
+  a single `start`.
+- The RAM-backed `qp::context` table is the last piece of Phase 3.
+
+---
+
 ## 2026-10-21 — `rhdl-roce::qp::state`: the queue-pair state machine
 
 **Path:** `crates/rhdl-roce/src/qp/state.rs`, `examples/qp_state.rs`,
