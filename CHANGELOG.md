@@ -31,6 +31,120 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-10-21 — RCStream: the structural half of its contract, and insertion on a diverging widget
+
+**Path:** `crates/rhdl-fpga/tests/rcstream_ready_does_not_reach_data.rs`,
+`crates/rhdl-fpga/tests/rcstream_diverging_relay_insertion.rs`
+
+**Why this, why now:** `rcstream` already had 209 tests, about ten per
+widget, and `tests/rcstream_relay_insertion.rs` covers the bus's
+central claim. So the useful thing left was not more unit cases but the
+claims the *bus* makes that no individual widget's tests can reach.
+Two were untested.
+
+**Design decisions:**
+
+- **The forward/backward independence check is structural, not
+  simulated, and it had to be.** `stream-bus-architecture.md` §2 singles
+  out one rule as the thing everybody gets wrong — AMBA permits TREADY
+  to depend combinationally on TVALID but forbids the reverse, and "most
+  third-party IP gets this wrong at least once". A widget that violates
+  it **simulates perfectly well on its own**: the fault only appears
+  when it meets another such widget and the two close a loop with no
+  register in it, or when timing closure fails on silicon. No amount of
+  stimulus finds that. The combinational-reachability matrix now on
+  `Descriptor` makes it decidable without running anything, which is
+  why this test exists now and could not have existed before.
+- **Stated as "a forward output must not depend on a backward input",
+  not in terms of `ready`.** The bus has two flow-control styles: the
+  ready/valid widgets signal backwards with `ready`, the credit widgets
+  with `credit_grant`. Same direction, same hazard, so classifying both
+  as "backward" is what lets one rule cover the whole library — and the
+  first draft, written around `ready` alone, silently skipped every
+  credit widget.
+- **Every exclusion is an assertion, not a comment.**
+  `RCStreamConstant` has no backward input at all: its own docs explain
+  that a constant source ignores backpressure deliberately, because its
+  samples are not specific and dropping one costs nothing. So the
+  property is *inapplicable* rather than satisfied, and
+  `the_constant_source_has_no_backward_input_to_check` asserts it has no
+  such input — so if that ever changes, the exclusion is forced back
+  under review instead of quietly outliving its reason.
+- **A deliberately-wrong widget ships with the test.**
+  `wrong::ReadyGatesData` gates its forward data on the backward ready
+  in one line, and `the_check_is_not_vacuous` requires the checker to
+  flag it. Without that, every other assertion in the file could be
+  passing because the checker finds nothing — which is exactly how a
+  structural test rots.
+- **Insertion on a *diverging* widget was the gap in the existing
+  coverage.** `rcstream_relay_insertion.rs` covers a bare chain,
+  `map -> relays -> filter`, and the hard converging case: a `zip` with
+  one input delayed, where getting it wrong shears the pairing. The
+  mirror case was missing, and it is where the claim is least obviously
+  true. `fanout` carries per-branch "already delivered" state precisely
+  to avoid handing one item to a branch twice when the branches become
+  ready on different cycles — and putting a relay on one branch
+  *guarantees* they do. The failure modes are worse than shearing: a
+  duplicated item, or a deadlock where the delayed branch's
+  backpressure stops the undelayed one for ever. All three are now
+  asserted by name, so a failure reads as what it is.
+- **The two sinks accept on coprime cycle counts** — one in two against
+  two in three. A symmetric pair advances the per-branch state in
+  lockstep and never reaches the case it exists for.
+
+**Surprises and gotchas:**
+
+- **Nothing was wrong.** All seventeen widgets pass the structural
+  check, and insertion on a fanout branch is behaviour-preserving at
+  depths 1, 2, 3, 4 and 8. That is the outcome to hope for and it is
+  worth stating plainly, because the value of these tests is now
+  entirely in the future: they are what stops the eighteenth widget, or
+  the first auto-pipeliner-inserted relay, breaking a property four
+  places in the source assert and nothing checked.
+- **The matrix names ports in ways a test has to discover, not
+  assume.** `credit_source` has inputs `.upstream_data#…` and
+  `.credit_grant` with outputs `.upstream_ready` and
+  `.downstream_data#…`; `credit_sink` uses `.downstream_ready`;
+  `credit_mux` uses plain `.ready` with `.credit_grant[0..]` as
+  *outputs*. A check written against one widget's naming would have
+  silently skipped the others, which is what the vacuity guard caught.
+  The diagnostic that dumps the port lists is left in the file,
+  `#[ignore]`d, because that is how the exclusions were established.
+- **`take_while(|t| t.time < n)` bounds simulation *time*, not
+  cycles.** The period is 100, so the 2000 that looked like a generous
+  cycle budget was twenty cycles, and the harness reported the
+  *undelayed baseline* delivering seven items of twenty-four. The
+  parameter is now named `time_limit` and the unit is stated at the
+  call sites, because the name `cycles` is what made the mistake easy.
+- **`#[rhdl(dq_no_prefix)]` means one widget per module in a test
+  file.** Three fixtures in one module collide on the generated `Q` and
+  `D`. The existing insertion test already solved this with sub-modules;
+  worth knowing before writing the fourth such file.
+- **An insertion-invariance test needs latency as a positive
+  observable.** Every assertion is "the sequence is unchanged", and all
+  of them would pass if the inserted chain were somehow bypassed — so
+  `depth_delays_branch_a_without_changing_what_it_delivers` requires
+  eight relays to delay the first delivery relative to one. That is the
+  only assertion in the file that would fail if the fixture were
+  mis-wired rather than the widget being wrong.
+
+**Validation:** 13 new tests, all passing. The structural check covers
+17 widgets across the single-stream combinators, the multi-port ones,
+the width-changing ones, the credit variants and both AXI4-Stream
+bridges, with one justified exclusion and a positive control. The
+diverging-insertion check covers depths 1 through 8 with sequence
+equality, explicit no-duplicate and no-deadlock assertions, and the
+latency proof.
+
+**Follow-ups:**
+
+- The structural check is a natural thing to extend beyond `rcstream`:
+  any widget pair with a ready/valid handshake has the same hazard, and
+  `axi4lite` and the future full AXI4 are the obvious candidates.
+- Nothing yet asserts the property *across* a composition — that a
+  design built from clean widgets is itself clean. The DRC added for
+  combinational cycles covers the fatal case; the weaker "no backward
+  path anywhere" is not checked at composition level.
 ## 2026-10-21 — `rhdl-fpga::net`: the category, and collecting the duplication that justified it
 
 **Path:** `crates/rhdl-fpga/src/net/{mod,config,ethernet,ipv4,udp,udp_rx}.rs`,
