@@ -31,6 +31,233 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-10-21 — `rhdl-roce::rx::parse`: the receive path's front door, and the loopback it makes possible
+
+**Path:** `crates/rhdl-roce/src/rx/parse.rs`, `src/rx/mod.rs`,
+`examples/rx_parse.rs`, `doc/rx_parse.md`, `doc/rx_parse_fsm.md`,
+`vcd/rx_parse/`; `tests/rx_vectors.rs`, `tests/loopback.rs`;
+`headers::{bth_unpack, reth_unpack, decode_write_opcode, WriteKind}`;
+`roce-v2-architecture.md` Tier 10 and the Phase 4 gate
+
+**Why this, why now:** Phase 4 is the receive direction, and every part
+of it — R_Key validation, address translation, placement, the
+connection manager — needs the same first step: turn a frame's bytes
+back into typed headers. So the parser comes first and everything else
+hangs off it.
+
+It was also the cheapest way to make the existing transmit path
+*testable against something other than a recording*. The user pointed
+out, mid-build, that an on-FPGA loopback becomes possible once a
+receiver exists. That is sharper than it first sounds: every other
+hardware validation tier needs a commodity RNIC and a configured host,
+both of which are still open questions, whereas loopback needs neither
+and reaches real timing and real BRAM with no host in the picture. It
+is now Tier 10 in `roce-v2-architecture.md` and part (a) of the Phase 4
+gate, with the host-side test named separately as part (b) so that
+passing (a) cannot be reported as passing Phase 4.
+
+**Design decisions:**
+
+- **One shift accumulator, not a field decoder.** Every header field is
+  a contiguous run of bytes, so each byte folds into a single 128-bit
+  accumulator and each field is snapshotted out of its low bits at the
+  offset where that field ends. 128 bits is not a round number chosen
+  for comfort: the RETH is 16 bytes, the longest single field in the
+  frame, and that is what sets the width.
+- **The ICRC falls out for free.** The accumulator keeps shifting
+  through the payload, so at the frame's last byte its low 32 bits are
+  exactly the last four bytes — the ICRC. No register, and nothing has
+  to know *where* the ICRC starts. Rejected: a separate ICRC register
+  with its own offset arithmetic, which would have to agree with the
+  length computation and could drift from it.
+- **Headers are presented from the first payload byte's cycle**, which
+  is the earliest they can be, and held to the end of the frame. That
+  is what the placement path needs: the RETH address has to be known
+  before the first byte it addresses arrives. The consequence is that a
+  consumer writes payload speculatively and commits on `done &&
+  verdict == Accept` plus an ICRC match. Rejected: buffering a whole
+  packet before placing any of it, which costs a PMTU of memory and
+  the latency that motivates RDMA.
+- **No backpressure.** A receiver cannot tell an Ethernet MAC to wait,
+  so a `ready` input would be a lie that showed up as dropped frames at
+  line rate. Everything is single-cycle per byte.
+- **A verdict enum of reasons, not a `bool`.** On a receive path the
+  rejection reason is the only diagnostic available, and a per-variant
+  counter tells an operator whether the link is carrying someone else's
+  broadcast traffic or whether a peer is sending opcodes this endpoint
+  does not implement — two unrelated situations a single `dropped`
+  count would conflate.
+- **IHL must be exactly 5, not at least 5.** A RoCEv2 sender must not
+  emit IP options, so a frame carrying them is either not from an RNIC
+  or has been tampered with. Supporting them would mean a variable
+  header length through the whole datapath for a case that should not
+  occur.
+- **Each check fires at the earliest byte that can settle it**, so a
+  frame addressed elsewhere is abandoned without parsing the rest.
+- **`decode_write_opcode` returns `Option<WriteKind>`, a struct rather
+  than a tuple.** A kernel matching `Some((t, op))` is a nested pattern
+  and is rejected; `Some(kind)` binds a whole struct and is accepted.
+  Returning `Option` rather than saturating to a default matters: an
+  unrecognised opcode read as `Only` would make the parser consume 16
+  payload bytes as an address.
+- **The RETH snapshot is gated on `has_reth`, not only on its offset.**
+  See the surprises below — byte 69 is inside the header for a
+  RETH-carrying packet and inside the *payload* for every other one.
+- **The phase enum is kept although it is redundant** with the byte
+  offset — it is the central question when reading a parser, and it is
+  what the generated diagram is drawn from. The redundancy is made a
+  *checked* invariant rather than a latent bug: `phase` is an output,
+  and `the_phase_always_agrees_with_the_byte_offset` compares it against
+  the offset-derived classification on every byte of every frame.
+
+**Surprises and gotchas:**
+
+- **A 14-byte frame was accepted.** The end-of-frame check compared the
+  byte count against `total_len + 14`, and `total_len` is zero until
+  offset 17 — so a frame ending at byte 13 satisfied `0 + 14 == 14`
+  exactly and passed with no headers parsed at all. The fix is to
+  require that the header block completed as well as that the length
+  agreed. Found by the truncation test, which is the reason to
+  enumerate cut points rather than test one.
+- **An offset-derived transition chain produces a *false* FSM diagram.**
+  The transition was first written as one `if`/`else if` chain over
+  byte offsets, which does not mention `q.state`. The extractor
+  therefore cannot narrow the target per source state and reported all
+  twenty edges on five nodes — including `Idle -> Payload`, which
+  cannot happen, since the only byte that leaves `Idle` is a
+  start-of-frame and that byte is offset zero. Shipping that diagram
+  would have been the same defect as `fix/fsm-extractor-unanalyzable`
+  (PR #122) from the other side: an over-approximation rather than a
+  silent self-loop, but still a diagram asserting transitions the
+  hardware cannot make. Rewriting the transition as a `match q.state`
+  with each arm naming only its reachable targets cut it to fourteen
+  edges, all real. **Generalisable: if a `#[derive(FsmWidget)]`
+  kernel computes `d.state` without reference to `q.state`, the
+  extracted diagram will be sound but useless.** Worth knowing before
+  writing the next protocol PHY.
+- **A packet with no RETH was reporting payload bytes as its RETH.**
+  The RETH is snapshotted when the byte offset reaches 69, which is
+  where that field ends — but a MIDDLE or LAST packet's header block
+  ends at 54, so for those packets byte 69 is *payload*, and the
+  snapshot loaded the RETH register with it. `has_reth` is false there,
+  so a correct consumer ignores the field and no test failed; the
+  corpus tests compare the RETH only when `has_reth` is set, so none of
+  the 2008 frames would ever have caught it. Found by reading the code
+  after the tests were green. Gating the snapshot on `has_reth` leaves
+  the register at zero, which makes the field's documented "zero
+  otherwise" true and turns the failure mode of a consumer forgetting
+  that check from "writes to an address made of payload bytes" into
+  "writes to address zero". The lesson is narrow and worth keeping: a
+  snapshot keyed on an absolute frame offset is only safe if that
+  offset is inside the header for *every* packet shape, and 69 is not.
+- The curated corpus's `payload` field is the payload *on the wire* and
+  already includes the pad bytes, and `payload_len` counts them. The
+  first version of the test added the pad a second time. The parser was
+  right and the test was wrong — which is the usual way round and worth
+  checking first.
+- 2500 bytes at a 1024-byte PMTU segments to 1024 + 1024 + 452, and
+  every one of those is a multiple of four, so *no* packet in that
+  message is padded. An assertion that the last packet must be padded
+  failed, correctly. The padded path needed its own test with payload
+  lengths of 1, 2, 3, 13 and 15.
+- **My own mutation harness misreported its results.** It detected
+  compile failure by grepping for `^error:`, which `cargo`'s own
+  `error: test failed, to rerun pass …` line matches — so every
+  *killed* mutant was reported as "COMPILE-FAIL" and the run said
+  nothing. Compile status has to be established by a separate
+  `cargo check`, before the test run, never inferred from its output.
+  This is the second time a mutation script has silently reported
+  success for the wrong reason; the first was anchors that matched zero
+  times.
+- Driving the transmitter closed-loop for the loopback test puts the
+  payload cursor one byte behind, because the simulator's closure sees
+  the output of the cycle driven by the *previous* input. Two
+  open-loop passes work: pass one learns where `payload_advance` lands,
+  pass two replays with the real bytes. The method assumes the advance
+  trajectory does not depend on payload *values*, so pass two asserts
+  that rather than trusting it.
+
+**Validation:** All five tiers plus two corpus tiers.
+
+- Tier 1 — kernel unit tests for `payload_len_of` including the
+  clamp-before-narrow case, and a direct reset test.
+- Tier 2 — well-formed frames across six opcode/payload/pad shapes;
+  every rejection provoked by exactly one mutated byte, with the
+  unmutated frame as the control; the complement test that mutating a
+  field the parser does *not* check still yields `Accept`; nine
+  truncation cut points; overlong; idle-byte dropping; mid-frame
+  restart; and the phase/offset agreement invariant.
+- Tier 3 — HDL emission, asserting the 128-bit accumulator survives as
+  one register.
+- Tier 4 — `iverilog` round-trip on both `.rtl()` and `.ntl()`.
+- Tier 5 — committed VCD digest.
+- Corpus, reversed — `tests/rx_vectors.rs` parses all 8 curated
+  vectors and all 2000 fuzz cases back, comparing the recovered BTH
+  against `bth_from_plan` applied to the fields the generator was
+  given, plus payload bytes, payload length and received ICRC. The
+  fuzz corpus stores header blocks and ICRCs separately and derives
+  payloads from a seed, so complete frames are rebuilt from it.
+- Loopback (Tier 10, simulation half) — `tests/loopback.rs` sends a
+  2500-byte message through `RoceWriteTx`, parses all three frames
+  back, and reassembles the body byte-for-byte; plus RC as well as UC,
+  the five pad lengths, a zero-length WRITE, and a negative control
+  that confirms a single flipped byte is still rejected.
+- Round-trip properties — `bth_unpack`/`reth_unpack` are pinned against
+  `bth_pack`/`reth_pack` field by field at their limits, and
+  `decode_write_opcode` is proved the exact inverse of
+  `encode_write_opcode` **exhaustively over all 256 opcode bytes**.
+- Every new kernel has a `test_kernel_vm_and_verilog_synchronous`
+  cross-check.
+
+**Mutation-verified.** Eleven deliberate defects were injected into the
+parser and every one was killed, with the kill count per mutant
+recorded so the thin spots are visible:
+
+| Injected defect | Tests that caught it |
+|---|---:|
+| Accept without the header block completing (the real bug above) | 1 |
+| RoCE UDP port compared against 4790 | 17 |
+| BTH snapshot one byte early | 7 |
+| RETH snapshot one byte late | 6 |
+| `has_reth` forced true | 7 |
+| Payload window one byte too long | 10 |
+| Minimum-length check removed | 2 |
+| Bytes taken while idle with no start-of-frame | 2 |
+| Overlong check neutralised | 1 |
+| `src_ip` and `dst_ip` swapped | 4 |
+| RETH snapshot ungated by `has_reth` | 1 |
+
+The three defects caught by a single test each are the
+header-completion requirement, the overlong check and the RETH gate;
+each has one dedicated test and nothing else covers it, which is worth
+knowing before any of those tests is changed. The payload cursor in the loopback
+harness was mutation-checked separately — advancing it one sample late
+kills four of the six loopback tests, the two survivors being the
+zero-length message and the early-rejected frame, neither of which has
+payload bytes to misplace.
+
+The FSM diagram is committed and `test_fsm_diagram_matches_descriptor`
+guards it against drift, per CLAUDE.md §12 rule 14.
+
+**Follow-ups:**
+
+- **ICRC verification on receive** is the next piece and the one that
+  makes the verdict trustworthy. The `icrc::Icrc` engine needs no
+  change — its masking is driven by frame offset, so it works
+  identically in both directions — but the driving and the comparison
+  are unwritten. Until then `rx::parse` reports the received ICRC and
+  checks nothing about it.
+- `qp::mr` — the memory-region table, R_Key validation and address
+  translation — then the placement path. A parsed frame currently goes
+  nowhere.
+- The connection manager (FERoCE's `udp_RoCE_connection_manager`, 72 KB
+  of it) still rides with Phase 4.
+- The on-FPGA half of Tier 10 is now unblocked by this widget but needs
+  the link adapter from Phase 5 to be real hardware rather than a
+  simulation.
+- Still open from Phase 3: whether `rhdl-fpga::net` is created and the
+  eight target-neutral frame helpers move there.
+
 ## 2026-10-21 — `rhdl-roce::endpoint`: Phase 3's widgets wired to the transmitter, and its gate met
 
 **Path:** `crates/rhdl-roce/src/endpoint.rs`, `examples/endpoint.rs`,

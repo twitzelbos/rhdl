@@ -1,6 +1,7 @@
 # RoCEv2 — RDMA over Converged Ethernet v2 for RHDL
 
-**Status: the plan, plus Phases 1–3 of the send side.**
+**Status: the plan, Phases 1–3 of the send side, and the parser that
+starts Phase 4.**
 `crates/rhdl-roce` implements the transport headers, the Invariant CRC,
 the message-to-packet segmenter, and the Ethernet/IPv4/UDP framing — so
 a **complete RoCEv2 frame is generated and matches Scapy byte-for-byte**,
@@ -15,8 +16,20 @@ is met — three queued messages produce three byte-exact frames, a second
 queue pair is framed with its own context, and nothing is emitted before
 `RTS`.
 
-What is **not** built: no connection manager, no receive path of any
-kind, no retransmission, no congestion control, and no arbiter (messages
+Phase 4 has begun with `rx::parse`, the byte-serial frame parser: bytes
+in, typed headers and an accept/reject verdict out, with the payload
+separated from the headers that framed it. It is validated against the
+same Scapy corpus **driven backwards** — all 2008 frames parse back to
+the fields the generator was given — and composing it with `tx` closes
+the Tier-10 loopback in simulation, so a 2500-byte message now segments
+into three packets, goes out, comes back and reassembles byte-for-byte
+inside this crate.
+
+What is **not** built: no ICRC *verification* on receive (the parser
+reports the received value; nothing recomputes and compares yet), no
+memory-region table and so no R_Key validation, address translation or
+placement — a parsed frame currently goes nowhere — no connection
+manager, no retransmission, no congestion control, and no arbiter (messages
 drain in posting order whatever queue pair they name). Queue-pair state
 is endpoint-level rather than per-queue-pair — a conservative
 approximation, documented in `endpoint`'s module docs, that can only
@@ -1019,11 +1032,23 @@ protocol implementation and needs exactly the receive path this phase
 builds. Until it exists, a queue pair's parameters have to be poked in
 by unspecified external means.
 
-*Gate: an unmodified Linux host issues `ibv_post_send` of an RDMA WRITE
-to the RHDL endpoint and the payload appears at the expected local
-address, with a deliberately corrupted ICRC rejected. And the host
-negotiates a queue pair over UDP rather than the parameters being
-hard-coded.*
+*Gate, in two parts, because the first needs no host and so cannot be
+blocked by one:*
+
+*(a) **Loopback** — Tier 10. The transmitter's own frames, fed into the
+receiver, yield back the `PacketPlan` that produced them, for the whole
+fuzz corpus in simulation and then on the FPGA. A deliberately corrupted
+ICRC is rejected, and so is a frame whose R_Key does not match the
+memory region.*
+
+*(b) **Against a real host** — an unmodified Linux host issues
+`ibv_post_send` of an RDMA WRITE to the RHDL endpoint and the payload
+appears at the expected local address. And the host negotiates a queue
+pair over UDP rather than the parameters being hard-coded.*
+
+*Part (a) is the honest measure of the RHDL work; part (b) is what makes
+it useful. Reporting (a) as though it were (b) is the §-TL;DR sliver
+failure in CLAUDE.md, so the two are named separately here.*
 
 ### Phase 5 — The own-MAC adapter (5–7 weeks, hardware-gated)
 
@@ -1165,6 +1190,43 @@ pass their own gates with only `link::gem_ring` swapped for
 `link::mac_phy`, and no change to any widget above the boundary.** If a
 RoCE-layer widget needs editing to pass, the abstraction leaked and that
 is the finding to report, not to paper over.
+
+### Tier 10 — Self-loopback, transmit into receive (Phase 4 gate)
+
+**Feed the transmitter's own byte stream into the receiver and require
+that what comes out is what went in.** The transmitter already produces
+a complete frame from a `PacketPlan`; the receiver's job is to recover
+headers and payload from a frame. Composing them closes a loop whose
+two ends are independently anchored to Scapy by Tier 6, which is what
+makes the loop meaningful rather than circular — a shared
+misunderstanding of the wire format would have to have survived the
+vector comparison in *both* directions to pass this.
+
+It runs at two levels, and the cheap one is available immediately:
+
+1. **In simulation**, as soon as the parser exists: drive
+   `RoceWriteTx`'s output bytes into the parser and assert the recovered
+   `Bth`/`Reth` equal the `PacketPlan` that generated them, over the
+   whole fuzz corpus. This is the tightest differential test available
+   for the receive path, because it needs no external tooling and the
+   expected value is *computed*, not recorded.
+2. **On the FPGA**, once there is a receiver: the transmitter's DDR ring
+   feeds the receiver on the same device. This is the first test that
+   exercises real timing, real BRAM, and the real adapter boundary with
+   no host involved.
+
+The on-FPGA half matters because every other hardware tier needs a
+commodity RNIC and a configured host. Loopback needs neither, so it is
+reachable **before** the host-side GPUDirect question of §4 is settled,
+and it isolates faults: a loopback failure is in RHDL, whereas a
+Tier-7/8 failure could be in RHDL, the host stack, or the switch.
+
+Its limit is equally sharp, and must not be forgotten: **loopback cannot
+find a wire-format misreading that is symmetric between the two
+directions**, and it cannot validate anything only a real peer does —
+placement into a real NIC's memory, a real host's R_Key semantics,
+congestion marking. It narrows the search space; it does not replace
+Tier 7 or 8.
 
 ---
 

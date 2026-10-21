@@ -19,7 +19,8 @@
 //!
 //! # What is here, and what is not
 //!
-//! Two phases of `roce-v2-architecture.md` are present. The packet
+//! Phases 1 through 3 of `roce-v2-architecture.md` are present, and
+//! Phase 4 has started. The packet
 //! level is complete: given a header record you get its wire bytes, and
 //! given a frame's bytes you get its ICRC. The send queue's decision
 //! logic is complete too — [`qp::segmenter`] turns a message into the
@@ -30,17 +31,35 @@
 //! header block of a real RoCEv2 frame is generated here and validated
 //! byte-for-byte.
 //!
-//! What is **not** here, and is deliberately absent rather than
-//! half-present: the link adapter that puts a finished frame somewhere a
-//! MAC can send it, and everything to do with reliable transport —
-//! acknowledgements, sequence-number windows and retransmission. So
-//! this builds complete frame *bytes*; it does not yet hand them to
-//! anything that transmits.
+//! The direction built first is **send** — see that document's §5.2 —
+//! and it is complete from a work request to a finished frame's bytes:
+//! [`tx`] walks a packet plan out byte by byte and [`endpoint`] drives
+//! it from a queue of work requests.
 //!
-//! The direction built first is **send** — see that document's §5.2.
-//! Parsing is partially present because the header records and their
-//! packing are shared between the two directions, but the receive path
-//! proper is not.
+//! The receive direction has begun. [`rx::parse`] turns a frame's bytes
+//! back into typed headers, a verdict and a payload stream, validated
+//! against the same Scapy corpus driven backwards. Composing it with
+//! [`tx`] closes the loop in `tests/loopback.rs`, so a multi-packet
+//! message now goes out and comes back byte-for-byte inside this crate.
+//!
+//! What is **not** here, and is deliberately absent rather than
+//! half-present:
+//!
+//! - **ICRC verification on receive.** [`rx::parse`] reports the ICRC
+//!   it received; nothing yet recomputes it and compares. The
+//!   [`icrc::Icrc`] engine needs no changes for this — its masking is
+//!   driven by frame offset and so works identically in both
+//!   directions — but the driving and the comparison are not written.
+//! - **Memory regions and placement.** Nothing validates an R_Key,
+//!   translates an address, or writes a payload anywhere. A parsed
+//!   frame currently goes nowhere.
+//! - **The link adapter** that puts a finished frame where a MAC can
+//!   send it, or takes received bytes from one.
+//! - **Reliable transport** — acknowledgements, sequence-number
+//!   windows, retransmission.
+//!
+//! So this builds and recovers complete frame *bytes*; it does not yet
+//! hand them to anything that transmits, nor act on what it parses.
 //!
 //! # Why this belongs in a type system
 //!
@@ -60,10 +79,19 @@
 //! `scapy.contrib.roce`, an independent implementation used in practice
 //! to dissect real RoCE traffic. The vectors are committed; the
 //! generator is `tools/gen_vectors.py` and is run deliberately.
+//!
+//! `tests/rx_vectors.rs` runs the same corpus the other way: given the
+//! bytes Scapy produced, the parser must recover the fields Scapy was
+//! given. Pinning the format from both sides is what makes the
+//! transmit-into-receive loopback in `tests/loopback.rs` evidence
+//! rather than a tautology — a shared misreading of the wire format
+//! would have to survive the Scapy comparison in both directions
+//! before it could reach the loop.
 
 pub mod endpoint;
 pub mod frame;
 pub mod headers;
 pub mod icrc;
 pub mod qp;
+pub mod rx;
 pub mod tx;
