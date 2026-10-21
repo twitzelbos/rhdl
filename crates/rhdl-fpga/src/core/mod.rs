@@ -13,6 +13,7 @@ pub mod comparator;
 pub mod constant;
 pub mod counter;
 pub mod crc;
+pub mod crc32;
 pub mod debouncer;
 pub mod delay;
 pub mod dff;

@@ -1,0 +1,19 @@
+[package]
+name = "rhdl-roce"
+version = "0.0.1"
+edition = "2024"
+license = "MIT"
+description = "RoCEv2 (RDMA over Converged Ethernet v2) transport headers and Invariant CRC in RHDL."
+homepage = "https://rhdl.org"
+repository = "https://github.com/samitbasu/rhdl"
+keywords = ["fpga", "hdl", "hardware", "rdma", "rocev2"]
+
+[dependencies]
+rhdl = { path = "../rhdl" }
+rhdl-bits = { path = "../rhdl-bits" }
+rhdl-fpga = { path = "../rhdl-fpga" }
+badascii-doc = "0.4.1"
+
+[dev-dependencies]
+expect-test = "1.5.1"
+miette = { version = "7.6.0", features = ["fancy"] }
