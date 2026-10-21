@@ -92,6 +92,7 @@
 	- [The Up-Converter](dsp/duc.md)
 	- [Specifying a chain](dsp/design.md)
 	- [Delay and control loops](dsp/delay.md)
+	- [An NMR Receiver Chain](dsp/nmr_receiver.md)
 - [Finite State Machines](fsm/summary.md)
 	- [Derive Macros](fsm/derive.md)
 	- [Transition Extraction](fsm/extraction.md)
