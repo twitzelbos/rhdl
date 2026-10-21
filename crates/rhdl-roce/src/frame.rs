@@ -148,6 +148,14 @@ pub struct FrameConfig {
     pub ip_id: Bits<16>,
     /// IPv4 time to live.
     pub ttl: Bits<8>,
+    /// The IPv4 TOS byte — six bits of DSCP then two of ECN.
+    ///
+    /// Configurable rather than zero because a RoCEv2 fabric routinely
+    /// depends on it: DCQCN needs ECN-capable transport marked here, and
+    /// lossless queues are selected by DSCP. The ICRC masks this byte,
+    /// so it does not affect the checksum — but it *is* covered by the
+    /// IPv4 header checksum, which is why changing it changes the frame.
+    pub dscp_ecn: Bits<8>,
 }
 
 #[kernel]
@@ -216,7 +224,7 @@ pub fn eth_byte(cfg: FrameConfig, index: Bits<4>) -> Bits<8> {
 /// definition.
 pub fn ipv4_head(cfg: FrameConfig, total_len: Bits<16>, checksum: Bits<16>) -> Bits<96> {
     // byte 0      : version 4, IHL 5  -> 0x45
-    // byte 1      : TOS / DSCP+ECN    -> 0
+    // byte 1      : TOS / DSCP+ECN
     // bytes 2..3  : total length
     // bytes 4..5  : identification
     // bytes 6..7  : flags + fragment offset -> 0
@@ -224,6 +232,7 @@ pub fn ipv4_head(cfg: FrameConfig, total_len: Bits<16>, checksum: Bits<16>) -> B
     // byte 9      : protocol
     // bytes 10..11: header checksum
     (bits::<96>(0x45) << 88)
+        | (cfg.dscp_ecn.resize::<96>() << 80)
         | (total_len.resize::<96>() << 64)
         | (cfg.ip_id.resize::<96>() << 48)
         | (cfg.ttl.resize::<96>() << 24)
@@ -435,6 +444,7 @@ mod tests {
             dst_port: bits(ROCE_UDP_PORT),
             ip_id: bits(ip_id),
             ttl: bits(ttl),
+            dscp_ecn: bits(0),
         }
     }
 
@@ -473,7 +483,7 @@ mod tests {
         let src = c.src_ip.raw() as u32;
         let dst = c.dst_ip.raw() as u32;
         let words: [u32; 10] = [
-            0x4500,
+            0x4500 | (c.dscp_ecn.raw() as u32),
             ip_total_length(p).raw() as u32,
             c.ip_id.raw() as u32,
             0x0000,
@@ -498,6 +508,7 @@ mod tests {
         let src = c.src_ip.raw() as u32;
         let dst = c.dst_ip.raw() as u32;
         let acc: u32 = 0x4500
+            + (c.dscp_ecn.raw() as u32)
             + ip_total_length(p).raw() as u32
             + c.ip_id.raw() as u32
             + (((c.ttl.raw() as u32) << 8) | 17)

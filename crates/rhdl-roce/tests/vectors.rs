@@ -735,6 +735,7 @@ impl Vector {
             dst_port: bits(4791),
             ip_id: bits(self.ip_id as u128),
             ttl: bits(self.ttl as u128),
+            dscp_ecn: bits(0),
         }
     }
 

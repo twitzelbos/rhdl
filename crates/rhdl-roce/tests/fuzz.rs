@@ -119,6 +119,7 @@ fn corpus() -> Vec<Case> {
                 dst_port: bits(4791),
                 ip_id: bits(num(f[8])),
                 ttl: bits(num(f[9])),
+                dscp_ecn: bits(0),
             },
             ctx: QpContext {
                 dqpn: bits(num(f[10])),

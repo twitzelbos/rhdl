@@ -294,9 +294,23 @@ pub fn roce_write_tx(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         }
         TxPhase::Payload => {
             emit = true;
-            byte = i.payload_byte;
+            // The last `padcount` bytes of the payload phase are pad,
+            // and the widget emits them itself. Requiring the caller to
+            // present zeros for them -- which the first version did --
+            // put a protocol detail in the caller's hands and was
+            // invisible in testing, because a test that supplies zeros
+            // passes either way.
+            //
+            // Pad bytes are zero here. The IBTA leaves their value
+            // unspecified and the receiver discards them, but they are
+            // covered by the ICRC, so sender and receiver must agree --
+            // and zero is what every implementation sends.
+            let in_pad = q.extras.pay_left <= plan.padcount.resize::<13>();
+            byte = if in_pad { bits(0) } else { i.payload_byte };
             icrc_cover = true;
-            pay_adv = i.ready;
+            // Do not step the caller's source for a byte it did not
+            // supply.
+            pay_adv = i.ready && !in_pad;
             if i.ready {
                 ex.index = q.extras.index + 1;
                 ex.pay_left = q.extras.pay_left - 1;
@@ -401,6 +415,7 @@ mod tests {
             dst_port: bits(4791),
             ip_id: bits(0),
             ttl: bits(64),
+            dscp_ecn: bits(0),
         }
     }
 
@@ -456,7 +471,27 @@ mod tests {
     /// Pass 1 locates the frame in time by watching `start_of_frame`;
     /// pass 2 replays with the payload placed in the window that
     /// follows the header.
-    fn emit(length: u128, payload: &[u8], stall_at: Option<usize>) -> Vec<u8> {
+    pub(super) fn emit(length: u128, payload: &[u8], stall_at: Option<usize>) -> Vec<u8> {
+        emit_inner(length, payload, stall_at, bits(0)).0
+    }
+
+    /// Same drive, with a chosen IPv4 TOS byte.
+    pub(super) fn emit_with_dscp(length: u128, payload: &[u8], dscp: Bits<8>) -> Vec<u8> {
+        emit_inner(length, payload, None, dscp).0
+    }
+
+    /// How many times the widget stepped the caller's payload source.
+    pub(super) fn count_payload_advances(length: u128) -> usize {
+        let payload: Vec<u8> = (0..64).collect();
+        emit_inner(length, &payload, None, bits(0)).1
+    }
+
+    fn emit_inner(
+        length: u128,
+        payload: &[u8],
+        stall_at: Option<usize>,
+        dscp: Bits<8>,
+    ) -> (Vec<u8>, usize) {
         const HDR: usize = 70; // ONLY carries a RETH
         let pad = ((4 - (length % 4)) % 4) as usize;
         let on_wire = length as usize + pad;
@@ -470,13 +505,15 @@ mod tests {
         let ready_at_input = |n: usize| Some(n) != stall_at;
         let ready_at_sample = |m: usize| ready_at_input(input_of(m));
 
-        let run = |sched: &[u8]| -> Vec<(Option<u8>, bool)> {
+        let run = |sched: &[u8]| -> Vec<(Option<u8>, bool, bool)> {
             let stream: Vec<In> = (0..n_cycles)
-                .map(|n| In {
-                    start: n == 0,
-                    payload_byte: bits(sched[n] as u128),
-                    ready: ready_at_input(n),
-                    ..base_input_with(length)
+                .map(|n| {
+                    let mut i = base_input_with(length);
+                    i.cfg.dscp_ecn = dscp;
+                    i.start = n == 0;
+                    i.payload_byte = bits(sched[n] as u128);
+                    i.ready = ready_at_input(n);
+                    i
                 })
                 .collect();
             let uut = RoceWriteTx::default();
@@ -487,6 +524,7 @@ mod tests {
                     (
                         s.output.data.map(|b| b.raw() as u8),
                         s.output.start_of_frame,
+                        s.output.payload_advance,
                     )
                 })
                 .collect()
@@ -497,7 +535,7 @@ mod tests {
         let pass1 = run(&zeros);
         let sof = pass1
             .iter()
-            .position(|(_, sof)| *sof)
+            .position(|(_, sof, _)| *sof)
             .expect("the widget never asserted start_of_frame");
 
         // Pass 2: place the payload in the accepted cycles that follow
@@ -518,12 +556,19 @@ mod tests {
             accepted += 1;
         }
 
-        run(&sched)
+        let pass2 = run(&sched);
+        let advances = pass2
+            .iter()
+            .enumerate()
+            .filter(|(m, (_, _, adv))| *adv && ready_at_sample(*m))
+            .count();
+        let bytes = pass2
             .into_iter()
             .enumerate()
             .filter(|(m, _)| ready_at_sample(*m))
-            .filter_map(|(_, (d, _))| d)
-            .collect()
+            .filter_map(|(_, (d, _, _))| d)
+            .collect();
+        (bytes, advances)
     }
 
     // ---------------- Tier 1 ----------------
@@ -818,9 +863,96 @@ mod tests {
             .join("vcd")
             .join("tx");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["63cee865118643fa7e1c0ee295a450c991f178f57262f1d791e59c3ea2889296"];
+        let expect = expect!["ac511de3bd56842f13ea60a6acd937b68f9613ccbbc933ba6258e254668e92d3"];
         let digest = vcd.dump_to_file(root.join("tx.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod phase3_debts {
+    //! Tests for the three debts the Phase-2 audit turned up.
+
+    use super::tests::{count_payload_advances, emit, emit_with_dscp};
+    use rhdl::prelude::*;
+
+    /// **The widget emits its own pad bytes.**
+    ///
+    /// Non-vacuous by construction: the caller is made to present
+    /// `0xFF` for the pad slots, so a widget that forwarded
+    /// `payload_byte` through the pad — which the first version did —
+    /// would put `FF FF FF` on the wire. A test that supplied zeros for
+    /// the pad, as the earlier ones did, passes either way and proves
+    /// nothing.
+    #[test]
+    fn the_pad_bytes_are_generated_not_forwarded() {
+        // 13 data bytes -> padcount 3. Slots 13..16 are pad, and the
+        // caller deliberately offers rubbish for them.
+        let mut payload: Vec<u8> = (1..=13).collect();
+        payload.extend_from_slice(&[0xFF, 0xFF, 0xFF]);
+        let frame = emit(13, &payload, None);
+        assert_eq!(
+            frame.len(),
+            70 + 16 + 4,
+            "70 header + 16 padded payload + 4 ICRC"
+        );
+        assert_eq!(
+            &frame[70..83],
+            &(1..=13).collect::<Vec<u8>>()[..],
+            "the data bytes should pass through"
+        );
+        assert_eq!(
+            &frame[83..86],
+            &[0, 0, 0],
+            "the pad must be zeros the widget generated, not the 0xFF the caller offered"
+        );
+    }
+
+    /// And the caller's source is not stepped for bytes it did not
+    /// supply: `payload_advance` fires exactly `length` times, not
+    /// `length + padcount`.
+    #[test]
+    fn payload_advance_counts_data_bytes_only() {
+        for (length, pad) in [(13u128, 3usize), (14, 2), (15, 1), (16, 0)] {
+            let advances = count_payload_advances(length);
+            assert_eq!(
+                advances, length as usize,
+                "length {length} (pad {pad}): source stepped {advances} times"
+            );
+        }
+    }
+
+    /// A non-zero DSCP reaches the wire, changes the IPv4 header
+    /// checksum, and — because the ICRC masks that byte — leaves the
+    /// ICRC untouched.
+    ///
+    /// The second half is the interesting one: it is a positive test
+    /// that the ICRC masking is real rather than decorative.
+    #[test]
+    fn dscp_reaches_the_wire_and_the_icrc_ignores_it() {
+        let payload: Vec<u8> = (0..16).collect();
+        let plain = emit_with_dscp(16, &payload, bits(0x00));
+        let marked = emit_with_dscp(16, &payload, bits(0xB8)); // DSCP 46 (EF), ECN 0
+        assert_eq!(plain[15], 0x00, "TOS byte should be where we think");
+        assert_eq!(marked[15], 0xB8, "DSCP should reach frame offset 15");
+        assert_ne!(
+            &plain[24..26],
+            &marked[24..26],
+            "the IPv4 header checksum must change with the TOS byte"
+        );
+        assert_eq!(
+            &plain[plain.len() - 4..],
+            &marked[marked.len() - 4..],
+            "the ICRC masks the TOS byte, so it must NOT change"
+        );
+        // Everything else is identical.
+        assert_eq!(plain.len(), marked.len());
+        for k in 0..plain.len() {
+            if k == 15 || (24..26).contains(&k) {
+                continue;
+            }
+            assert_eq!(plain[k], marked[k], "byte {k} changed unexpectedly");
+        }
     }
 }
