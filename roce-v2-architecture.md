@@ -724,8 +724,24 @@ crates/rhdl-fpga/src/
 ```
 
 Adding a top-level category to `rhdl-fpga` is exactly the structural
-decision `architecture.md` requires checking before making. `net` is
-proposed, not assumed.
+decision `architecture.md` requires checking before making.
+
+**Signed off and built.** `rhdl_fpga::net` now holds `config`,
+`ethernet`, `ipv4`, `udp` and `udp_rx` — the last being the byte-serial
+receive parser for all three layers, which is the piece the duplication
+was about: `roce::rx::parse` and `roce::cm::manager` had the same forty
+lines of header offsets, the second committed deliberately with a note
+that this category was the right answer. Both now compose `net::udp_rx`.
+A MAC frontend is the obvious next resident and is not there yet.
+
+The residency test, recorded in `architecture.md` alongside the category
+list: a widget belongs in `net` when its signature mentions no protocol
+above UDP. That is why `payload_on_wire`, `header_bytes`, `udp_length`,
+`ip_total_length`, `bth_from_plan` and `header_byte` stayed in
+`roce::frame` — they take a `PacketPlan`, a `Bth` or a `QpContext`
+however much of their body is IPv4 arithmetic — and why `core::crc32`
+stayed in `core`, since Ethernet's FCS is one of its users and not its
+definition.
 
 ### How the pieces compose
 

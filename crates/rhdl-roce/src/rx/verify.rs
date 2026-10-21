@@ -443,7 +443,7 @@ mod tests {
             .join("vcd")
             .join("rx_verify");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["5fd2d1de5e7472ae7fe9f8fca7c16cb56bb9b53d97681b24894fc622fd655ef4"];
+        let expect = expect!["3e588fc91cb685c27940e581321ffef9c224ef6bfa5a48d040f6637f492ac064"];
         let digest = vcd.dump_to_file(root.join("rx_verify.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

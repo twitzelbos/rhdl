@@ -91,72 +91,33 @@ use crate::qp::context::QpContext;
 use crate::qp::segmenter::PacketPlan;
 use rhdl::prelude::*;
 
-/// EtherType for IPv4.
-pub const ETHERTYPE_IPV4: u128 = 0x0800;
+// The Ethernet, IPv4 and UDP layers moved to `rhdl_fpga::net`, where
+// they belong: nothing in their signatures mentions RDMA, and this
+// crate was not the only caller -- `crate::cm::manager` needed the same
+// forty-two header bytes and the duplication was committed with a note
+// saying so.
+//
+// Re-exported rather than having every call site import from two
+// crates. A RoCE frame *is* an Ethernet/IPv4/UDP frame with an
+// InfiniBand payload, so `frame::ipv4_byte` remains the honest path for
+// a reader of this module.
+pub use rhdl_fpga::net::FrameConfig;
+pub use rhdl_fpga::net::ethernet::{ETH_BYTES, ETHERTYPE_IPV4, eth_byte, eth_pack};
+pub use rhdl_fpga::net::ipv4::{
+    IP_PROTO_UDP, IPV4_BYTES, IPV4_OFFSET, ipv4_byte, ipv4_checksum, ipv4_head,
+};
+pub use rhdl_fpga::net::udp::{UDP_BYTES, UDP_OFFSET, udp_byte, udp_pack};
+
 /// The IANA-assigned UDP destination port for RoCEv2.
 pub const ROCE_UDP_PORT: u128 = 4791;
-/// IANA protocol number for UDP.
-pub const IP_PROTO_UDP: u128 = 17;
 
-/// Length of the Ethernet II header, in bytes. No VLAN tag.
-pub const ETH_BYTES: u128 = 14;
-/// Length of an IPv4 header with no options, in bytes.
-pub const IPV4_BYTES: u128 = 20;
-/// Length of the UDP header, in bytes.
-pub const UDP_BYTES: u128 = 8;
 /// Length of the ICRC trailer, in bytes.
 pub const ICRC_BYTES: u128 = 4;
 
-/// Frame offset of the IPv4 header. Equal to [`ETH_BYTES`], and the
-/// value [`crate::icrc::COVERAGE_START`] has to agree with.
-pub const IPV4_OFFSET: u128 = ETH_BYTES;
-/// Frame offset of the UDP header.
-pub const UDP_OFFSET: u128 = IPV4_OFFSET + IPV4_BYTES;
 /// Frame offset of the BTH.
 pub const BTH_OFFSET: u128 = UDP_OFFSET + UDP_BYTES;
 /// Frame offset of the RETH, when the opcode carries one.
 pub const RETH_OFFSET: u128 = BTH_OFFSET + 12;
-
-/// The link and network parameters of one connection.
-///
-/// Constant for the life of the connection, alongside
-/// [`QpContext`]: that holds the RDMA-level parameters and this holds
-/// the ones that would be the same for any UDP traffic. Both are
-/// written by the out-of-band connection manager.
-#[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
-pub struct FrameConfig {
-    /// Destination MAC — the peer NIC's, learned at connection setup.
-    pub dst_mac: Bits<48>,
-    /// This interface's MAC.
-    pub src_mac: Bits<48>,
-    /// This interface's IPv4 address.
-    pub src_ip: Bits<32>,
-    /// The peer's IPv4 address.
-    pub dst_ip: Bits<32>,
-    /// UDP source port. RoCEv2 leaves this free, and a real sender
-    /// varies it to spread traffic across a fabric's ECMP hashes.
-    pub src_port: Bits<16>,
-    /// UDP destination port. [`ROCE_UDP_PORT`] for RoCEv2.
-    ///
-    /// A parameter rather than a constant inside [`udp_pack`], because
-    /// hardcoding 4791 there would make an otherwise generic UDP header
-    /// builder quietly RoCE-specific — which is the coupling the module
-    /// docs are about.
-    pub dst_port: Bits<16>,
-    /// IPv4 identification field. Only meaningful for fragmentation,
-    /// which RoCEv2 must not use, so a constant is fine.
-    pub ip_id: Bits<16>,
-    /// IPv4 time to live.
-    pub ttl: Bits<8>,
-    /// The IPv4 TOS byte — six bits of DSCP then two of ECN.
-    ///
-    /// Configurable rather than zero because a RoCEv2 fabric routinely
-    /// depends on it: DCQCN needs ECN-capable transport marked here, and
-    /// lossless queues are selected by DSCP. The ICRC masks this byte,
-    /// so it does not affect the checksum — but it *is* covered by the
-    /// IPv4 header checksum, which is why changing it changes the frame.
-    pub dscp_ecn: Bits<8>,
-}
 
 #[kernel]
 /// Payload bytes actually on the wire, including the pad bytes.
@@ -196,135 +157,6 @@ pub fn udp_length(plan: PacketPlan) -> Bits<16> {
 /// The IPv4 total-length field: the IPv4 header plus the UDP datagram.
 pub fn ip_total_length(plan: PacketPlan) -> Bits<16> {
     bits::<16>(20) + udp_length(plan)
-}
-
-#[kernel]
-/// Pack the Ethernet II header into its 112 wire bits.
-pub fn eth_pack(cfg: FrameConfig) -> Bits<112> {
-    (cfg.dst_mac.resize::<112>() << 64) | (cfg.src_mac.resize::<112>() << 16) | bits(0x0800)
-}
-
-#[kernel]
-/// Select one byte of the Ethernet header. `index` is clamped.
-pub fn eth_byte(cfg: FrameConfig, index: Bits<4>) -> Bits<8> {
-    let safe = if index > bits(13) {
-        bits::<4>(13)
-    } else {
-        index
-    };
-    let shift = (bits::<8>(13) - safe.resize::<8>()) << 3;
-    ((eth_pack(cfg) >> shift.resize::<112>()) & bits(0xFF)).resize::<8>()
-}
-
-#[kernel]
-/// Pack IPv4 header bytes 0–11 — everything but the two addresses.
-///
-/// `checksum` is a parameter rather than being computed here, so that
-/// [`ipv4_checksum`] can call this with zero and avoid a circular
-/// definition.
-pub fn ipv4_head(cfg: FrameConfig, total_len: Bits<16>, checksum: Bits<16>) -> Bits<96> {
-    // byte 0      : version 4, IHL 5  -> 0x45
-    // byte 1      : TOS / DSCP+ECN
-    // bytes 2..3  : total length
-    // bytes 4..5  : identification
-    // bytes 6..7  : flags + fragment offset -> 0
-    // byte 8      : TTL
-    // byte 9      : protocol
-    // bytes 10..11: header checksum
-    (bits::<96>(0x45) << 88)
-        | (cfg.dscp_ecn.resize::<96>() << 80)
-        | (total_len.resize::<96>() << 64)
-        | (cfg.ip_id.resize::<96>() << 48)
-        | (cfg.ttl.resize::<96>() << 24)
-        | (bits::<96>(17) << 16)
-        | checksum.resize::<96>()
-}
-
-#[kernel]
-/// The IPv4 header checksum: the one's-complement sum of the header's
-/// ten 16-bit words, complemented, computed with the checksum field
-/// taken as zero.
-pub fn ipv4_checksum(cfg: FrameConfig, total_len: Bits<16>) -> Bits<16> {
-    let head = ipv4_head(cfg, total_len, bits(0));
-    let mut acc = bits::<32>(0);
-    // Six words from the head; the checksum word is zero in it.
-    for i in 0..6 {
-        let shift = ((5 - i) * 16) as u128;
-        acc += ((head >> shift) & bits::<96>(0xFFFF)).resize::<32>();
-    }
-    // Four more from the two addresses.
-    acc += ((cfg.src_ip >> 16) & bits(0xFFFF)).resize::<32>();
-    acc += (cfg.src_ip & bits(0xFFFF)).resize::<32>();
-    acc += ((cfg.dst_ip >> 16) & bits(0xFFFF)).resize::<32>();
-    acc += (cfg.dst_ip & bits(0xFFFF)).resize::<32>();
-    // Fold the carries in. Twice, because the first fold can itself
-    // carry out of bit 15.
-    let fold1 = (acc & bits(0xFFFF)) + (acc >> 16);
-    let fold2 = (fold1 & bits(0xFFFF)) + (fold1 >> 16);
-    ((fold2 & bits(0xFFFF)) ^ bits(0xFFFF)).resize::<16>()
-}
-
-#[kernel]
-/// Select one byte of the IPv4 header. `index` is clamped, and so is
-/// the sub-index handed to each of the three ranges — see the module
-/// docs on why that is load-bearing rather than defensive.
-pub fn ipv4_byte(cfg: FrameConfig, total_len: Bits<16>, index: Bits<5>) -> Bits<8> {
-    let safe = if index > bits(19) {
-        bits::<5>(19)
-    } else {
-        index
-    };
-    let in_head = safe < bits(12);
-    let in_src = safe >= bits(12) && safe < bits(16);
-
-    // Each sub-index is clamped into its own range *before* being used
-    // as a shift, because all three branches below evaluate.
-    let head_i = if in_head { safe } else { bits::<5>(11) };
-    let src_i = if in_src {
-        safe - bits(12)
-    } else {
-        bits::<5>(0)
-    };
-    let dst_i = if safe >= bits(16) {
-        safe - bits(16)
-    } else {
-        bits::<5>(0)
-    };
-
-    let head_shift = (bits::<8>(11) - head_i.resize::<8>()) << 3;
-    let src_shift = (bits::<8>(3) - src_i.resize::<8>()) << 3;
-    let dst_shift = (bits::<8>(3) - dst_i.resize::<8>()) << 3;
-
-    let head = ipv4_head(cfg, total_len, ipv4_checksum(cfg, total_len));
-    let from_head = ((head >> head_shift.resize::<96>()) & bits(0xFF)).resize::<8>();
-    let from_src = ((cfg.src_ip >> src_shift.resize::<32>()) & bits(0xFF)).resize::<8>();
-    let from_dst = ((cfg.dst_ip >> dst_shift.resize::<32>()) & bits(0xFF)).resize::<8>();
-
-    if in_head {
-        from_head
-    } else if in_src {
-        from_src
-    } else {
-        from_dst
-    }
-}
-
-#[kernel]
-/// Pack the UDP header into its 64 wire bits.
-///
-/// The checksum is zero, which RoCEv2 requires.
-pub fn udp_pack(cfg: FrameConfig, udp_len: Bits<16>) -> Bits<64> {
-    (cfg.src_port.resize::<64>() << 48)
-        | (cfg.dst_port.resize::<64>() << 32)
-        | (udp_len.resize::<64>() << 16)
-}
-
-#[kernel]
-/// Select one byte of the UDP header. `index` is clamped.
-pub fn udp_byte(cfg: FrameConfig, udp_len: Bits<16>, index: Bits<3>) -> Bits<8> {
-    let safe = if index > bits(7) { bits::<3>(7) } else { index };
-    let shift = (bits::<8>(7) - safe.resize::<8>()) << 3;
-    ((udp_pack(cfg, udp_len) >> shift.resize::<64>()) & bits(0xFF)).resize::<8>()
 }
 
 #[kernel]
