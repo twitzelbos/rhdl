@@ -10,7 +10,7 @@ fn main() -> Result<(), RHDLError> {
     let uut = Ps2Keyboard::default();
     // Send the scan code 0x1C ('A' on Set 2).
     let data: u8 = 0x1C;
-    let parity = (data.count_ones() % 2) == 0;
+    let parity = data.count_ones().is_multiple_of(2);
     let frame_bits: Vec<bool> = std::iter::once(false)
         .chain((0..8).map(|i| (data >> i) & 1 == 1))
         .chain(std::iter::once(parity))

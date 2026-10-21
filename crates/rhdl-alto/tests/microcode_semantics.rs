@@ -138,8 +138,8 @@ fn observe(prog: Vec<InCfg>) -> Observation {
     //   comb  (output during last action's cycle)  = outs[full.len() - 1].
     //   after (output during the appended NOP cycle) = outs[full.len()].
     let n = full.len();
-    let comb = outs[n - 1].clone();
-    let after = outs[n].clone();
+    let comb = outs[n - 1];
+    let after = outs[n];
     Observation { comb, after }
 }
 
@@ -153,6 +153,7 @@ fn observe_comb(prog: Vec<InCfg>) -> Out {
     observe(prog).comb
 }
 
+#[allow(clippy::too_many_arguments)] // one argument per microinstruction field
 fn ui(
     rsel: u8,
     aluf: AluFunction,

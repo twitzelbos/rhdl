@@ -379,7 +379,7 @@ fn pipelined_jal_squashes_and_redirects() {
 #[test]
 fn pipelined_iverilog_round_trip() -> Result<(), RHDLError> {
     let uut = PipelinedCpu::default();
-    let program = vec![addi(1, 0, 5), addi(2, 1, 7), sw(2, 0, 0)];
+    let program = [addi(1, 0, 5), addi(2, 1, 7), sw(2, 0, 0)];
     let inputs: Vec<PIn> = (0..12)
         .map(|cycle| PIn {
             instr: bits::<32>(if cycle < program.len() {

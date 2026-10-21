@@ -24,7 +24,7 @@ fn main() {
     println!("Index = (RSEL << 3) | BS");
     println!();
     println!("MPC=0x153 (BS=InstructionRegister=7, RSEL=0):");
-    let idx = (0 << 3) | 7;
+    let idx = 7;
     println!(
         "  constants[{idx}] = 0x{:04x}  (mask AND'd with DISP value)",
         constants[idx]

@@ -50,7 +50,7 @@ fn attr_counter_counts_when_enabled() {
         .last()
         .map(|s| s.output.raw())
         .unwrap_or(0);
-    assert!(last >= 4 && last <= 5, "expected ~5 counts, got {last}");
+    assert!((4..=5).contains(&last), "expected ~5 counts, got {last}");
 }
 
 #[test]
@@ -165,7 +165,7 @@ fn attr_generic_counter_at_width_4_counts() {
         .map(|s| s.output.raw())
         .unwrap_or(0);
     assert!(
-        last >= 3 && last <= 5,
+        (3..=5).contains(&last),
         "expected ~5 bumps at N=4, got {last}"
     );
 }
@@ -239,5 +239,5 @@ fn attr_widget_a_runs() {
         .last()
         .map(|s| s.output.raw())
         .unwrap_or(0xff);
-    assert!(last >= 3 && last <= 4);
+    assert!((3..=4).contains(&last));
 }

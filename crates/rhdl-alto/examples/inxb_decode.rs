@@ -52,10 +52,10 @@ fn main() {
     for &(idx, label) in &probe_indices {
         let v = crom[idx];
         println!(
-            "  constant_rom[{:>3}] = 0x{:04x} ({}) — {}",
+            "  constant_rom[{:>3}] = 0x{:04x} (bit15={}) — {}",
             idx,
             v,
-            format!("bit15={}", (v >> 15) & 1),
+            (v >> 15) & 1,
             label
         );
     }

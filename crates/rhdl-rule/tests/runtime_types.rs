@@ -49,7 +49,7 @@ fn reg_alias_resolves_to_dff_and_counter_works() {
         .last()
         .map(|s| s.output.raw())
         .unwrap_or(0);
-    assert!(last >= 4 && last <= 5, "expected ~5 counts, got {last}");
+    assert!((4..=5).contains(&last), "expected ~5 counts, got {last}");
 }
 
 #[test]

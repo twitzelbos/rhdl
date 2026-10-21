@@ -4,18 +4,12 @@ use rhdl_fpga::{doc::write_svg_as_markdown, serial_bus::uart_rx::UartRx};
 /// Encode a byte as a UART frame at the given divisor: idle, start, 8 LSB-first data, stop, idle.
 fn encode_frame(byte: u128, divisor: usize) -> Vec<bool> {
     let mut out = vec![true; 8];
-    for _ in 0..divisor {
-        out.push(false);
-    }
+    out.extend(std::iter::repeat_n(false, divisor));
     for k in 0..8 {
         let bit = ((byte >> k) & 1) != 0;
-        for _ in 0..divisor {
-            out.push(bit);
-        }
+        out.extend(std::iter::repeat_n(bit, divisor));
     }
-    for _ in 0..divisor {
-        out.push(true);
-    }
+    out.extend(std::iter::repeat_n(true, divisor));
     out
 }
 

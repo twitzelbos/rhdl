@@ -198,17 +198,17 @@ fn disk_word_outranks_emulator_under_pressure() {
 
     // Output is observed one cycle after the firing (last_task is a DFF).
     // Cycles 0..4 fire Disk Word (task 14) → trace[1..=5].last_task == 14.
-    for cyc in 1..=5 {
+    for (cyc, entry) in arbiter_trace.iter().enumerate().take(6).skip(1) {
         assert_eq!(
-            arbiter_trace[cyc].last_task.raw(),
+            entry.last_task.raw(),
             14,
             "cycle {cyc} (out): Disk Word should win over Emulator"
         );
     }
     // Cycles 5..9 fire Emulator (task 0) → trace[6..=9].last_task == 0.
-    for cyc in 6..=9 {
+    for (cyc, entry) in arbiter_trace.iter().enumerate().take(10).skip(6) {
         assert_eq!(
-            arbiter_trace[cyc].last_task.raw(),
+            entry.last_task.raw(),
             0,
             "cycle {cyc} (out): Emulator runs once Disk Word releases"
         );

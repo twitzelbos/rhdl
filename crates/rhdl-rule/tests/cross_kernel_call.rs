@@ -74,7 +74,7 @@ fn increment_via_helper_kernel() {
         .map(|s| s.output.raw())
         .unwrap_or(0);
     assert!(
-        last >= 4 && last <= 5,
+        (4..=5).contains(&last),
         "expected ~5 increments via helper kernel; got {last}"
     );
 }

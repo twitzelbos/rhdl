@@ -199,7 +199,7 @@ mod tests {
         };
         let (o, _d) = relay_kernel::<b8, ()>(cr, i, q);
         assert!(o.data.is_none());
-        assert_eq!(o.ready, true); // !stop_out = !false = true
+        assert!(o.ready); // !stop_out = !false = true
     }
 
     /// Direct kernel test: when Carloni has buffered data
@@ -228,7 +228,7 @@ mod tests {
             Some(it) => assert_eq!(it.data.raw(), 0xAB),
             None => panic!("expected Some(item) when void_out=false"),
         }
-        assert_eq!(o.ready, true);
+        assert!(o.ready);
     }
 
     /// Direct kernel test: an incoming item is forwarded into
@@ -253,8 +253,8 @@ mod tests {
         };
         let (_o, d) = relay_kernel::<b8, ()>(cr, i, q);
         assert_eq!(d.inner.data_in.data.raw(), 0x55);
-        assert_eq!(d.inner.void_in, false); // is_none() = false → void = false
-        assert_eq!(d.inner.stop_in, true); // !ready = true
+        assert!(!d.inner.void_in); // is_none() = false → void = false
+        assert!(d.inner.stop_in); // !ready = true
     }
 
     /// Tier 3 — HDL emission snapshot.

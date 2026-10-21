@@ -230,7 +230,7 @@ mod tests {
         // Verify hsync occurs only when pixel_x in [7, 9).
         for s in &outputs {
             let x = s.output.pixel_x.raw();
-            let expected_hsync = x >= 7 && x < 9;
+            let expected_hsync = (7..9).contains(&x);
             assert_eq!(
                 s.output.hsync, expected_hsync,
                 "hsync at x={x} should be {expected_hsync}"

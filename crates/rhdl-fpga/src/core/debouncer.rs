@@ -222,7 +222,7 @@ mod tests {
     fn test_short_glitch_rejected() -> miette::Result<()> {
         const SETTLE: u128 = 5;
         // Input: glitch of 2 high cycles, then back to low forever.
-        let mut input = vec![false; 40];
+        let mut input = [false; 40];
         input[3] = true;
         input[4] = true;
         let stream = input.iter().copied().with_reset(1).clock_pos_edge(100);
@@ -246,7 +246,7 @@ mod tests {
     fn test_sustained_high_propagates() -> miette::Result<()> {
         const SETTLE: u128 = 5;
         // High starting at cycle 3 and held through the rest of the run.
-        let mut input = vec![false; 40];
+        let mut input = [false; 40];
         for x in input.iter_mut().skip(3) {
             *x = true;
         }
@@ -287,7 +287,7 @@ mod tests {
     #[test]
     fn test_debouncer_hdl_works() -> miette::Result<()> {
         let uut = Debouncer::<4>::new(bits(5));
-        let mut input = vec![false; 40];
+        let mut input = [false; 40];
         input[3] = true;
         input[4] = true;
         for x in input.iter_mut().skip(15) {
@@ -306,7 +306,7 @@ mod tests {
     #[test]
     fn test_debouncer_trace() -> miette::Result<()> {
         let uut = Debouncer::<4>::new(bits(5));
-        let mut input = vec![false; 40];
+        let mut input = [false; 40];
         input[3] = true;
         input[4] = true;
         for x in input.iter_mut().skip(15) {

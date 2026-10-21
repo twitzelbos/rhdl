@@ -366,7 +366,7 @@ mod tests {
     #[test]
     fn test_long_run_saturates_at_128() -> miette::Result<()> {
         let uut = RleEncoder::default();
-        let input: Vec<u8> = std::iter::repeat(0x55).take(130).collect();
+        let input: Vec<u8> = std::iter::repeat_n(0x55, 130).collect();
         let captured = drive_and_capture(&uut, &input);
         // First 128 → one run encoding (wire count = 127).
         // Remaining 2 → second run encoding (wire count = 1).

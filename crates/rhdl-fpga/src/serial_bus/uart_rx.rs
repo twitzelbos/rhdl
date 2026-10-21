@@ -241,24 +241,16 @@ mod tests {
     ) -> Vec<bool> {
         let mut out = vec![true; idle_before];
         // Start bit (low) for `divisor` cycles.
-        for _ in 0..divisor {
-            out.push(false);
-        }
+        out.extend(std::iter::repeat_n(false, divisor));
         // 8 data bits, LSB-first.
         for k in 0..8 {
             let bit = ((byte >> k) & 1) != 0;
-            for _ in 0..divisor {
-                out.push(bit);
-            }
+            out.extend(std::iter::repeat_n(bit, divisor));
         }
         // Stop bit (high) for `divisor` cycles.
-        for _ in 0..divisor {
-            out.push(true);
-        }
+        out.extend(std::iter::repeat_n(true, divisor));
         // Idle.
-        for _ in 0..idle_after {
-            out.push(true);
-        }
+        out.extend(std::iter::repeat_n(true, idle_after));
         out
     }
 
@@ -281,7 +273,7 @@ mod tests {
             assert!(
                 valid_cycle.is_some(),
                 "no valid pulse for byte {byte:#x}: outputs[..15]={:?}",
-                &outputs[..15.min(outputs.len())]
+                outputs[..15.min(outputs.len())]
                     .iter()
                     .map(|s| s.output.valid)
                     .collect::<Vec<_>>()

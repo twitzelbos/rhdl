@@ -162,8 +162,8 @@ mod tests {
     #[test]
     fn microcode_rom_iverilog_round_trip() -> Result<(), RHDLError> {
         let mut words = [0u32; MICROCODE_WORDS];
-        for i in 0..16 {
-            words[i] = 0xA5A5_0000 | i as u32;
+        for (i, w) in words.iter_mut().take(16).enumerate() {
+            *w = 0xA5A5_0000 | i as u32;
         }
         let uut = MicrocodeRom::with_words(&words);
         let inputs: Vec<UromIn> = (0..6).map(|i| UromIn { mpc: b11(i as u16) }).collect();

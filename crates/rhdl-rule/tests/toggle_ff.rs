@@ -107,9 +107,8 @@ fn toggle_ff_toggles() {
         .map(|s| s.output)
         .collect();
     // The state was toggled twice, so it should end up where it started (false).
-    assert_eq!(
-        *outputs.last().unwrap(),
-        false,
+    assert!(
+        !(*outputs.last().unwrap()),
         "expected state=false after two toggles; got outputs={outputs:?}",
     );
 }

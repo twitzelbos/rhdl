@@ -47,8 +47,7 @@ fn parse_tsv(stdout: &str) -> Vec<Snap> {
     stdout
         .lines()
         .skip(1)
-        .enumerate()
-        .filter_map(|(_idx, line)| {
+        .filter_map(|line| {
             let p: Vec<&str> = line.split('\t').collect();
             if p.len() < 7 + 32 {
                 return None;
@@ -130,8 +129,8 @@ fn main() {
         .enumerate()
         .map(|(i, t)| {
             let mut r = [0u16; 32];
-            for k in 0..32 {
-                r[k] = t.regs[k].raw() as u16;
+            for (slot, reg) in r.iter_mut().zip(t.regs.iter()) {
+                *slot = reg.raw() as u16;
             }
             Snap {
                 cycle: i,
@@ -268,7 +267,7 @@ fn main() {
     println!("Cycles 0-3: OURS reports mpc=0 due to task_started + URom-latency display");
     println!("artifact.  Real divergence (if any) emerges at cycle 4 (KSEC start) onward.");
     println!();
-    println!("{:>5}  {:>10}  {:>10}  {}", "cyc", "CTR", "OURS", "");
+    println!("{:>5}  {:>10}  {:>10}  ", "cyc", "CTR", "OURS");
     let mut last_ctr_task: i32 = -1;
     let mut last_ours_task: i32 = -1;
     for k in 0..n_aligned {

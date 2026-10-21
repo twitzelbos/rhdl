@@ -1051,14 +1051,25 @@ mod tests {
 
     use crate::serial_bus::modbus_rtu_slave::{In as SlaveIn, ModbusRtuSlave, Out as SlaveOut};
 
-    /// Run a full request-response round-trip: master starts a
-    /// request, master TX bytes flow into slave RX, slave processes
-    /// + responds, slave TX bytes flow back to master RX, master
-    /// decodes.  Returns `(tx_master_bytes, slave_holding_regs,
-    /// slave_coils, master_done_out)`.  The "wire" model is naive:
-    /// every cycle, if either side has `tx_valid` it's asserted on
-    /// the other side's `rx_valid` AND the sender's `tx_ready` is
-    /// pulsed — i.e. one byte per cycle, instantaneous.
+    /// Run a full request-response round-trip: the master starts a
+    /// request, its TX bytes flow into the slave's RX, the slave
+    /// processes and responds, its TX bytes flow back to the master's
+    /// RX, and the master decodes.
+    ///
+    /// Returns `(tx_master_bytes, slave_holding_regs, slave_coils,
+    /// master_done_out)`.
+    ///
+    /// The "wire" model is naive: on every cycle, if either side has
+    /// `tx_valid` it is asserted on the other side's `rx_valid` and the
+    /// sender's `tx_ready` is pulsed — one byte per cycle,
+    /// instantaneous.
+    // Nine parameters, and they are nine genuinely independent Modbus
+    // request fields -- bundling them into a struct would move the
+    // argument list rather than shorten it, and a test helper's
+    // call sites read better with the fields named at the call. Same
+    // allow, for the same reason, as the video widgets in
+    // `crate::video`.
+    #[allow(clippy::too_many_arguments)]
     fn run_round_trip<const NREG: usize, const NCOIL: usize>(
         slave_addr: u8,
         fc: u8,

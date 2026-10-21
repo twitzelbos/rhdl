@@ -194,7 +194,7 @@ fn monitored_arbiter_counter_advances_on_grants() {
         .collect();
     let final_count = outputs.last().map(|o| o.total_grants.raw()).unwrap_or(0);
     assert!(
-        final_count >= 4 && final_count <= 6,
+        (4..=6).contains(&final_count),
         "expected ~6 grants counted, got {final_count}",
     );
 }

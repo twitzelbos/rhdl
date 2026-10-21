@@ -95,7 +95,7 @@ fn counter_counts_when_enabled() {
     // we expect to see the counter at 5 (the last sampled output
     // reflects the post-cycle-5 state).
     assert!(
-        final_count >= 4 && final_count <= 5,
+        (4..=5).contains(&final_count),
         "expected counter near 5 after 5 enabled cycles; got {final_count}",
     );
 }

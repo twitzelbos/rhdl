@@ -177,8 +177,8 @@ mod tests {
     #[test]
     fn constant_rom_iverilog_round_trip() -> Result<(), RHDLError> {
         let mut constants = [0u16; NUM_CONSTANTS];
-        for i in 0..16 {
-            constants[i] = (0xA000 + i) as u16;
+        for (i, c) in constants.iter_mut().take(16).enumerate() {
+            *c = (0xA000 + i) as u16;
         }
         let uut = ConstantRom::with_constants(&constants);
         let inputs: Vec<ConstantIn> = (0..6).map(|i| ConstantIn { index: b8(i as u8) }).collect();

@@ -281,6 +281,10 @@ mod property_layer {
         my_kernel();
     }
 
+    // Never called directly: `#[fsm_properties]` generates the
+    // `FsmProps_empty_kernel` type that the test below reads, and the
+    // function body is only the macro's input.
+    #[allow(dead_code)]
     #[fsm_properties()]
     pub fn empty_kernel() {}
 

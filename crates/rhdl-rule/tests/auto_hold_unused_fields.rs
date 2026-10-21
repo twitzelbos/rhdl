@@ -71,7 +71,7 @@ fn auto_hold_active_increments_normally() {
         .map(|s| s.output.raw())
         .unwrap_or(0);
     assert!(
-        last >= 4 && last <= 5,
+        (4..=5).contains(&last),
         "active should increment; got {last}"
     );
 }
@@ -128,7 +128,7 @@ fn many_unused_fields_compile_and_run() {
         .last()
         .map(|s| s.output.raw())
         .unwrap_or(0);
-    assert!(last >= 3 && last <= 4, "got {last}");
+    assert!((3..=4).contains(&last), "got {last}");
 }
 
 // ---- Test 3: #[output] with no `self_q` parameter ---------------

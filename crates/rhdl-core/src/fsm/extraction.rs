@@ -1066,9 +1066,13 @@ mod tests {
         let r_d_init = make_register(0); // d = dont_care
         let r_q_state = make_register(1); // q.state
         let r_d_default = make_register(2); // d.state = q.state (kernel-top default)
-        let r_to_running = make_register(3); // d.state = Running
-        let r_to_done = make_register(4); // d.state = Done
-        let r_to_idle = make_register(5); // d.state = Idle
+        // Registers 3, 4 and 5 are deliberately unallocated. An earlier
+        // draft of this test built the per-arm `d` values by assigning
+        // the target enum to a register first; the final shape splices
+        // the `Enum` results (10, 11, 12) directly, so those three were
+        // left declared and unused with comments describing code that
+        // is no longer here. Removed rather than underscore-prefixed:
+        // the misleading comments were the actual problem.
         let r_arm_idle = make_register(6); // d after Idle arm
         let r_arm_running = make_register(7); // d after Running arm
         let r_arm_done = make_register(8); // d after Done arm
@@ -2067,8 +2071,8 @@ mod tests {
     /// Done).  Kernel-top default writes `d.state = q.state`.  Then
     /// a Case on `q.state` where:
     ///   - Idle arm: `d.state = Running` (transition out)
-    ///   - Running arm: empty (no body, no d.state write)
-    ///       ← intended deadlock that becomes implicit self-loop
+    ///   - Running arm: empty (no body, no d.state write) — the
+    ///     intended deadlock that becomes an implicit self-loop
     ///   - Done arm: `d.state = Idle` (transition out)
     ///
     /// The extractor produces (Idle → Running, Running → Running,

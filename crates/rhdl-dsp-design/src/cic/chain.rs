@@ -1108,10 +1108,14 @@ mod tests {
     /// difference has to be exactly `comb_pipeline` and nothing else.
     #[test]
     fn an_unpipelined_implementation_is_shorter_by_that_term() {
-        let mut piped = ChainSpec::default();
-        piped.pipelined_combs = true;
-        let mut flat = ChainSpec::default();
-        flat.pipelined_combs = false;
+        let piped = ChainSpec {
+            pipelined_combs: true,
+            ..Default::default()
+        };
+        let flat = ChainSpec {
+            pipelined_combs: false,
+            ..Default::default()
+        };
 
         let a = design(piped).expect("designable");
         let b = design(flat).expect("designable");
@@ -1407,8 +1411,8 @@ mod tests {
         }
         // And the product must be order-independent at DC and shape-
         // dependent away from it.
-        let fwd = cascade_magnitude(&vec![(8usize, 2usize, 1usize), (61, 5, 1)], 488, 0.3);
-        let rev = cascade_magnitude(&vec![(61usize, 5usize, 1usize), (8, 2, 1)], 488, 0.3);
+        let fwd = cascade_magnitude(&[(8usize, 2usize, 1usize), (61, 5, 1)], 488, 0.3);
+        let rev = cascade_magnitude(&[(61usize, 5usize, 1usize), (8, 2, 1)], 488, 0.3);
         assert!(fwd.is_finite() && rev.is_finite());
         assert!(
             (fwd - rev).abs() > 1e-9,
@@ -1481,9 +1485,8 @@ mod tests {
             ..base()
         };
         // Either outcome is acceptable; panicking is not.
-        match design(spec) {
-            Ok(d) => assert!(d.achieved_snr_db.is_finite()),
-            Err(_) => {}
+        if let Ok(d) = design(spec) {
+            assert!(d.achieved_snr_db.is_finite())
         }
         // And the model itself must return a number at an absurd width.
         let v = snr_db(16, 88, 8, 244, 2, 40);

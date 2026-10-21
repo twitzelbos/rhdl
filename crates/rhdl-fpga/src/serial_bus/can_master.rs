@@ -1271,7 +1271,7 @@ mod tests {
         let trace = run_two_nodes(
             4,
             350 * 4 + 200,
-            one_shot_tx(0x1ABCDE7, true, 2, 0xDEAD_BEEF_00_00_00_00),
+            one_shot_tx(0x1ABCDE7, true, 2, 0xDEAD_BEEF_0000_0000),
             silent_listener(),
         );
         let pulse = trace

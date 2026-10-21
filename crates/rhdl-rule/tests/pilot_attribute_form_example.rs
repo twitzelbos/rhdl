@@ -140,7 +140,10 @@ fn attr_form_counter_increments_when_enabled() {
     .collect();
     let outputs = drive(stream_in);
     let last = *outputs.last().unwrap_or(&0);
-    assert!(last >= 4 && last <= 5, "expected ~5 increments, got {last}");
+    assert!(
+        (4..=5).contains(&last),
+        "expected ~5 increments, got {last}"
+    );
 }
 
 #[test]

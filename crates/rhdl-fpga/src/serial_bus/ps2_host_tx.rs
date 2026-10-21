@@ -369,7 +369,7 @@ mod tests {
             for _ in 0..4 {
                 let mut s = idle_in();
                 s.clk_in = false;
-                s.data_in = if cycle == 10 { false } else { true };
+                s.data_in = cycle != 10;
                 stream.push(s);
             }
         }

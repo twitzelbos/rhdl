@@ -173,8 +173,8 @@ mod tests {
         };
         let (_o, d) = rcstream_to_axi_kernel::<b8, ()>(cr, i, q);
         assert_eq!(d.outbuf.data_in.data.raw(), 0xCD);
-        assert_eq!(d.outbuf.void_in, false);
-        assert_eq!(d.outbuf.stop_in, false);
+        assert!(!d.outbuf.void_in);
+        assert!(!d.outbuf.stop_in);
     }
 
     /// Direct kernel test: data: None produces void_in=1.
@@ -193,7 +193,7 @@ mod tests {
             },
         };
         let (_o, d) = rcstream_to_axi_kernel::<b8, ()>(cr, i, q);
-        assert_eq!(d.outbuf.void_in, true);
+        assert!(d.outbuf.void_in);
     }
 
     /// Direct kernel test: when Carloni has buffered data, it emerges
@@ -218,9 +218,9 @@ mod tests {
         };
         let (o, _d) = rcstream_to_axi_kernel::<b8, bool>(cr, i, q);
         assert_eq!(o.tdata.raw(), 0xEF);
-        assert_eq!(o.tuser, true);
-        assert_eq!(o.tvalid, true);
-        assert_eq!(o.ready, true);
+        assert!(o.tuser);
+        assert!(o.tvalid);
+        assert!(o.ready);
     }
 
     /// Tier 2 — **backpressure**, the mirror of the AXI->RCStream case

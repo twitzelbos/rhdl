@@ -42,7 +42,7 @@ fn main() -> Result<(), RHDLError> {
                 tx_byte: bits(0xED),
                 tx_strobe: false,
                 clk_in: false,
-                data_in: if cycle == 10 { false } else { true },
+                data_in: cycle != 10,
             });
         }
     }

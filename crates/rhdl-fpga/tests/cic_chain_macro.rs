@@ -39,6 +39,14 @@ cic_chain!(
 );
 
 #[test]
+// `assertions_on_constants` fires because clippy can evaluate these at
+// lint time -- every operand is a `const`. The lint's premise is that
+// such an assertion is meaningless, and here it is the opposite: these
+// are *constant-invariant* tests. Nothing about them is checked by the
+// type system, and the moment one of the constants is edited the
+// assertion becomes false and the build stops. Rewriting them to
+// involve a runtime value would make them weaker, not stronger.
+#[allow(clippy::assertions_on_constants)]
 fn the_derived_numbers_are_visible() {
     // The macro's whole convenience is not having to compute these.
     // Being unable to *see* them would be a different thing.
@@ -108,6 +116,14 @@ fn the_compensator_is_separable() -> miette::Result<()> {
 /// Both figures are reported: what the chain does unaided, and what is
 /// left if the taps are applied.
 #[test]
+// `assertions_on_constants` fires because clippy can evaluate these at
+// lint time -- every operand is a `const`. The lint's premise is that
+// such an assertion is meaningless, and here it is the opposite: these
+// are *constant-invariant* tests. Nothing about them is checked by the
+// type system, and the moment one of the constants is edited the
+// assertion becomes false and the build stops. Rewriting them to
+// involve a runtime value would make them weaker, not stronger.
+#[allow(clippy::assertions_on_constants)]
 fn the_droop_and_the_compensated_ripple_are_both_reported() {
     // Skipping the compensator is a real choice, so the cost of
     // skipping it has to be visible.

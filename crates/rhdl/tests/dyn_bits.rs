@@ -374,12 +374,11 @@ fn test_xmul_emits_narrow_operands() -> miette::Result<()> {
     let mut width = std::collections::HashMap::new();
     for line in hdl.lines() {
         let t = line.trim();
-        if let Some(rest) = t.strip_prefix("reg signed [") {
-            if let Some((range, name)) = rest.split_once("] ") {
-                if let Ok(hi) = range.split(':').next().unwrap_or("").parse::<usize>() {
-                    width.insert(name.trim_end_matches(';').to_string(), hi + 1);
-                }
-            }
+        if let Some(rest) = t.strip_prefix("reg signed [")
+            && let Some((range, name)) = rest.split_once("] ")
+            && let Ok(hi) = range.split(':').next().unwrap_or("").parse::<usize>()
+        {
+            width.insert(name.trim_end_matches(';').to_string(), hi + 1);
         }
     }
     let mut mults = Vec::new();

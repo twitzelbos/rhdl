@@ -331,8 +331,8 @@ mod tests {
     use std::f64::consts::TAU;
 
     const W: usize = 18;
-    const INT_W: usize = super::super::INT_W;
-    /// Ditto the angle width and the iteration count.
+    /// Taken from the parent module, so the tests cannot drift from the
+    /// widths the widget is actually built with.
     const ANGLE_W: usize = super::super::ANGLE_W;
     const ITERATIONS: usize = super::super::ITERATIONS;
     type Uut = CordicVectoringDefault;

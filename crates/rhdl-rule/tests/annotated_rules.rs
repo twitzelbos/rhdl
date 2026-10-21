@@ -200,11 +200,11 @@ fn conflict_free_annotation_compiles_and_both_rules_fire() {
     // suppression).  After 5 cycles each should have incremented
     // ~5 times.
     assert!(
-        a >= 4 && a <= 5,
+        (4..=5).contains(&a),
         "expected `a` to count up freely (no conflict suppression); got {a}",
     );
     assert!(
-        b >= 4 && b <= 5,
+        (4..=5).contains(&b),
         "expected `b` to count up freely (no conflict suppression); got {b}",
     );
 }

@@ -75,7 +75,7 @@ fn both_widgets_run() {
         .last()
         .map(|s| s.output.raw())
         .unwrap_or(0xff);
-    assert!(last_a >= 3 && last_a <= 4);
+    assert!((3..=4).contains(&last_a));
 
     let b: WidgetB = WidgetB::default();
     let stream_b = std::iter::repeat_n(true, 4)
@@ -88,5 +88,5 @@ fn both_widgets_run() {
         .last()
         .map(|s| s.output.raw())
         .unwrap_or(0xffff);
-    assert!(last_b >= 6 && last_b <= 8);
+    assert!((6..=8).contains(&last_b));
 }

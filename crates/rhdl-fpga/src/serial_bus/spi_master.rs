@@ -277,8 +277,7 @@ mod tests {
         // Capture mosi sequence at cycles where SPI bit is being presented (q.phase=0 cycles).
         let mosi_seq: Vec<bool> = outputs
             .iter()
-            .enumerate()
-            .filter_map(|(i, s)| {
+            .filter_map(|s| {
                 if s.output.busy && !s.output.sclk {
                     Some(s.output.mosi)
                 } else {
@@ -315,9 +314,9 @@ mod tests {
             // mosi bits should equal tx in MSB-first order.
             assert!(mosi.len() >= 8, "mosi too short: {mosi:?}");
             // The first 8 mosi bits captured (during transferring && sclk=0) are tx[7], tx[6], ..., tx[0].
-            for k in 0..8 {
+            for (k, got) in mosi.iter().take(8).enumerate() {
                 let expected_bit = ((tx >> (7 - k)) & 1) != 0;
-                assert_eq!(mosi[k], expected_bit, "mosi[{k}] mismatch for tx=0x{tx:x}");
+                assert_eq!(*got, expected_bit, "mosi[{k}] mismatch for tx=0x{tx:x}");
             }
         }
         Ok(())
