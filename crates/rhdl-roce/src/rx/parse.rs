@@ -131,12 +131,14 @@
 //! And the state machine the parser walks through a frame:
 #![doc = include_str!("../../doc/rx_parse_fsm.md")]
 
+use crate::frame::ROCE_UDP_PORT;
 use crate::headers::{
     Bth, Reth, WriteKind, bth_unpack, carries_reth, decode_write_opcode, reth_unpack,
 };
 use crate::icrc::COVERAGE_START;
 use rhdl::prelude::*;
 use rhdl_fpga::core::dff;
+use rhdl_fpga::net::udp_rx::{UdpHeader, UdpRx, UdpRxVerdict};
 
 /// The smallest IP total length a RoCE RDMA WRITE can have: 20 bytes of
 /// IPv4, 8 of UDP, 12 of BTH, no RETH, no payload, 4 of ICRC.
@@ -239,8 +241,12 @@ pub enum RxPhase {
     /// is what lets the parser resynchronise after a frame it did not
     /// see the beginning of.
     Idle,
-    /// Accumulating header bytes and running the acceptance checks.
-    Header,
+    /// Inside the Ethernet, IPv4 and UDP headers, which
+    /// [`rhdl_fpga::net::udp_rx::UdpRx`] is taking apart.
+    Network,
+    /// Accumulating the InfiniBand transport headers — the BTH, and the
+    /// RETH when the opcode carries one.
+    Transport,
     /// Passing payload bytes through.
     Payload,
     /// The last four bytes, which are the ICRC.
@@ -251,44 +257,38 @@ pub enum RxPhase {
 }
 
 #[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
-/// The parser's internal registers, bundled into one `Digital` struct.
-///
-/// Per CLAUDE.md §3.1: a protocol parser is one state machine with many
-/// internal registers, not many sub-circuits. Giving each of these its
-/// own `DFF` would put eleven entries in the derived `Q`/`D` tuples,
-/// and the tuple trait impls stop at twelve — so the pattern is one DFF
-/// for the FSM enum and one for everything else.
-///
-/// `pub` because the derived `Q`/`D` types name it, and hidden from the
-/// docs because it is internal state rather than API — the convention
-/// CLAUDE.md §7 records for a widget's state type.
 #[doc(hidden)]
+/// The parser's own registers — the InfiniBand half only.
+///
+/// Much shorter than it was. The byte offset, the IPv4 total length and
+/// the addresses and ports all moved into
+/// [`rhdl_fpga::net::udp_rx::UdpRx`], which is the point of composing
+/// it: this struct now holds what is specific to InfiniBand and
+/// nothing else.
 pub struct RxRegs {
-    /// Frame offset of the next byte expected.
-    pub offset: Bits<16>,
-    /// The rolling header accumulator. See the module's Internals.
+    /// The transport-header accumulator, fed every UDP payload byte.
+    ///
+    /// 128 bits because the RETH is 16 bytes, the widest single field.
+    /// Payload bytes keep shifting through after the snapshots below,
+    /// which is deliberate — see `icrc` on how the trailer falls out of
+    /// it for free.
     pub acc: Bits<128>,
-    /// IPv4 total length, snapshotted at offset 17.
-    pub total_len: Bits<16>,
-    /// Snapshotted at offset 29.
-    pub src_ip: Bits<32>,
-    /// Snapshotted at offset 33.
-    pub dst_ip: Bits<32>,
-    /// Snapshotted at offset 35.
-    pub src_port: Bits<16>,
-    /// The packed BTH, snapshotted at offset 53.
+    /// The packed BTH, snapshotted at payload index 11.
     pub bth: Bits<96>,
-    /// The packed RETH, snapshotted at offset 69.
+    /// The packed RETH, snapshotted at payload index 27 — and only when
+    /// the opcode says there is one. For a MIDDLE or LAST that index is
+    /// *payload*, and an ungated snapshot would load this with it.
     pub reth: Bits<128>,
     /// Whether the decoded opcode carries a RETH.
     pub has_reth: bool,
     /// The decoded opcode.
     pub kind: WriteKind,
-    /// Sticky. Once it leaves `Accept` no further checks run.
+    /// Sticky, and for RoCE-level rejections only; the network-level
+    /// verdict comes from `UdpRx`.
     pub verdict: RxVerdict,
-    /// Set once the whole header block has been accumulated, which is
-    /// what gates presenting `headers` and passing payload through.
-    pub header_valid: bool,
+    /// Set once the transport headers are complete, which is what gates
+    /// presenting `headers` and passing payload through.
+    pub transport_valid: bool,
 }
 
 #[derive(Clone, Debug, Synchronous, SynchronousDQ, Default, FsmWidget)]
@@ -296,6 +296,7 @@ pub struct RxRegs {
 #[fsm(state_field = "state", state_enum = RxPhase, allow_implicit)]
 /// Byte-serial RoCEv2 frame parser. See the [module docs](self).
 pub struct RxParser {
+    udp: UdpRx,
     state: dff::DFF<RxPhase>,
     extras: dff::DFF<RxRegs>,
 }
@@ -339,15 +340,15 @@ pub struct Out {
     /// cycle's byte is outside the ICRC's covered range (or there is
     /// no byte).
     ///
-    /// The parser already knows the frame geometry, so it is the right
-    /// place to decide coverage: from [`crate::icrc::COVERAGE_START`]
-    /// up to but excluding the four-byte ICRC field, whose position
-    /// follows from the IPv4 total length. Emitting the feed, the
-    /// index and `frame_start` together means a widget composing this
-    /// with [`crate::icrc::Icrc`] wires three signals across and has
-    /// no relative timing to reason about -- they are produced in the
-    /// same cycle by the same source. [`crate::rx::verify::RxVerify`]
-    /// is that widget.
+    /// Deciding coverage needs the frame geometry, and that is why
+    /// [`rhdl_fpga::net::udp_rx::UdpRx`] forwards every byte with its
+    /// frame offset and exposes the IPv4 total length continuously
+    /// rather than only inside its parsed header: the ICRC starts at
+    /// frame offset 14, long before the header block is complete.
+    /// Emitting the feed, the index and `frame_start` together means a
+    /// widget composing this with [`crate::icrc::Icrc`] wires three
+    /// signals across and has no relative timing to reason about.
+    /// [`crate::rx::verify::RxVerify`] is that widget.
     pub icrc_feed: Option<Bits<8>>,
     /// The frame offset of this cycle's byte, which is what selects the
     /// ICRC's field masking. Zero when there is no byte.
@@ -359,12 +360,12 @@ pub struct Out {
     ///
     /// An output rather than private state because the phase is
     /// redundant with the byte offset, and redundant state that must
-    /// agree with a counter is where parsers go wrong. Exposing it
-    /// lets `the_phase_always_agrees_with_the_byte_offset` check the
+    /// agree with a counter is where parsers go wrong. Exposing it lets
+    /// `the_phase_always_agrees_with_the_byte_offset` check the
     /// agreement on every byte of every frame in the corpus, which
-    /// turns the redundancy into a tested invariant instead of a
-    /// latent disagreement. It is also the signal worth looking at
-    /// first in a waveform.
+    /// turns the redundancy into a tested invariant instead of a latent
+    /// disagreement. It is also the signal worth looking at first in a
+    /// waveform.
     pub phase: RxPhase,
 }
 
@@ -398,258 +399,330 @@ pub fn payload_len_of(total_len: Bits<16>, has_reth: bool) -> Bits<13> {
 }
 
 #[kernel]
+/// Translate a network-layer verdict into this parser's.
+///
+/// A plain renaming except for one case: a UDP port that is not ours is
+/// [`RxVerdict::NotRocePort`], which says *which* port was expected in
+/// a way the generic `PortMismatch` cannot.
+pub fn verdict_of(v: UdpRxVerdict) -> RxVerdict {
+    match v {
+        UdpRxVerdict::Accept => RxVerdict::Accept,
+        UdpRxVerdict::NotIpv4 => RxVerdict::NotIpv4,
+        UdpRxVerdict::Ipv4Unsupported => RxVerdict::Ipv4Unsupported,
+        UdpRxVerdict::BadLength => RxVerdict::BadLength,
+        UdpRxVerdict::NotUdp => RxVerdict::NotUdp,
+        UdpRxVerdict::PortMismatch => RxVerdict::NotRocePort,
+        UdpRxVerdict::Truncated => RxVerdict::Truncated,
+        UdpRxVerdict::Overlong => RxVerdict::Overlong,
+    }
+}
+
+#[kernel]
+// Three clippy suggestions here cannot be taken, all for the same
+// reason: `#[kernel]` lowers `match` on an `Option`, not `Option`'s
+// methods or sugar over them. `if let` is not accepted,
+// `.unwrap_or_default()` is not accepted, and a match guard -- which
+// `collapsible_match` would require -- is rejected outright with
+// "Guards are not supported in rhdl kernel function match
+// expressions". The explicit matches are the only spelling that
+// compiles to hardware. Same reasoning, and the same allows, as
+// `crate::endpoint` and `crate::rx::endpoint`.
+#[allow(
+    clippy::single_match,
+    clippy::collapsible_match,
+    clippy::manual_unwrap_or_default
+)]
 /// Kernel for [`RxParser`].
 pub fn rx_parse(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let mut d = D::dont_care();
     let mut o = Out::dont_care();
-    d.state = q.state;
-    let mut next = q.extras;
+    let mut r = q.extras;
+    // The next phase is computed into a local and assigned to `d.state`
+    // exactly once, at the very end.
+    //
+    // This is not style. `if cond { d.state = X }` lowers to a `Select`
+    // over the *whole* `d`, so every field of it -- including `d.udp`,
+    // the child's input -- inherits a dependency on whatever `cond`
+    // reads. `cond` here reads `q.udp`, so conditional writes to
+    // `d.state` make the combinational-reachability DRC see `udp`'s
+    // output reaching `udp`'s own input and report a cycle through one
+    // widget. There is no real loop; the select is what manufactures
+    // it. Assigning each `d` field once, unconditionally, from a local
+    // keeps the paths separable.
+    let mut next_state = q.state;
+
+    // ---- the network layers are UdpRx's job.
+    d.udp.data = i.data;
+    d.udp.start_of_frame = i.start_of_frame;
+    d.udp.end_of_frame = i.end_of_frame;
+    d.udp.expect_port = bits(ROCE_UDP_PORT);
+    let u = q.udp;
 
     o.payload = None;
     o.done = false;
-    o.verdict = q.extras.verdict;
     o.icrc = bits(0);
-    o.busy = q.state != RxPhase::Idle;
+    o.busy = u.busy;
     o.phase = q.state;
     o.headers = None;
     o.icrc_feed = None;
-    o.frame_index = bits(0);
-    o.frame_start = false;
+    o.frame_index = u.frame_index;
+    o.frame_start = u.frame_start;
 
-    let byte = match i.data {
-        Some(b) => b,
-        None => bits(0),
+    // A network-level rejection outranks anything this layer has to
+    // say: a frame that is not even IPv4 has no opcode to complain
+    // about.
+    // The parsed network header, or zeros before it is complete. Only
+    // read once `transport_valid`, by which point UdpRx has presented
+    // it -- the transport headers are inside the UDP payload, so the
+    // network headers necessarily finished first.
+    let net = match u.header {
+        Some(h) => h,
+        None => UdpHeader::default(),
     };
-    let valid = match i.data {
-        Some(_) => true,
-        None => false,
+    let net_verdict = verdict_of(u.verdict);
+    let mut verdict = if net_verdict != RxVerdict::Accept {
+        net_verdict
+    } else {
+        r.verdict
     };
-    // A byte without a start-of-frame while idle is the tail of a frame
-    // whose beginning we missed. Dropping it is how the parser realigns.
-    let taken = valid && (i.start_of_frame || q.state != RxPhase::Idle);
+    o.verdict = verdict;
 
-    // Headers, once complete, are presented for the rest of the frame.
-    // Suppressed on a restart, because they describe the frame being
-    // abandoned rather than the one beginning.
-    if q.extras.header_valid && !(taken && i.start_of_frame) {
+    // ---- the ICRC feed, which is why UdpRx forwards whole frames.
+    //
+    // Covered from COVERAGE_START up to but excluding the four-byte
+    // ICRC field, which begins at `ip_total_len + 10`. The
+    // `frame_index < 18` term is not redundant: `ip_total_len` is only
+    // valid from the cycle after offset 17, so without it the three
+    // bytes at offsets 14, 15 and 16 would be dropped from the
+    // checksum.
+    match u.byte {
+        Some(b) => {
+            if verdict == RxVerdict::Accept
+                && u.frame_index >= bits(COVERAGE_START)
+                && (u.frame_index < bits(18) || u.frame_index < u.ip_total_len + bits(10))
+            {
+                o.icrc_feed = Some(b);
+            }
+        }
+        None => {}
+    }
+
+    // ---- RoCE's own length bound. UdpRx only rejects a length too
+    // small to hold the headers it has already parsed; the smallest
+    // *RoCE* frame is larger, and the largest is bounded by the PMTU.
+    if u.frame_index >= bits(18)
+        && (u.ip_total_len < bits(MIN_IP_TOTAL_LEN) || u.ip_total_len > bits(MAX_IP_TOTAL_LEN))
+    {
+        r.verdict = RxVerdict::BadLength;
+        verdict = RxVerdict::BadLength;
+        o.verdict = RxVerdict::BadLength;
+    }
+
+    // ---- present the headers, once the transport block is complete.
+    if r.transport_valid && !u.frame_start {
         let mut h = RxHeaders::dont_care();
-        h.bth = bth_unpack(q.extras.bth);
-        h.kind = q.extras.kind;
-        h.reth = reth_unpack(q.extras.reth);
-        h.has_reth = q.extras.has_reth;
-        h.src_ip = q.extras.src_ip;
-        h.dst_ip = q.extras.dst_ip;
-        h.src_port = q.extras.src_port;
-        h.ip_total_len = q.extras.total_len;
-        h.payload_len = payload_len_of(q.extras.total_len, q.extras.has_reth);
+        h.bth = bth_unpack(r.bth);
+        h.kind = r.kind;
+        h.reth = reth_unpack(r.reth);
+        h.has_reth = r.has_reth;
+        h.src_ip = net.src_ip;
+        h.dst_ip = net.dst_ip;
+        h.src_port = net.src_port;
+        h.ip_total_len = u.ip_total_len;
+        h.payload_len = payload_len_of(u.ip_total_len, r.has_reth);
         o.headers = Some(h);
     }
 
-    if taken {
-        // A start-of-frame mid-frame abandons what was in progress, and
-        // the frame it abandons is reported in this same cycle.
-        if i.start_of_frame {
-            if q.state != RxPhase::Idle {
-                o.done = true;
-                o.verdict = RxVerdict::Truncated;
-            }
-            next = RxRegs::default();
-            o.frame_start = true;
-        }
-
-        let cur = next.offset;
-        let accepting = next.verdict == RxVerdict::Accept;
-        let acc = (next.acc << 8) | byte.resize::<128>();
-
-        // The payload byte passes through in the cycle it arrives, which
-        // is the cycle `headers` is first presented. Both conditions
-        // read the *registered* state, so the two stay in step.
-        if accepting
-            && q.extras.header_valid
-            && !i.start_of_frame
-            && cur <= next.total_len + bits(9)
-        {
-            o.payload = Some(byte);
-        }
-
-        if accepting {
-            next.offset = cur + bits(1);
-            next.acc = acc;
-
-            if cur == bits(13) && (acc & bits(0xFFFF)) != bits(0x0800) {
-                next.verdict = RxVerdict::NotIpv4;
-            }
-            if cur == bits(14) && (acc & bits(0xFF)) != bits(0x45) {
-                next.verdict = RxVerdict::Ipv4Unsupported;
-            }
-            if cur == bits(17) {
-                let tl = (acc & bits(0xFFFF)).resize::<16>();
-                next.total_len = tl;
-                if tl < bits(MIN_IP_TOTAL_LEN) || tl > bits(MAX_IP_TOTAL_LEN) {
-                    next.verdict = RxVerdict::BadLength;
-                }
-            }
-            if cur == bits(23) && (acc & bits(0xFF)) != bits(17) {
-                next.verdict = RxVerdict::NotUdp;
-            }
-            if cur == bits(29) {
-                next.src_ip = (acc & bits(0xFFFF_FFFF)).resize::<32>();
-            }
-            if cur == bits(33) {
-                next.dst_ip = (acc & bits(0xFFFF_FFFF)).resize::<32>();
-            }
-            if cur == bits(35) {
-                next.src_port = (acc & bits(0xFFFF)).resize::<16>();
-            }
-            if cur == bits(37) && (acc & bits(0xFFFF)) != bits(4791) {
-                next.verdict = RxVerdict::NotRocePort;
-            }
-            if cur == bits(OFF_BTH) {
-                match decode_write_opcode((acc & bits(0xFF)).resize::<8>()) {
-                    Some(k) => {
-                        next.kind = k;
-                        next.has_reth = carries_reth(k.op);
-                    }
-                    None => {
-                        next.verdict = RxVerdict::UnknownOpcode;
+    // ---- the transport headers, from UdpRx's payload stream.
+    //
+    // `saw_payload` drives the phase below rather than UdpRx's own
+    // phase output: reaching across into a sibling's state machine
+    // would couple the two in a way that a timing change in either
+    // breaks silently, whereas the payload stream is the interface.
+    let saw_payload = match u.payload {
+        Some(_b) => true,
+        None => false,
+    };
+    // Set when this cycle's byte is one of the four ICRC bytes rather
+    // than payload. Hoisted out of the block below because the phase
+    // machine needs it, and without it `Trailer` is unreachable -- a
+    // dead state that the generated diagram would show as an island.
+    let mut reached_trailer = false;
+    //
+    // Indices here are *payload*-relative, which is the other gain
+    // from composing: the BTH ends at payload index 11 and the RETH at
+    // 27, rather than at frame offsets 53 and 69 that have the network
+    // headers' lengths baked into them.
+    if u.frame_start {
+        r = RxRegs::default();
+    }
+    match u.payload {
+        Some(b) => {
+            let k = u.payload_index;
+            let acc = (r.acc << 8) | b.resize::<128>();
+            if verdict == RxVerdict::Accept {
+                r.acc = acc;
+                if k == bits(0) {
+                    match decode_write_opcode(b) {
+                        Some(kind) => {
+                            r.kind = kind;
+                            r.has_reth = carries_reth(kind.op);
+                        }
+                        None => {
+                            r.verdict = RxVerdict::UnknownOpcode;
+                        }
                     }
                 }
-            }
-            if cur == bits(53) {
-                next.bth = (acc & bits(0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF)).resize::<96>();
-            }
-            // Gated on `has_reth`, not just the offset. For a MIDDLE
-            // or LAST packet the header block ends at 54, so offset 69
-            // is a *payload* byte -- and an ungated snapshot would load
-            // the RETH register with payload data. `has_reth` is false
-            // there so a correct consumer ignores the field, but a
-            // consumer that forgot to check it would read payload bytes
-            // as a remote address. Leaving the register at zero makes
-            // that mistake benign instead of arbitrary, and makes the
-            // field's documented "zero otherwise" true.
-            if cur == bits(69) && next.has_reth {
-                next.reth = acc;
-            }
-            // Only checkable once the length field has been seen; before
-            // then `total_len` is zero and every offset would look long.
-            if cur > bits(17) && cur > next.total_len + bits(13) {
-                next.verdict = RxVerdict::Overlong;
-            }
-
-            // The ICRC's covered range: from COVERAGE_START up to but
-            // excluding the four-byte ICRC field, which begins at
-            // `total_len + 10`.
-            //
-            // The `cur < 17` term is not redundant. `total_len` is only
-            // snapshotted at offset 17, so for offsets 14, 15 and 16 the
-            // register still reads zero and `cur < total_len + 10` would
-            // be false -- dropping three IP-header bytes from the
-            // checksum. At offset 17 the snapshot above has already
-            // run, so the general form is correct from there on.
-            o.frame_index = cur;
-            if cur >= bits(COVERAGE_START) && (cur < bits(17) || cur < next.total_len + bits(10)) {
-                o.icrc_feed = Some(byte);
-            }
-        }
-
-        let header_end = if next.has_reth {
-            bits::<16>(70)
-        } else {
-            bits::<16>(54)
-        };
-        let after = cur + bits(1);
-        if accepting && after >= header_end {
-            next.header_valid = true;
-        }
-
-        // The transition, as a match on the phase rather than one
-        // offset-derived chain.
-        //
-        // The chain would be shorter, and it was what this was first
-        // written as. But the FSM extractor walks the RHIF and cannot
-        // narrow a target that does not depend on `q.state`, so it
-        // reported every state as reaching every other -- including
-        // `Idle -> Payload`, which cannot happen: the only byte that
-        // leaves `Idle` is a start-of-frame, and that byte is offset
-        // zero. A generated diagram asserting a transition the hardware
-        // cannot make is the defect `fix/fsm-extractor-unanalyzable`
-        // was about, and shipping one here would be the same mistake
-        // from the other side. Matching on the phase makes each arm
-        // name only the targets it can actually reach, and the
-        // extracted diagram is both sound and tight.
-        let rejected = next.verdict != RxVerdict::Accept;
-        let last_payload = next.total_len + bits(9);
-        match q.state {
-            RxPhase::Idle => d.state = RxPhase::Header,
-            RxPhase::Header => {
-                if rejected {
-                    d.state = RxPhase::Drain;
-                } else if after < header_end {
-                    d.state = RxPhase::Header;
-                } else if after <= last_payload {
-                    d.state = RxPhase::Payload;
+                if k == bits(11) {
+                    r.bth = (acc & bits(0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF)).resize::<96>();
+                }
+                // Gated on `has_reth`: for a MIDDLE or LAST, payload
+                // index 27 is payload, and an ungated snapshot would
+                // load the RETH register with it. `has_reth` is false
+                // there so a correct consumer ignores the field, but
+                // leaving it zero makes forgetting that check write to
+                // address zero rather than to an address made of
+                // payload bytes.
+                if k == bits(27) && r.has_reth {
+                    r.reth = acc;
+                }
+                let transport_bytes = if r.has_reth {
+                    bits::<16>(28)
                 } else {
-                    d.state = RxPhase::Trailer;
+                    bits::<16>(12)
+                };
+                if k + bits(1) >= transport_bytes {
+                    r.transport_valid = true;
+                }
+                // The payload proper: past the transport headers, and
+                // before the four-byte ICRC trailer. The UDP payload is
+                // `ip_total_len - 28` bytes, so its last non-trailer
+                // index is `ip_total_len - 33`.
+                let udp_payload = u.ip_total_len - bits(28);
+                if r.transport_valid && k >= transport_bytes && k + bits(5) <= udp_payload {
+                    o.payload = Some(b);
+                }
+                if r.transport_valid && k + bits(5) > udp_payload {
+                    reached_trailer = true;
+                }
+            }
+        }
+        None => {}
+    }
+
+    // ---- phases, as a match on the phase rather than a chain over
+    // offsets, so the FSM extractor can narrow each arm's targets.
+    let rejected = r.verdict != RxVerdict::Accept || net_verdict != RxVerdict::Accept;
+    // Gated on a byte actually having been taken. Without the gate the
+    // `Idle` arm fires on every idle cycle and the parser sits in
+    // `Network` before a frame has begun -- which is what
+    // `the_phase_always_agrees_with_the_byte_offset` caught. The old
+    // single-widget version had its phase machine inside the
+    // byte-taken branch; composing UdpRx moved the byte test behind
+    // `u.byte`, and the gate has to move with it.
+    let took = match u.byte {
+        Some(_b) => true,
+        None => false,
+    };
+    if took {
+        match q.state {
+            RxPhase::Idle => next_state = RxPhase::Network,
+            RxPhase::Network => {
+                if rejected {
+                    next_state = RxPhase::Drain;
+                } else if saw_payload {
+                    next_state = RxPhase::Transport;
+                } else {
+                    next_state = RxPhase::Network;
+                }
+            }
+            RxPhase::Transport => {
+                if rejected {
+                    next_state = RxPhase::Drain;
+                } else if reached_trailer {
+                    // A zero-payload packet goes straight to the trailer.
+                    next_state = RxPhase::Trailer;
+                } else if r.transport_valid {
+                    next_state = RxPhase::Payload;
+                } else {
+                    next_state = RxPhase::Transport;
                 }
             }
             RxPhase::Payload => {
                 if rejected {
-                    d.state = RxPhase::Drain;
-                } else if after <= last_payload {
-                    d.state = RxPhase::Payload;
+                    next_state = RxPhase::Drain;
+                } else if reached_trailer {
+                    next_state = RxPhase::Trailer;
                 } else {
-                    d.state = RxPhase::Trailer;
+                    next_state = RxPhase::Payload;
                 }
             }
             RxPhase::Trailer => {
                 if rejected {
-                    d.state = RxPhase::Drain;
+                    next_state = RxPhase::Drain;
                 } else {
-                    d.state = RxPhase::Trailer;
+                    next_state = RxPhase::Trailer;
                 }
             }
-            RxPhase::Drain => d.state = RxPhase::Drain,
+            RxPhase::Drain => next_state = RxPhase::Drain,
         }
-        // A start-of-frame begins a new header block from whatever
-        // phase the parser was in, which is what makes resynchronising
-        // possible mid-stream.
-        if i.start_of_frame {
-            d.state = RxPhase::Header;
-        }
+    }
+    if u.frame_start {
+        next_state = RxPhase::Network;
+    }
 
-        if i.end_of_frame {
-            o.done = true;
-            // The frame's own length must agree with what IPv4 claimed
-            // -- and the header block must have completed, or there was
-            // no claim to agree with.
-            //
-            // Both halves are load-bearing. Without the length check, a
-            // frame cut at a phase boundary would look complete.
-            // Without `header_valid`, a 14-byte frame would be accepted:
-            // `total_len` is still zero before offset 17, so `0 + 14`
-            // equals the byte count exactly, and a frame with no headers
-            // at all would pass. That was a real defect, caught by
-            // `a_frame_that_ends_early_is_truncated`.
-            if next.verdict == RxVerdict::Accept {
-                if next.header_valid && after == next.total_len + bits(14) {
-                    o.verdict = RxVerdict::Accept;
-                    o.icrc = (acc & bits(0xFFFF_FFFF)).resize::<32>();
-                } else {
-                    o.verdict = RxVerdict::Truncated;
-                }
-            } else {
-                o.verdict = next.verdict;
-            }
-            d.state = RxPhase::Idle;
-            next = RxRegs::default();
+    // ---- end of frame.
+    if u.done {
+        o.done = true;
+        // RoCE's own verdict first, then the network layer's.
+        //
+        // That order looks backwards -- the lower layer is checked
+        // first -- and it is right, because of *when* each is
+        // detectable. A RoCE-level rejection can only be raised while
+        // UdpRx is still accepting: `BadLength` at frame offset 18,
+        // `UnknownOpcode` at offset 42. The network verdicts that
+        // would otherwise mask them, `Truncated` and `Overlong`, are
+        // only known at or near the end of the frame. So a frame
+        // declaring a length too small for RoCE reports `BadLength`,
+        // which says what is wrong, rather than the `Overlong` that
+        // follows from it forty bytes later.
+        if r.verdict != RxVerdict::Accept {
+            o.verdict = r.verdict;
+        } else if net_verdict != RxVerdict::Accept {
+            o.verdict = net_verdict;
+        } else if !r.transport_valid {
+            // UdpRx accepted the datagram's extent, but there were not
+            // enough payload bytes to hold a transport header.
+            o.verdict = RxVerdict::Truncated;
         } else {
-            o.verdict = next.verdict;
+            o.verdict = RxVerdict::Accept;
+            // The ICRC is the frame's last four bytes, and the
+            // accumulator has kept shifting through the payload -- so
+            // its low 32 bits are exactly those bytes. Nothing has to
+            // know where the trailer starts.
+            o.icrc = (r.acc & bits(0xFFFF_FFFF)).resize::<32>();
         }
+        next_state = RxPhase::Idle;
+        r = RxRegs::default();
     }
 
     if cr.reset.any() {
-        d.state = RxPhase::Idle;
-        next = RxRegs::default();
+        next_state = RxPhase::Idle;
+        // `d.udp` is deliberately NOT forced here.
+        //
+        // Two reasons, and the second one is a hard constraint. A
+        // `Synchronous` child consumes the implicit `ClockReset` the
+        // framework fans out to every sub-circuit, so `UdpRx` resets
+        // itself and driving its inputs to idle is redundant.
+        //
+        // And it is not merely redundant: assigning `d.udp` inside this
+        // conditional makes the whole of `d` a select between a
+        // reset value and a value that depends on `q.udp` -- at which
+        // point the combinational-reachability DRC sees `udp`'s output
+        // reaching its own input and reports a cycle through one
+        // widget. Leaving `d.udp` assigned exactly once, unconditionally
+        // and only from `i`, is what keeps that path honest.
+        r = RxRegs::default();
         o.headers = None;
         o.payload = None;
         o.done = false;
@@ -661,7 +734,8 @@ pub fn rx_parse(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         o.frame_index = bits(0);
         o.frame_start = false;
     }
-    d.extras = next;
+    d.state = next_state;
+    d.extras = r;
     (o, d)
 }
 
@@ -1177,9 +1251,20 @@ mod tests {
         assert_eq!(h.bth.dqpn.raw(), 0x000111);
     }
 
-    /// **The phase and the byte offset never disagree.** The phase is
-    /// redundant state, kept for reviewability and for the generated
-    /// diagram; this is what stops the redundancy becoming a bug.
+    /// **The phase and the byte offset never disagree.**
+    ///
+    /// The phase is redundant state — it is derivable from the byte
+    /// offset and the frame's geometry — and it is kept because it is
+    /// the central question when reading a parser and it is what the
+    /// generated diagram is drawn from. This is what stops the
+    /// redundancy becoming a bug.
+    ///
+    /// The boundaries, all of which follow from the frame layout:
+    /// `Network` covers the Ethernet/IPv4/UDP bytes and ends on the
+    /// *first* UDP payload byte (offset 42), because the phase is the
+    /// registered one; `Transport` covers the BTH and, when present,
+    /// the RETH; `Payload` the RDMA payload; `Trailer` the four ICRC
+    /// bytes.
     #[test]
     fn the_phase_always_agrees_with_the_byte_offset() {
         for (op, payload, pad) in [
@@ -1189,24 +1274,26 @@ mod tests {
             (WriteOpcode::Last, 13, 3),
         ] {
             let f = good_frame(op, payload, pad);
-            let header_end = if carries_reth(op) { 70 } else { 54 };
+            // Where the transport headers end, as a frame offset.
+            let transport_end = if carries_reth(op) { 70 } else { 54 };
             let n = f.len();
             let r = run(&f);
             for (offset, phase) in &r.phases {
                 let want = if *offset == 0 {
                     RxPhase::Idle
-                } else if *offset < header_end {
-                    RxPhase::Header
-                } else if *offset < n - 4 {
+                } else if *offset <= 42 {
+                    RxPhase::Network
+                } else if *offset < transport_end {
+                    RxPhase::Transport
+                } else if *offset <= n - 4 {
                     RxPhase::Payload
                 } else if *offset < n {
                     RxPhase::Trailer
                 } else {
                     RxPhase::Idle
                 };
-                // A zero-payload frame goes Header -> Trailer directly,
-                // so `header_end == n - 4` and the Payload branch above
-                // is correctly never taken.
+                // A zero-payload frame has `transport_end == n - 4`, so
+                // the Payload branch is correctly never taken for it.
                 assert_eq!(
                     *phase, want,
                     "{op:?}/{payload}/{pad}: at byte offset {offset} of \
@@ -1223,11 +1310,10 @@ mod tests {
         let good = good_frame(WriteOpcode::Only, 16, 0);
         let cr_reset = clock_reset(clock(false), reset(true));
         let q = Q {
+            udp: Default::default(),
             state: RxPhase::Payload,
             extras: RxRegs {
-                offset: bits(75),
-                header_valid: true,
-                total_len: bits(76),
+                transport_valid: true,
                 ..Default::default()
             },
         };
@@ -1305,7 +1391,7 @@ mod tests {
             .join("vcd")
             .join("rx_parse");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["be09ed3c7f4be0b56374cc10393fa949e7f51fe2629eab43a2f664d27f147dc5"];
+        let expect = expect!["3c343586a1d2ea781debb5308bdda2ac2d608e486a64c6421ea2aac3795a8de2"];
         let digest = vcd.dump_to_file(root.join("rx_parse.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())
@@ -1331,6 +1417,23 @@ mod tests {
 
     /// The phases and the edges between them, pinned by name.
     ///
+    /// Eighteen edges on six nodes, out of thirty possible, and the
+    /// absences carry as much as the presences:
+    ///
+    ///   - `Idle` reaches only `Network`. The only byte that leaves
+    ///     `Idle` is a start-of-frame, and that byte is offset zero.
+    ///   - `Network` reaches neither `Payload` nor `Trailer`: the
+    ///     transport headers are always between them.
+    ///   - `Trailer` never returns to `Payload`, and `Drain` reaches no
+    ///     data phase at all — once past the payload or rejected there
+    ///     is no way back within a frame.
+    ///   - `Transport -> Trailer` exists, and should: a zero-length
+    ///     WRITE has no payload bytes between its RETH and its ICRC.
+    ///
+    /// Every phase reaches `Network` (a start-of-frame restarts from
+    /// anywhere) and `Idle` (end of frame), which is why the count is
+    /// as high as it is.
+    ///
     /// Every edge here is one the hardware can take; a diagram is only
     /// worth including in the docs if that is true. The ones that are
     /// *absent* carry as much information as the ones present:
@@ -1346,7 +1449,14 @@ mod tests {
     fn the_fsm_has_exactly_the_edges_the_frame_structure_implies() {
         let t = rhdl::core::fsm::extract_widget_transitions_strict::<RxParser>()
             .expect("extracting transitions");
-        let name = ["Idle", "Header", "Payload", "Trailer", "Drain"];
+        let name = [
+            "Idle",
+            "Network",
+            "Transport",
+            "Payload",
+            "Trailer",
+            "Drain",
+        ];
         let mut edges: Vec<String> = t
             .iter()
             .filter(|x| x.source_index != x.target_index)
@@ -1355,20 +1465,24 @@ mod tests {
         edges.sort();
         edges.dedup();
         let expect = expect![[r#"
-            Drain -> Header
             Drain -> Idle
-            Header -> Drain
-            Header -> Idle
-            Header -> Payload
-            Header -> Trailer
-            Idle -> Header
+            Drain -> Network
+            Idle -> Network
+            Network -> Drain
+            Network -> Idle
+            Network -> Transport
             Payload -> Drain
-            Payload -> Header
             Payload -> Idle
+            Payload -> Network
             Payload -> Trailer
             Trailer -> Drain
-            Trailer -> Header
             Trailer -> Idle
+            Trailer -> Network
+            Transport -> Drain
+            Transport -> Idle
+            Transport -> Network
+            Transport -> Payload
+            Transport -> Trailer
         "#]];
         expect.assert_eq(&format!("{}\n", edges.join("\n")));
     }

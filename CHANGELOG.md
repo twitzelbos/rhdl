@@ -31,6 +31,174 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-10-21 — `rhdl-fpga::net`: the category, and collecting the duplication that justified it
+
+**Path:** `crates/rhdl-fpga/src/net/{mod,config,ethernet,ipv4,udp,udp_rx}.rs`,
+`examples/udp_rx.rs`, `doc/udp_rx.md`, `doc/udp_rx_fsm.md`,
+`vcd/udp_rx/`; `crates/rhdl-roce/src/frame.rs`, `src/rx/parse.rs`,
+`src/cm/manager.rs`; `architecture.md` category list;
+`roce-v2-architecture.md` §6
+
+**Why this, why now:** `roce-v2-architecture.md` §6 has proposed a `net`
+category since the RoCE work was scoped, and `architecture.md` requires
+sign-off before a new top-level category is added to `rhdl-fpga`. The
+sign-off came; this is the category plus the debt it was proposed to
+collect.
+
+The debt was real and recorded rather than discovered: `roce::rx::parse`
+and `roce::cm::manager` each had their own copy of the same forty-two
+header bytes' worth of offsets, and the second one shipped with a
+comment saying the shared widget was the right answer and was waiting
+on this decision. **The duplication came before the abstraction, which
+is the order that tells you the abstraction is real** — a point now
+written into `architecture.md` as the worked example of meeting the
+new-category bar rather than arguing around it.
+
+**Design decisions:**
+
+- **The residency test is on the interface, not the implementation.** A
+  widget belongs in `net` when its signature mentions no protocol above
+  UDP. By that test eight functions, `FrameConfig` and seven constants
+  moved out of `roce::frame`, while `payload_on_wire`, `header_bytes`,
+  `udp_length`, `ip_total_length`, `bth_from_plan` and `header_byte`
+  stayed — they take a `PacketPlan`, a `Bth` or a `QpContext` however
+  much of their body is IPv4 arithmetic. `core::crc32` stayed in `core`
+  too, because Ethernet's frame check sequence is one of its users and
+  not its definition. Without a test of that shape a category becomes a
+  drawer for anything thematically adjacent.
+- **`roce::frame` re-exports what moved** rather than every call site
+  importing from two crates. A RoCE frame *is* an Ethernet/IPv4/UDP
+  frame with an InfiniBand payload, so `frame::ipv4_byte` is still the
+  honest path for a reader of that module. No new dependency edge:
+  rhdl-roce already depended on rhdl-fpga.
+- **`net::udp_rx::UdpRx` is a pass-through parser, not a filter**, and
+  this is the decision to understand before changing it. The obvious
+  shape consumes the headers and emits only the payload. This does that
+  *and* forwards every byte with its absolute frame offset, because a
+  protocol whose integrity check covers the frame from the IP header
+  onward cannot work from the payload alone — RoCEv2's Invariant CRC
+  masks seven bytes **by frame offset**. A filtering parser would force
+  its caller to keep a second copy of the stream and a second counter
+  to recover what the parser already knew. So `byte`/`frame_index` come
+  out alongside `payload`/`payload_index`, and a caller uses whichever
+  pair its own layer is expressed in.
+- **It also exposes `ip_total_len` continuously**, not only inside the
+  parsed header. The header is presented at frame offset 42; a
+  frame-covering checksum needs to know where the frame ends from
+  offset 18. Without that output its caller would snapshot the length
+  field itself, which is the duplication this widget exists to remove.
+- **Neither checksum is verified**, IPv4's or UDP's. The MAC has already
+  checked the Ethernet frame check sequence, and a protocol wanting more
+  has its own integrity check — which `frame_index` exists to feed.
+  Verifying here would cost an accumulator to tell a caller something it
+  mostly cannot act on.
+- **The callers got simpler in a way that was not the goal but is the
+  better outcome.** `rx::parse`'s registers lost the byte offset, the
+  total length and the addresses and ports; its transport snapshots
+  became *payload*-relative, so the BTH ends at payload index 11 and the
+  RETH at 27 rather than at frame offsets 53 and 69 with the network
+  headers' lengths baked in. The connection manager's payload snapshots
+  are now the layout table's own offsets instead of those offsets plus
+  forty-two.
+
+**Surprises and gotchas:**
+
+- **A conditional write to a `d` field manufactures a combinational
+  cycle when any child has a feedthrough.** `if cond { d.state = X }`
+  lowers to a `Select` over the **whole** `d`, so every field of it —
+  including `d.udp`, the child's input — inherits a dependency on
+  whatever `cond` reads. `cond` here reads `q.udp`, so the
+  reachability DRC correctly reported a *cycle through one widget*.
+  There is no real loop; the select manufactures one. The fix is to
+  compute the value into a local and assign each `d` field exactly once,
+  unconditionally.
+
+  **This is a general hazard for any widget composing a child with a
+  combinational input-to-output path**, and it did not exist before
+  because the only children in these widgets were DFFs, whose `q` is
+  registered and so cannot close a loop. Both migrated kernels carry the
+  explanation at the assignment.
+- **Forcing a child's inputs to idle under reset is both redundant and
+  part of that same problem.** A `Synchronous` child consumes the
+  implicit `ClockReset` the framework fans out, so it resets itself —
+  and assigning `d.<child>` inside the reset conditional is exactly what
+  makes the select above span it.
+- **`Trailer` became an unreachable state** in `rx::parse` after the
+  rewrite: nothing transitioned into it, which the generated diagram
+  would have shown as an island. The payload window already knew where
+  the trailer began; it simply was not driving the phase.
+- **A restart's verdict was clobbered by the ordinary verdict
+  assignment.** `UdpRx` reports an abandoned frame as `Truncated` in the
+  cycle a mid-stream start-of-frame arrives — but the registers are
+  reset in that same cycle, so the later `o.verdict = r.verdict` wrote
+  `Accept` back over it. The report has to come *after* the ordinary
+  assignments, which reads oddly and is why there is a comment saying
+  so.
+- **A behaviour change, deliberate and in the safer direction.** The
+  connection manager used to answer a truncated-but-identified datagram
+  with `BadMagic`, on the grounds that the sender was entitled to know.
+  `UdpRx` accepts a datagram only if its header block completed *and*
+  its extent matches the length IPv4 declared, so every truncation is
+  now `Truncated` and draws no reply at all. That is stricter, better
+  for a port that must not amplify, and it costs such a sender an
+  explanation. `a_truncated_frame_draws_no_reply` records the change
+  rather than hiding it.
+- **Verdict precedence had to invert.** RoCE's own verdict is now
+  checked *before* the network layer's, which looks backwards. It is
+  right because of *when* each is detectable: every RoCE-level rejection
+  is raised while `UdpRx` is still accepting — `BadLength` at frame
+  offset 18, `UnknownOpcode` at 42 — whereas `Truncated` and `Overlong`
+  are only known at the end. Checked the other way round, a frame
+  declaring a length too small for RoCE reported the `Overlong` that
+  follows from it forty bytes later instead of the `BadLength` that says
+  what is wrong.
+- **The connection manager's `identified` flag disappeared, and the
+  guard it implemented survived.** That flag existed to stop the widget
+  being an amplifier: the UDP destination port is at offset 37, so a
+  shorter frame has passed every check that ran without ever having been
+  shown to be addressed here. `UdpRx`'s acceptance already means exactly
+  that, so the flag had no work left to do. Pleasant, and worth noting
+  because deleting a security guard usually is not.
+- **VCD type sidecars change when a type moves.** `vcd/tx` and
+  `vcd/endpoint` both show a diff from this work despite the transmit
+  path being untouched: the sidecar records fully-qualified type paths,
+  and `FrameConfig` moved crates. Metadata, not behaviour — but it does
+  mean a type move is never artifact-neutral.
+
+**Validation:** the corpus is what makes a refactor of this size
+defensible, and it was run at every step.
+
+- All 2008 Scapy-generated frames still parse back to the fields their
+  generator was given **and** recompute their own ICRCs. A move or a
+  rewrite that altered one header byte fails there.
+- All 21 loopback tests pass, including Phase 4's gate — a connection
+  negotiated over UDP, then a 2500-byte message placed byte-for-byte at
+  translated addresses.
+- All 13 connection-manager tests pass, with every request still
+  assembled from explicit big-endian pushes against the documented
+  layout rather than through the crate's own encoder.
+- `UdpRx` has its own five tiers: the clamp, a well-formed datagram, the
+  pass-through contract asserted byte-for-byte over a whole frame, the
+  header/payload timing contract, eight single-byte mutations each
+  producing their own verdict, the complement test that mutating an
+  *unchecked* field still accepts, seven truncation cut points, overlong,
+  idle-byte dropping, restart reporting, reset, HDL emission, `iverilog`
+  round-trip on both `.rtl()` and `.ntl()`, and a committed digest.
+- The generated diagrams came out *tighter*: `rx::parse` 18 edges on six
+  nodes where it had 14 on five, `UdpRx` 9 on four, each with the
+  absences explained in the test that pins them.
+
+**Follow-ups:**
+
+- A MAC frontend — GMII/RGMII, preamble and SFD, the frame check
+  sequence, the inter-frame gap — is the obvious next resident of `net`
+  and is what `roce-v2-architecture.md` §5.1's own-MAC adapter needs.
+- A transmit-side counterpart to `udp_rx` would let `roce::tx` and the
+  connection manager's reply path share their frame emission the way
+  their parsers now share receive. The duplication there is smaller and
+  has only one and a half callers, so it does not yet meet the bar this
+  entry is about.
+
 ## 2026-10-21 — Phase 4 completed: ICRC verification, memory regions, placement, and a connection manager
 
 **Path:** `crates/rhdl-roce/src/qp/mr.rs`, `src/rx/verify.rs`,

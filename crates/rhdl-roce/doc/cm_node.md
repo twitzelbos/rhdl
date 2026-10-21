@@ -5019,13 +5019,13 @@ None
 {write: None, done: 0,...
 <title>{write: None, done: 0, outcome: Idle, placed: 0000, headers: None, reply: None, reply_sof: 0, reply_eof: 0, cm_done: 0, cm_status: Accepted, cm_overridden: 0, rx_busy: 0, cm_phase: Idle}</title>
 </text>
-<path d="M 581 1030 L 584 1023 L 4677 1023 L 4680 1030 L 4677 1037 L 584 1037 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2630" xml:space="preserve" y="1030">
-{write: None, done: 0, outcome: Idle, placed: 0000, headers: None, reply: None, reply_sof: 0, reply_eof: 0, cm_done: 0, cm_status: Accepted, cm_overridden: 0, rx_busy: 1, cm_phase: Header}
-<title>{write: None, done: 0, outcome: Idle, placed: 0000, headers: None, reply: None, reply_sof: 0, reply_eof: 0, cm_done: 0, cm_status: Accepted, cm_overridden: 0, rx_busy: 1, cm_phase: Header}</title>
+<path d="M 581 1030 L 584 1023 L 4777 1023 L 4780 1030 L 4777 1037 L 584 1037 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2680" xml:space="preserve" y="1030">
+{write: None, done: 0, outcome: Idle, placed: 0000, headers: None, reply: None, reply_sof: 0, reply_eof: 0, cm_done: 0, cm_status: Accepted, cm_overridden: 0, rx_busy: 1, cm_phase: Network}
+<title>{write: None, done: 0, outcome: Idle, placed: 0000, headers: None, reply: None, reply_sof: 0, reply_eof: 0, cm_done: 0, cm_status: Accepted, cm_overridden: 0, rx_busy: 1, cm_phase: Network}</title>
 </text>
-<path d="M 4680 1030 L 4683 1023 L 8578 1023 L 8581 1030 L 8578 1037 L 4683 1037 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6630" xml:space="preserve" y="1030">
+<path d="M 4780 1030 L 4783 1023 L 8578 1023 L 8581 1030 L 8578 1037 L 4783 1037 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6680" xml:space="preserve" y="1030">
 {write: None, done: 0, outcome: Idle, placed: 0000, headers: None, reply: None, reply_sof: 0, reply_eof: 0, cm_done: 0, cm_status: Accepted, cm_overridden: 0, rx_busy: 1, cm_phase: Body}
 <title>{write: None, done: 0, outcome: Idle, placed: 0000, headers: None, reply: None, reply_sof: 0, reply_eof: 0, cm_done: 0, cm_status: Accepted, cm_overridden: 0, rx_busy: 1, cm_phase: Body}</title>
 </text>
@@ -5371,8 +5371,8 @@ None
 </text>
 <path d="M 18281 1030 L 18284 1023 L 21977 1023 L 21980 1030 L 21977 1037 L 18284 1037 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="20130" xml:space="preserve" y="1030">
-{write: None, done: 0, outcome: Idle, placed: 0000, headers: None, reply: None, reply_sof: 0, reply_eof: 0, cm_done: 0, cm_status: Accepted, cm_overridden: 0, rx_busy: 1, cm_phase: Header}
-<title>{write: None, done: 0, outcome: Idle, placed: 0000, headers: None, reply: None, reply_sof: 0, reply_eof: 0, cm_done: 0, cm_status: Accepted, cm_overridden: 0, rx_busy: 1, cm_phase: Header}</title>
+{write: None, done: 0, outcome: Idle, placed: 0000, headers: None, reply: None, reply_sof: 0, reply_eof: 0, cm_done: 0, cm_status: Accepted, cm_overridden: 0, rx_busy: 1, cm_phase: Network}
+<title>{write: None, done: 0, outcome: Idle, placed: 0000, headers: None, reply: None, reply_sof: 0, reply_eof: 0, cm_done: 0, cm_status: Accepted, cm_overridden: 0, rx_busy: 1, cm_phase: Network}</title>
 </text>
 <path d="M 21980 1030 L 21983 1023 L 25177 1023 L 25180 1030 L 25177 1037 L 21983 1037 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="23580" xml:space="preserve" y="1030">
@@ -7108,13 +7108,13 @@ Accepted
 Idle
 <title>Idle</title>
 </text>
-<path d="M 580 2710 L 583 2703 L 4677 2703 L 4680 2710 L 4677 2717 L 583 2717 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2630" xml:space="preserve" y="2710">
-Header
-<title>Header</title>
+<path d="M 580 2710 L 583 2703 L 4777 2703 L 4780 2710 L 4777 2717 L 583 2717 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2680" xml:space="preserve" y="2710">
+Network
+<title>Network</title>
 </text>
-<path d="M 4680 2710 L 4683 2703 L 8677 2703 L 8680 2710 L 8677 2717 L 4683 2717 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6680" xml:space="preserve" y="2710">
+<path d="M 4780 2710 L 4783 2703 L 8677 2703 L 8680 2710 L 8677 2717 L 4783 2717 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6730" xml:space="preserve" y="2710">
 Body
 <title>Body</title>
 </text>
@@ -7130,8 +7130,8 @@ Idle
 </text>
 <path d="M 18280 2710 L 18283 2703 L 21977 2703 L 21980 2710 L 21977 2717 L 18283 2717 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="20130" xml:space="preserve" y="2710">
-Header
-<title>Header</title>
+Network
+<title>Network</title>
 </text>
 <path d="M 21980 2710 L 21983 2703 L 27177 2703 L 27180 2710 L 27177 2717 L 21983 2717 Z" fill="none" stroke="#56C126" stroke-width="1"/>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="24580" xml:space="preserve" y="2710">
@@ -7163,11 +7163,11 @@ Idle
 <title></title>
 </text>
 <text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="start" x="3" xml:space="preserve" y="2750">
-      #Header
-<title>top.outputs.cm_phase#Header</title>
+      #Network
+<title>top.outputs.cm_phase#Network</title>
 </text>
-<path d="M 580 2750 L 583 2743 L 4677 2743 L 4680 2750 L 4677 2757 L 583 2757 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2630" xml:space="preserve" y="2750">
+<path d="M 580 2750 L 583 2743 L 4777 2743 L 4780 2750 L 4777 2757 L 583 2757 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="2680" xml:space="preserve" y="2750">
 
 <title></title>
 </text>
@@ -7180,8 +7180,8 @@ Idle
       #Body
 <title>top.outputs.cm_phase#Body</title>
 </text>
-<path d="M 4680 2770 L 4683 2763 L 8677 2763 L 8680 2770 L 8677 2777 L 4683 2777 Z" fill="none" stroke="#56C126" stroke-width="1"/>
-<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6680" xml:space="preserve" y="2770">
+<path d="M 4780 2770 L 4783 2763 L 8677 2763 L 8680 2770 L 8677 2777 L 4783 2777 Z" fill="none" stroke="#56C126" stroke-width="1"/>
+<text dominant-baseline="middle" fill="#D4D4D4" font-family="monospace" font-size="10px" text-anchor="middle" x="6730" xml:space="preserve" y="2770">
 
 <title></title>
 </text>
