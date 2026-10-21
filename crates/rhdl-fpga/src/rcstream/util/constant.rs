@@ -29,6 +29,15 @@
 //! That difference is worth stating rather than leaving implied: it is
 //! the distinction between a stream whose samples carry time and one
 //! whose samples do not.
+//!
+//!# Example
+//!
+//!```
+#![doc = include_str!("../../../examples/rcstream_constant.rs")]
+//!```
+//!
+//! The trace below demonstrates the result.
+#![doc = include_str!("../../../doc/rcstream_constant.md")]
 
 use rhdl::prelude::*;
 
@@ -143,6 +152,82 @@ mod tests {
             Some(item) => assert_eq!(item.data.v.raw(), 4321),
             None => panic!("idle during reset"),
         }
+    }
+
+    /// Tier 3 — the emitted top module is the contract.
+    #[test]
+    fn hdl_emission_snapshot() -> miette::Result<()> {
+        let uut = Uut::new(
+            Real::<16> {
+                v: signed::<16>(4321),
+            },
+            (),
+        );
+        let desc = uut.descriptor("rcstream_constant".into())?;
+        let hdl = desc.hdl()?;
+        let top = hdl
+            .modules
+            .modules
+            .iter()
+            .find(|m| m.name == "rcstream_constant")
+            .expect("top module must be emitted");
+        let expect = expect_test::expect![[r#"
+            module rcstream_constant(input wire [1:0] clock_reset, output wire [17:0] o);
+               wire [17:0] od;
+               wire [15:0] q;
+               assign o = od[17:0];
+               rcstream_constant_value c0(.clock_reset(clock_reset), .o(q[15:0]));
+               assign od = kernel_rcstream_constant_kernel(clock_reset, q);
+               function [17:0] kernel_rcstream_constant_kernel(input reg [1:0] arg_0, input reg [15:0] arg_2);
+                     reg [15:0] r0;
+                     reg [16:0] r1;
+                     reg [15:0] r2;
+                     reg [17:0] r3;
+                     reg [17:0] r4;
+                     reg [1:0] r5;
+                     localparam l0 = 1'b1;
+                     localparam l1 = 18'b000000000000000000;
+                     localparam l2 = 1'b1;
+                     begin
+                        r5 = arg_0;
+                        r0 = arg_2;
+                        r2 = r0[15:0];
+                        r1 = {l0, r2};
+                        r3 = l1;
+                        r3[16:0] = r1;
+                        r4 = r3;
+                        r4[17:17] = l2;
+                        kernel_rcstream_constant_kernel = r4;
+                     end
+               endfunction
+            endmodule"#]];
+        expect.assert_eq(&top.pretty());
+        Ok(())
+    }
+
+    /// Tier 5 — a waveform digest.
+    #[test]
+    fn trace_digest() {
+        let uut = Uut::new(
+            Real::<16> {
+                v: signed::<16>(4321),
+            },
+            (),
+        );
+        let vcd = uut
+            .run(std::iter::repeat_n((), 8).with_reset(1).clock_pos_edge(100))
+            .collect::<VcdFile>();
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("vcd")
+            .join("rcstream_constant");
+        std::fs::create_dir_all(&root).unwrap();
+        let expect = expect_test::expect![
+            "987d4e0178b59aec38b39383242105ac43e5e2b32bba87e7e6dab68aa33ba144"
+        ];
+        let digest = vcd
+            .dump_to_file(root.join("rcstream_constant.vcd"))
+            .unwrap();
+        expect.assert_eq(&digest);
     }
 
     /// Tier 4 — emitted Verilog agrees with the Rust simulation.
