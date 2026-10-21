@@ -75,6 +75,7 @@ fn main() -> Result<(), RHDLError> {
             src_ip: bits(0xC0A8_0132),
             dst_ip: bits(0xC0A8_010A),
             src_port: bits(0x1234),
+            dst_port: bits(4791),
             ip_id: bits(0),
             ttl: bits(64),
         },

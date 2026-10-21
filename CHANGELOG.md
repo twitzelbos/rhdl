@@ -81,6 +81,23 @@ emits a complete frame whose bytes match Scapy exactly.
   the checksum is settled by the time the phase reaches `Icrc` and
   there is no stall. One dead cycle between packets, which Ethernet's
   inter-frame gap requires anyway.
+- **`frame.rs`'s two layers are now actually separable, which they were
+  not.** Asked whether the assembled datapath belongs in a `net`
+  category, the answer is no — `RoceWriteTx` is an RDMA endpoint
+  (queue pairs, PSNs, remote keys), `rhdl-fpga` does not depend on
+  `rhdl-roce` and should not, and moving it would mean moving the
+  segmenter, headers, ICRC and QP context too. But the question exposed
+  a real defect: the IPv4 and UDP builders took a `PacketPlan` **purely
+  to look up a length**, and `udp_pack` **hardcoded port 4791**. Both
+  made genuinely generic networking code artificially RoCE-coupled, and
+  that is why the module did not look movable. They now take
+  `Bits<16>` lengths and read the destination port from
+  [`FrameConfig`], so `frame.rs` splits cleanly: **8 items with no RDMA
+  type in their signature** (`FrameConfig`, `eth_pack`, `eth_byte`,
+  `ipv4_head`, `ipv4_checksum`, `ipv4_byte`, `udp_pack`, `udp_byte`) are
+  ready to move to `net::` as a rename, and 6 (`header_byte`,
+  `bth_from_plan`, and the length arithmetic that knows a RETH is 16
+  bytes) stay. The move itself still waits on §12's category decision.
 
 **Surprises and gotchas:**
 

@@ -732,6 +732,7 @@ impl Vector {
             src_ip: bits(self.src_ip as u128),
             dst_ip: bits(self.dst_ip as u128),
             src_port: bits(self.sport as u128),
+            dst_port: bits(4791),
             ip_id: bits(self.ip_id as u128),
             ttl: bits(self.ttl as u128),
         }
@@ -835,10 +836,10 @@ fn whole_frame_headers_match_scapy() {
 /// is ever looked at.
 #[test]
 fn the_ipv4_header_checksum_is_correct() {
-    use rhdl_roce::frame::ipv4_checksum;
+    use rhdl_roce::frame::{ip_total_length, ipv4_checksum};
     for v in vectors() {
         let want = u16::from_be_bytes([v.frame[IP_OFF + 10], v.frame[IP_OFF + 11]]);
-        let got = ipv4_checksum(v.frame_config(), v.plan()).raw() as u16;
+        let got = ipv4_checksum(v.frame_config(), ip_total_length(v.plan())).raw() as u16;
         assert_eq!(got, want, "{}: IPv4 header checksum", v.name);
         // And the standard property: the one's-complement sum over the
         // whole header, checksum included, is zero.

@@ -116,6 +116,7 @@ fn corpus() -> Vec<Case> {
                 src_ip: bits(num(f[5])),
                 dst_ip: bits(num(f[6])),
                 src_port: bits(num(f[7])),
+                dst_port: bits(4791),
                 ip_id: bits(num(f[8])),
                 ttl: bits(num(f[9])),
             },

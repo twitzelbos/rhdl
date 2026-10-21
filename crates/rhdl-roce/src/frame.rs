@@ -7,14 +7,38 @@
 //!
 //! # Where this should eventually live
 //!
-//! **In `rhdl-fpga` under a `net` category, not here.** Ethernet, IPv4
-//! and UDP header generation is useful to anything that talks to a
-//! network, and `roce-v2-architecture.md` §6 proposes exactly that. But
-//! adding a top-level category to `rhdl-fpga` is one of the structural
-//! decisions `architecture.md` requires sign-off for, and that sign-off
-//! is still outstanding (§12, decision 5). Keeping it here in the
-//! meantime is the conservative option: it does not touch `rhdl-fpga`'s
-//! structure, and moving a module later is a rename.
+//! This module holds **two layers**, and they are deliberately kept
+//! separable:
+//!
+//! - **Generic networking**, which belongs in `rhdl-fpga` under a `net`
+//!   category: [`FrameConfig`], [`eth_pack`], [`eth_byte`],
+//!   [`ipv4_head`], [`ipv4_checksum`], [`ipv4_byte`], [`udp_pack`],
+//!   [`udp_byte`] and the layer-offset constants. **None of these
+//!   mention an RDMA type.** They take byte *lengths*, so an IPv4
+//!   header builder does not need to know what a queue pair is.
+//! - **RoCE-specific glue**, which stays here: [`header_byte`]'s
+//!   dispatch across the layer boundaries, [`bth_from_plan`], and the
+//!   length arithmetic ([`header_bytes`], [`udp_length`],
+//!   [`ip_total_length`], [`payload_on_wire`]) that knows a RETH is 16
+//!   bytes and that a pad count exists.
+//!
+//! The first group was *originally written taking a
+//! [`PacketPlan`][crate::qp::segmenter::PacketPlan] just to look up a
+//! length, which coupled generic code to RDMA for no reason and made it
+//! look unmovable. Taking lengths instead is what makes the eventual
+//! move to `net` a rename plus an import change.
+//!
+//! The move itself is not done here, because adding a top-level category
+//! to `rhdl-fpga` is one of the structural decisions `architecture.md`
+//! requires sign-off for and that sign-off is outstanding
+//! (`roce-v2-architecture.md` §12, decision 5).
+//!
+//! **The assembled transmitter does *not* belong in `net`.**
+//! [`crate::tx::RoceWriteTx`] is an RDMA endpoint — queue pairs, packet
+//! sequence numbers, remote keys — and `rhdl-fpga` neither depends on
+//! this crate nor should. Moving it would mean moving the segmenter, the
+//! headers, the ICRC and the queue-pair context too, which is the whole
+//! crate.
 //!
 //! # The frame
 //!
@@ -112,6 +136,13 @@ pub struct FrameConfig {
     /// UDP source port. RoCEv2 leaves this free, and a real sender
     /// varies it to spread traffic across a fabric's ECMP hashes.
     pub src_port: Bits<16>,
+    /// UDP destination port. [`ROCE_UDP_PORT`] for RoCEv2.
+    ///
+    /// A parameter rather than a constant inside [`udp_pack`], because
+    /// hardcoding 4791 there would make an otherwise generic UDP header
+    /// builder quietly RoCE-specific — which is the coupling the module
+    /// docs are about.
+    pub dst_port: Bits<16>,
     /// IPv4 identification field. Only meaningful for fragmentation,
     /// which RoCEv2 must not use, so a constant is fine.
     pub ip_id: Bits<16>,
@@ -183,7 +214,7 @@ pub fn eth_byte(cfg: FrameConfig, index: Bits<4>) -> Bits<8> {
 /// `checksum` is a parameter rather than being computed here, so that
 /// [`ipv4_checksum`] can call this with zero and avoid a circular
 /// definition.
-pub fn ipv4_head(cfg: FrameConfig, plan: PacketPlan, checksum: Bits<16>) -> Bits<96> {
+pub fn ipv4_head(cfg: FrameConfig, total_len: Bits<16>, checksum: Bits<16>) -> Bits<96> {
     // byte 0      : version 4, IHL 5  -> 0x45
     // byte 1      : TOS / DSCP+ECN    -> 0
     // bytes 2..3  : total length
@@ -193,7 +224,7 @@ pub fn ipv4_head(cfg: FrameConfig, plan: PacketPlan, checksum: Bits<16>) -> Bits
     // byte 9      : protocol
     // bytes 10..11: header checksum
     (bits::<96>(0x45) << 88)
-        | (ip_total_length(plan).resize::<96>() << 64)
+        | (total_len.resize::<96>() << 64)
         | (cfg.ip_id.resize::<96>() << 48)
         | (cfg.ttl.resize::<96>() << 24)
         | (bits::<96>(17) << 16)
@@ -204,8 +235,8 @@ pub fn ipv4_head(cfg: FrameConfig, plan: PacketPlan, checksum: Bits<16>) -> Bits
 /// The IPv4 header checksum: the one's-complement sum of the header's
 /// ten 16-bit words, complemented, computed with the checksum field
 /// taken as zero.
-pub fn ipv4_checksum(cfg: FrameConfig, plan: PacketPlan) -> Bits<16> {
-    let head = ipv4_head(cfg, plan, bits(0));
+pub fn ipv4_checksum(cfg: FrameConfig, total_len: Bits<16>) -> Bits<16> {
+    let head = ipv4_head(cfg, total_len, bits(0));
     let mut acc = bits::<32>(0);
     // Six words from the head; the checksum word is zero in it.
     for i in 0..6 {
@@ -228,7 +259,7 @@ pub fn ipv4_checksum(cfg: FrameConfig, plan: PacketPlan) -> Bits<16> {
 /// Select one byte of the IPv4 header. `index` is clamped, and so is
 /// the sub-index handed to each of the three ranges — see the module
 /// docs on why that is load-bearing rather than defensive.
-pub fn ipv4_byte(cfg: FrameConfig, plan: PacketPlan, index: Bits<5>) -> Bits<8> {
+pub fn ipv4_byte(cfg: FrameConfig, total_len: Bits<16>, index: Bits<5>) -> Bits<8> {
     let safe = if index > bits(19) {
         bits::<5>(19)
     } else {
@@ -255,7 +286,7 @@ pub fn ipv4_byte(cfg: FrameConfig, plan: PacketPlan, index: Bits<5>) -> Bits<8> 
     let src_shift = (bits::<8>(3) - src_i.resize::<8>()) << 3;
     let dst_shift = (bits::<8>(3) - dst_i.resize::<8>()) << 3;
 
-    let head = ipv4_head(cfg, plan, ipv4_checksum(cfg, plan));
+    let head = ipv4_head(cfg, total_len, ipv4_checksum(cfg, total_len));
     let from_head = ((head >> head_shift.resize::<96>()) & bits(0xFF)).resize::<8>();
     let from_src = ((cfg.src_ip >> src_shift.resize::<32>()) & bits(0xFF)).resize::<8>();
     let from_dst = ((cfg.dst_ip >> dst_shift.resize::<32>()) & bits(0xFF)).resize::<8>();
@@ -273,18 +304,18 @@ pub fn ipv4_byte(cfg: FrameConfig, plan: PacketPlan, index: Bits<5>) -> Bits<8> 
 /// Pack the UDP header into its 64 wire bits.
 ///
 /// The checksum is zero, which RoCEv2 requires.
-pub fn udp_pack(cfg: FrameConfig, plan: PacketPlan) -> Bits<64> {
+pub fn udp_pack(cfg: FrameConfig, udp_len: Bits<16>) -> Bits<64> {
     (cfg.src_port.resize::<64>() << 48)
-        | (bits::<64>(4791) << 32)
-        | (udp_length(plan).resize::<64>() << 16)
+        | (cfg.dst_port.resize::<64>() << 32)
+        | (udp_len.resize::<64>() << 16)
 }
 
 #[kernel]
 /// Select one byte of the UDP header. `index` is clamped.
-pub fn udp_byte(cfg: FrameConfig, plan: PacketPlan, index: Bits<3>) -> Bits<8> {
+pub fn udp_byte(cfg: FrameConfig, udp_len: Bits<16>, index: Bits<3>) -> Bits<8> {
     let safe = if index > bits(7) { bits::<3>(7) } else { index };
     let shift = (bits::<8>(7) - safe.resize::<8>()) << 3;
-    ((udp_pack(cfg, plan) >> shift.resize::<64>()) & bits(0xFF)).resize::<8>()
+    ((udp_pack(cfg, udp_len) >> shift.resize::<64>()) & bits(0xFF)).resize::<8>()
 }
 
 #[kernel]
@@ -377,9 +408,9 @@ pub fn header_byte(cfg: FrameConfig, bth: Bth, plan: PacketPlan, index: Bits<7>)
     if index < bits(14) {
         eth_byte(cfg, eth_i)
     } else if index < bits(34) {
-        ipv4_byte(cfg, plan, ip_i)
+        ipv4_byte(cfg, ip_total_length(plan), ip_i)
     } else if index < bits(42) {
-        udp_byte(cfg, plan, udp_i)
+        udp_byte(cfg, udp_length(plan), udp_i)
     } else if index < bits(54) {
         bth_byte(bth, bth_i)
     } else {
@@ -401,6 +432,7 @@ mod tests {
             src_ip: bits(src_ip),
             dst_ip: bits(dst_ip),
             src_port: bits(0x1234),
+            dst_port: bits(ROCE_UDP_PORT),
             ip_id: bits(ip_id),
             ttl: bits(ttl),
         }
@@ -506,7 +538,7 @@ mod tests {
             let c = cfg(src, dst, id, ttl);
             let p = plan16();
             assert_eq!(
-                ipv4_checksum(c, p).raw() as u16,
+                ipv4_checksum(c, ip_total_length(p)).raw() as u16,
                 checksum_ref(c, p),
                 "checksum mismatch for src={src:#010x} dst={dst:#010x} id={id:#06x} ttl={ttl}"
             );
@@ -535,8 +567,8 @@ mod tests {
             let p = plan16();
             let mut acc: u32 = 0;
             for i in 0..10u128 {
-                let hi = ipv4_byte(c, p, bits(2 * i)).raw() as u32;
-                let lo = ipv4_byte(c, p, bits(2 * i + 1)).raw() as u32;
+                let hi = ipv4_byte(c, ip_total_length(p), bits(2 * i)).raw() as u32;
+                let lo = ipv4_byte(c, ip_total_length(p), bits(2 * i + 1)).raw() as u32;
                 acc += (hi << 8) | lo;
             }
             while acc >> 16 != 0 {
@@ -554,8 +586,8 @@ mod tests {
     #[test]
     fn the_udp_checksum_is_zero() {
         let c = cfg(0xC0A8_0132, 0xC0A8_010A, 0, 64);
-        assert_eq!(udp_byte(c, plan16(), bits(6)), bits::<8>(0));
-        assert_eq!(udp_byte(c, plan16(), bits(7)), bits::<8>(0));
+        assert_eq!(udp_byte(c, udp_length(plan16()), bits(6)), bits::<8>(0));
+        assert_eq!(udp_byte(c, udp_length(plan16()), bits(7)), bits::<8>(0));
     }
 
     /// The destination port is the IANA-assigned one, in the right byte
@@ -563,8 +595,8 @@ mod tests {
     #[test]
     fn the_destination_port_is_4791() {
         let c = cfg(0xC0A8_0132, 0xC0A8_010A, 0, 64);
-        let hi = udp_byte(c, plan16(), bits(2)).raw();
-        let lo = udp_byte(c, plan16(), bits(3)).raw();
+        let hi = udp_byte(c, udp_length(plan16()), bits(2)).raw();
+        let lo = udp_byte(c, udp_length(plan16()), bits(3)).raw();
         assert_eq!((hi << 8) | lo, ROCE_UDP_PORT);
     }
 
@@ -595,9 +627,13 @@ mod tests {
         for i in 14u128..16 {
             assert_eq!(eth_byte(c, bits(i)), last_eth, "eth_byte({i})");
         }
-        let last_ip = ipv4_byte(c, p, bits(19));
+        let last_ip = ipv4_byte(c, ip_total_length(p), bits(19));
         for i in 20u128..32 {
-            assert_eq!(ipv4_byte(c, p, bits(i)), last_ip, "ipv4_byte({i})");
+            assert_eq!(
+                ipv4_byte(c, ip_total_length(p), bits(i)),
+                last_ip,
+                "ipv4_byte({i})"
+            );
         }
         // And the frame-level dispatcher, past the header block.
         let bth = bth_from_plan(ctx(), p, false);
@@ -679,14 +715,16 @@ mod tests {
 
     #[test]
     fn ipv4_head_kernel_vm_and_verilog() -> miette::Result<()> {
-        let inputs = cfgs().zip(plans()).map(|(c, p)| (c, p, bits::<16>(0xBEEF)));
+        let inputs = cfgs()
+            .zip(plans())
+            .map(|(c, p)| (c, ip_total_length(p), bits::<16>(0xBEEF)));
         test_kernel_vm_and_verilog_synchronous::<ipv4_head, _, _, _>(ipv4_head, inputs)?;
         Ok(())
     }
 
     #[test]
     fn udp_pack_kernel_vm_and_verilog() -> miette::Result<()> {
-        let inputs = cfgs().zip(plans());
+        let inputs = cfgs().zip(plans()).map(|(c, p)| (c, udp_length(p)));
         test_kernel_vm_and_verilog_synchronous::<udp_pack, _, _, _>(udp_pack, inputs)?;
         Ok(())
     }
@@ -694,9 +732,10 @@ mod tests {
     #[test]
     fn udp_byte_kernel_vm_and_verilog() -> miette::Result<()> {
         // Indices past the end included: the clamp bounds the shift.
-        let inputs = cfgs()
-            .zip(plans())
-            .flat_map(|(c, p)| (0u128..8).map(move |i| (c, p, bits::<3>(i))));
+        let inputs = cfgs().zip(plans()).flat_map(|(c, p)| {
+            let ul = udp_length(p);
+            (0u128..8).map(move |i| (c, ul, bits::<3>(i)))
+        });
         test_kernel_vm_and_verilog_synchronous::<udp_byte, _, _, _>(udp_byte, inputs)?;
         Ok(())
     }
@@ -752,7 +791,7 @@ mod tests {
         let inputs = (0u128..64).map(|i| {
             (
                 cfg(0xC0A8_0100 + i, 0xC0A8_0200 + i * 7, i * 1021, 64),
-                plan16(),
+                ip_total_length(plan16()),
             )
         });
         test_kernel_vm_and_verilog_synchronous::<ipv4_checksum, _, _, _>(ipv4_checksum, inputs)?;
@@ -764,7 +803,7 @@ mod tests {
         let inputs = (0u128..32).map(|i| {
             (
                 cfg(0xC0A8_0132, 0xC0A8_010A, 0x1234, 64),
-                plan16(),
+                ip_total_length(plan16()),
                 bits::<5>(i),
             )
         });

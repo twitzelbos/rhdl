@@ -398,6 +398,7 @@ mod tests {
             src_ip: bits(0xC0A8_0132),
             dst_ip: bits(0xC0A8_010A),
             src_port: bits(0x1234),
+            dst_port: bits(4791),
             ip_id: bits(0),
             ttl: bits(64),
         }
@@ -817,7 +818,7 @@ mod tests {
             .join("vcd")
             .join("tx");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["4e816d34093a173650a4317e9587ed4d2d9b228c35e8443df3301ced5617ea77"];
+        let expect = expect!["63cee865118643fa7e1c0ee295a450c991f178f57262f1d791e59c3ea2889296"];
         let digest = vcd.dump_to_file(root.join("tx.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())
