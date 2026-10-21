@@ -564,6 +564,16 @@ mod tests {
     }
 
     #[test]
+    fn write_opcode_for_kernel_vm_and_verilog() -> miette::Result<()> {
+        let inputs = [(true, true), (true, false), (false, true), (false, false)].into_iter();
+        test_kernel_vm_and_verilog_synchronous::<write_opcode_for, _, _, _>(
+            write_opcode_for,
+            inputs,
+        )?;
+        Ok(())
+    }
+
+    #[test]
     fn pmtu_bytes_kernel_vm_and_verilog() -> miette::Result<()> {
         let inputs = [
             Pmtu::B256,

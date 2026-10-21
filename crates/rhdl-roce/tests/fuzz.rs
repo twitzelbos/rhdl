@@ -42,7 +42,7 @@
 
 use rhdl::prelude::*;
 use rhdl_fpga::core::crc32::{INIT, XOR_OUT, crc32_step};
-use rhdl_roce::frame::{FrameConfig, header_byte, header_bytes};
+use rhdl_roce::frame::{FrameConfig, bth_from_plan, header_byte, header_bytes};
 use rhdl_roce::headers::{Reth, Transport, WriteOpcode};
 use rhdl_roce::icrc::{COVERAGE_START, PREFIX_REMAINDER, icrc_mask};
 use rhdl_roce::qp::context::{Pmtu, QpContext};
@@ -211,7 +211,15 @@ fn fuzz_header_blocks_match_scapy() {
             c.header.len()
         );
         let got: Vec<u8> = (0..n)
-            .map(|i| header_byte(c.cfg, c.ctx, c.plan, c.ackreq, bits(i as u128)).raw() as u8)
+            .map(|i| {
+                header_byte(
+                    c.cfg,
+                    bth_from_plan(c.ctx, c.plan, c.ackreq),
+                    c.plan,
+                    bits(i as u128),
+                )
+                .raw() as u8
+            })
             .collect();
         if got != c.header {
             let at = got
@@ -234,7 +242,15 @@ fn fuzz_icrcs_match_scapy() {
     for c in &corpus() {
         let n = header_bytes(c.plan).raw() as usize;
         let mut frame: Vec<u8> = (0..n)
-            .map(|i| header_byte(c.cfg, c.ctx, c.plan, c.ackreq, bits(i as u128)).raw() as u8)
+            .map(|i| {
+                header_byte(
+                    c.cfg,
+                    bth_from_plan(c.ctx, c.plan, c.ackreq),
+                    c.plan,
+                    bits(i as u128),
+                )
+                .raw() as u8
+            })
             .collect();
         frame.extend_from_slice(&payload_of(c));
         let got = icrc_of(&frame);

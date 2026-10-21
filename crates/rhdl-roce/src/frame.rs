@@ -322,19 +322,22 @@ pub fn bth_from_plan(ctx: QpContext, plan: PacketPlan, ackreq: bool) -> Bth {
 /// the RETH. The payload and the ICRC are not here: the payload comes
 /// from a stream and the ICRC from [`crate::icrc`].
 ///
+/// The [`Bth`] is a **parameter rather than being built here**, for two
+/// reasons. It is constant across a packet's bytes, so building it per
+/// index would describe the same logic once per byte and leave the
+/// sharing to the synthesiser; and it keeps this function to four
+/// arguments, which is what `TestArg` supports — so the top-level byte
+/// generator can have a kernel-VM and Verilog round-trip instead of
+/// being the one function in the path that never sees a Verilog
+/// compiler. Build it with [`bth_from_plan`].
+///
 /// `index` beyond [`header_bytes`] returns the last RETH byte. That is
 /// a clamp rather than an error because a mux has no error arm; the
 /// caller is responsible for not asking. Note that the clamp has to be
 /// applied *before* the sub-index is narrowed — `resize` truncates
 /// rather than saturating, so clamping afterwards lets a large index
 /// wrap around to byte 0.
-pub fn header_byte(
-    cfg: FrameConfig,
-    ctx: QpContext,
-    plan: PacketPlan,
-    ackreq: bool,
-    index: Bits<7>,
-) -> Bits<8> {
+pub fn header_byte(cfg: FrameConfig, bth: Bth, plan: PacketPlan, index: Bits<7>) -> Bits<8> {
     // As everywhere in this module: every branch evaluates, so each
     // sub-index is clamped into its own range before use.
     let eth_i = if index < bits(14) {
@@ -378,7 +381,7 @@ pub fn header_byte(
     } else if index < bits(42) {
         udp_byte(cfg, plan, udp_i)
     } else if index < bits(54) {
-        bth_byte(bth_from_plan(ctx, plan, ackreq), bth_i)
+        bth_byte(bth, bth_i)
     } else {
         reth_byte(plan.reth, reth_i)
     }
@@ -597,10 +600,11 @@ mod tests {
             assert_eq!(ipv4_byte(c, p, bits(i)), last_ip, "ipv4_byte({i})");
         }
         // And the frame-level dispatcher, past the header block.
-        let last_hdr = header_byte(c, ctx(), p, false, bits(69));
+        let bth = bth_from_plan(ctx(), p, false);
+        let last_hdr = header_byte(c, bth, p, bits(69));
         for i in 70u128..128 {
             assert_eq!(
-                header_byte(c, ctx(), p, false, bits(i)),
+                header_byte(c, bth, p, bits(i)),
                 last_hdr,
                 "header_byte({i})"
             );
@@ -625,6 +629,123 @@ mod tests {
     // `test_kernel_vm_and_verilog_synchronous` is the right Tier 3+4
     // cover -- it lowers to Verilog, runs both the Rust VM and
     // `iverilog`, and compares per input.
+
+    /// A spread of plans: both RETH states, all four pad counts, and
+    /// payload lengths across the 13-bit range.
+    fn plans() -> impl Iterator<Item = PacketPlan> + Clone {
+        (0u128..40).map(|i| {
+            let data = (i * 211) % 4097;
+            PacketPlan {
+                opcode: match i % 6 {
+                    0 => WriteOpcode::First,
+                    1 => WriteOpcode::Middle,
+                    2 => WriteOpcode::Last,
+                    3 => WriteOpcode::LastWithImmediate,
+                    4 => WriteOpcode::Only,
+                    _ => WriteOpcode::OnlyWithImmediate,
+                },
+                psn: bits((i * 99_991) & 0xFF_FFFF),
+                payload_bytes: bits(data),
+                padcount: bits((4 - data % 4) % 4),
+                carries_reth: i % 2 == 0,
+                reth: crate::headers::Reth {
+                    va: bits((i * 0x0123_4567_89AB_CDEF) & u64::MAX as u128),
+                    rkey: bits((i * 0x0101_0101) & 0xFFFF_FFFF),
+                    dma_len: bits(data),
+                },
+            }
+        })
+    }
+
+    fn cfgs() -> impl Iterator<Item = FrameConfig> + Clone {
+        (0u128..16).map(|i| {
+            cfg(
+                0xC0A8_0100 + i * 37,
+                0x0A00_0001 + i * 1021,
+                i * 4099,
+                i * 17,
+            )
+        })
+    }
+
+    #[test]
+    fn eth_pack_kernel_vm_and_verilog() -> miette::Result<()> {
+        test_kernel_vm_and_verilog_synchronous::<eth_pack, _, _, _>(
+            eth_pack,
+            cfgs().map(|c| (c,)),
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn ipv4_head_kernel_vm_and_verilog() -> miette::Result<()> {
+        let inputs = cfgs().zip(plans()).map(|(c, p)| (c, p, bits::<16>(0xBEEF)));
+        test_kernel_vm_and_verilog_synchronous::<ipv4_head, _, _, _>(ipv4_head, inputs)?;
+        Ok(())
+    }
+
+    #[test]
+    fn udp_pack_kernel_vm_and_verilog() -> miette::Result<()> {
+        let inputs = cfgs().zip(plans());
+        test_kernel_vm_and_verilog_synchronous::<udp_pack, _, _, _>(udp_pack, inputs)?;
+        Ok(())
+    }
+
+    #[test]
+    fn udp_byte_kernel_vm_and_verilog() -> miette::Result<()> {
+        // Indices past the end included: the clamp bounds the shift.
+        let inputs = cfgs()
+            .zip(plans())
+            .flat_map(|(c, p)| (0u128..8).map(move |i| (c, p, bits::<3>(i))));
+        test_kernel_vm_and_verilog_synchronous::<udp_byte, _, _, _>(udp_byte, inputs)?;
+        Ok(())
+    }
+
+    #[test]
+    fn bth_from_plan_kernel_vm_and_verilog() -> miette::Result<()> {
+        let inputs = plans().flat_map(|p| [true, false].into_iter().map(move |a| (ctx(), p, a)));
+        test_kernel_vm_and_verilog_synchronous::<bth_from_plan, _, _, _>(bth_from_plan, inputs)?;
+        Ok(())
+    }
+
+    /// **The top-level byte generator, through the kernel VM and
+    /// `iverilog`.** This is the one that mattered: every byte-exact
+    /// claim about whole frames -- eight curated vectors and 2000 fuzz
+    /// cases -- runs through direct Rust calls to this function, which
+    /// §4 warns are more permissive than the VM. Without this test the
+    /// whole-frame result was a statement about the Rust simulator and
+    /// not about hardware.
+    #[test]
+    fn header_byte_kernel_vm_and_verilog() -> miette::Result<()> {
+        let inputs = cfgs().zip(plans()).flat_map(|(c, p)| {
+            let bth = bth_from_plan(ctx(), p, true);
+            // 0..72 so the out-of-range clamp is exercised in Verilog too.
+            (0u128..72).map(move |i| (c, bth, p, bits::<7>(i)))
+        });
+        test_kernel_vm_and_verilog_synchronous::<header_byte, _, _, _>(header_byte, inputs)?;
+        Ok(())
+    }
+
+    #[test]
+    fn length_kernels_vm_and_verilog() -> miette::Result<()> {
+        test_kernel_vm_and_verilog_synchronous::<payload_on_wire, _, _, _>(
+            payload_on_wire,
+            plans().map(|p| (p,)),
+        )?;
+        test_kernel_vm_and_verilog_synchronous::<header_bytes, _, _, _>(
+            header_bytes,
+            plans().map(|p| (p,)),
+        )?;
+        test_kernel_vm_and_verilog_synchronous::<udp_length, _, _, _>(
+            udp_length,
+            plans().map(|p| (p,)),
+        )?;
+        test_kernel_vm_and_verilog_synchronous::<ip_total_length, _, _, _>(
+            ip_total_length,
+            plans().map(|p| (p,)),
+        )?;
+        Ok(())
+    }
 
     #[test]
     fn checksum_kernel_vm_and_verilog() -> miette::Result<()> {

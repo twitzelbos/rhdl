@@ -795,7 +795,7 @@ impl Vector {
 /// comes from a stream, and the ICRC, which has its own test.
 #[test]
 fn whole_frame_headers_match_scapy() {
-    use rhdl_roce::frame::{header_byte, header_bytes};
+    use rhdl_roce::frame::{bth_from_plan, header_byte, header_bytes};
     for v in vectors() {
         let cfg = v.frame_config();
         let ctx = v.qp_context();
@@ -808,7 +808,15 @@ fn whole_frame_headers_match_scapy() {
             v.name
         );
         let got: Vec<u8> = (0..n)
-            .map(|i| header_byte(cfg, ctx, plan, v.ackreq, bits(i as u128)).raw() as u8)
+            .map(|i| {
+                header_byte(
+                    cfg,
+                    bth_from_plan(ctx, plan, v.ackreq),
+                    plan,
+                    bits(i as u128),
+                )
+                .raw() as u8
+            })
             .collect();
         let expected = &v.frame[..n];
         assert_eq!(
@@ -899,7 +907,7 @@ fn the_length_fields_match_the_frame() {
 /// NIC accepting the packet is the Ethernet FCS, which the MAC appends.
 #[test]
 fn a_complete_frame_matches_scapy_byte_for_byte() {
-    use rhdl_roce::frame::{header_byte, header_bytes};
+    use rhdl_roce::frame::{bth_from_plan, header_byte, header_bytes};
     for v in vectors() {
         let cfg = v.frame_config();
         let ctx = v.qp_context();
@@ -908,7 +916,15 @@ fn a_complete_frame_matches_scapy_byte_for_byte() {
 
         // 1. the header block, from the frame generator
         let mut frame: Vec<u8> = (0..n)
-            .map(|i| header_byte(cfg, ctx, plan, v.ackreq, bits(i as u128)).raw() as u8)
+            .map(|i| {
+                header_byte(
+                    cfg,
+                    bth_from_plan(ctx, plan, v.ackreq),
+                    plan,
+                    bits(i as u128),
+                )
+                .raw() as u8
+            })
             .collect();
         // 2. the payload, including its pad bytes
         frame.extend_from_slice(&v.payload);

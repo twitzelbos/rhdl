@@ -269,3 +269,139 @@ pub fn reth_byte(h: Reth, index: Bits<5>) -> Bits<8> {
     let shift = (bits::<8>(15) - safe.resize::<8>()) << 3;
     ((packed >> shift.resize::<128>()) & bits(0xFF)).resize::<8>()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rhdl::core::sim::testbench::kernel::test_kernel_vm_and_verilog_synchronous;
+
+    /// A spread of BTH field values, including the all-ones and
+    /// all-zeros corners of every field.
+    fn bths() -> impl Iterator<Item = Bth> + Clone {
+        (0u128..64).map(|i| Bth {
+            opcode: bits((i * 4) & 0xFF),
+            solicited: i & 1 != 0,
+            migreq: i & 2 != 0,
+            padcount: bits(i & 3),
+            version: bits(i & 0xF),
+            pkey: bits(if i == 0 {
+                0
+            } else {
+                0xFFFF ^ ((i * 977) & 0xFFFF)
+            }),
+            fecn: i & 4 != 0,
+            becn: i & 8 != 0,
+            resv6: bits(i & 0x3F),
+            dqpn: bits((i * 262_111) & 0xFF_FFFF),
+            ackreq: i & 16 != 0,
+            resv7: bits(i & 0x7F),
+            psn: bits((i * 199_933) & 0xFF_FFFF),
+        })
+    }
+
+    fn reths() -> impl Iterator<Item = Reth> + Clone {
+        (0u128..48).map(|i| Reth {
+            va: bits((i * 0x0123_4567_89AB_CDEF) & u64::MAX as u128),
+            rkey: bits((i * 0x0101_0101) & 0xFFFF_FFFF),
+            dma_len: bits((i * 7919) & 0xFFFF_FFFF),
+        })
+    }
+
+    const OPS: [WriteOpcode; 6] = [
+        WriteOpcode::First,
+        WriteOpcode::Middle,
+        WriteOpcode::Last,
+        WriteOpcode::LastWithImmediate,
+        WriteOpcode::Only,
+        WriteOpcode::OnlyWithImmediate,
+    ];
+
+    // Every kernel in this module gets a kernel-VM and `iverilog`
+    // round-trip. Per CLAUDE.md §4 a direct Rust call is *more
+    // permissive* than the VM -- `Bits<N> << k` for `k >= N` wraps in
+    // Rust and errors in the VM -- so the shift-heavy byte selectors
+    // here are exactly the kind of kernel that can pass a Tier-1 test
+    // and still be broken hardware.
+
+    #[test]
+    fn bth_pack_kernel_vm_and_verilog() -> miette::Result<()> {
+        test_kernel_vm_and_verilog_synchronous::<bth_pack, _, _, _>(
+            bth_pack,
+            bths().map(|h| (h,)),
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn bth_byte_kernel_vm_and_verilog() -> miette::Result<()> {
+        // Indices past the end included on purpose: the clamp is what
+        // keeps the shift inside the operand width.
+        let inputs = bths().flat_map(|h| (0u128..16).map(move |i| (h, bits::<4>(i))));
+        test_kernel_vm_and_verilog_synchronous::<bth_byte, _, _, _>(bth_byte, inputs)?;
+        Ok(())
+    }
+
+    #[test]
+    fn reth_pack_kernel_vm_and_verilog() -> miette::Result<()> {
+        test_kernel_vm_and_verilog_synchronous::<reth_pack, _, _, _>(
+            reth_pack,
+            reths().map(|h| (h,)),
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn reth_byte_kernel_vm_and_verilog() -> miette::Result<()> {
+        let inputs = reths().flat_map(|h| (0u128..32).map(move |i| (h, bits::<5>(i))));
+        test_kernel_vm_and_verilog_synchronous::<reth_byte, _, _, _>(reth_byte, inputs)?;
+        Ok(())
+    }
+
+    #[test]
+    fn bit_of_kernel_vm_and_verilog() -> miette::Result<()> {
+        test_kernel_vm_and_verilog_synchronous::<bit_of<96>, _, _, _>(
+            bit_of::<96>,
+            [true, false].into_iter().map(|b| (b,)),
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn carries_reth_kernel_vm_and_verilog() -> miette::Result<()> {
+        test_kernel_vm_and_verilog_synchronous::<carries_reth, _, _, _>(
+            carries_reth,
+            OPS.into_iter().map(|o| (o,)),
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn transport_base_kernel_vm_and_verilog() -> miette::Result<()> {
+        test_kernel_vm_and_verilog_synchronous::<transport_base, _, _, _>(
+            transport_base,
+            [Transport::Rc, Transport::Uc].into_iter().map(|t| (t,)),
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn write_operation_kernel_vm_and_verilog() -> miette::Result<()> {
+        test_kernel_vm_and_verilog_synchronous::<write_operation, _, _, _>(
+            write_operation,
+            OPS.into_iter().map(|o| (o,)),
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn encode_write_opcode_kernel_vm_and_verilog() -> miette::Result<()> {
+        let inputs = [Transport::Rc, Transport::Uc]
+            .into_iter()
+            .flat_map(|t| OPS.into_iter().map(move |o| (t, o)));
+        test_kernel_vm_and_verilog_synchronous::<encode_write_opcode, _, _, _>(
+            encode_write_opcode,
+            inputs,
+        )?;
+        Ok(())
+    }
+}

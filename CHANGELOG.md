@@ -31,6 +31,142 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-10-20 — `rhdl-roce::tx`: the assembled transmitter, and closing the Verilog-coverage gap
+
+**Path:** `crates/rhdl-roce/src/tx.rs`, `examples/tx.rs`, `doc/tx.md`,
+`doc/tx_fsm.md`, `vcd/tx/`; plus `test_kernel_vm_and_verilog_synchronous`
+coverage added across `headers.rs`, `frame.rs` and `qp/segmenter.rs`, and
+a four-argument `header_byte`
+
+**Why this, why now:** two gaps were pointed out in what had been
+shipped, and both were real.
+
+**Gap 1 — most of the crate's logic had never been through Verilog.**
+19 of 28 kernels were validated only by direct Rust calls. CLAUDE.md §4
+is explicit that a direct call is *more permissive* than the kernel VM —
+`Bits<N> << k` for `k >= N` wraps in Rust and errors in the VM — which
+is the entire reason the clamping work exists. So "every header byte
+matches Scapy over 8 vectors and 2000 fuzz cases" was a statement about
+the **Rust simulator**, not about hardware. `header_byte`, the top-level
+byte generator, was among the uncovered.
+
+**Gap 2 — there was no datapath.** Only `Icrc` and `WriteSegmenter`
+implemented `SynchronousIO`. `frame.rs` was entirely combinational, with
+no register, no byte counter and no stream port, so nothing could be
+instantiated on a board.
+
+Both are now closed: **0 of 29 kernels unverified**, and `RoceWriteTx`
+emits a complete frame whose bytes match Scapy exactly.
+
+**Design decisions:**
+
+- **`header_byte` dropped from five arguments to four**, taking a
+  pre-built `Bth` instead of `(QpContext, ackreq)`. `TestArg` is
+  implemented for tuples up to 4, so the five-argument version
+  *could not be tested* through the VM helper. The change is an
+  improvement regardless: the BTH is constant across a packet's bytes,
+  so building it per index described the same logic once per byte.
+- **The transmitter uses `#[derive(FsmWidget)]` and ships its diagram**,
+  per §12 rule 14. The FSM is genuinely informative here — four phases
+  in sequence — unlike the segmenter's, where the derive was declined
+  and the reason recorded.
+- **`d.phase` is assigned directly in each match arm**, not via an
+  intermediate. The extractor walks RHIF for writes to the state field
+  and a `let next = ...; d.phase = next` indirection hides them.
+- **The payload is pulled, not pushed.** The caller presents the byte at
+  the current offset and steps its source on `payload_advance`. That
+  suits the memory-backed source this will have (a DMA reading
+  acquisition samples) better than a stream the widget would buffer.
+- **The ICRC is fed each byte as it is emitted, gated on `ready`**, so
+  the checksum is settled by the time the phase reaches `Icrc` and
+  there is no stall. One dead cycle between packets, which Ethernet's
+  inter-frame gap requires anyway.
+
+**Surprises and gotchas:**
+
+- **RHDL caught a `dont_care()` partial read by name.** The idle-path
+  fallback was `None => PacketPlan::dont_care()`, and that value *is*
+  read — the header and length kernels evaluate every cycle regardless
+  of phase. The compiler listed every uncovered field path. `default()`
+  is the fix, and §12 rule 7 is the rule. A good example of the type
+  system doing the work it is there for.
+- **`resize` truncates rather than saturating, and that cost a real
+  bug.** `header_byte`'s RETH sub-index was
+  `(index - 54).resize::<5>()`, so index 86 gave 32, which narrows to 0
+  — returning RETH byte **0** instead of the last byte. Caught by the
+  out-of-range selector test. The rule is sharper than §4 states it:
+  clamp the operand **and** clamp before any narrowing.
+- **I chased a non-existent widget bug for a long time, and the fault
+  was my own closed-loop test harness.** The emitted frame matched
+  Scapy for 86 of 90 bytes and the ICRC did not. The engine was fed the
+  payload shifted by one — solved exactly, as
+  `fold(header + payload[1..15] + [0])`. The widget was correct
+  throughout: driving it **open-loop** showed `presented == emitted ==
+  fed` on every cycle. The harness bug is that `run_fn`'s closure
+  observes the output of the cycle driven by the *previous* call's
+  input, so stepping a payload cursor on an observed `payload_advance`
+  presents the next byte one cycle early. Recorded at length because
+  the failure mode is nasty: **the emitted stream still looks right
+  while the ICRC folds a shifted payload**, so the widget appears to
+  have a checksum bug.
+- **And on the way I wrote a vacuous test.** To isolate it I switched
+  to a constant payload and the ICRC matched — which proves nothing,
+  because with identical bytes an off-by-one is undetectable. Exactly
+  the failure the 2026-08-16 "sweep for vacuous assertions" entry is
+  about, committed by the person who had just read it.
+- **`with_reset(1)` shifts output samples one cycle later than inputs.**
+  Output sample `m` corresponds to input `m - 1`. Leaving that implicit
+  put the payload window and the ready-filter each one cycle out, in
+  *opposite* directions. `emit()` now names `input_of(m)` explicitly.
+- **`.unwrap_or_default()` is not in the kernel subset**, so clippy's
+  suggestion on the `Option` match had to be `#[allow]`ed with the
+  reason. `#[kernel]` lowers `match` on an `Option`, not arbitrary
+  `Option` methods.
+- **The FSM extractor reports self-loops**, so the transition count is
+  9 and not 5. An assertion on the bare count failed for a correct
+  reason; the test now asserts the *set* of inter-state edges and
+  separately that all four phases can hold.
+
+**Validation:** 92 tests in the crate (68 lib, 16 vector, 5 fuzz, 3
+doctests). `RoceWriteTx` has Tiers 1–5 plus the rule-14 diagram drift
+test. The acceptance test is
+`the_emitted_frame_matches_scapy`: the assembled datapath's `data` port
+produces vector `uc_write_only_16` byte for byte — Ethernet, IPv4 with
+its checksum, UDP, BTH, RETH, payload and ICRC.
+`a_stall_does_not_change_the_frame` re-runs it with a stall injected at
+five different cycles, including inside the header, the payload and the
+ICRC, and requires the frame to be identical — which is what makes the
+hold-don't-drop contract tested rather than asserted.
+
+Kernel Verilog coverage is now complete and audited by script: 29
+kernels, 27 with a `test_kernel_vm_and_verilog_synchronous` round-trip
+and 3 covered by their widgets' Tier-4 RTL+NTL, **0 unverified**. The
+FSM diagram is derived from the kernel's own RHIF and renders 4 states
+with 5 edges.
+
+**Follow-ups:**
+
+- **`link::gem_ring` is the last piece** before the Phase-2 gate in
+  `roce-v2-architecture.md`: an AXI-HP master writing these bytes into
+  the DDR ring the PS GEM serves.
+- **An addressed payload port** (`payload_offset`) would suit a
+  memory-backed source better than the current `payload_advance` pulse,
+  and would have made the test harness correct by construction. Needs
+  thought about presenting the offset a cycle early for registered
+  memory.
+- **An `RCStream` adapter** over the byte port, so the transmitter
+  composes with the rest of the library's streaming widgets.
+- `rhdl_fpga::doc::write_fsm_diagram` resolves against `rhdl-fpga`'s
+  manifest directory, like `write_svg_as_markdown` did, so a sibling
+  crate must use `render_fsm_diagram_markdown` and write the file
+  itself. Worth the same split treatment if another crate needs it.
+- The Tier-3 snapshot pins module structure and `endmodule` count
+  rather than the full text; the emitted module is mostly header mux and
+  a verbatim snapshot would be ~1500 lines of noise, which is the same
+  call `fifo::synchronous` makes.
+
+---
+
 ## 2026-10-20 — `rhdl-roce::frame`: Ethernet, IPv4 and UDP, and a complete frame byte-for-byte
 
 **Path:** `crates/rhdl-roce/src/frame.rs`,
