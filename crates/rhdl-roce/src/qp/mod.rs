@@ -18,6 +18,7 @@
 //! roughly a third of a full implementation.
 
 pub mod context;
+pub mod mr;
 pub mod segmenter;
 pub mod state;
 pub mod table;
