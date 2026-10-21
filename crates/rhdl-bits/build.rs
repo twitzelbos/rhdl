@@ -22,7 +22,13 @@ impl std::fmt::Display for TestThing {
             "{}",
             match self {
                 TestThing::UnsignedLiteral(x) => format!("{x}_u128"),
-                TestThing::SignedLiteral(x) => format!("({x} as i128)"),
+                // `({x}_i128)` and not `({x} as i128)`: the cast form
+                // makes clippy fire `unnecessary_cast` once per emitted
+                // literal, and this generator emits hundreds -- 240
+                // warnings from this one line. The parentheses stay
+                // because a negative literal needs them in some
+                // expression positions. Matches the unsigned arm above.
+                TestThing::SignedLiteral(x) => format!("({x}_i128)"),
                 TestThing::FixedBits(n, x) => format!("b{n}({x})"),
                 TestThing::FixedSignedBits(n, x) => format!("s{n}({x})"),
                 TestThing::DynBits(n, x) => format!("b{n}({x}).dyn_bits()"),
