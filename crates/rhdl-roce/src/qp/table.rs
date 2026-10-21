@@ -193,7 +193,7 @@ mod tests {
     fn ctx(n: u128) -> QpContext {
         QpContext {
             dqpn: bits(0x1000 + n),
-            transport: if n % 2 == 0 {
+            transport: if n.is_multiple_of(2) {
                 Transport::Uc
             } else {
                 Transport::Rc

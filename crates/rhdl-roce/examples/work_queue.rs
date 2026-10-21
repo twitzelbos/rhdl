@@ -69,7 +69,7 @@ fn main() -> Result<(), RHDLError> {
     });
     stream.push(idle);
 
-    let uut = WorkQueue::<3>::default();
+    let uut = WorkQueue::<MessageRequest, 3>::default();
     let input = stream.into_iter().with_reset(1).clock_pos_edge(100);
     let vcd = uut.run(input).collect::<SvgFile>();
     let markdown = render_svg_markdown(

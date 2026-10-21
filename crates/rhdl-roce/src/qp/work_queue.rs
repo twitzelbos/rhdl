@@ -65,16 +65,15 @@ bool |                        |
 //! The trace below demonstrates the result.
 #![doc = include_str!("../../doc/work_queue.md")]
 
-use super::context::MessageRequest;
 use rhdl::prelude::*;
 use rhdl_fpga::fifo::synchronous::SyncFIFO;
 
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
 /// Inputs to the [`WorkQueue`].
-pub struct In {
+pub struct In<T: Digital> {
     /// A message to enqueue, or `None`. Taken only when `accepted` is
     /// reported on the same cycle.
-    pub post: Option<MessageRequest>,
+    pub post: Option<T>,
     /// The send path has finished the **whole** message at the head.
     /// Strobe for one cycle; the head advances.
     pub complete: bool,
@@ -85,9 +84,9 @@ pub struct In {
 
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
 /// Outputs of the [`WorkQueue`].
-pub struct Out {
+pub struct Out<T: Digital> {
     /// The message at the head, held until `complete`.
-    pub current: Option<MessageRequest>,
+    pub current: Option<T>,
     /// The posted message was taken this cycle.
     pub accepted: bool,
     /// No room for another message.
@@ -103,14 +102,14 @@ pub struct Out {
 /// `N` is the FIFO's address width, so the usable depth is `2^N - 1` —
 /// one slot is spent distinguishing full from empty, as in every
 /// ring-buffer FIFO.
-pub struct WorkQueue<const N: usize>
+pub struct WorkQueue<T: Digital, const N: usize>
 where
     rhdl::bits::W<N>: BitWidth,
 {
-    fifo: SyncFIFO<MessageRequest, N>,
+    fifo: SyncFIFO<T, N>,
 }
 
-impl<const N: usize> Default for WorkQueue<N>
+impl<T: Digital, const N: usize> Default for WorkQueue<T, N>
 where
     rhdl::bits::W<N>: BitWidth,
 {
@@ -121,23 +120,27 @@ where
     }
 }
 
-impl<const N: usize> SynchronousIO for WorkQueue<N>
+impl<T: Digital, const N: usize> SynchronousIO for WorkQueue<T, N>
 where
     rhdl::bits::W<N>: BitWidth,
 {
-    type I = In;
-    type O = Out;
-    type Kernel = work_queue<N>;
+    type I = In<T>;
+    type O = Out<T>;
+    type Kernel = work_queue<T, N>;
 }
 
 #[kernel]
 /// Kernel for [`WorkQueue`].
-pub fn work_queue<const N: usize>(cr: ClockReset, i: In, q: Q<N>) -> (Out, D<N>)
+pub fn work_queue<T: Digital, const N: usize>(
+    cr: ClockReset,
+    i: In<T>,
+    q: Q<T, N>,
+) -> (Out<T>, D<T, N>)
 where
     rhdl::bits::W<N>: BitWidth,
 {
-    let mut d = D::<N>::dont_care();
-    let mut o = Out::dont_care();
+    let mut d = D::<T, N>::dont_care();
+    let mut o = Out::<T>::dont_care();
 
     // Refuse new work while flushing, and when there is no room.
     let room = !q.fifo.full;
@@ -178,10 +181,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::qp::context::MessageRequest;
     use expect_test::expect;
     use std::path::PathBuf;
 
-    type Uut = WorkQueue<3>; // 7 usable slots
+    type Uut = WorkQueue<MessageRequest, 3>; // 7 usable slots
 
     fn msg(n: u128) -> MessageRequest {
         MessageRequest {
@@ -190,7 +194,7 @@ mod tests {
         }
     }
 
-    fn idle() -> In {
+    fn idle() -> In<MessageRequest> {
         In {
             post: None,
             complete: false,
@@ -199,7 +203,7 @@ mod tests {
     }
 
     /// Run a stimulus and return (accepted messages, head sequence).
-    fn run(stream: Vec<In>) -> (Vec<MessageRequest>, Vec<Option<MessageRequest>>) {
+    fn run(stream: Vec<In<MessageRequest>>) -> (Vec<MessageRequest>, Vec<Option<MessageRequest>>) {
         let uut = Uut::default();
         let inputs = stream.clone();
         let samples: Vec<_> = uut
@@ -223,7 +227,7 @@ mod tests {
     #[test]
     fn an_empty_queue_has_no_head() {
         let cr = ClockReset::dont_care();
-        let q = Q::<3> {
+        let q = Q::<MessageRequest, 3> {
             fifo: rhdl_fpga::fifo::synchronous::Out {
                 data: None,
                 full: false,
@@ -233,7 +237,7 @@ mod tests {
                 underflow: false,
             },
         };
-        let (o, _d) = work_queue::<3>(cr, idle(), q);
+        let (o, _d) = work_queue::<MessageRequest, 3>(cr, idle(), q);
         assert_eq!(o.current, None);
     }
 
@@ -282,7 +286,7 @@ mod tests {
     #[test]
     fn flush_refuses_new_work_but_keeps_the_head() {
         let cr = ClockReset::dont_care();
-        let q = Q::<3> {
+        let q = Q::<MessageRequest, 3> {
             fifo: rhdl_fpga::fifo::synchronous::Out {
                 data: Some(msg(1)),
                 full: false,
@@ -292,7 +296,7 @@ mod tests {
                 underflow: false,
             },
         };
-        let (o, d) = work_queue::<3>(
+        let (o, d) = work_queue::<MessageRequest, 3>(
             cr,
             In {
                 post: Some(msg(2)),
@@ -310,7 +314,7 @@ mod tests {
     #[test]
     fn a_full_queue_refuses_work() {
         let cr = ClockReset::dont_care();
-        let q = Q::<3> {
+        let q = Q::<MessageRequest, 3> {
             fifo: rhdl_fpga::fifo::synchronous::Out {
                 data: Some(msg(1)),
                 full: true,
@@ -320,7 +324,7 @@ mod tests {
                 underflow: false,
             },
         };
-        let (o, d) = work_queue::<3>(
+        let (o, d) = work_queue::<MessageRequest, 3>(
             cr,
             In {
                 post: Some(msg(9)),
@@ -337,7 +341,7 @@ mod tests {
     #[test]
     fn complete_on_an_empty_queue_does_nothing() {
         let cr = ClockReset::dont_care();
-        let q = Q::<3> {
+        let q = Q::<MessageRequest, 3> {
             fifo: rhdl_fpga::fifo::synchronous::Out {
                 data: None,
                 full: false,
@@ -347,7 +351,7 @@ mod tests {
                 underflow: false,
             },
         };
-        let (_o, d) = work_queue::<3>(
+        let (_o, d) = work_queue::<MessageRequest, 3>(
             cr,
             In {
                 complete: true,
@@ -361,7 +365,7 @@ mod tests {
     #[test]
     fn reset_empties_the_queue() {
         let cr = clock_reset(clock(false), reset(true));
-        let q = Q::<3> {
+        let q = Q::<MessageRequest, 3> {
             fifo: rhdl_fpga::fifo::synchronous::Out {
                 data: Some(msg(1)),
                 full: true,
@@ -371,7 +375,7 @@ mod tests {
                 underflow: false,
             },
         };
-        let (o, d) = work_queue::<3>(
+        let (o, d) = work_queue::<MessageRequest, 3>(
             cr,
             In {
                 post: Some(msg(2)),
@@ -459,7 +463,7 @@ mod tests {
 
     // ---------------- Tier 3/4/5 ----------------
 
-    fn stimulus() -> Vec<In> {
+    fn stimulus() -> Vec<In<MessageRequest>> {
         let mut v = Vec::new();
         for n in 1..=3u128 {
             v.push(In {

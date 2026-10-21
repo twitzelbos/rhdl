@@ -160,6 +160,13 @@ impl SynchronousIO for QpStateMachine {
 }
 
 #[kernel]
+// clippy reads `match x { Some(v) => …, None => {} }` as a single-pattern
+// match and suggests `if let`. These stay as matches: the nested-flat
+// shape is forced by `Some(Variant)` being unexpressible (see the module
+// docs and `kernel-language-extensions.md` §4.6), and rewriting the outer
+// layer to `if let` while the inner stays a match would make the
+// transition table read inconsistently for no gain.
+#[allow(clippy::single_match)]
 /// Kernel for [`QpStateMachine`].
 pub fn qp_state_machine(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     let mut d = D::dont_care();
@@ -478,10 +485,7 @@ mod tests {
         ] {
             assert!(states.contains(&want), "never reached {want:?}: {states:?}");
         }
-        assert!(
-            states.iter().any(|s| *s == QpState::Rts),
-            "never became ready to send"
-        );
+        assert!(states.contains(&QpState::Rts), "never became ready to send");
     }
 
     fn bring_up_stimulus() -> Vec<In> {
