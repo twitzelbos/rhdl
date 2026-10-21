@@ -1,7 +1,7 @@
 # RoCEv2 — RDMA over Converged Ethernet v2 for RHDL
 
-**Status: the plan, Phases 1–3 of the send side, and the parser that
-starts Phase 4.**
+**Status: the plan, Phases 1–3 of the send side, and Phase 4 —
+receive — complete except for its host-side gate.**
 `crates/rhdl-roce` implements the transport headers, the Invariant CRC,
 the message-to-packet segmenter, and the Ethernet/IPv4/UDP framing — so
 a **complete RoCEv2 frame is generated and matches Scapy byte-for-byte**,
@@ -16,20 +16,30 @@ is met — three queued messages produce three byte-exact frames, a second
 queue pair is framed with its own context, and nothing is emitted before
 `RTS`.
 
-Phase 4 has begun with `rx::parse`, the byte-serial frame parser: bytes
-in, typed headers and an accept/reject verdict out, with the payload
-separated from the headers that framed it. It is validated against the
-same Scapy corpus **driven backwards** — all 2008 frames parse back to
-the fields the generator was given — and composing it with `tx` closes
-the Tier-10 loopback in simulation, so a 2500-byte message now segments
-into three packets, goes out, comes back and reassembles byte-for-byte
-inside this crate.
+Phase 4 is built. `rx::parse` turns a frame's bytes into typed headers
+and a verdict; `rx::verify` recomputes and checks the Invariant CRC;
+`qp::mr` validates an R_Key and translates the address it authorises;
+`rx::endpoint` places the payload there, tracking per-queue-pair
+reassembly so a multi-packet message lands contiguously; and `cm::*`
+lets a queue pair and a memory region be negotiated over UDP instead of
+being compiled in. `cm::node` composes the last two onto one wire.
 
-What is **not** built: no ICRC *verification* on receive (the parser
-reports the received value; nothing recomputes and compares yet), no
-memory-region table and so no R_Key validation, address translation or
-placement — a parsed frame currently goes nowhere — no connection
-manager, no retransmission, no congestion control, and no arbiter (messages
+**Phase 4's gate, part (a), is met**: a connection negotiated over UDP
+with nothing configured by hand, then a 2500-byte message out of the
+transmitter, into the receiver, and placed byte-for-byte at the
+translated local addresses — with a corrupted ICRC rejected, a
+mismatched R_Key placing nothing at all, and a dropped packet
+abandoning the message rather than misplacing it. **Part (b) is not
+met**: it needs an unmodified Linux host with a commodity RNIC, which
+is hardware that is not available yet.
+
+The parser is also validated against the Scapy corpus **driven
+backwards** — all 2008 frames parse back to the fields the generator was
+given, and every one of their checksums recomputes to the value Scapy
+put in it.
+
+What is **not** built: no retransmission, no congestion control, and no
+arbiter (messages
 drain in posting order whatever queue pair they name). Queue-pair state
 is endpoint-level rather than per-queue-pair — a conservative
 approximation, documented in `endpoint`'s module docs, that can only
