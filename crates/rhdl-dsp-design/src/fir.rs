@@ -36,7 +36,7 @@ mod tests {
     #[test]
     fn growth_is_ceil_log2_of_the_tap_count() {
         // +1 for the fold's pre-add throughout.
-        assert_eq!(accumulator_width(8, 8, 1), 8 + 8 + 0 + 1);
+        assert_eq!(accumulator_width(8, 8, 1), (8 + 8) + 1);
         assert_eq!(accumulator_width(8, 8, 2), 8 + 8 + 1 + 1);
         assert_eq!(accumulator_width(8, 8, 3), 8 + 8 + 2 + 1);
         assert_eq!(accumulator_width(8, 8, 4), 8 + 8 + 2 + 1);

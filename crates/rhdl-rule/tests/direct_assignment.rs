@@ -62,7 +62,10 @@ fn direct_assignment_counter_increments() {
         .last()
         .map(|s| s.output.raw())
         .unwrap_or(99);
-    assert!(last >= 4 && last <= 5, "expected ~5 increments, got {last}");
+    assert!(
+        (4..=5).contains(&last),
+        "expected ~5 increments, got {last}"
+    );
 }
 
 // ---- Test 2: mixed set! + direct assignment ----------------------
@@ -107,9 +110,9 @@ fn mixed_syntax_both_forms_lower_to_actions() {
         .unwrap_or(0);
     let a_lo = last & 0xff;
     let b_lo = (last >> 8) & 0xff;
-    assert!(a_lo >= 3 && a_lo <= 4, "a expected ~4, got {a_lo}");
+    assert!((3..=4).contains(&a_lo), "a expected ~4, got {a_lo}");
     assert!(
-        b_lo >= 6 && b_lo <= 8,
+        (6..=8).contains(&b_lo),
         "b expected ~8 (4 increments of 2), got {b_lo}",
     );
 }
@@ -213,7 +216,7 @@ fn preamble_fifo_advances_pointer_when_room() {
     // wired correctly), not the exact final value.
     let final_addr = outputs.last().map(|o| o.write_address.raw()).unwrap_or(99);
     assert!(
-        final_addr >= 3 && final_addr <= 5,
+        (3..=5).contains(&final_addr),
         "expected pointer to advance; got {final_addr}; outputs: {outputs:?}",
     );
     // Overflow should not be latched (we didn't fill).

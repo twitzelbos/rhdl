@@ -102,7 +102,7 @@ fn counter_only_counts_after_flag_is_raised() {
     );
     let final_count = final_state.counter.raw();
     assert!(
-        final_count >= 4 && final_count <= 5,
+        (4..=5).contains(&final_count),
         "expected counter near 5 after 5 enabled cycles; got {final_count}",
     );
 }
@@ -192,7 +192,7 @@ fn three_rule_counter_with_no_input_reset_compiles_and_runs() {
     assert!(final_state.flag);
     let counter = final_state.counter.raw();
     assert!(
-        counter >= 9 && counter <= 10,
+        (9..=10).contains(&counter),
         "expected counter near 10 after 10 enabled cycles; got {counter}",
     );
 }

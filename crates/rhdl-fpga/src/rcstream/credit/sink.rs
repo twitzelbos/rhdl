@@ -310,9 +310,6 @@ mod tests {
         let _u2: CreditSink<b16, bool, 8, 6> = CreditSink::default();
     }
 
-    /// iverilog round-trip: drive items in with downstream always
-    /// ready; expect items to propagate through the FIFO and credit
-    /// grants to flow back.
     // ---- Tier 1: the credit accounting itself -------------------
     //
     // This widget shipped with NO behavioural tests, and the credit
@@ -663,6 +660,15 @@ mod tests {
             .clock_pos_edge(100)
     }
 
+    /// iverilog round-trip: items in against a downstream that stalls
+    /// one cycle in three, so the buffer actually fills and the credit
+    /// grants flowing back are exercised rather than bypassed.
+    ///
+    /// The stalling stream matters. This test previously drove
+    /// `downstream_ready` true on every cycle, which never lets the
+    /// buffer fill and so never cashes the surplus credit -- the
+    /// condition under which the pool off-by-one survived, as the
+    /// Tier-1 note above records.
     #[test]
     fn iverilog_round_trip() -> Result<(), RHDLError> {
         let uut: CreditSink<b8, (), 5, 4> = CreditSink::default();

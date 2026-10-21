@@ -225,6 +225,12 @@ mod macro_tests {
     /// The chapter states these numbers; if the designer changes its
     /// mind the chapter is wrong and this says so.
     #[test]
+    // `assertions_on_constants`: every operand is a `const`, so clippy can
+    // evaluate these at lint time and calls them meaningless. They are the
+    // opposite -- constant-invariant tests. Nothing checks these values but
+    // this, and editing one of the constants makes the assertion false and
+    // stops the build.
+    #[allow(clippy::assertions_on_constants)]
     fn the_macro_derives_what_the_chapter_claims() {
         assert_eq!(narrowband_chain::DECIMATE, 488);
         assert_eq!(narrowband_chain::SPLIT, [8, 61]);

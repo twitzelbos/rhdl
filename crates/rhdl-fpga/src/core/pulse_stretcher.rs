@@ -204,7 +204,7 @@ mod tests {
     #[test]
     fn test_single_pulse_stretches_to_full_length() -> miette::Result<()> {
         const STRETCH: u128 = 5;
-        let mut input = vec![false; 20];
+        let mut input = [false; 20];
         input[2] = true;
         let stream = input.iter().copied().with_reset(1).clock_pos_edge(100);
         let uut = PulseStretcher::<4>::new(bits(STRETCH));
@@ -225,7 +225,7 @@ mod tests {
         const STRETCH: u128 = 4;
         // Pulses at idx 1 and idx 3 — second should fully re-arm,
         // so total high run = (3 - 1) + STRETCH = 2 + 4 = 6.
-        let mut input = vec![false; 20];
+        let mut input = [false; 20];
         input[1] = true;
         input[3] = true;
         let stream = input.iter().copied().with_reset(1).clock_pos_edge(100);
@@ -338,7 +338,7 @@ mod tests {
     #[test]
     fn test_pulse_stretcher_hdl_works() -> miette::Result<()> {
         let uut = PulseStretcher::<4>::new(bits(5));
-        let mut input = vec![false; 20];
+        let mut input = [false; 20];
         input[2] = true;
         input[10] = true;
         input[12] = true;
@@ -356,7 +356,7 @@ mod tests {
     #[test]
     fn test_pulse_stretcher_trace() -> miette::Result<()> {
         let uut = PulseStretcher::<4>::new(bits(5));
-        let mut input = vec![false; 20];
+        let mut input = [false; 20];
         input[2] = true;
         input[10] = true;
         input[12] = true;

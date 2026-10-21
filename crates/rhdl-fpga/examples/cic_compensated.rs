@@ -74,8 +74,8 @@ fn main() -> Result<(), RHDLError> {
     );
 
     let mut t = [SignedBits::<WC>::default(); TAPS];
-    for k in 0..TAPS {
-        t[k] = signed::<WC>(quant.taps[k] as i128);
+    for (slot, tap) in t.iter_mut().zip(quant.taps.iter()) {
+        *slot = signed::<WC>(*tap as i128);
     }
     // The pair has no `Default`: a filter with no taps is a filter
     // that outputs zero, and that should not be reachable by accident.

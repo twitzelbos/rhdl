@@ -719,32 +719,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::serial_bus::can_master::{CanMaster, In as TxIn};
 
-    /// Build a default-idle TxIn for the new CanMaster API.
-    fn tx_idle_in() -> TxIn {
-        TxIn {
-            rx: true,
-            tx_id: bits(0),
-            tx_extended: false,
-            tx_rtr: false,
-            tx_dlc: bits(0),
-            tx_data: bits(0),
-            tx_request: false,
-            acc_id_filter: bits(0),
-            acc_id_mask: bits(0),
-        }
-    }
-
-    /// Build a one-shot TX request input on the new CanMaster API.
-    fn tx_start(id: u128, dlc: u128, data: u128) -> TxIn {
-        let mut i = tx_idle_in();
-        i.tx_request = true;
-        i.tx_id = bits(id);
-        i.tx_dlc = bits(dlc);
-        i.tx_data = bits(data);
-        i
-    }
+    // The helpers that drove a `CanMaster` into this receiver used to
+    // live here. They moved with the round-trip itself, which is now
+    // `can_master::tests::test_two_node_*` -- see the note further down
+    // this module. They were left behind unused, so they are gone.
     use expect_test::expect;
     use std::path::PathBuf;
 

@@ -52,12 +52,12 @@ use std::process::Command;
 fn spike_path() -> Option<PathBuf> {
     // Try $PATH first; fall back to a known build location used by
     // our build script (see CHANGELOG for the install instructions).
-    if let Ok(out) = Command::new("which").arg("spike").output() {
-        if out.status.success() {
-            let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if !path.is_empty() {
-                return Some(PathBuf::from(path));
-            }
+    if let Ok(out) = Command::new("which").arg("spike").output()
+        && out.status.success()
+    {
+        let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if !path.is_empty() {
+            return Some(PathBuf::from(path));
         }
     }
     // Try the local-build install path used by this repo's CI.
@@ -84,6 +84,7 @@ fn require_spike() -> Option<PathBuf> {
 const ELF_LOAD_ADDR: u32 = 0x8000_0000;
 
 /// Write a 32-bit ELF section header (40 bytes) into `buf`.
+#[allow(clippy::too_many_arguments)] // an ELF program header has this many fields
 fn shdr(
     buf: &mut Vec<u8>,
     sh_name: u32,
@@ -271,15 +272,14 @@ fn run_spike(spike: &PathBuf, program: &[u32], _cycles: u32) -> Option<[u32; 8]>
     for line in combined.lines() {
         let trimmed = line.trim();
         // Spike's mem dump format: "0xXXXXXXXX" (with 0x prefix).
-        if let Some(hex) = trimmed.strip_prefix("0x") {
-            if hex.len() == 8 && hex.chars().all(|c| c.is_ascii_hexdigit()) {
-                if let Ok(v) = u32::from_str_radix(hex, 16) {
-                    if idx < 8 {
-                        words[idx] = v;
-                        idx += 1;
-                    }
-                }
-            }
+        if let Some(hex) = trimmed.strip_prefix("0x")
+            && hex.len() == 8
+            && hex.chars().all(|c| c.is_ascii_hexdigit())
+            && let Ok(v) = u32::from_str_radix(hex, 16)
+            && idx < 8
+        {
+            words[idx] = v;
+            idx += 1;
         }
     }
     if idx < 8 {
@@ -488,24 +488,37 @@ fn sltu(rd: u32, rs1: u32, rs2: u32) -> u32 {
 fn sw(rs2: u32, rs1: u32, imm: i32) -> u32 {
     s_type(imm, rs2, rs1, 2, 0x23)
 }
+// `lb`/`lbu`/`lh`/`lhu`/`sb`/`sh` complete the RV32I load-store
+// assembler below, and the lockstep programs in this file happen to use
+// only the word-sized forms. They are kept rather than deleted so the
+// helper set stays a whole instruction set for the next program that
+// needs one -- and the sub-word forms are not untested: the official
+// architectural suite covers them via `upstream_riscv_tests.rs`
+// (`rv32ui-p-lb`, `-lbu`, `-lh`, `-lhu`, `-sb`, `-sh`).
+#[allow(dead_code)]
 fn sh(rs2: u32, rs1: u32, imm: i32) -> u32 {
     s_type(imm, rs2, rs1, 1, 0x23)
 }
+#[allow(dead_code)]
 fn sb(rs2: u32, rs1: u32, imm: i32) -> u32 {
     s_type(imm, rs2, rs1, 0, 0x23)
 }
 fn lw(rd: u32, rs1: u32, imm: i32) -> u32 {
     i_type(imm, rs1, 2, rd, 0x03)
 }
+#[allow(dead_code)]
 fn lh(rd: u32, rs1: u32, imm: i32) -> u32 {
     i_type(imm, rs1, 1, rd, 0x03)
 }
+#[allow(dead_code)]
 fn lb(rd: u32, rs1: u32, imm: i32) -> u32 {
     i_type(imm, rs1, 0, rd, 0x03)
 }
+#[allow(dead_code)]
 fn lhu(rd: u32, rs1: u32, imm: i32) -> u32 {
     i_type(imm, rs1, 5, rd, 0x03)
 }
+#[allow(dead_code)]
 fn lbu(rd: u32, rs1: u32, imm: i32) -> u32 {
     i_type(imm, rs1, 4, rd, 0x03)
 }
@@ -1751,7 +1764,7 @@ spike_tests! {
     ];
     // Build a 32-bit constant: 0xCAFE_BABE
     spike_build_const_cafe_babe, 16, vec![
-        lui(1, 0xCAFE_C),     // sign-extension of 0xBABE means we use lui(0xCAFEC) and add positive
+        lui(1, 0xCAFEC),     // sign-extension of 0xBABE means we use lui(0xCAFEC) and add positive
         addi(1, 1, -0x542),   // 0xBABE - 0x1000 (since lower 12 bits of 0xCAFEB000 is 0)
         sw(1, 31, 0),
     ];
@@ -2010,7 +2023,7 @@ fn straight_line_program(seed: u64, n: usize) -> Vec<u32> {
 
     // Append SW of x1..x8 to data window slots 0..28.
     for i in 0..8 {
-        prog.push(sw((i + 1) as u32, 31, (i as i32) * 4));
+        prog.push(sw((i + 1) as u32, 31, i * 4));
     }
     prog
 }

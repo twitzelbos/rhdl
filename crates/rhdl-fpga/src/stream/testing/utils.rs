@@ -76,7 +76,7 @@ mod tests {
     fn pattern(prob: f64) -> Vec<i32> {
         stalling(0..40, prob)
             .take(40)
-            .map(|x| x.map(|v| v as i32).unwrap_or(-1))
+            .map(|x| x.unwrap_or(-1))
             .collect()
     }
 

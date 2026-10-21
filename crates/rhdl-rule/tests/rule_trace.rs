@@ -222,7 +222,7 @@ fn traced_kernel_runs_correctly() {
         .last()
         .map(|s| s.output.raw())
         .unwrap_or(0);
-    assert!(last >= 3 && last <= 4, "got {last}");
+    assert!((3..=4).contains(&last), "got {last}");
 }
 
 #[test]

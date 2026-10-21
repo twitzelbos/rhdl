@@ -411,11 +411,9 @@ mod tests {
         let mut second_rise = None;
         let mut prev_e = false;
         for (i, s) in outputs.iter().enumerate() {
-            if !prev_e && s.output.e {
-                if i > high_idx + 1 {
-                    second_rise = Some(i);
-                    break;
-                }
+            if !prev_e && s.output.e && i > high_idx + 1 {
+                second_rise = Some(i);
+                break;
             }
             prev_e = s.output.e;
         }

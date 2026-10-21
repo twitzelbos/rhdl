@@ -210,12 +210,12 @@ mod tests {
             // Header[0] = sector index; Header[1] = sector_index XOR 0xa5a5
             let h0 = (s & 0xffff) as u16;
             let h1 = h0 ^ 0xa5a5;
-            bytes[off + PAD_BYTES + 0] = (h0 & 0xff) as u8;
+            bytes[off + PAD_BYTES] = (h0 & 0xff) as u8;
             bytes[off + PAD_BYTES + 1] = ((h0 >> 8) & 0xff) as u8;
             bytes[off + PAD_BYTES + 2] = (h1 & 0xff) as u8;
             bytes[off + PAD_BYTES + 3] = ((h1 >> 8) & 0xff) as u8;
             // Label[0] = 0xdead
-            bytes[off + PAD_BYTES + HEADER_BYTES + 0] = 0xad;
+            bytes[off + PAD_BYTES + HEADER_BYTES] = 0xad;
             bytes[off + PAD_BYTES + HEADER_BYTES + 1] = 0xde;
             // Data[0..3] = sector index repeated
             for d in 0..4usize {
@@ -266,7 +266,7 @@ mod tests {
     fn cylinder_head_sector_indexing() {
         let mut bytes = vec![0u8; FILE_SIZE_BYTES];
         // Mark sector (5, 1, 7) data[0] with a recognizable pattern.
-        let s_idx = 5 * HEADS * SECTORS_PER_TRACK + 1 * SECTORS_PER_TRACK + 7;
+        let s_idx = 5 * HEADS * SECTORS_PER_TRACK + SECTORS_PER_TRACK + 7;
         let off = s_idx * SECTOR_BYTES + PAD_BYTES + HEADER_BYTES + LABEL_BYTES;
         bytes[off] = 0xCD;
         bytes[off + 1] = 0xAB;

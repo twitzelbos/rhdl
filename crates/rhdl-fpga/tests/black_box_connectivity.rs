@@ -128,7 +128,7 @@ fn inverter_hdl_async(name: &str) -> HDLDescriptor {
 /// a graph that skipped them.
 #[test]
 fn a_combinational_black_box_is_a_feedthrough() {
-    let honest = BlackInverter::<1>::default();
+    let honest = BlackInverter::<1>;
     assert!(
         rhdl::core::circuit::drc::no_combinatorial_paths(&honest).is_err(),
         "`assign o = ~i;` is a combinational path from input to output"
@@ -142,7 +142,7 @@ fn a_combinational_black_box_is_a_feedthrough() {
 /// now written down where a reviewer can see it.
 #[test]
 fn a_black_box_declaring_no_feedthrough_is_not_one() {
-    let claims_registered = BlackInverter::<0>::default();
+    let claims_registered = BlackInverter::<0>;
     assert!(
         rhdl::core::circuit::drc::no_combinatorial_paths(&claims_registered).is_ok(),
         "a black box declaring `None` must be treated as breaking the path"
@@ -354,7 +354,7 @@ fn both_routes_agree_on_a_black_box_behind_logic() {
 #[test]
 fn an_opaque_black_box_connects_everything() {
     use rhdl::core::circuit::drc::feedthrough_by_netlist_walk;
-    let uut = BlackInverter::<2>::default();
+    let uut = BlackInverter::<2>;
     let m = uut
         .descriptor(ScopedName::top())
         .expect("descriptor")

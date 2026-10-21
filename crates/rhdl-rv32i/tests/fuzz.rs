@@ -400,6 +400,7 @@ fn run_pipelined_writes(program: Vec<u32>, max_cycles: usize) -> Vec<(u32, u32)>
 /// cycle budget, so we compare the longest prefix they share.  A
 /// real divergence (different write CONTENT at the same prefix
 /// position) still fails; only length mismatch is tolerated.
+#[allow(clippy::too_many_arguments)] // a divergence report names every piece of state it compares
 fn assert_prefix_match(
     label: &str,
     seed: u64,

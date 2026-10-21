@@ -153,8 +153,8 @@ fn run_rhdl_chip(disk: &str, rom_dir: &str, cycles: usize) -> Vec<CycleState> {
         .into_iter()
         .map(|t| {
             let mut r = [0u16; 32];
-            for i in 0..32 {
-                r[i] = t.regs[i].raw() as u16;
+            for (slot, reg) in r.iter_mut().zip(t.regs.iter()) {
+                *slot = reg.raw() as u16;
             }
             CycleState {
                 task: t.current_task.raw() as i32,

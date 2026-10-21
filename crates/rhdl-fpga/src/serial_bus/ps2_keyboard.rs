@@ -263,7 +263,7 @@ mod tests {
     fn drive_frame(data: u8) -> Vec<In> {
         // Compute odd parity bit.
         let ones = data.count_ones();
-        let parity = (ones % 2) == 0; // odd parity → parity = 1 if data has even ones
+        let parity = ones.is_multiple_of(2); // odd parity → parity = 1 if data has even ones
         // Frame bits, in transmission order: start(0), data LSB→MSB, parity, stop(1).
         let mut frame_bits: Vec<bool> = Vec::with_capacity(11);
         frame_bits.push(false); // start

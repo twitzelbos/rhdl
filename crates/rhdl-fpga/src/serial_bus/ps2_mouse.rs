@@ -213,7 +213,7 @@ mod tests {
 
     /// Build a stream that drives one PS/2 byte, with correct odd parity.
     fn drive_byte(data: u8) -> Vec<In> {
-        let parity = (data.count_ones() % 2) == 0;
+        let parity = data.count_ones().is_multiple_of(2);
         let mut frame_bits: Vec<bool> = Vec::with_capacity(11);
         frame_bits.push(false);
         for i in 0..8 {

@@ -205,6 +205,14 @@ mod tests {
     use std::path::PathBuf;
 
     /// Software reference: divide `dividend` by `divisor` over `N` bits.
+    //
+    // `manual_checked_ops` wants `checked_div`/`checked_rem` with
+    // separate fallbacks. This is a reference model for the hardware,
+    // and the hardware's divide-by-zero behaviour -- quotient all ones,
+    // remainder the dividend -- is *one* decision. Splitting it across
+    // two `unwrap_or`s would hide that they are the same case, which is
+    // the thing this function exists to state.
+    #[allow(clippy::manual_checked_ops)]
     fn div_ref(dividend: u128, divisor: u128, n: usize) -> (u128, u128) {
         let mask = if n == 128 { !0u128 } else { (1u128 << n) - 1 };
         let dividend = dividend & mask;

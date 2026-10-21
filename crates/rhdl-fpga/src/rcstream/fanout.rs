@@ -356,9 +356,9 @@ mod tests {
 
         let want: Vec<u128> = (0..COUNT).collect();
         assert_eq!(to_send, COUNT, "the source must not stall forever");
-        for b in 0..3 {
+        for (b, branch) in got.iter().enumerate() {
             assert_eq!(
-                got[b], want,
+                *branch, want,
                 "branch {b} must receive every item exactly once, in order"
             );
         }

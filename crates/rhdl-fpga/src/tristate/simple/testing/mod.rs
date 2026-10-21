@@ -33,7 +33,6 @@ pub fn fixture(_cr: ClockReset, i: I, q: Q) -> (O, D) {
 mod tests {
     use expect_test::{expect, expect_file};
     use miette::IntoDiagnostic;
-    use rhdl::prelude::vlog::Pretty as _;
 
     use crate::tristate::simple::sender::Cmd;
 

@@ -2101,11 +2101,15 @@ mod tests {
     /// split does not make it worse.
     #[test]
     fn allowing_a_split_never_costs_more() {
-        let mut one = InterpSpec::default();
-        one.max_chain_stages = 1;
+        let one = InterpSpec {
+            max_chain_stages: 1,
+            ..Default::default()
+        };
         let a = design(one).expect("designable");
-        let mut three = InterpSpec::default();
-        three.max_chain_stages = 3;
+        let three = InterpSpec {
+            max_chain_stages: 3,
+            ..Default::default()
+        };
         let b = design(three).expect("designable");
         assert!(
             b.cost <= a.cost * 1.000_001,
@@ -2393,8 +2397,10 @@ mod tests {
     /// **An impossible image requirement is named, not approximated.**
     #[test]
     fn an_unreachable_image_requirement_is_reported() {
-        let mut s = InterpSpec::default();
-        s.min_image_rejection_db = 250.0;
+        let s = InterpSpec {
+            min_image_rejection_db: 250.0,
+            ..Default::default()
+        };
         match design(s) {
             Err(Unmet::ImageRejection { best_db, needed_db }) => {
                 assert_eq!(needed_db, 250.0);
@@ -2407,9 +2413,11 @@ mod tests {
     /// As is a bandwidth that does not fit the envelope rate.
     #[test]
     fn a_bandwidth_wider_than_the_envelope_nyquist_is_reported() {
-        let mut s = InterpSpec::default();
         // 1 Msps envelope has 500 kHz of Nyquist; ask for 600 kHz.
-        s.image_free_bw_hz = 600e3;
+        let s = InterpSpec {
+            image_free_bw_hz: 600e3,
+            ..Default::default()
+        };
         match design(s) {
             Err(Unmet::BandwidthTooWide { passband }) => assert!(passband >= 1.0),
             other => panic!("expected BandwidthTooWide, got {other:?}"),
@@ -2419,10 +2427,12 @@ mod tests {
     /// And a flatness requirement no depth that rejects images can meet.
     #[test]
     fn an_incompatible_pair_of_requirements_is_reported() {
-        let mut s = InterpSpec::default();
-        s.min_image_rejection_db = 100.0;
-        s.max_ripple_db = 1e-6;
-        s.max_taps = 5;
+        let s = InterpSpec {
+            min_image_rejection_db: 100.0,
+            max_ripple_db: 1e-6,
+            max_taps: 5,
+            ..Default::default()
+        };
         match design(s) {
             Err(Unmet::Incompatible { .. }) | Err(Unmet::ImageRejection { .. }) => {}
             other => panic!("expected Incompatible or ImageRejection, got {other:?}"),
@@ -2439,11 +2449,13 @@ mod tests {
     /// ranking.
     #[test]
     fn the_cost_model_prefers_depth_at_the_low_rate() {
-        let mut s = InterpSpec::default();
-        s.interpolate = 64;
-        s.image_free_bw_hz = 100e3;
-        s.fs_hz = 64e6;
-        s.max_chain_stages = 2;
+        let s = InterpSpec {
+            interpolate: 64,
+            image_free_bw_hz: 100e3,
+            fs_hz: 64e6,
+            max_chain_stages: 2,
+            ..Default::default()
+        };
         let d = design(s).expect("designable");
         // Whatever the search picked, the *reported* cost must rise if
         // the same shapes are reversed. Build both orders by hand.

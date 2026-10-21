@@ -124,19 +124,66 @@ fn alu_undef15_treated_as_bus() {
     assert_eq!(o.result, b(0xCAFE));
 }
 
+/// **Tier 4: the emitted Verilog agrees with the Rust model, for every
+/// ALU function.**
+///
+/// This test previously bore this name and did no such thing: it called
+/// `alu` five times in Rust, discarded the results with
+/// `.map(..).count()`, and returned `Ok`. It therefore asserted
+/// nothing at all -- not even that the outputs were right, let alone
+/// that the hardware agreed -- so the Alto ALU had no Verilog
+/// ground-truth check while appearing to have one. Clippy's
+/// `suspicious_map` is what surfaced it.
+///
+/// It now runs the kernel through the RHDL VM *and* through iverilog
+/// and requires all three to agree, across all sixteen functions and
+/// both carry-in states.
 #[test]
 fn alu_iverilog_round_trip() -> Result<(), RHDLError> {
+    use rhdl::core::sim::testbench::kernel::test_kernel_vm_and_verilog_synchronous;
     use rhdl_alto::alu::alu;
-    let inputs: Vec<(AluFunction, Bits<16>, Bits<16>, bool)> = vec![
-        (AluFunction::BusPlusT, b(7), b(3), false),
-        (AluFunction::BusMinusT, b(7), b(3), false),
-        (AluFunction::BusXorT, b(0xAA), b(0x55), false),
-        (AluFunction::BusAndT, b(0xF0), b(0x0F), false),
-        (AluFunction::BusPlusSkip, b(10), b(0), true),
+
+    const FUNCS: [AluFunction; 16] = [
+        AluFunction::Bus,
+        AluFunction::T,
+        AluFunction::BusOrT,
+        AluFunction::BusAndT,
+        AluFunction::BusXorT,
+        AluFunction::BusPlusOne,
+        AluFunction::BusMinusOne,
+        AluFunction::BusPlusT,
+        AluFunction::BusMinusT,
+        AluFunction::BusMinusTMinusOne,
+        AluFunction::BusPlusTPlusOne,
+        AluFunction::BusPlusSkip,
+        AluFunction::BusAndTAlt,
+        AluFunction::BusAndNotT,
+        AluFunction::Undef14,
+        AluFunction::Undef15,
     ];
-    let _ = inputs
-        .iter()
-        .map(|(f, a, b_, s)| alu(*f, *a, *b_, *s))
-        .count();
+    // Operand pairs chosen to exercise carry-out and borrow at their
+    // boundaries, which is where an arithmetic function and its
+    // Verilog are most likely to disagree.
+    const OPERANDS: [(u16, u16); 8] = [
+        (0, 0),
+        (0, 1),
+        (1, 0),
+        (7, 3),
+        (0xAAAA, 0x5555),
+        (0xFFFF, 0x0001),
+        (0x0001, 0xFFFF),
+        (0xFFFF, 0xFFFF),
+    ];
+
+    let mut inputs = Vec::new();
+    for f in FUNCS {
+        for (x, y) in OPERANDS {
+            for skip in [false, true] {
+                inputs.push((f, b(x), b(y), skip));
+            }
+        }
+    }
+    assert_eq!(inputs.len(), 16 * 8 * 2);
+    test_kernel_vm_and_verilog_synchronous::<alu, _, _, _>(alu, inputs.into_iter())?;
     Ok(())
 }

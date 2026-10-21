@@ -31,9 +31,17 @@ fn main() -> Result<(), RHDLError> {
                 // By default, we do not advance the FIFO
                 input.next = false;
                 // The FIFO has valid data.  So we can receive data. Toss a coin.
-                if output.data.is_some() && det.chance(50) {
-                    input.next = true;
-                    assert_eq!(output_seq.next().unwrap(), output.data.unwrap());
+                // A match with a guard rather than an `if let` chain:
+                // this crate is not on edition 2024, where let chains
+                // became available. The guard keeps the original
+                // short-circuit, so the coin is only tossed when there
+                // is data to take.
+                match output.data {
+                    Some(data) if det.chance(50) => {
+                        input.next = true;
+                        assert_eq!(output_seq.next().unwrap(), data);
+                    }
+                    _ => {}
                 }
                 // Return the constructed input
                 Some(ResetOrData::Data(input))

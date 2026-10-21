@@ -39,9 +39,9 @@ fn main() {
     }
     let sm_count = trace.iter().filter(|t| t.disk_sector_mark).count();
     println!("Total cycles: {}, sector_marks: {sm_count}", trace.len());
-    for k in 0..16 {
-        if counts[k] > 0 {
-            println!("  task {k:2}: {} cycles", counts[k]);
+    for (k, n) in counts.iter().enumerate().take(16) {
+        if *n > 0 {
+            println!("  task {k:2}: {n} cycles");
         }
     }
 

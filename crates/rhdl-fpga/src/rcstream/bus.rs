@@ -217,7 +217,7 @@ mod tests {
             frame: true,
         };
         assert_eq!(i.data.raw(), 0xab);
-        assert_eq!(i.frame, true);
+        assert!(i.frame);
     }
 
     /// `RCStream<T, F>` with `data: None` is a valid idle cycle.
@@ -228,7 +228,7 @@ mod tests {
             ready: true,
         };
         assert!(s.data.is_none());
-        assert_eq!(s.ready, true);
+        assert!(s.ready);
     }
 
     /// `RCStream<T, F>` with `data: Some(item)` carries the item.
@@ -248,7 +248,7 @@ mod tests {
             }
             None => panic!("expected Some(item), got None"),
         }
-        assert_eq!(s.ready, false);
+        assert!(!s.ready);
     }
 
     /// `lift` then `lower` is the identity — the domain wrapper carries

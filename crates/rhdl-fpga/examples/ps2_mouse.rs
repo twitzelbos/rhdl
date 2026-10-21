@@ -5,7 +5,7 @@ use rhdl_fpga::{
 };
 
 fn drive_byte(data: u8, out: &mut Vec<In>) {
-    let parity = (data.count_ones() % 2) == 0;
+    let parity = data.count_ones().is_multiple_of(2);
     let frame_bits: Vec<bool> = std::iter::once(false)
         .chain((0..8).map(|i| (data >> i) & 1 == 1))
         .chain(std::iter::once(parity))

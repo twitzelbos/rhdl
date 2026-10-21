@@ -574,18 +574,12 @@ mod tests {
     /// bits LSB-first, stop bit), each held for `divisor` cycles.
     fn encode_frame(byte: u128, divisor: usize) -> Vec<bool> {
         let mut out = vec![true; 4];
-        for _ in 0..divisor {
-            out.push(false);
-        }
+        out.extend(std::iter::repeat_n(false, divisor));
         for k in 0..8 {
             let b = ((byte >> k) & 1) != 0;
-            for _ in 0..divisor {
-                out.push(b);
-            }
+            out.extend(std::iter::repeat_n(b, divisor));
         }
-        for _ in 0..divisor {
-            out.push(true);
-        }
+        out.extend(std::iter::repeat_n(true, divisor));
         out
     }
 

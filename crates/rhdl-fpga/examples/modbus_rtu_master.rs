@@ -42,9 +42,7 @@ fn main() -> Result<(), RHDLError> {
     }
 
     let mut response = vec![0x01, 0x03, 0x0A];
-    for _ in 0..10 {
-        response.push(0);
-    }
+    response.extend(std::iter::repeat_n(0, 10));
     let crc = ref_crc(&response);
     response.push((crc & 0xFF) as u8);
     response.push((crc >> 8) as u8);

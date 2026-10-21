@@ -112,7 +112,7 @@ fn sector_mark_cadence_matches_test_period() {
     );
     let n = rising_edges.len();
     assert!(
-        n >= 15 && n <= 22,
+        (15..=22).contains(&n),
         "expected 15..22 sector_mark rising edges in 5000 cycles at \
          {TEST_DISK_PERIOD}-cycle period; got {n} — cadence broken or \
          BLOCK not clearing the latch"

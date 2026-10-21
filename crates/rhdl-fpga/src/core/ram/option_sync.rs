@@ -146,7 +146,6 @@ where
 #[cfg(test)]
 mod tests {
     use expect_test::expect;
-    use rhdl::prelude::*;
 
     use super::*;
     use std::path::PathBuf;

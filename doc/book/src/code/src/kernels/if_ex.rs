@@ -5,15 +5,13 @@ pub mod step_1 {
     // ANCHOR: step_1
     #[kernel]
     fn kernel(a: b8, b: b8) -> b8 {
-        let c;
         if a > b {
-            c = b8(3);
+            b8(3)
         } else if a == b {
-            c = b8(5);
+            b8(5)
         } else {
-            c = b8(7);
+            b8(7)
         }
-        c
     }
     // ANCHOR_END: step_1
 }

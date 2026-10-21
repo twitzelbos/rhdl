@@ -300,7 +300,7 @@ fn the_matrix_and_the_netlist_walk_agree_across_the_corpus() {
         }};
     }
 
-    let verdicts = vec![
+    let verdicts = [
         check!("dff", dff::DFF::<b8>::default()),
         check!("counter", counter::Counter::<4>::default()),
         check!("faulty_reducer", faulty::U::<4, 2>::default()),

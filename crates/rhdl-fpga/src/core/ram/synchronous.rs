@@ -307,7 +307,7 @@ where
 #[cfg(test)]
 mod tests {
     use expect_test::expect;
-    use rhdl::prelude::{vlog::Pretty, *};
+    use rhdl::prelude::vlog::Pretty;
 
     use super::*;
     use std::path::PathBuf;

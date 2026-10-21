@@ -1544,7 +1544,7 @@ mod tests {
         let final_disk_sector_count = trace.last().unwrap().disk_sector_count.raw();
         eprintln!("[end_to_end_256_word_dma] disk_sector_count = {final_disk_sector_count}");
         assert!(
-            final_disk_sector_count >= 140 && final_disk_sector_count <= 145,
+            (140..=145).contains(&final_disk_sector_count),
             "Disk Sector should fire 140..145 times (5-cycle setup + \
              ~140 post-DMA cycles in 400-cycle test); got \
              {final_disk_sector_count}"
@@ -2210,8 +2210,7 @@ mod tests {
         // this cycle's response).  So `mpc[k]` and `instruction[k]`
         // are coherently paired in the same cycle.
         eprintln!("[per_cycle_chain] cycle  task  exec_mpc  exec_instr");
-        for i in 0..trace.len().min(800) {
-            let cur = &trace[i];
+        for (i, cur) in trace.iter().take(800).enumerate() {
             let exec_mpc = cur.mpc.raw();
             let exec_instr = cur.instruction.raw();
             let unprog = exec_instr == 0xfff77bff;

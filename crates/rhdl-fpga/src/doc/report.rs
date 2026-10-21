@@ -849,6 +849,14 @@ mod tests {
     /// render on US Letter, which is 50 points *shorter*. That 50 points
     /// had to come out of somewhere, and "somewhere" was these constants.
     #[test]
+    // `assertions_on_constants` fires because clippy can evaluate these at
+    // lint time -- every operand is a `const`. The lint's premise is that
+    // such an assertion is meaningless, and here it is the opposite: these
+    // are *constant-invariant* tests. Nothing about them is checked by the
+    // type system, and the moment one of the constants is edited the
+    // assertion becomes false and the build stops. Rewriting them to
+    // involve a runtime value would make them weaker, not stronger.
+    #[allow(clippy::assertions_on_constants)]
     fn the_page_geometry_has_room_for_what_it_places() {
         // A plot's real vertical extent, per `plot::draw`.
         let plot_top = |y: f64| y + PLOT_H + 20.0;

@@ -160,8 +160,8 @@ mod tests {
         };
         let (_o, d) = axi_to_rcstream_kernel::<b8, ()>(cr, i, q);
         assert_eq!(d.inbuf.data_in.data.raw(), 0xAB);
-        assert_eq!(d.inbuf.void_in, false);
-        assert_eq!(d.inbuf.stop_in, false);
+        assert!(!d.inbuf.void_in);
+        assert!(!d.inbuf.stop_in);
     }
 
     /// Direct kernel test: tvalid=0 produces void_in=1.
@@ -182,7 +182,7 @@ mod tests {
             },
         };
         let (_o, d) = axi_to_rcstream_kernel::<b8, ()>(cr, i, q);
-        assert_eq!(d.inbuf.void_in, true);
+        assert!(d.inbuf.void_in);
     }
 
     /// Direct kernel test: when Carloni has buffered data, it emerges
@@ -212,7 +212,7 @@ mod tests {
             Some(it) => assert_eq!(it.data.raw(), 0x42),
             None => panic!("expected Some(item) when void_out=false"),
         }
-        assert_eq!(o.tready, true); // !stop_out = !false = true
+        assert!(o.tready); // !stop_out = !false = true
     }
 
     /// Framing test: `F = bool` flows TUSER through into Item::frame.
@@ -234,7 +234,7 @@ mod tests {
         };
         let (_o, d) = axi_to_rcstream_kernel::<b8, bool>(cr, i, q);
         assert_eq!(d.inbuf.data_in.data.raw(), 0xFF);
-        assert_eq!(d.inbuf.data_in.frame, true);
+        assert!(d.inbuf.data_in.frame);
     }
 
     /// Tier 2 — **backpressure**, which this translator had no coverage

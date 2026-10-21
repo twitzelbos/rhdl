@@ -31,6 +31,165 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-10-21 — Clippy clean across the workspace, a CI gate to keep it that way, and the Tier-4 gap it was hiding
+
+**Path:** `.github/workflows/ci.yml` (new), and 84 files across
+`rhdl-bits`, `rhdl-core`, `rhdl-fpga`, `rhdl-alto`, `rhdl-rv32i`,
+`rhdl-rule`, `rhdl-dsp-design`, `rhdl`, and `doc/book/src/code`
+
+**Why this, why now:** `cargo clippy --all -- -D warnings` is listed in
+CLAUDE.md §8 as required before any commit, and it could not pass —
+so in practice nobody ran it with `-D`, and it could not be a CI gate.
+A lint that never fails is a lint that is not read, and the two real
+defects below had been sitting in the output the whole time.
+
+**Design decisions:**
+
+- **The count was 324, not the 107 first reported.** Worth recording
+  because the *reason* will catch the next person: `cargo clippy` does
+  not re-emit warnings for crates it has already checked, so a warm
+  cache reports a clean workspace that is not clean. The first survey
+  only covered the two crates that happened to rebuild. **Any claim
+  about a workspace-wide warning count has to come from a run after
+  `cargo clean`**, or it is measuring the cache.
+- **240 of the 324 were one line.** `rhdl-bits`' build script emitted
+  `({x} as i128)` for every signed test literal into a generated
+  `bit_tests.rs`, and there are hundreds of them. Changed to
+  `({x}_i128)`, which is what the unsigned arm two lines above already
+  did. Generated code is worth checking first when a count looks
+  absurd.
+- **`allow` where the lint's premise does not hold, never to quieten
+  it.** Fifteen of them, each with the reasoning in a comment above it:
+  - *constant-invariant tests* (15 sites): clippy evaluates
+    `assert!(TITLE_Y < PAGE_H)` at lint time and calls a constant
+    assertion meaningless. Here it is the opposite — nothing else checks
+    those page-geometry, filter-derivation or test-fixture constants,
+    and editing one makes the assertion false and stops the build.
+    Rewriting them to involve a runtime value would make them weaker.
+  - *`too_many_arguments`* on an ELF program header, an Alto
+    microinstruction and a divergence report: the arguments are the
+    fields, and a struct would move the list rather than shorten it.
+  - *`manual_checked_ops`* on the divider's reference model: the
+    hardware's divide-by-zero behaviour — quotient all ones, remainder
+    the dividend — is one decision, and splitting it across two
+    `unwrap_or`s hides that they are the same case.
+  - *`single_match` / `collapsible_match`* in the RoCE kernels, which
+    already carried the reason: neither `if let` nor match guards are in
+    the kernel-accepted subset.
+- **Dead code removed where it was stale, kept where the set is the
+  point.** The `r_to_*` registers in the FSM extractor's test were
+  removed rather than underscore-prefixed, because the misleading
+  comments describing code that no longer exists were the actual
+  problem. The RV32I `lb/lbu/lh/lhu/sb/sh` builders were kept under
+  `#[allow(dead_code)]`, because a half-complete assembler is worse
+  than an unused helper and the next lockstep program will want them.
+
+**Surprises and gotchas:**
+
+- **A test named `alu_iverilog_round_trip` ran no iverilog.**
+  `crates/rhdl-alto/tests/alu.rs` called `alu()` five times in Rust,
+  discarded the results with `.map(..).count()`, and returned `Ok`. It
+  asserted *nothing* — not the output values, let alone that the
+  hardware agreed — so the Alto ALU had **no Tier-4 Verilog
+  ground-truth while appearing to have one**. Clippy's `suspicious_map`
+  is the only reason it surfaced.
+
+  It now runs the kernel through the RHDL VM and through iverilog and
+  requires all three to agree, over all 16 ALU functions × 8 operand
+  pairs chosen at the carry/borrow boundaries × both carry-in states.
+  **It passes** — the emitted Verilog was in fact correct, which is
+  luck rather than evidence, since nothing had ever checked. Only
+  `alu.rs` was affected; every other `rhdl-alto` test genuinely calls
+  `run_iverilog`.
+
+  The general lesson is the one CLAUDE.md §5 already implies and this
+  makes concrete: **a test's name is not evidence that it does what the
+  name says.** A `-D warnings` gate would have caught this on the day
+  it was written.
+- **A doc comment documenting the wrong item, and stale besides.** In
+  `rcstream/credit/sink.rs` a `/// iverilog round-trip: …` comment was
+  stranded above a section divider, so it attached to `fn item()`. Its
+  text was also out of date — it described a permanently-ready
+  downstream, which is exactly the condition the Tier-1 note beside it
+  says allowed a pool off-by-one to survive. Moved onto the test it
+  describes and corrected to the stalling stream the test now uses.
+- **Two sets of dead code that looked like missing tests and were
+  not**, both worth checking rather than deleting on sight:
+  `can_receiver`'s unused `CanMaster` TX helpers (the round-trip moved
+  to `can_master::tests`' two-node harness) and the RV32I sub-word
+  load/store builders (the official architectural suite covers all
+  eight load/stores — 43 upstream tests are wired up).
+- **`rhdl-fpga` is on edition 2021 and `rhdl-roce` on 2024**, so a
+  let-chain that compiles in one crate does not compile in the other.
+  Hit when rewriting an `unwrap`-after-`is_some`; a match with a guard
+  is the portable spelling.
+- `clippy --fix` underscore-prefixes an unused binding rather than
+  removing it, which silences without fixing. Its output has to be read
+  as a suggestion, not a result — every one of the 27 automated edits
+  was audited in the diff.
+
+**Validation:** `cargo test --all --no-fail-fast` — exit 0, 174 test
+binaries, **4191 passed, 0 failed**: the identical count to the run
+immediately before this work. `cargo clippy --all --all-targets -- -D
+warnings` passes from a cleared cache.
+
+**The check that matters for a change of this shape is that nothing
+moved.** Not one committed artifact — no `expect_test` snapshot, no VCD
+digest, no trace markdown — differs, and `git diff` is identical before
+and after a full suite run. A lint fix that altered emitted Verilog or
+simulation behaviour would appear there and nowhere else, which is why
+this is stated as a result rather than an assumption. The one
+behavioural change in the diff is deliberate and in the other
+direction: the Alto ALU now has a Verilog round-trip it did not have.
+
+**And the gate, in the same change.** `.github/workflows/ci.yml` runs
+the three commands CLAUDE.md §8 lists as required — `fmt --check`,
+`clippy --all --all-targets -D warnings`, and `test --all
+--no-fail-fast` plus the clean-tree assertion. It lands here rather
+than in a follow-up because the two halves are one change: the gate
+cannot pass until the debt is cleared, and the debt returns the moment
+nothing enforces it.
+
+**Until this file existed there was no CI at all** — none in this fork,
+none in its history, none upstream. CLAUDE.md §14's "CI will run them;
+you should beat it" was describing something that did not exist, which
+is worth knowing about any other claim of enforcement in that document.
+
+Three decisions in it worth the reading:
+
+- **`--all-targets`, which is not what CLAUDE.md §8 and §14 print.**
+  Without it clippy checks lib targets only and never looks at tests,
+  examples or benches — so the ALU defect above, which lived in a test
+  target, would have slipped past the documented command. The
+  discrepancy is noted here because the file cannot be corrected in
+  this commit.
+- **The toolchain is pinned to a minor**, not to `stable`. `-D
+  warnings` turns every new lint into a build failure, and clippy gains
+  lints between minors, so tracking `stable` means an unrelated pull
+  request fails the day Rust ships for something its author did not
+  write. Pinning converts that into a deliberate bump. A patch release
+  never changes the lint set, so the minor is the right granularity.
+- **Caching is safe for the clippy job**, despite the suppression trap
+  that made this debt look a third of its real size: a cached result is
+  keyed on the lint flags, so a plain `cargo check` can never satisfy
+  `clippy -- -D warnings`, and a cached clippy result under those flags
+  can only exist if it passed.
+
+The clean-tree assertion is a separate step from the test run rather
+than a call to `just tree-clean`, which runs the suite itself and
+deliberately swallows a test failure to reach the artifact check.
+Separate steps keep "a test failed" and "a test rewrote a committed
+file" as distinct, separately-named failures.
+
+**Follow-ups:**
+
+- Consider promoting the CI toolchain pin to a `rust-toolchain.toml`,
+  which would give local builds and CI the same compiler. Not done here
+  because it changes every contributor's local toolchain, which is a
+  choice rather than a fix.
+- `doc/book/src/code` and `doc/mdbook-rhdl` are workspace members, so
+  `--all` covers them; the three permanently-failing tests §8 records
+  from 2026-08-19 are no longer failing.
 ## 2026-10-21 — RCStream: the structural half of its contract, and insertion on a diverging widget
 
 **Path:** `crates/rhdl-fpga/tests/rcstream_ready_does_not_reach_data.rs`,

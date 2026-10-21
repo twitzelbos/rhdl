@@ -190,9 +190,9 @@ fn lockstep_rv32ui_p_addi() {
 fn sim_addi_works() {
     let program = vec![
         // addi x1, x0, 5
-        0x005_00_093,
+        0x0050_0093,
         // addi x2, x0, 10
-        0x00a_00_113,
+        0x00A0_0113,
         // add  x3, x1, x2  ← R-type ADD (funct7=0,rs2=2,rs1=1,funct3=0,rd=3,opcode=0x33)
         // = 0000000_00010_00001_000_00011_0110011 = 0x002081B3
         0x002081B3,
@@ -217,7 +217,7 @@ fn sim_ecall_traps_correctly() {
         // lui x1, 0
         0x0000_00B7,
         // addi x1, x1, 0x10  ← x1 = 0x10 (mtvec)
-        0x010_08_093,
+        0x0100_8093,
         // csrrw x0, x1, mtvec  → opcode=0x73, funct3=1, rs1=1, csr=0x305
         // = 305 << 20 | 1 << 15 | 1 << 12 | 0 << 7 | 0x73 = 0x30509073
         0x30509073,
