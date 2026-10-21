@@ -31,6 +31,78 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-10-21 — `rhdl-roce::qp::table`: the queue-pair context table §6 promised
+
+**Path:** `crates/rhdl-roce/src/qp/table.rs`, `examples/qp_table.rs`,
+`doc/qp_table.md`, `vcd/qp_table/`
+
+**Why this, why now:** `roce-v2-architecture.md` §6 promised a
+"queue-pair context table (RAM-backed)" and the first implementation
+shipped a plain struct passed in as an input — which means exactly one
+connection. This is the table. It is the last of Phase 3's four widgets.
+
+**Design decisions:**
+
+- **Validity is the `Option`, not a side flag.** The table stores
+  `Option<QpContext>`, so an unconfigured entry reads back as `None` and
+  `valid` is derived. A separate validity bitmap would be a second
+  source of truth that can disagree with the first, and the failure it
+  permits is the worst available here: transmitting with a stale context
+  to a queue pair the peer has torn down.
+- **Entries initialise to `None`, emphatically not
+  `QpContext::default()`.** A zeroed context is a *plausible* connection
+  to queue pair 0 — valid-looking `pkey`, a real PMTU — and transmitting
+  to it is worse than refusing to. The mutation that initialises to a
+  zeroed context is caught by `an_unconfigured_entry_is_none`.
+- **Tear-down writes `None`** rather than clearing a bit, which falls
+  out of the above and means there is one code path for configure and
+  unconfigure.
+- **The low `N` bits index the table, and aliasing is documented rather
+  than guarded.** A 24-bit queue-pair number cannot index 16 million
+  entries. Two queue pairs differing only above bit `N` alias; the host
+  allocates the numbers, so it is a control-plane constraint — but the
+  kind that gets discovered in the field if it is not written down.
+  `qpn_index` is the single place it happens and a test pins it.
+
+**Surprises and gotchas:**
+
+- **The read is registered, which is fine here and worth saying anyway.**
+  `ctx` arrives one cycle after `read_qpn`, because block RAM. It costs
+  nothing for the send path — the queue-pair number is constant for a
+  whole message, so the lookup happens once at message start and is long
+  settled before the first header byte. It would matter for a design
+  interleaving packets from different queue pairs cycle by cycle, which
+  nothing here does.
+- **Reset has to disable the write port, not just clear the outputs.**
+  Otherwise a write presented during reset lands in the RAM. Caught by
+  its own test, and the mutation that drops the line fails it.
+
+**Validation:** 11 tests. Tier 1 covers the fresh-table-is-`None`
+property across five addresses, the index/aliasing rule, the write port
+being driven and left disabled, tear-down writing `None`, and reset
+blocking a write. Tier 2 configures four queue pairs and reads each
+back — the test that actually distinguishes a table from a register —
+and tears one down and confirms it reads invalid again. Tiers 3–5
+present, with `.skip(2)` for the block-RAM reason and the Tier-3
+snapshot pinned by structure rather than text, as
+`core::ram::option_sync` does.
+
+Three mutations confirmed caught: zeroed-context initialisation,
+always-valid, and letting a write through during reset.
+
+**Follow-ups:**
+
+- **Phase 3 is not done.** All four widgets exist — the three debts,
+  `qp::state`, `qp::work_queue`, `qp::table` — but **none is wired into
+  `RoceWriteTx`**, which still takes a single `ctx` input and a single
+  `start`. Four unwired widgets is not an endpoint, and the phase gate
+  is explicitly about the integrated behaviour: several messages queued
+  back to back producing the right frame sequence, a second queue pair
+  interleaving, and transmission refused outside `RTS`. That integration
+  is the next commit.
+
+---
+
 ## 2026-10-21 — `rhdl-roce::qp::work_queue`: a queue of messages, so `start` stops throwing them away
 
 **Path:** `crates/rhdl-roce/src/qp/work_queue.rs`,
