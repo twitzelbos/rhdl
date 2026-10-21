@@ -31,6 +31,65 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-10-21 — Nested variant patterns: considered, measured, and deprioritised
+
+**Path:** `kernel-language-extensions.md` §4.6
+
+**Why this, why now:** asked to document a proposal for making
+`Some(State::Init)` work "if you really think it's worth it". Having
+looked, **I don't**, and the entry records the evidence rather than a
+design plan.
+
+**What was established:**
+
+- **The rejection is protecting correctness.** `ArmEnum` carries exactly
+  one `discriminant` and `OpCode::Case`'s `CaseArgument::Slot` matches
+  one discriminant, so neither can express a two-level test. Accepting
+  the nested `PatKind::Path` — which binds nothing, so the binding
+  itself really would be a no-op — would dispatch on the outer tag alone
+  and make `Some(State::Init)` silently match `Some(State::Rtr)`. The
+  loud rejection is right given the IR, which is the opposite of my
+  earlier guess that it might be a one-line fix.
+- **It would be a new lowering stage, not a desugaring.** Multi-level
+  dispatch is the classic match-compilation problem: when no inner arm
+  matches, control must fall through to a later *outer* arm, which
+  nested `Case` cannot express without duplicating arms. A bounded
+  version — arm sets that partition exhaustively at every level — is
+  tractable but still needs its own soundness argument.
+
+**The measurement that decided it.** I had predicted this would recur
+constantly, because the library's dominant idiom is `Option`-encoded
+validity and `RCStream` is literally `Option<Item<T, F>>`. The corpus
+disagrees: **25** kernels match on an `Option`, **2** dispatch on the
+payload's variant, and **0** of those are in `rhdl-roce`, `rhdl-alto` or
+`rhdl-rv32i`. All 25 bind the payload and *use* it. So the cost is a new
+compiler stage and the benefit is about 35 lines in one widget.
+
+**Surprises and gotchas:**
+
+- **My instinct about frequency was wrong, twice in two days, in the
+  same area.** First I asserted a compiler limitation without testing
+  it; then I predicted a pattern would be common without counting it.
+  Both took minutes to check. The cheap check is the lesson: a claim
+  about how often something occurs in the corpus is a `grep`, not a
+  judgement.
+- **A deprioritised item is worth more written down than a proposal
+  is.** The next person to hit `UnsupportedPatternInBindPattern` will
+  want to know whether to fix it; the answer, the reason the guard is
+  correct, the workaround, and the number that would change the answer
+  are all more useful than a design for something nobody should build
+  yet.
+
+**Validation:** documentation only. The counts quoted are reproducible
+with the greps recorded in the entry.
+
+**Follow-ups:** revisit if the dispatch-on-payload-variant count climbs
+— a protocol receiver dispatching on a command enum inside an `RCStream`
+item is the shape that would do it — or if a decision-tree lowering
+arrives for another reason and this falls out of it.
+
+---
+
 ## 2026-10-21 — Compiler: an unknowable FSM target is `Unanalyzable`, not a self-loop
 
 **Path:** `crates/rhdl-core/src/fsm/extraction.rs`,
