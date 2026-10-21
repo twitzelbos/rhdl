@@ -28,6 +28,7 @@ use rhdl_roce::headers::{Reth, Transport, WriteOpcode};
 use rhdl_roce::qp::context::{Pmtu, QpContext};
 use rhdl_roce::qp::segmenter::PacketPlan;
 use rhdl_roce::rx::parse::{In, RxHeaders, RxParser, RxVerdict};
+use rhdl_roce::rx::verify::{self, RxVerify};
 
 const CORPUS: &str = include_str!("vectors/write_vectors.txt");
 
@@ -480,6 +481,210 @@ fn headers_are_presented_exactly_when_the_first_payload_byte_arrives() {
              same cycle — the RETH address has to be known before the \
              first byte it addresses",
             c.name
+        );
+    }
+}
+
+// ------------------------------------------------ ICRC verification
+
+/// What a run of [`RxVerify`] produced.
+struct Verified {
+    verdict: RxVerdict,
+    received: u32,
+    computed: u32,
+    dones: usize,
+}
+
+fn verify_frame(frame: &[u8]) -> Verified {
+    let idle = verify::In {
+        data: None,
+        start_of_frame: false,
+        end_of_frame: false,
+    };
+    let last = frame.len() - 1;
+    let mut stream = vec![idle];
+    for (k, b) in frame.iter().enumerate() {
+        stream.push(verify::In {
+            data: Some(bits(*b as u128)),
+            start_of_frame: k == 0,
+            end_of_frame: k == last,
+        });
+    }
+    stream.push(idle);
+    stream.push(idle);
+
+    let uut = RxVerify::default();
+    let input = stream.into_iter().with_reset(1).clock_pos_edge(100);
+    let mut r = Verified {
+        verdict: RxVerdict::Accept,
+        received: 0,
+        computed: 0,
+        dones: 0,
+    };
+    for s in uut.run(input).synchronous_sample() {
+        if s.output.done {
+            r.verdict = s.output.verdict;
+            r.received = s.output.received.raw() as u32;
+            r.computed = s.output.computed.raw() as u32;
+            r.dones += 1;
+        }
+    }
+    r
+}
+
+/// **Every curated frame's ICRC recomputes to the value Scapy put in
+/// it.** This is the test that says the receive-side checksum is real:
+/// the expected value was produced by an independent implementation,
+/// not by this crate.
+#[test]
+fn every_curated_frame_passes_its_own_icrc() {
+    for v in vectors() {
+        let frame = unhex(v.get("frame"));
+        let r = verify_frame(&frame);
+        assert_eq!(r.dones, 1, "{}: exactly one done", v.name);
+        assert_eq!(
+            r.computed, r.received,
+            "{}: recomputed ICRC {:#010x} does not match the {:#010x} in \
+             the frame",
+            v.name, r.computed, r.received
+        );
+        assert_eq!(
+            r.received,
+            u32::from_be_bytes(unhex(v.get("icrc"))[..4].try_into().unwrap()),
+            "{}: and that value is the corpus's",
+            v.name
+        );
+        assert_eq!(r.verdict, RxVerdict::Accept, "{}: accepted", v.name);
+    }
+}
+
+/// **All 2000 fuzz frames.** Rebuilt complete, including the ICRC the
+/// generator recorded, and every one must verify.
+#[test]
+fn every_fuzz_frame_passes_its_own_icrc() {
+    for c in fuzz_corpus() {
+        let r = verify_frame(&c.frame);
+        assert_eq!(
+            r.verdict,
+            RxVerdict::Accept,
+            "{}: verdict (received {:#010x}, computed {:#010x})",
+            c.name,
+            r.received,
+            r.computed
+        );
+        assert_eq!(r.computed, c.icrc, "{}: recomputed ICRC", c.name);
+        assert_eq!(r.received, c.icrc, "{}: received ICRC", c.name);
+    }
+}
+
+/// **The negative control, and the reason this widget exists.** Flip
+/// any single byte the ICRC covers and the frame must be rejected.
+///
+/// The sweep is over every covered offset, not a sample, because a
+/// checksum that misses one byte of its range is exactly the defect
+/// that a handful of spot checks would pass.
+#[test]
+fn flipping_any_covered_byte_is_caught() {
+    let v = vectors()
+        .into_iter()
+        .find(|v| v.name == "uc_write_only_16")
+        .expect("the vector");
+    let good = unhex(v.get("frame"));
+    assert_eq!(
+        verify_frame(&good).verdict,
+        RxVerdict::Accept,
+        "the control must pass"
+    );
+
+    // Covered: offset 14 up to but excluding the 4-byte ICRC field.
+    let icrc_at = good.len() - 4;
+    let masked = [15usize, 22, 24, 25, 40, 41, 46];
+    let mut checked = 0;
+    for at in 14..icrc_at {
+        let mut f = good.clone();
+        f[at] ^= 0xFF;
+        let r = verify_frame(&f);
+        if masked.contains(&at) {
+            // These are blanked to all-ones before the checksum, so
+            // changing them cannot change it -- that is the point of
+            // the masking, and it is what lets a router rewrite them.
+            assert_eq!(
+                r.computed, r.received,
+                "offset {at} is masked, so flipping it must NOT change \
+                 the checksum"
+            );
+            continue;
+        }
+        // A changed header field may be rejected before the checksum is
+        // even reached -- flipping the protocol byte makes it not-UDP.
+        // Either outcome is a rejection; what must not happen is
+        // Accept.
+        assert_ne!(
+            r.verdict,
+            RxVerdict::Accept,
+            "flipping covered byte {at} must be caught; got received \
+             {:#010x} computed {:#010x}",
+            r.received,
+            r.computed
+        );
+        checked += 1;
+    }
+    assert!(
+        checked > 60,
+        "the sweep should cover the whole payload and header: {checked}"
+    );
+}
+
+/// And a corrupted ICRC *field* is caught too -- the other side of the
+/// comparison.
+#[test]
+fn a_corrupted_icrc_field_is_rejected() {
+    let v = vectors()
+        .into_iter()
+        .find(|v| v.name == "uc_write_only_16")
+        .expect("the vector");
+    let good = unhex(v.get("frame"));
+    let n = good.len();
+    for at in n - 4..n {
+        let mut f = good.clone();
+        f[at] ^= 0x01;
+        let r = verify_frame(&f);
+        assert_eq!(
+            r.verdict,
+            RxVerdict::IcrcMismatch,
+            "a one-bit change to ICRC byte {at} must be reported as a \
+             mismatch"
+        );
+        assert_ne!(r.received, r.computed);
+    }
+}
+
+/// The masked bytes, stated as a positive claim rather than only as an
+/// exception in the sweep above: a router rewriting TTL, DSCP/ECN, the
+/// IP or UDP checksum, or the BTH's congestion bits must not invalidate
+/// the frame.
+#[test]
+fn a_router_rewriting_the_masked_fields_does_not_break_the_frame() {
+    let v = vectors()
+        .into_iter()
+        .find(|v| v.name == "uc_write_only_16")
+        .expect("the vector");
+    let good = unhex(v.get("frame"));
+    for (at, what) in [
+        (15usize, "DSCP/ECN"),
+        (22, "TTL"),
+        (24, "IP checksum high"),
+        (25, "IP checksum low"),
+        (40, "UDP checksum high"),
+        (41, "UDP checksum low"),
+        (46, "BTH FECN/BECN/reserved"),
+    ] {
+        let mut f = good.clone();
+        f[at] = 0x5A;
+        let r = verify_frame(&f);
+        assert_eq!(
+            r.computed, r.received,
+            "rewriting {what} at offset {at} must not change the ICRC"
         );
     }
 }

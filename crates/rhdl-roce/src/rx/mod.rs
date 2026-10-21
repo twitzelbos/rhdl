@@ -7,4 +7,6 @@
 //! interface, so composing them is the Tier-10 loopback test of
 //! `roce-v2-architecture.md`.
 
+pub mod endpoint;
 pub mod parse;
+pub mod verify;

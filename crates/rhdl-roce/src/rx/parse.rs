@@ -134,6 +134,7 @@
 use crate::headers::{
     Bth, Reth, WriteKind, bth_unpack, carries_reth, decode_write_opcode, reth_unpack,
 };
+use crate::icrc::COVERAGE_START;
 use rhdl::prelude::*;
 use rhdl_fpga::core::dff;
 
@@ -183,6 +184,16 @@ pub enum RxVerdict {
     /// The frame ended before the headers were complete, or its length
     /// disagreed with the IP total length field.
     Truncated,
+    /// The Invariant CRC did not match the frame's contents.
+    ///
+    /// **Never produced by [`RxParser`]**, which reports the ICRC it
+    /// received and compares nothing. It is produced by
+    /// [`crate::rx::verify::RxVerify`], which composes the parser with
+    /// the checksum engine. The variant lives here, in the one verdict
+    /// type for the whole receive front end, so that a consumer has a
+    /// single value to check rather than a verdict *and* a separate
+    /// `icrc_ok` flag it could forget.
+    IcrcMismatch,
     /// Bytes were still arriving after the IP total length said the
     /// frame should have ended.
     Overlong,
@@ -324,6 +335,25 @@ pub struct Out {
     pub icrc: Bits<32>,
     /// A frame is in progress.
     pub busy: bool,
+    /// The byte to fold into the Invariant CRC, or `None` when this
+    /// cycle's byte is outside the ICRC's covered range (or there is
+    /// no byte).
+    ///
+    /// The parser already knows the frame geometry, so it is the right
+    /// place to decide coverage: from [`crate::icrc::COVERAGE_START`]
+    /// up to but excluding the four-byte ICRC field, whose position
+    /// follows from the IPv4 total length. Emitting the feed, the
+    /// index and `frame_start` together means a widget composing this
+    /// with [`crate::icrc::Icrc`] wires three signals across and has
+    /// no relative timing to reason about -- they are produced in the
+    /// same cycle by the same source. [`crate::rx::verify::RxVerify`]
+    /// is that widget.
+    pub icrc_feed: Option<Bits<8>>,
+    /// The frame offset of this cycle's byte, which is what selects the
+    /// ICRC's field masking. Zero when there is no byte.
+    pub frame_index: Bits<16>,
+    /// A frame began this cycle -- the cycle to re-seed a checksum on.
+    pub frame_start: bool,
     /// Which phase the parser is in *for the byte on `data` this
     /// cycle* — the registered phase, not the one being moved to.
     ///
@@ -382,6 +412,9 @@ pub fn rx_parse(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     o.busy = q.state != RxPhase::Idle;
     o.phase = q.state;
     o.headers = None;
+    o.icrc_feed = None;
+    o.frame_index = bits(0);
+    o.frame_start = false;
 
     let byte = match i.data {
         Some(b) => b,
@@ -421,6 +454,7 @@ pub fn rx_parse(cr: ClockReset, i: In, q: Q) -> (Out, D) {
                 o.verdict = RxVerdict::Truncated;
             }
             next = RxRegs::default();
+            o.frame_start = true;
         }
 
         let cur = next.offset;
@@ -500,6 +534,21 @@ pub fn rx_parse(cr: ClockReset, i: In, q: Q) -> (Out, D) {
             // then `total_len` is zero and every offset would look long.
             if cur > bits(17) && cur > next.total_len + bits(13) {
                 next.verdict = RxVerdict::Overlong;
+            }
+
+            // The ICRC's covered range: from COVERAGE_START up to but
+            // excluding the four-byte ICRC field, which begins at
+            // `total_len + 10`.
+            //
+            // The `cur < 17` term is not redundant. `total_len` is only
+            // snapshotted at offset 17, so for offsets 14, 15 and 16 the
+            // register still reads zero and `cur < total_len + 10` would
+            // be false -- dropping three IP-header bytes from the
+            // checksum. At offset 17 the snapshot above has already
+            // run, so the general form is correct from there on.
+            o.frame_index = cur;
+            if cur >= bits(COVERAGE_START) && (cur < bits(17) || cur < next.total_len + bits(10)) {
+                o.icrc_feed = Some(byte);
             }
         }
 
@@ -608,6 +657,9 @@ pub fn rx_parse(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         o.icrc = bits(0);
         o.busy = false;
         o.phase = RxPhase::Idle;
+        o.icrc_feed = None;
+        o.frame_index = bits(0);
+        o.frame_start = false;
     }
     d.extras = next;
     (o, d)
@@ -1253,7 +1305,7 @@ mod tests {
             .join("vcd")
             .join("rx_parse");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["1ecf8d519b59220132127031b9be51c1e858d9a19f5198002246bdb78e9d38da"];
+        let expect = expect!["be09ed3c7f4be0b56374cc10393fa949e7f51fe2629eab43a2f664d27f147dc5"];
         let digest = vcd.dump_to_file(root.join("rx_parse.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())
