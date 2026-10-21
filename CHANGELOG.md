@@ -31,6 +31,132 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-10-21 — Compiler: an unknowable FSM target is `Unanalyzable`, not a self-loop
+
+**Path:** `crates/rhdl-core/src/fsm/extraction.rs`,
+`crates/rhdl-fpga/tests/fsm_unanalyzable_target.rs`,
+`doc/book/src/fsm/extraction.md`, `fsm-architecture.md` §5.4
+
+**What guarantee changed:** none weakened; one **strengthened**. Layer 3
+of `fsm-architecture.md` makes the generated state diagram load-bearing
+for FSM-aware review — CLAUDE.md §12 rule 14 exists for that reason. The
+extractor previously had a path where it emitted a diagram that was
+*confidently wrong*, and the guarantee this restores is that a diagram
+the tooling produces is either correct or absent.
+
+**Why this, why now:** found while answering a question about the
+extractor. When a kernel writes its state field from a value the walker
+cannot trace — in practice a kernel input, `d.state = i.requested` —
+`possible_state_values_under_constraint` returned `Ok(empty)`. The caller
+reads an empty target set as "no state write on this path" and, under
+`#[fsm(allow_implicit)]`, converts it into a `(s, s)` self-loop. So
+`extract_widget_transitions_strict` returned **success** with a diagram
+asserting the machine could never leave the state it was in, when in
+truth it could reach any state. Measured on a three-state probe:
+`[(A,A), (B,B), (C,C)]` instead of a complete graph.
+
+**Design decisions:**
+
+- **Report `Unanalyzable`; do not emit the sound over-approximation.**
+  "Any variant" is technically sound and practically useless — a
+  complete graph tells a reviewer nothing, and worse, it makes a kernel
+  that *cannot be analysed* indistinguishable from one that genuinely
+  can reach every state. Failing loudly puts the choice back with the
+  author, whose fix is in the kernel: map the incoming value through
+  literal arms, which is what a state machine validating a requested
+  transition does anyway. `rhdl_roce::qp::state` is the worked example.
+- **The change is one line of behaviour in one place** — the
+  no-definer fallback in the walker — because
+  `ExtractionResult::unanalyzable` and
+  `FsmDiagnosticKind::Unanalyzable` already existed. The defect was not
+  missing machinery; it was a path that did not use it.
+- **No new opcode, no IR change, no lowering change.** This is purely
+  an analysis pass, which is why §11.1's IR-spec and lowering tiers do
+  not apply and why the widget-snapshot regression is expected to be
+  empty.
+
+**What loophole this does *not* introduce:** the adjacent paths were
+walked before changing anything. An arm that genuinely holds the state
+via the kernel-top default reaches the `Index(q, [.state])` case and
+still returns the source variant, so implicit self-loops are untouched —
+pinned by the pre-existing `principled_implicit_hold_masks_deadlock_state`
+and the `strict_mode_*` tests, all 63 of which still pass unchanged. A
+`Struct` whose state field comes from a template still returns
+`Ok(empty)` without recursing, so that path is unaffected. The
+`Select`-union and `Case`-constraint behaviour is reached through
+different arms. The only newly-failing shape is the one that was
+previously producing a wrong answer.
+
+**Alternative considered and rejected:** returning the full variant set
+for an untraceable target. Sound, and it would have kept `_strict`
+succeeding — but it converts a precise diagram into a complete one with
+no signal that anything went wrong, which is the same class of problem
+in a quieter coat.
+
+**Reversible:** yes. It changes an analysis result, not the IR, and
+nothing downstream depends on the old behaviour — the old behaviour was
+a bug.
+
+**Surprises and gotchas:**
+
+- **The claim that motivated the question was itself false.** I had told
+  the user that a *computed* target defeated the extractor and
+  documented it in four places. It does not: `let mut next = q.state; …;
+  d.state = next` extracts correctly, because the walker unions `Select`
+  branches and a mutable local lowers to exactly that. Corrected
+  separately; the real defect turned out to be the input-sourced case,
+  which is adjacent but different.
+- **Splicing tests into a file can orphan a `#[test]`.** Inserting
+  ahead of an existing test's `fn` line left that test's attribute
+  attached to the new one — two `#[test]`s on mine, none on the
+  original, so it silently stopped running. Caught by
+  `duplicate_macro_attributes` plus a dead-code warning, and confirmed
+  by comparing `--list` counts against main: 63 → 65, which is exactly
+  the two added.
+- **`cargo clippy -- -D warnings` does not pass on `rhdl-core` or
+  `rhdl-fpga` on main** (5 and 102 warnings respectively). Counts are
+  byte-identical with this change, so nothing here is new, but
+  CLAUDE.md §8 lists that command as required and it is currently not
+  satisfied. Not fixed here — that is a separate change and this PR is
+  one feature.
+
+**Validation:**
+
+- **Pass-level** (§11.1 tier 1): two tests on hand-built op lists —
+  `state_written_from_an_argument_is_unanalyzable_not_a_self_loop`
+  asserts the diagnostic fires, names the source variant, carries an
+  actionable reason, and crucially that the bogus self-loop is **absent**
+  from the transition set; `state_written_from_a_literal_still_extracts`
+  is the positive counterpart, guarding against pessimism.
+- **Kernel-level** (§11.1 tier 4): `fsm_unanalyzable_target.rs` runs
+  three real widgets through the whole pipeline — the input-sourced one
+  must fail with a message containing both "Unanalyzable" and the cause;
+  the computed-but-traceable one must still produce all five edges; the
+  literal one must be unaffected. Plus the three still lower to Verilog
+  and the offending widget actually changes state in simulation, so it
+  is a real state machine rather than a construct that exists only to
+  fail extraction.
+- **Negative test** (§11.1 tier 6): the above *is* the negative test —
+  this change tightens a check, and the rejection's diagnostic is
+  asserted rather than assumed.
+- **Widget-snapshot regression** (§11.1 tier 5): `cargo test --all
+  --no-fail-fast` without `UPDATE_EXPECT`, reported below. No FSM
+  diagram in the corpus changed, which is the expected result: every
+  corpus widget writes literal targets.
+
+**Follow-ups:**
+
+- `Some(QpState::Init)` — a variant pattern nested inside `Some(…)` — is
+  rejected with `UnsupportedPatternInBindPattern` during lowering. A
+  different limitation, in `mir::compiler::bind_pattern` rather than the
+  extractor, and a `kernel-language-extensions.md` item. Whether it is
+  a missing no-op binding case or a guard against incorrect *matching*
+  is not established; that answer decides whether it is a one-line fix
+  or a feature.
+- `-D warnings` on `rhdl-core` and `rhdl-fpga`, as its own change.
+
+---
+
 ## 2026-08-31 — The up-converter's book chapter, and an RCStream inventory that turned up three gaps
 
 **Paths:** `doc/book/src/dsp/duc.md` (new), `doc/book/src/code/src/dsp/duc.rs` (new), `doc/book/src/SUMMARY.md`, `notes/rcstream-widget-review.md` (new).
