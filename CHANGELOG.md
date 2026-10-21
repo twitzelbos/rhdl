@@ -31,6 +31,92 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-10-21 — `rhdl-roce::qp::state`: the queue-pair state machine
+
+**Path:** `crates/rhdl-roce/src/qp/state.rs`, `examples/qp_state.rs`,
+`doc/qp_state.md`, `doc/qp_state_fsm.md`, `vcd/qp_state/`
+
+**Why this, why now:** Phase 3's first real widget. A queue pair is not
+usable the moment it exists — the IBTA puts it through RESET → INIT →
+RTR → RTS as the two ends exchange parameters, and a requester may only
+transmit once it reaches RTS. Until now that rule lived in the caller's
+discipline: `RoceWriteTx` would happily build frames for a connection
+the peer had never heard of. `can_send` makes it a property of the
+hardware.
+
+**Design decisions:**
+
+- **SQE is deliberately absent.** It is entered when a work queue
+  element completes with an error on an unreliable queue pair, which
+  needs per-element completion status — that arrives with the work
+  completion machinery in a later phase. Adding the variant now would
+  produce a state nothing can enter, which is *worse* than omitting it:
+  it would show up in the generated diagram as an unreachable node and
+  imply a path that does not exist.
+  `every_state_is_reachable_and_there_are_no_orphans` enforces that.
+- **An illegal request is refused, not punished.** The state holds and
+  `rejected` pulses. Entering ERR instead would make a control-plane
+  bug indistinguishable from a wire error, and the two want different
+  responses.
+- **A datapath `error` overrides any request on the same cycle** and is
+  not reported as a rejection — a wire error is not something the
+  control plane gets to disagree with.
+- **`draining` is a separate output from `can_send`.** SQD means finish
+  what is outstanding and accept nothing new, which is a work-queue
+  concern rather than a datapath one, so the two are reported
+  separately rather than conflated.
+
+**Surprises and gotchas:**
+
+- **`Some(QpState::Init)` is not an expressible pattern.** A variant
+  pattern nested inside `Some(…)` is rejected with
+  `UnsupportedPatternInBindPattern` — notably *not* at `cargo check`
+  time, but when the kernel is actually lowered, which here meant the
+  example panicking inside `extract_widget_transitions_strict`. The fix
+  is three nested flat matches: unwrap the `Option` by its own match,
+  then match the inner value. Verbose, and it keeps the `q.state` match
+  outermost so the FSM extractor still finds the state field at the top
+  of the tree. This belongs in CLAUDE.md §4's list of what the kernel
+  subset rejects.
+- **A computed state target defeats the FSM extractor.** `d.state =
+  req` compiles and produces correct hardware, but the extractor walks
+  RHIF for *writes of literal variants* to the state field, so the
+  generated diagram would be empty. Every arm therefore names its
+  target literally — which is what a real state machine looks like
+  anyway.
+- **Two of my three mutation checks silently did not apply**, because
+  the anchor strings I guessed did not match the generated code's
+  ordering. Both reported "ok", which I nearly read as "the mutation
+  survived" rather than "the mutation was never made". Mutation testing
+  needs its anchors asserted; the script now does `assert count == 1`
+  and says `ANCHOR FAILED` instead of running a no-op test.
+
+**Validation:** 13 tests. The centre is
+`the_transition_table_matches_the_ibta`, which walks all 36 (from, to)
+pairs against an **independently written** transition table — legal ones
+must take effect, illegal ones must hold and report `rejected`. Backed
+by `some_transitions_really_are_illegal`, which asserts at least ten
+pairs are refused so the first test cannot pass vacuously against a
+permissive table. Plus `can_send` in RTS only, error override from every
+state, ERR-recovers-only-through-RESET, idle hold, reset, and a Tier-2
+bring-up sequence that includes a refused request.
+
+Rule 14 satisfied: `FsmWidget` derive, the diagram generated from the
+kernel's own RHIF (6 states, 15 inter-state edges — exactly the 2+3+3+3+3+1
+the table defines), and a drift test. Tiers 3–5 present.
+
+Three mutations confirmed caught: `can_send` true while draining,
+RESET → RTS made legal, and ERR recovering straight to RTS.
+
+**Follow-ups:**
+
+- `qp::work_queue` and the RAM-backed `qp::context` table are the rest
+  of Phase 3; this widget is not yet wired into `RoceWriteTx`, so
+  `can_send` is not gating anything yet.
+- SQE when work completions land.
+
+---
+
 ## 2026-10-20 — RoCEv2 Phase 3 planned: what FERoCE has that we do not, and which of it can actually be built next
 
 **Path:** `roce-v2-architecture.md` (§9 gains Phase 3; later phases
