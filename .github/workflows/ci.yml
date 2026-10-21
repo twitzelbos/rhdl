@@ -1,0 +1,124 @@
+# The checks CLAUDE.md §14 says "CI will run" — which, until this file,
+# nothing did.
+#
+# The three jobs are the three commands in §8's required column, and they
+# are separate jobs on purpose: when one fails, the job name alone says
+# which contract broke, without reading a log.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A new push supersedes the one before it. The test job takes tens of
+# minutes, so letting superseded runs finish is just burning minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Pinned to a minor, not to `stable`.
+  #
+  # `-D warnings` turns every new lint into a build failure, and clippy
+  # gains lints between minor releases — so tracking `stable` means an
+  # unrelated pull request fails the day Rust ships, for something its
+  # author did not write. Pinning moves that into a deliberate bump:
+  # raise this number, run `cargo clippy --all --all-targets -- -D
+  # warnings` locally, fix what the new release found, in its own commit.
+  #
+  # A patch release never changes the lint set, so the minor is the right
+  # granularity: security and bug fixes still arrive on their own.
+  RUST_VERSION: "1.99"
+
+jobs:
+  fmt:
+    name: cargo fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  clippy:
+    name: cargo clippy -D warnings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      # `--all-targets` is load-bearing and is NOT what CLAUDE.md §8 and
+      # §14 currently print. Without it clippy checks lib targets only,
+      # and so never looks at tests, examples or benches. The defect that
+      # motivated this gate -- an Alto ALU test named
+      # `alu_iverilog_round_trip` that ran no iverilog and asserted
+      # nothing -- lived in a test target, and the documented command
+      # would not have found it.
+      #
+      # Caching is safe here despite the warning-suppression trap that
+      # made this debt look three times smaller than it was: a cached
+      # result is keyed on the lint flags, so a plain `cargo check` can
+      # never satisfy `clippy -- -D warnings`, and a cached clippy result
+      # under these flags can only exist if it passed.
+      - run: cargo clippy --all --all-targets -- -D warnings
+
+  test:
+    name: cargo test
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+      - uses: Swatinem/rust-cache@v2
+
+      # A hard precondition, not a convenience: CLAUDE.md §12 rule 3.
+      # Tier 4 is the only tier that checks the emitted hardware, so a
+      # run without iverilog reports success while proving much less than
+      # it appears to. Every Tier-4 crate carries an
+      # `iverilog_precondition` test that aborts the run if the tool is
+      # missing, so leaving this out would fail loudly rather than
+      # silently -- but it would still fail.
+      - name: Install iverilog
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y iverilog
+          iverilog -V | head -1
+
+      # `--no-fail-fast` is not optional. cargo test is fail-fast across
+      # test *binaries*, so one failing crate aborts the run before later
+      # crates are reached and the summary looks like an ordinary failure
+      # rather than a truncated run. CLAUDE.md §8 records the day that
+      # hid the whole of rhdl-fpga from every workspace run.
+      - run: cargo test --all --no-fail-fast
+
+      # Committed artifacts -- traces under doc/, VCD type sidecars,
+      # FSM diagrams -- are refreshed by `cargo run --example ...` and
+      # only *checked* by tests. A test may write one, but only if the
+      # bytes are identical every time.
+      #
+      # This is checked here rather than through `just tree-clean`,
+      # which runs the suite itself and deliberately swallows a test
+      # failure to get to the artifact check. Running the two as separate
+      # steps keeps "a test failed" and "a test rewrote a committed file"
+      # as distinct, separately-named failures.
+      - name: Working tree must be clean after a full test run
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::the test run modified committed artifacts"
+            git status --short
+            echo
+            echo "A test is writing a committed file with non-identical bytes."
+            echo "Fix the stimulus (see doc::DetRng, never rand::random) or"
+            echo "move the write into an example."
+            exit 1
+          fi
+          echo "OK: the full test run left the working tree clean"

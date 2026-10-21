@@ -31,11 +31,11 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
-## 2026-10-21 — Clippy clean across the workspace, and the two defects that were hiding in the noise
+## 2026-10-21 — Clippy clean across the workspace, a CI gate to keep it that way, and the Tier-4 gap it was hiding
 
-**Path:** 29 files across `rhdl-bits`, `rhdl-core`, `rhdl-fpga`,
-`rhdl-alto`, `rhdl-rv32i`, `rhdl-rule`, `rhdl-dsp-design`, `rhdl`, and
-`doc/book/src/code`
+**Path:** `.github/workflows/ci.yml` (new), and 84 files across
+`rhdl-bits`, `rhdl-core`, `rhdl-fpga`, `rhdl-alto`, `rhdl-rv32i`,
+`rhdl-rule`, `rhdl-dsp-design`, `rhdl`, and `doc/book/src/code`
 
 **Why this, why now:** `cargo clippy --all -- -D warnings` is listed in
 CLAUDE.md §8 as required before any commit, and it could not pass —
@@ -142,11 +142,54 @@ this is stated as a result rather than an assumption. The one
 behavioural change in the diff is deliberate and in the other
 direction: the Alto ALU now has a Verilog round-trip it did not have.
 
+**And the gate, in the same change.** `.github/workflows/ci.yml` runs
+the three commands CLAUDE.md §8 lists as required — `fmt --check`,
+`clippy --all --all-targets -D warnings`, and `test --all
+--no-fail-fast` plus the clean-tree assertion. It lands here rather
+than in a follow-up because the two halves are one change: the gate
+cannot pass until the debt is cleared, and the debt returns the moment
+nothing enforces it.
+
+**Until this file existed there was no CI at all** — none in this fork,
+none in its history, none upstream. CLAUDE.md §14's "CI will run them;
+you should beat it" was describing something that did not exist, which
+is worth knowing about any other claim of enforcement in that document.
+
+Three decisions in it worth the reading:
+
+- **`--all-targets`, which is not what CLAUDE.md §8 and §14 print.**
+  Without it clippy checks lib targets only and never looks at tests,
+  examples or benches — so the ALU defect above, which lived in a test
+  target, would have slipped past the documented command. The
+  discrepancy is noted here because the file cannot be corrected in
+  this commit.
+- **The toolchain is pinned to a minor**, not to `stable`. `-D
+  warnings` turns every new lint into a build failure, and clippy gains
+  lints between minors, so tracking `stable` means an unrelated pull
+  request fails the day Rust ships for something its author did not
+  write. Pinning converts that into a deliberate bump. A patch release
+  never changes the lint set, so the minor is the right granularity.
+- **Caching is safe for the clippy job**, despite the suppression trap
+  that made this debt look a third of its real size: a cached result is
+  keyed on the lint flags, so a plain `cargo check` can never satisfy
+  `clippy -- -D warnings`, and a cached clippy result under those flags
+  can only exist if it passed.
+
+The clean-tree assertion is a separate step from the test run rather
+than a call to `just tree-clean`, which runs the suite itself and
+deliberately swallows a test failure to reach the artifact check.
+Separate steps keep "a test failed" and "a test rewrote a committed
+file" as distinct, separately-named failures.
+
 **Follow-ups:**
 
-- `cargo clippy --all -- -D warnings` can now be a CI gate. It is worth
-  making one promptly: this debt accumulated because nothing enforced
-  it, and the ALU test shows what hides in an unread warning stream.
+- Consider promoting the CI toolchain pin to a `rust-toolchain.toml`,
+  which would give local builds and CI the same compiler. Not done here
+  because it changes every contributor's local toolchain, which is a
+  choice rather than a fix.
+- `doc/book/src/code` and `doc/mdbook-rhdl` are workspace members, so
+  `--all` covers them; the three permanently-failing tests §8 records
+  from 2026-08-19 are no longer failing.
 
 ## 2026-10-21 — Phase 4 completed: ICRC verification, memory regions, placement, and a connection manager
 
