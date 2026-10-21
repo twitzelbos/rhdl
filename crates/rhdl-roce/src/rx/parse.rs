@@ -1391,7 +1391,7 @@ mod tests {
             .join("vcd")
             .join("rx_parse");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["ca67fd23554b1701507a4c32dba42b0066dbf06e68b8cbfc153c2aefd5d1d45e"];
+        let expect = expect!["3c343586a1d2ea781debb5308bdda2ac2d608e486a64c6421ea2aac3795a8de2"];
         let digest = vcd.dump_to_file(root.join("rx_parse.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())
@@ -1449,7 +1449,14 @@ mod tests {
     fn the_fsm_has_exactly_the_edges_the_frame_structure_implies() {
         let t = rhdl::core::fsm::extract_widget_transitions_strict::<RxParser>()
             .expect("extracting transitions");
-        let name = ["Idle", "Network", "Transport", "Payload", "Trailer", "Drain"];
+        let name = [
+            "Idle",
+            "Network",
+            "Transport",
+            "Payload",
+            "Trailer",
+            "Drain",
+        ];
         let mut edges: Vec<String> = t
             .iter()
             .filter(|x| x.source_index != x.target_index)

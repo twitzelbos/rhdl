@@ -510,41 +510,50 @@ fn a_truncated_datagram_is_refused() {
     }
 }
 
-/// **A frame too short to have been identified as ours draws no
-/// reply.** Otherwise this widget is an amplifier: the UDP destination
-/// port sits at offset 37, so a frame that ends before it has passed
-/// every check that ran without ever having been shown to be addressed
-/// here — and answering it would turn one byte into 82.
+/// **A truncated frame draws no reply at all**, at any length. That is
+/// what stops this widget being an amplifier: one byte in must not
+/// produce eighty-two out.
 ///
-/// Found by reading the generated state diagram, which showed an
-/// `Idle -> Reply` edge that should not have existed.
+/// The guard was originally an `identified` flag in the manager's own
+/// registers, set when the UDP destination port at frame offset 37
+/// matched — because a frame ending before that offset has *passed*
+/// every check that ran without ever having been shown to be addressed
+/// here. It was found by reading the generated state diagram, which
+/// showed an `Idle -> Reply` edge that should not have existed.
+///
+/// Composing `net::udp_rx` replaced that flag with something stricter,
+/// and this test records the change rather than hiding it. `UdpRx`
+/// accepts a datagram only if its header block completed **and** its
+/// actual extent matches the length IPv4 declared — so every
+/// truncation is `Truncated`, not `Accept`, and none is answered.
+/// Previously a frame of 38 bytes or more drew a `BadMagic` reply,
+/// since it had reached the port check.
+///
+/// The new behaviour is the safer one and arguably the more correct: a
+/// datagram whose UDP header is incomplete, or whose length contradicts
+/// itself, is not a request. The cost is that such a sender gets
+/// silence instead of an explanation, which is the right trade for a
+/// port that must not amplify.
 #[test]
-fn a_frame_too_short_to_identify_draws_no_reply() {
+fn a_truncated_frame_draws_no_reply() {
     let full = frame_of(Request::default());
-    for cut in 1..38usize {
+    assert_eq!(full.len(), 82);
+    for cut in [1usize, 13, 37, 38, 41, 42, 45, 60, 81] {
         let out = run(&[full[..cut].to_vec()]);
         assert!(
             out.replies.is_empty(),
-            "a {cut}-byte frame has not reached the port check at offset \
-             37, so it must not be answered -- {} reply/replies sent",
+            "a {cut}-byte frame is truncated and must not be answered -- \
+             {} reply/replies sent",
             out.replies.len()
         );
         assert!(out.statuses.is_empty(), "{cut} bytes: no decision either");
         assert!(out.qp_writes.is_empty(), "{cut} bytes: nothing configured");
     }
-    // From offset 38 the port has been checked, so a truncated-but-ours
-    // datagram *is* answered -- the sender is entitled to know why it
-    // was refused.
-    for cut in [38usize, 45, 81] {
-        let out = run(&[full[..cut].to_vec()]);
-        assert_eq!(
-            out.replies.len(),
-            1,
-            "a {cut}-byte frame has been identified as ours and should \
-             get an explanation"
-        );
-        assert_eq!(out.statuses, vec![CmStatus::BadMagic], "{cut} bytes");
-    }
+    // And the complete frame *is* answered, so the loop above is not
+    // passing because nothing is ever answered.
+    let out = run(&[full]);
+    assert_eq!(out.replies.len(), 1, "the whole frame draws a reply");
+    assert_eq!(out.statuses, vec![CmStatus::Accepted]);
 }
 
 /// Two requests in a row are both handled, which means the registers

@@ -347,15 +347,6 @@ pub fn udp_rx(cr: ClockReset, i: In, q: Q) -> (Out, D) {
 
     if taken {
         if i.start_of_frame {
-            // A restart abandons whatever was in progress, and the
-            // abandoned frame is reported in this same cycle -- it did
-            // end, and a consumer counting frames must see it. Without
-            // this a peer that retries mid-frame makes one frame
-            // disappear from every downstream count.
-            if q.state != UdpRxPhase::Idle {
-                o.done = true;
-                o.verdict = UdpRxVerdict::Truncated;
-            }
             r = UdpRxRegs::default();
             o.frame_start = true;
         }
@@ -494,6 +485,22 @@ pub fn udp_rx(cr: ClockReset, i: In, q: Q) -> (Out, D) {
         } else {
             o.verdict = r.verdict;
         }
+
+        // A restart abandons whatever was in progress, and the
+        // abandoned frame is reported in this same cycle -- it did end,
+        // and a consumer counting frames must see it, or a peer that
+        // retries mid-frame makes one frame vanish from every
+        // downstream count.
+        //
+        // Reported *here*, after the verdict assignments above, and not
+        // in the start-of-frame block where it belongs by reading
+        // order: the registers were reset there, so `r.verdict` is
+        // `Accept` again and the `else` branch above would overwrite
+        // the `Truncated` with it.
+        if i.start_of_frame && q.state != UdpRxPhase::Idle {
+            o.done = true;
+            o.verdict = UdpRxVerdict::Truncated;
+        }
     }
 
     if cr.reset.any() {
@@ -513,4 +520,525 @@ pub fn udp_rx(cr: ClockReset, i: In, q: Q) -> (Out, D) {
     }
     d.regs = r;
     (o, d)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use expect_test::expect;
+    use rhdl::core::sim::testbench::kernel::test_kernel_vm_and_verilog_synchronous;
+
+    const OUR_PORT: u128 = 4792;
+
+    /// An Ethernet/IPv4/UDP datagram, assembled from explicit
+    /// big-endian pushes rather than through this crate's own header
+    /// builders — which would test the parser against the generator and
+    /// pass even if both agreed on the wrong layout.
+    fn datagram(dst_port: u16, payload: &[u8]) -> Vec<u8> {
+        let mut f: Vec<u8> = Vec::new();
+        f.extend_from_slice(&[0x00, 0x0a, 0x35, 0x01, 0x02, 0x03]);
+        f.extend_from_slice(&[0xec, 0x0d, 0x9a, 0xaa, 0xbb, 0xcc]);
+        f.extend_from_slice(&0x0800u16.to_be_bytes());
+        f.push(0x45);
+        f.push(0x00);
+        f.extend_from_slice(&((20 + 8 + payload.len()) as u16).to_be_bytes());
+        f.extend_from_slice(&0u16.to_be_bytes());
+        f.extend_from_slice(&0u16.to_be_bytes());
+        f.push(64);
+        f.push(17);
+        f.extend_from_slice(&0u16.to_be_bytes());
+        f.extend_from_slice(&[192, 168, 1, 10]);
+        f.extend_from_slice(&[192, 168, 1, 50]);
+        f.extend_from_slice(&0x9abcu16.to_be_bytes());
+        f.extend_from_slice(&dst_port.to_be_bytes());
+        f.extend_from_slice(&((8 + payload.len()) as u16).to_be_bytes());
+        f.extend_from_slice(&0u16.to_be_bytes());
+        f.extend_from_slice(payload);
+        f
+    }
+
+    struct Run {
+        header: Option<UdpHeader>,
+        payload: Vec<u8>,
+        payload_indices: Vec<u16>,
+        bytes: Vec<u8>,
+        frame_indices: Vec<u16>,
+        verdict: UdpRxVerdict,
+        dones: usize,
+        first_header_cycle: Option<usize>,
+        first_payload_cycle: Option<usize>,
+    }
+
+    fn drive(frame: &[u8], port: u128, eof_at: Option<usize>) -> Run {
+        let idle = In {
+            data: None,
+            start_of_frame: false,
+            end_of_frame: false,
+            expect_port: bits(port),
+        };
+        let eof = eof_at.unwrap_or(frame.len() - 1);
+        let mut stream = vec![idle];
+        for (k, b) in frame.iter().enumerate().take(eof + 1) {
+            stream.push(In {
+                data: Some(bits(*b as u128)),
+                start_of_frame: k == 0,
+                end_of_frame: k == eof,
+                ..idle
+            });
+        }
+        stream.push(idle);
+        stream.push(idle);
+
+        let uut = UdpRx::default();
+        let input = stream.into_iter().with_reset(1).clock_pos_edge(100);
+        let mut r = Run {
+            header: None,
+            payload: Vec::new(),
+            payload_indices: Vec::new(),
+            bytes: Vec::new(),
+            frame_indices: Vec::new(),
+            verdict: UdpRxVerdict::Accept,
+            dones: 0,
+            first_header_cycle: None,
+            first_payload_cycle: None,
+        };
+        for (cycle, s) in uut.run(input).synchronous_sample().enumerate() {
+            let o = s.output;
+            if o.header.is_some() {
+                if r.first_header_cycle.is_none() {
+                    r.first_header_cycle = Some(cycle);
+                }
+                r.header = o.header;
+            }
+            if let Some(b) = o.payload {
+                if r.first_payload_cycle.is_none() {
+                    r.first_payload_cycle = Some(cycle);
+                }
+                r.payload.push(b.raw() as u8);
+                r.payload_indices.push(o.payload_index.raw() as u16);
+            }
+            if let Some(b) = o.byte {
+                r.bytes.push(b.raw() as u8);
+                r.frame_indices.push(o.frame_index.raw() as u16);
+            }
+            if o.done {
+                r.verdict = o.verdict;
+                r.dones += 1;
+            }
+        }
+        r
+    }
+
+    fn run(frame: &[u8]) -> Run {
+        drive(frame, OUR_PORT, None)
+    }
+
+    // ------------------------------------------------- Tier 1
+
+    #[test]
+    fn payload_length_comes_from_the_ip_total_length_and_clamps() {
+        assert_eq!(payload_len_of(bits(28)).raw(), 0, "headers only");
+        assert_eq!(payload_len_of(bits(68)).raw(), 40);
+        // Below the headers it must contain: clamps rather than wrapping.
+        for tl in 0u128..28 {
+            assert_eq!(payload_len_of(bits(tl)).raw(), 0, "total_len {tl}");
+        }
+    }
+
+    #[test]
+    fn payload_len_of_kernel_vm_and_verilog() -> miette::Result<()> {
+        let inputs = (0u128..400).map(|n| (bits::<16>(n * 11),));
+        test_kernel_vm_and_verilog_synchronous::<payload_len_of, _, _, _>(payload_len_of, inputs)?;
+        Ok(())
+    }
+
+    // ------------------------------------------------- Tier 2
+
+    /// The control for every rejection test below.
+    #[test]
+    fn a_well_formed_datagram_is_parsed() {
+        let payload: Vec<u8> = (0..8u8).map(|k| 0xA0 | k).collect();
+        let r = run(&datagram(OUR_PORT as u16, &payload));
+        assert_eq!(r.verdict, UdpRxVerdict::Accept);
+        assert_eq!(r.dones, 1);
+
+        let h = r.header.expect("a header");
+        assert_eq!(h.dst_mac.raw(), 0x000a_3501_0203);
+        assert_eq!(h.src_mac.raw(), 0xec0d_9aaa_bbcc);
+        assert_eq!(h.src_ip.raw(), 0xC0A8_010A);
+        assert_eq!(h.dst_ip.raw(), 0xC0A8_0132);
+        assert_eq!(h.src_port.raw(), 0x9abc);
+        assert_eq!(h.dst_port.raw(), OUR_PORT);
+        assert_eq!(h.ip_total_len.raw(), 36, "20 + 8 + 8");
+        assert_eq!(h.udp_len.raw(), 16, "8 + 8");
+        assert_eq!(h.payload_len.raw(), 8);
+
+        assert_eq!(r.payload, payload, "the payload, byte for byte");
+        assert_eq!(
+            r.payload_indices,
+            (0..8u16).collect::<Vec<_>>(),
+            "payload indices count from zero"
+        );
+    }
+
+    /// **Every byte is forwarded, with its frame offset.** The
+    /// pass-through contract, and the reason a caller whose checksum
+    /// covers the frame does not need a second copy of the stream.
+    #[test]
+    fn every_byte_is_forwarded_with_its_frame_offset() {
+        let payload: Vec<u8> = (0..8u8).map(|k| 0xA0 | k).collect();
+        let f = datagram(OUR_PORT as u16, &payload);
+        let r = run(&f);
+        assert_eq!(r.bytes, f, "every byte, headers included");
+        assert_eq!(
+            r.frame_indices,
+            (0..f.len() as u16).collect::<Vec<_>>(),
+            "and each with its absolute frame offset"
+        );
+    }
+
+    /// The header appears in the same cycle as the first payload byte —
+    /// the earliest it could, and the contract a caller builds on.
+    #[test]
+    fn the_header_appears_with_the_first_payload_byte() {
+        let r = run(&datagram(OUR_PORT as u16, &[1, 2, 3, 4]));
+        assert_eq!(
+            r.first_header_cycle, r.first_payload_cycle,
+            "header and first payload byte must appear together"
+        );
+    }
+
+    /// Each rejection, provoked by exactly one byte, with the
+    /// unmutated datagram as the control above.
+    #[test]
+    fn each_malformed_field_produces_its_own_verdict() {
+        let good = datagram(OUR_PORT as u16, &[1, 2, 3, 4]);
+        for (at, to, want, why) in [
+            (12usize, 0x86u8, UdpRxVerdict::NotIpv4, "EtherType IPv6"),
+            (13, 0x06, UdpRxVerdict::NotIpv4, "EtherType low byte"),
+            (14, 0x46, UdpRxVerdict::Ipv4Unsupported, "IHL 6, options"),
+            (14, 0x65, UdpRxVerdict::Ipv4Unsupported, "version 6"),
+            (23, 0x06, UdpRxVerdict::NotUdp, "protocol TCP"),
+            (23, 0x01, UdpRxVerdict::NotUdp, "protocol ICMP"),
+            (37, 0x00, UdpRxVerdict::PortMismatch, "a different port"),
+            (36, 0xFF, UdpRxVerdict::PortMismatch, "port high byte"),
+        ] {
+            let mut f = good.clone();
+            assert_ne!(f[at], to, "offset {at} is already {to:#04x}");
+            f[at] = to;
+            let r = run(&f);
+            assert_eq!(
+                r.verdict, want,
+                "offset {at} set to {to:#04x} ({why}) should give {want:?}"
+            );
+            assert!(
+                r.payload.is_empty(),
+                "offset {at}: a rejected datagram must emit no payload"
+            );
+        }
+    }
+
+    /// A total length that cannot hold the headers already parsed.
+    #[test]
+    fn an_impossible_ip_total_length_is_rejected() {
+        let good = datagram(OUR_PORT as u16, &[1, 2, 3, 4]);
+        for tl in [0u16, 1, 27] {
+            let mut f = good.clone();
+            f[16] = (tl >> 8) as u8;
+            f[17] = (tl & 0xFF) as u8;
+            assert_eq!(
+                run(&f).verdict,
+                UdpRxVerdict::BadLength,
+                "total length {tl} cannot hold 20 + 8 bytes of header"
+            );
+        }
+        // And the boundary is inclusive.
+        let mut f = good.clone();
+        f[16] = 0;
+        f[17] = 28;
+        assert_ne!(
+            run(&f).verdict,
+            UdpRxVerdict::BadLength,
+            "28 is exactly the headers, which is legal"
+        );
+    }
+
+    /// **A field this widget does not check must not be rejected** —
+    /// the complement, without which a parser that rejected on any
+    /// mutation would look correct.
+    #[test]
+    fn mutating_an_unchecked_field_does_not_reject() {
+        let good = datagram(OUR_PORT as u16, &[1, 2, 3, 4]);
+        for (at, why) in [
+            (0usize, "destination MAC, the MAC filter's business"),
+            (6, "source MAC"),
+            (15, "DSCP/ECN"),
+            (18, "IP identification"),
+            (22, "TTL, which every router decrements"),
+            (24, "IPv4 header checksum, deliberately not verified"),
+            (34, "UDP source port"),
+            (40, "UDP checksum, deliberately not verified"),
+        ] {
+            let mut f = good.clone();
+            f[at] ^= 0xFF;
+            assert_eq!(
+                run(&f).verdict,
+                UdpRxVerdict::Accept,
+                "offset {at} ({why}) is not a field this widget validates"
+            );
+        }
+    }
+
+    #[test]
+    fn a_frame_that_ends_early_is_truncated() {
+        let good = datagram(OUR_PORT as u16, &[1, 2, 3, 4]);
+        assert_eq!(good.len(), 46);
+        for eof in [0usize, 13, 17, 37, 41, 42, 44] {
+            assert_eq!(
+                drive(&good, OUR_PORT, Some(eof)).verdict,
+                UdpRxVerdict::Truncated,
+                "a frame ending at byte {eof} of 46 is truncated"
+            );
+        }
+        assert_eq!(
+            drive(&good, OUR_PORT, Some(45)).verdict,
+            UdpRxVerdict::Accept,
+            "and the full length is not"
+        );
+    }
+
+    #[test]
+    fn a_frame_longer_than_it_declared_is_rejected() {
+        let mut f = datagram(OUR_PORT as u16, &[1, 2, 3, 4]);
+        f.extend([0u8; 8]);
+        assert_eq!(run(&f).verdict, UdpRxVerdict::Overlong);
+    }
+
+    /// Bytes arriving without a start-of-frame while idle are the tail
+    /// of a frame whose beginning was missed; dropping them is how the
+    /// parser realigns.
+    #[test]
+    fn bytes_without_a_start_of_frame_are_dropped_while_idle() {
+        let good = datagram(OUR_PORT as u16, &[1, 2, 3, 4]);
+        let idle = In {
+            data: None,
+            start_of_frame: false,
+            end_of_frame: false,
+            expect_port: bits(OUR_PORT),
+        };
+        let last = good.len() - 1;
+        let mut stream = vec![idle];
+        for (k, b) in good.iter().enumerate() {
+            stream.push(In {
+                data: Some(bits(*b as u128)),
+                start_of_frame: false,
+                end_of_frame: k == last,
+                ..idle
+            });
+        }
+        stream.push(idle);
+        let uut = UdpRx::default();
+        let input = stream.into_iter().with_reset(1).clock_pos_edge(100);
+        let mut dones = 0;
+        let mut payload = 0;
+        let mut busy = false;
+        for s in uut.run(input).synchronous_sample() {
+            if s.output.done {
+                dones += 1;
+            }
+            if s.output.payload.is_some() {
+                payload += 1;
+            }
+            if s.output.busy {
+                busy = true;
+            }
+        }
+        assert_eq!(dones, 0, "no frame began, so none can have ended");
+        assert_eq!(payload, 0);
+        assert!(!busy, "and the parser never left Idle");
+    }
+
+    /// A restart abandons the frame in progress and reports it, because
+    /// a consumer counting frames must see it end.
+    #[test]
+    fn a_restart_abandons_and_reports_the_frame_in_progress() {
+        let good = datagram(OUR_PORT as u16, &[1, 2, 3, 4]);
+        let idle = In {
+            data: None,
+            start_of_frame: false,
+            end_of_frame: false,
+            expect_port: bits(OUR_PORT),
+        };
+        let mut f = good[..20].to_vec();
+        let restart = f.len();
+        f.extend_from_slice(&good);
+        let last = f.len() - 1;
+        let mut stream = vec![idle];
+        for (k, b) in f.iter().enumerate() {
+            stream.push(In {
+                data: Some(bits(*b as u128)),
+                start_of_frame: k == 0 || k == restart,
+                end_of_frame: k == last,
+                ..idle
+            });
+        }
+        stream.push(idle);
+        let uut = UdpRx::default();
+        let input = stream.into_iter().with_reset(1).clock_pos_edge(100);
+        let mut verdicts = Vec::new();
+        let mut payload = Vec::new();
+        for s in uut.run(input).synchronous_sample() {
+            if s.output.done {
+                verdicts.push(s.output.verdict);
+            }
+            if let Some(b) = s.output.payload {
+                payload.push(b.raw() as u8);
+            }
+        }
+        assert_eq!(
+            verdicts,
+            vec![UdpRxVerdict::Truncated, UdpRxVerdict::Accept],
+            "the abandoned frame is reported, then the complete one"
+        );
+        assert_eq!(payload, vec![1, 2, 3, 4], "only the second frame's payload");
+    }
+
+    #[test]
+    fn reset_emits_nothing() {
+        let cr = clock_reset(clock(false), reset(true));
+        let q = Q {
+            state: UdpRxPhase::Payload,
+            regs: UdpRxRegs {
+                offset: bits(50),
+                header_valid: true,
+                ..Default::default()
+            },
+        };
+        let i = In {
+            data: Some(bits(0x42)),
+            start_of_frame: false,
+            end_of_frame: false,
+            expect_port: bits(OUR_PORT),
+        };
+        let (o, d) = udp_rx(cr, i, q);
+        assert_eq!(d.state, UdpRxPhase::Idle);
+        assert_eq!(d.regs, UdpRxRegs::default());
+        assert_eq!(o.header, None);
+        assert_eq!(o.payload, None);
+        assert_eq!(o.byte, None);
+        assert!(!o.done);
+    }
+
+    // --------------------------------------------- the FSM diagram
+
+    /// Per CLAUDE.md §12 rule 14.
+    #[test]
+    fn test_fsm_diagram_matches_descriptor() {
+        let transitions = rhdl::core::fsm::extract_widget_transitions_strict::<UdpRx>()
+            .expect("extracting transitions");
+        let fresh = crate::doc::render_fsm_diagram_markdown::<UdpRx>(&transitions);
+        let committed = include_str!("../../doc/udp_rx_fsm.md");
+        assert_eq!(
+            fresh.trim(),
+            committed.trim(),
+            "doc/udp_rx_fsm.md is stale -- re-run \
+             `cargo run --example udp_rx -p rhdl-fpga`"
+        );
+    }
+
+    /// The phases and the edges between them, pinned by name.
+    ///
+    /// Nine of the twelve possible, and the absences are the
+    /// informative part: `Idle` reaches only `Header`, because the only
+    /// byte that leaves `Idle` is a start-of-frame and that byte is
+    /// offset zero; and `Drain` never reaches `Payload`, because a
+    /// datagram rejected at the network layer has no payload to
+    /// deliver.
+    ///
+    /// `Payload -> Drain` is real and worth noting, since it looks like
+    /// it should not be: the overlong check fires when bytes keep
+    /// arriving past the length IPv4 declared, which happens during the
+    /// payload. Every phase reaching `Header` is the restart.
+    #[test]
+    fn the_fsm_has_exactly_the_edges_the_frame_structure_implies() {
+        let t = rhdl::core::fsm::extract_widget_transitions_strict::<UdpRx>()
+            .expect("extracting transitions");
+        let name = ["Idle", "Header", "Payload", "Drain"];
+        let mut edges: Vec<String> = t
+            .iter()
+            .filter(|x| x.source_index != x.target_index)
+            .map(|x| format!("{} -> {}", name[x.source_index], name[x.target_index]))
+            .collect();
+        edges.sort();
+        edges.dedup();
+        let expect = expect![[r#"
+            Drain -> Header
+            Drain -> Idle
+            Header -> Drain
+            Header -> Idle
+            Header -> Payload
+            Idle -> Header
+            Payload -> Drain
+            Payload -> Header
+            Payload -> Idle
+        "#]];
+        expect.assert_eq(&format!("{}\n", edges.join("\n")));
+    }
+
+    // ------------------------------------------ Tiers 3, 4 and 5
+
+    fn test_stream() -> impl Iterator<Item = TimedSample<(ClockReset, In)>> {
+        let idle = In {
+            data: None,
+            start_of_frame: false,
+            end_of_frame: false,
+            expect_port: bits(OUR_PORT),
+        };
+        let f = datagram(OUR_PORT as u16, &[1, 2, 3, 4]);
+        let last = f.len() - 1;
+        let mut stream = vec![idle];
+        for (k, b) in f.iter().enumerate() {
+            stream.push(In {
+                data: Some(bits(*b as u128)),
+                start_of_frame: k == 0,
+                end_of_frame: k == last,
+                ..idle
+            });
+        }
+        stream.push(idle);
+        stream.into_iter().with_reset(1).clock_pos_edge(100)
+    }
+
+    #[test]
+    fn test_vlog_generation() -> miette::Result<()> {
+        let uut = UdpRx::default();
+        let hdl = uut.descriptor("top".into())?.hdl()?.modules.pretty();
+        assert!(hdl.contains("module top"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_widget_hdl_works() -> miette::Result<()> {
+        let uut = UdpRx::default();
+        let tb = uut
+            .run(test_stream())
+            .collect::<SynchronousTestBench<_, _>>();
+        tb.rtl(&uut, &Default::default())?.run_iverilog()?;
+        tb.ntl(&uut, &Default::default())?.run_iverilog()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_widget_trace() -> miette::Result<()> {
+        let uut = UdpRx::default();
+        let vcd = uut.run(test_stream()).collect::<VcdFile>();
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("vcd")
+            .join("udp_rx");
+        std::fs::create_dir_all(&root).unwrap();
+        let expect = expect!["636379b14196bb5da62e17a6a9eb2d81ab939548d4787c52839e2c9ee6496897"];
+        let digest = vcd.dump_to_file(root.join("udp_rx.vcd")).unwrap();
+        expect.assert_eq(&digest);
+        Ok(())
+    }
 }
