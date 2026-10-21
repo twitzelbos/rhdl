@@ -1,7 +1,33 @@
 # RoCEv2 — RDMA over Converged Ethernet v2 for RHDL
 
-**Status: scope document. No code written. The staging in §9 needs explicit
-sign-off before Phase 0 starts** — see §12.
+**Status: the plan, plus Phases 1–3 of the send side.**
+`crates/rhdl-roce` implements the transport headers, the Invariant CRC,
+the message-to-packet segmenter, and the Ethernet/IPv4/UDP framing — so
+a **complete RoCEv2 frame is generated and matches Scapy byte-for-byte**,
+over eight curated vectors and a 2000-case differential fuzz corpus
+(§10 Tier 6).
+
+Phase 3 landed the endpoint: a queue-pair state machine that refuses to
+transmit outside `RTS`, a RAM-backed queue-pair context table, a work
+queue so several messages can be outstanding, and
+`endpoint::RoceWriteEndpoint` wiring them to the transmitter. Its gate
+is met — three queued messages produce three byte-exact frames, a second
+queue pair is framed with its own context, and nothing is emitted before
+`RTS`.
+
+What is **not** built: no connection manager, no receive path of any
+kind, no retransmission, no congestion control, and no arbiter (messages
+drain in posting order whatever queue pair they name). Queue-pair state
+is endpoint-level rather than per-queue-pair — a conservative
+approximation, documented in `endpoint`'s module docs, that can only
+refuse where a per-queue-pair gate would allow. And there is still no
+link adapter, so **nothing reaches a wire**.
+
+**The remaining staging in §9 still needs explicit sign-off** — see §12.
+Note that §12's structural question about a `net` category is no longer
+blocking: the Ethernet/IPv4/UDP widgets were written inside
+`rhdl-roce::frame` instead, which touches nothing in `rhdl-fpga`'s
+structure and is a rename away from migrating once the decision lands.
 
 RoCEv2 lets a network card write directly into a remote machine's memory
 with no CPU in the data path — and on a host with `nvidia-peermem`
@@ -214,13 +240,13 @@ cleanly onto §6:
 | FERoCE module | Size | RHDL counterpart |
 |---|---|---|
 | `RoCE_tx_engine.sv` | 73 KB | `qp::uc_write_sq` |
-| `RoCE_rtr_read_module.sv` + `RoCE_retransmission_module_v2.sv` | 122 KB | Phase 3 `qp::retry` |
+| `RoCE_rtr_read_module.sv` + `RoCE_retransmission_module_v2.sv` | 122 KB | Phase 6 `qp::retry` |
 | `RoCE_tx_header_producer.sv` | 45 KB | `headers::generate` |
 | `RoCE_reth_bth_tx.sv`, `RoCE_immdh_reth_tx.sv`, `RoCE_bth_udp_tx.sv` | 80 KB | `headers::{bth,reth}` + `serde` |
 | `RoCE_realign_frame_fifo.sv` | 35 KB | **§8's alignment problem, as a module** |
 | `axis_RoCE_icrc_insert.v` | 28 KB | `icrc.rs` |
-| `RoCE_qp_state_module.sv` | 28 KB | `qp::context` |
-| `udp_RoCE_connection_manager*.sv` | 72 KB | Phase 2 connection setup |
+| `RoCE_qp_state_module.sv` | 28 KB | Phase 3 `qp::state` + `qp::context` |
+| `udp_RoCE_connection_manager*.sv` | 72 KB | Phase 4 connection setup |
 | `RoCE_bth_udp_rx.sv` | 27 KB | `headers::parse` (ACK path) |
 
 ### The measurement that argues for `rhdl-rule`
@@ -240,7 +266,7 @@ argument in this document for writing the queue-pair logic in
 role here is to be that comparison, and to be the Phase-3 reference once
 reliable transport is on the table — its
 `ReqHandleRQ` + `RespHandleSQ` + `RetryHandleSQ` are ~262 KB, nearly a
-third of it, which is what sets Phase 3 at 16–24 weeks.
+third of it, which is what sets Phase 6 at 16–24 weeks.
 
 ### Nobody writes their own parallel CRC-32
 
@@ -726,7 +752,7 @@ the PSN window is open, emit a packet and advance three counters
 atomically." Written as a hand-rolled FSM that is a wide `match` with
 easy-to-get-wrong interlocks; written as rules it is five independent
 `#[rule]` methods and a synthesized conflict-arbitrated scheduler, which
-is how blue-rdma expresses the same logic. Phase 3's retry logic is the
+is how blue-rdma expresses the same logic. Phase 6's retry logic is the
 stronger case still.
 
 **Decision recorded: the queue-pair logic is written with `rhdl-rule`;
@@ -910,7 +936,72 @@ verified by a CUDA kernel reading its own GPU memory. §10 Tier 7.*
 **This is the deliverable the sensor use case needs.** 13–18 weeks
 cumulative, on existing Red Pitaya hardware.
 
-### Phase 3 — UC RDMA WRITE, receive (6–8 weeks)
+### Phase 3 — The endpoint FERoCE has and we do not (4–6 weeks)
+
+Asked for directly: the five modules FERoCE ships that this crate lacks.
+**Only two of the five can go in one PR**, and working out which is the
+useful part of this phase's plan.
+
+| FERoCE module | Size | What it needs first | Lands in |
+|---|---|---|---|
+| `RoCE_qp_state_module.sv` | 28 KB | nothing new | **Phase 3** |
+| `RoCE_simple_work_queue.sv` | 25 KB | `fifo::synchronous`, which exists | **Phase 3** |
+| `udp_RoCE_connection_manager*.sv` | 72 KB | a UDP **receive** path, and a register file to write into | Phase 4 |
+| `RoCE_retransmission_module_v2.sv` + `RoCE_rtr_read_module.sv` | 122 KB | ACK/NAK **reception** (AETH), a PSN window, timers | Phase 6 |
+| `RoCE_realign_frame_fifo.sv` | 35 KB | a datapath wider than 8 bits | Phase 5 |
+
+Three of them are gated on infrastructure that does not exist, and the
+reasons are structural rather than a matter of effort:
+
+- **Retransmission without ACK reception is meaningless.** A
+  retransmission buffer exists to hold packets until they are
+  acknowledged; with no receive path there is nothing to retire them.
+  So this item *is* reliable transport, and it belongs with Phase 6
+  rather than ahead of it.
+- **The realign FIFO is not a missing feature.** It is an artifact of
+  FERoCE's 64- and 512-bit datapaths, where a payload does not begin on
+  a beat boundary. At one byte per cycle **there is nothing to realign**,
+  so building it now would produce a widget with no job until the
+  datapath widens — which is itself blocked on §8's open language
+  question. It attaches to Phase 5.
+- **The connection manager is a UDP protocol implementation**, not a
+  configuration register. It receives and parses datagrams, so it needs
+  the receive path too. It rides with Phase 4, where that path is built.
+
+#### What Phase 3 actually contains
+
+1. **`qp::state` — the IBTA queue-pair state machine.** `RESET → INIT →
+   RTR → RTS`, plus `SQD`, `SQE` and `ERR`. Takes
+   `#[derive(FsmWidget)]` and ships its diagram per §12 rule 14. This is
+   what makes "the endpoint refuses to transmit before it is ready" a
+   property of the hardware rather than of the caller's discipline.
+2. **`qp::context` becomes a table.** RAM-backed and QPN-indexed, which
+   is what §6 of this document promised and what the first
+   implementation did not deliver — it is currently a plain struct
+   passed in as an input, so the endpoint supports exactly one
+   connection. Composes `core::ram::synchronous`.
+3. **`qp::work_queue` — a queue of message requests.** Today `start`
+   asserted while busy *restarts* the message; with a work queue the
+   endpoint accepts several and works through them. Composes
+   `fifo::synchronous`.
+4. **The three debts the audit turned up**, which are small and belong
+   with this work rather than drifting:
+   - **Generate the pad bytes.** `RoceWriteTx` currently requires the
+     *caller* to present zero bytes for the 0–3 pad, because `pay_left`
+     counts payload-plus-pad and the payload phase emits
+     `i.payload_byte` throughout. The widget should emit them itself.
+   - **Handle 24-bit PSN wrap**, which is currently neither handled nor
+     documented.
+   - **Make the IPv4 DSCP configurable** rather than hardwired to zero,
+     since a real fabric uses it for QoS and RoCEv2 deployments
+     routinely depend on it.
+
+*Gate: several messages queued back to back on one queue pair produce
+the correct frame sequence, byte-exact against Scapy; a second queue
+pair with different parameters interleaves correctly; and the state
+machine refuses to transmit outside `RTS`.*
+
+### Phase 4 — UC RDMA WRITE, receive (6–8 weeks)
 
 The other direction, per §5.2. Reuses Phase 1's parse and ICRC check and
 Phase 2's QP context, and adds what receiving requires: `qp::mr` — the
@@ -922,11 +1013,19 @@ Note that on the GEM adapter this direction has the CPU in the data path
 per §5.4, so the acceptance target is correctness and modest rate, not
 line rate. Line-rate receive is what Phase 4 unlocks.
 
+This phase also carries the **connection manager** — FERoCE's
+`udp_RoCE_connection_manager`, 72 KB of it — because that is a UDP
+protocol implementation and needs exactly the receive path this phase
+builds. Until it exists, a queue pair's parameters have to be poked in
+by unspecified external means.
+
 *Gate: an unmodified Linux host issues `ibv_post_send` of an RDMA WRITE
 to the RHDL endpoint and the payload appears at the expected local
-address, with a deliberately corrupted ICRC rejected.*
+address, with a deliberately corrupted ICRC rejected. And the host
+negotiates a queue pair over UDP rather than the parameters being
+hard-coded.*
 
-### Phase 4 — The own-MAC adapter (5–7 weeks, hardware-gated)
+### Phase 5 — The own-MAC adapter (5–7 weeks, hardware-gated)
 
 `net::mac` — roadmap item 59 — plus `link::mac_phy`. GMII/RGMII
 frontend, preamble and SFD, FCS append and check, inter-frame gap, and
@@ -938,28 +1037,36 @@ run behind its own MAC, the abstraction was wrong and that is the finding.
 It also unlocks line-rate receive (§5.4) and is the prerequisite for any
 rate above 1 GbE.
 
-*Gate: Phases 2 and 3 pass their own gates unchanged, with only the
+Widening the datapath beyond 8 bits is what first requires FERoCE's
+**frame-realign FIFO** (35 KB): above one byte per cycle a payload no
+longer starts on a beat boundary. That is also where §8's open question
+about runtime-amount barrel shifts in the kernel subset gets answered
+for real rather than deferred.
+
+*Gate: Phases 2, 3 and 4 pass their own gates unchanged, with only the
 adapter swapped.*
 
-### Phase 5 — Reliable Connection, both directions (16–24 weeks)
+### Phase 6 — Reliable Connection, both directions (16–24 weeks)
 
 ACK/NAK generation and consumption, PSN window tracking, the
 retransmission buffer and its timers, duplicate detection, RNR-NAK, and
 the receive-queue request handler. This is the third of the problem that
-§3's file sizes measure. `rhdl-rule` carries the retry logic.
+§3's file sizes measure, and it is where FERoCE's
+`RoCE_retransmission_module_v2` + `RoCE_rtr_read_module` (122 KB
+together) land. `rhdl-rule` carries the retry logic.
 
 *Gate: `ib_write_bw` from `perftest` completes against the RHDL endpoint
 with zero retransmission errors, and completes again with deliberately
 injected loss.*
 
-### Phase 6 — READ, SEND/RECV, completions (12–16 weeks)
+### Phase 7 — READ, SEND/RECV, completions (12–16 weeks)
 
 An RDMA READ responder reads local memory, which Phase 3's `qp::mr`
 already provides; what is new is the read-response generator and the
 duplicate-read cache. Work-completion generation makes the endpoint
 usable from ordinary verbs code.
 
-### Phase 7 — Congestion control (8–12 weeks)
+### Phase 8 — Congestion control (8–12 weeks)
 
 ECN marking, CNP generation and consumption, and the DCQCN rate-limiter
 control loop. Only needed on a shared fabric; on a point-to-point link it
@@ -974,21 +1081,25 @@ well equipped to build and test.
 | Phase −1 — a measured packets-per-second number | one afternoon |
 | Phase 0 — CRC-32, IPv4, UDP | 3–4 weeks |
 | Phase 1 — verified parser/generator + link boundary | 7–10 weeks |
-| **Phase 2 — UC WRITE send: samples in host GPU memory** | **13–18 weeks (3–4.5 months)** |
-| **Phase 3 — UC WRITE receive** | **19–26 weeks (4.5–6 months)** |
-| Phase 4 — own-MAC adapter, line-rate receive, >1 GbE possible | 24–33 weeks |
-| Phase 5 — Reliable Connection | 40–57 weeks |
-| Phase 6 — full verb set | 52–73 weeks |
-| Phase 7 — congestion control | 60–85 weeks (14–20 months) |
+| **Phase 2 — UC WRITE send: samples in host GPU memory** | **13–18 weeks** |
+| **Phase 3 — a real endpoint: QP state, QP table, work queue** | **17–24 weeks** |
+| Phase 4 — UC WRITE receive + connection manager | 23–32 weeks |
+| Phase 5 — own-MAC adapter, wider datapath, realign | 28–39 weeks |
+| Phase 6 — Reliable Connection + retransmission | 44–63 weeks |
+| Phase 7 — full verb set | 56–79 weeks |
+| Phase 8 — congestion control | 64–91 weeks (15–21 months) |
 
-Two things to note about these numbers versus the first draft. **Phase 2
-got cheaper** — 13–18 weeks instead of 18–24 — because the hard GEM
-removes `net::mac` from the critical path and drops the CRC-32 width
-requirement from 512 bits to 8. **The full stack got slightly longer**,
-because receive-direction WRITE and the own-MAC adapter are now explicit
-phases rather than being folded into later ones. The full-stack figure
-remains consistent with blue-rdma's 26 kLOC and with
-`tier-c-flagship-cores.md`'s 18–24 months for comparable projects.
+Phase 3 was inserted after the first send path was built and audited
+against FERoCE's module list. The honest reading of that audit is that
+Phase 2 produced **correct frame bytes for a single UC WRITE message on
+one queue pair**, which is not an endpoint: there is no queue-pair state
+machine, the context is an input struct rather than a table, and a
+second `start` abandons the message in flight. Phase 3 is what closes
+that, and it is the first phase whose deliverable someone could
+reasonably call a RoCEv2 transmitter.
+
+The full-stack figure remains consistent with blue-rdma's 26 kLOC and
+with `tier-c-flagship-cores.md`'s 18–24 months for comparable projects.
 
 ---
 

@@ -11,6 +11,7 @@ members = [
     "crates/rhdl-rule",
     "crates/rhdl-rule-core",
     "crates/rhdl-rule-rt",
+    "crates/rhdl-roce",
     "crates/rhdl-rv32i",
     "crates/rhdl-alto",
     "crates/rhdl-surfer-plugin",

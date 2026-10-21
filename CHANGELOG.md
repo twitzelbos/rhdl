@@ -31,6 +31,112 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-10-21 — `rhdl-roce::endpoint`: Phase 3's widgets wired to the transmitter, and its gate met
+
+**Path:** `crates/rhdl-roce/src/endpoint.rs`, `examples/endpoint.rs`,
+`doc/endpoint.md`, `vcd/endpoint/`; `qp::work_queue` becomes generic;
+`qp::context::WorkRequest` added; `roce-v2-architecture.md` status
+
+**Why this, why now:** Phase 3 was four widgets that existed and were
+tested in isolation — a queue-pair state machine nothing consulted, a
+work queue nothing drained, a context table nothing read. **Four unwired
+widgets is not an endpoint**, and §9's gate is deliberately written about
+the integrated behaviour rather than the parts. This is the wiring, and
+the gate now has a test per clause.
+
+**Design decisions:**
+
+- **`WorkQueue` became generic over its payload** so it can hold
+  `WorkRequest { qpn, msg }`. The queue-pair number travels *with* the
+  message rather than being endpoint state, which is what lets one queue
+  serve several connections — otherwise a context table is pointless,
+  since the queue itself would have to be per-connection.
+- **Message completion is the transmitter's `busy` falling edge, not
+  `end_of_frame`.** The transmitter reports framing per *packet*, so
+  retiring on `end_of_frame` would discard the rest of a multi-packet
+  message. That costs one registered bool (`was_busy`) and the mutation
+  that replaces it fails the three-message test.
+- **Posting is allowed in any state; sending is not.** Refusing work
+  during bring-up would make the queue useless exactly when an
+  application wants to prime it. `flush` (from the state machine's
+  `draining`) is the one case that refuses.
+- **Per-queue-pair state is deferred, and the approximation is
+  conservative rather than wrong.** The IBTA's state is per queue pair;
+  this endpoint has one state machine governing the whole endpoint while
+  the table holds a context per queue pair. An endpoint-level gate can
+  only refuse where a per-queue-pair gate would have allowed, never the
+  reverse — so no frame is emitted that a per-queue-pair implementation
+  would not also emit. A *lax* approximation would have been
+  unacceptable; a strict one costs only the ability to have one queue
+  pair sending while another is still in INIT. Doing it properly needs
+  the transition function as a pure kernel plus a read-modify-write
+  through the table's block RAM.
+- **The table's read address is driven from the queue head
+  continuously.** The head is held stable until the message completes, so
+  the registered read has long settled by the time it is needed and no
+  lookup state machine is required.
+
+**Surprises and gotchas:**
+
+- **`dont_care()` bit again, in the same shape as in `tx`.** The
+  work-queue head's fallback has to be `WorkRequest::default()`: it *is*
+  read on the idle path, because the table's read address is driven from
+  it every cycle, and reading a `dont_care()` aggregate is a partial read
+  (§12 rule 7). Second time this session; the pattern to internalise is
+  that a "fallback that is never used" usually is used, by something
+  evaluated unconditionally.
+- **The two-pass open-loop payload driver was reused deliberately.** The
+  closed-loop version is off by one against `run_fn` — documented at
+  length in the `tx` entry — and the saving grace is that payload
+  *content* does not affect control flow, so pass 1's `payload_advance`
+  positions are valid for pass 2.
+- **clippy wanted kernel-illegal constructs.** `.unwrap_or_default()`
+  and `if let` are not in the accepted subset, so the explicit matches
+  carry an `#[allow]` with the reason rather than being rewritten. Same
+  for `qp::state`'s nested flat matches and `single_match`, where the
+  shape is forced by `Some(Variant)` being unexpressible.
+
+**Validation:** 10 tests on this module, and the three that matter are
+§9's gate clauses:
+
+- **`three_queued_messages_produce_three_correct_frames`** — three
+  messages posted during bring-up, all three emerge, each **byte-exact
+  against Scapy vector `uc_write_only_16`**. Before the work queue, the
+  second and third `start` would have abandoned the message in flight.
+- **`a_second_queue_pair_is_framed_with_its_own_context`** — two
+  contexts configured, one message each. The `dqpn` and `rkey` bytes
+  differ, the ICRC differs, and **every byte the context does not touch
+  is identical**, which is what proves the table is read per message
+  rather than one context being latched.
+- **`nothing_is_transmitted_before_rts`** — checked from RESET, INIT and
+  RTR, with `reaching_rts_unblocks_transmission` as the companion so the
+  first cannot pass for a widget that never transmits at all.
+
+Supporting: an unconfigured queue pair reports `ctx_missing` and sends
+nothing rather than framing with a zeroed context; work may be posted
+before the queue pair is ready; reset clears everything. Tiers 3–5
+present, with `.skip(2)` for the two block RAMs and the non-zero ICRC
+seed.
+
+**Four mutations confirmed caught** by named assertions: dropping the
+`can_send` gate, dropping the `ctx_valid` gate, retiring messages
+unconditionally, and reading the table at a fixed address instead of the
+head's queue-pair number.
+
+**Follow-ups:**
+
+- **No arbiter.** Messages drain in posting order whatever queue pair
+  they name, so a long message on one connection delays another's.
+  FERoCE has a round-robin arbiter; it is not in this phase.
+- **Per-queue-pair state**, per the decision above.
+- **`ctx_missing` latches.** A message naming an unconfigured queue pair
+  blocks the head indefinitely, because it can be neither sent nor
+  retired. A real endpoint would complete it with an error, which needs
+  the work-completion machinery of a later phase.
+- Phase 4 is the receive path and the connection manager.
+
+---
+
 ## 2026-10-21 — Nested variant patterns: considered, measured, and deprioritised
 
 **Path:** `kernel-language-extensions.md` §4.6
@@ -213,6 +319,1149 @@ a bug.
   is not established; that answer decides whether it is a one-line fix
   or a feature.
 - `-D warnings` on `rhdl-core` and `rhdl-fpga`, as its own change.
+
+## 2026-10-21 — Correction: the FSM extractor follows computed targets; the real defect is elsewhere
+
+**Path:** `crates/rhdl-roce/src/tx.rs`, `crates/rhdl-roce/src/qp/state.rs`
+(comments and module docs); two earlier entries in this file amended
+
+**Why this, why now:** asked whether the FSM extractor could be fixed to
+handle a computed state target. Investigating it showed **there is
+nothing to fix, because the claim was false.** I had restructured
+`tx.rs` away from an intermediate local *preemptively*, never tested it,
+and then wrote the limitation into two source files and two CHANGELOG
+entries as established fact. A future reader would have taken it as a
+constraint and restructured code around a restriction that does not
+exist.
+
+**What the extractor actually does**, measured with a three-state probe
+widget:
+
+- **A computed target through an intermediate local works.**
+  `let mut next = q.state; … ; d.state = next` over a three-state
+  machine extracted `[(A,A), (A,B), (B,A), (B,C), (C,A)]` — exactly
+  right, self-loop included. It works because the extractor **unions
+  `Select` branches**, and a mutable local assigned in match arms
+  lowers to precisely a `Select` chain. That capability is documented in
+  `extraction.rs` itself, which I had not read before asserting
+  otherwise.
+- **A target read straight from an input is not followed, and fails
+  silently.** `d.state = i.requested` returns `Ok` with **only
+  self-loops** — `[(A,A), (B,B), (C,C)]` — so the generated diagram
+  claims the machine never leaves its state. The truth is that it can go
+  anywhere.
+
+**The real defect, stated for whoever picks it up:**
+
+`extract_widget_transitions_strict` returns success with a *silently
+incomplete* transition set when the target comes from outside the
+kernel. `ExtractionResult` already carries an `unanalyzable: Vec<(&str,
+&str)>` field for exactly this situation, and the analysis pass already
+reports it as `FsmDiagnosticKind::Unanalyzable` — so the machinery
+exists and this path does not use it. **A silently wrong diagram is
+worse than a missing one**, especially under §12 rule 14, which makes
+the diagram load-bearing for FSM-aware review: a reviewer who trusts it
+would conclude a state machine is a set of isolated self-loops.
+
+That is a compiler-level change and therefore wants its own PR under
+§11.1 — one feature, tests at the IR level it touches, a Justification
+section, and a book/design-plan update. It is **not** bundled into
+Phase 3. The shape is small: recognise a state-field write whose source
+traces to an input rather than to literals, and route it into the
+existing `unanalyzable` channel so `_strict` fails loudly instead of
+succeeding quietly.
+
+**Surprises and gotchas:**
+
+- **I asserted a compiler limitation without testing it, then
+  documented it in four places.** The probe that disproved it took five
+  minutes. The lesson is narrow and worth keeping: a claim about what
+  the *compiler* cannot do is a claim about someone else's code, and it
+  needs a test, not a plausible mechanism.
+- **The adjacent limitation is real but different.** A variant pattern
+  nested inside `Some(…)` genuinely is rejected
+  (`UnsupportedPatternInBindPattern`, raised during lowering rather than
+  at `cargo check` time). That one is in `mir::compiler::bind_pattern`,
+  not the extractor, and is a `kernel-language-extensions.md` item
+  rather than an FSM one. Conflating the two is what let the false claim
+  look credible.
+
+**Validation:** the two probe widgets were throwaway and are not
+committed; their results are quoted above. All 13 `qp::state` tests
+still pass with the corrected comments, and no code changed — only the
+reasons given for it.
+
+**Follow-ups:**
+
+- The input-sourced-target defect, as its own compiler PR per §11.1.
+- `Some(Variant)` patterns in `bind_pattern`, separately, as a
+  kernel-language item. Worth checking whether the guard is protecting
+  against incorrect *matching* or merely missing a no-op binding case —
+  I have not established which, and the answer decides whether it is a
+  one-line fix or a real feature.
+
+---
+
+## 2026-10-21 — `rhdl-roce::qp::table`: the queue-pair context table §6 promised
+
+**Path:** `crates/rhdl-roce/src/qp/table.rs`, `examples/qp_table.rs`,
+`doc/qp_table.md`, `vcd/qp_table/`
+
+**Why this, why now:** `roce-v2-architecture.md` §6 promised a
+"queue-pair context table (RAM-backed)" and the first implementation
+shipped a plain struct passed in as an input — which means exactly one
+connection. This is the table. It is the last of Phase 3's four widgets.
+
+**Design decisions:**
+
+- **Validity is the `Option`, not a side flag.** The table stores
+  `Option<QpContext>`, so an unconfigured entry reads back as `None` and
+  `valid` is derived. A separate validity bitmap would be a second
+  source of truth that can disagree with the first, and the failure it
+  permits is the worst available here: transmitting with a stale context
+  to a queue pair the peer has torn down.
+- **Entries initialise to `None`, emphatically not
+  `QpContext::default()`.** A zeroed context is a *plausible* connection
+  to queue pair 0 — valid-looking `pkey`, a real PMTU — and transmitting
+  to it is worse than refusing to. The mutation that initialises to a
+  zeroed context is caught by `an_unconfigured_entry_is_none`.
+- **Tear-down writes `None`** rather than clearing a bit, which falls
+  out of the above and means there is one code path for configure and
+  unconfigure.
+- **The low `N` bits index the table, and aliasing is documented rather
+  than guarded.** A 24-bit queue-pair number cannot index 16 million
+  entries. Two queue pairs differing only above bit `N` alias; the host
+  allocates the numbers, so it is a control-plane constraint — but the
+  kind that gets discovered in the field if it is not written down.
+  `qpn_index` is the single place it happens and a test pins it.
+
+**Surprises and gotchas:**
+
+- **The read is registered, which is fine here and worth saying anyway.**
+  `ctx` arrives one cycle after `read_qpn`, because block RAM. It costs
+  nothing for the send path — the queue-pair number is constant for a
+  whole message, so the lookup happens once at message start and is long
+  settled before the first header byte. It would matter for a design
+  interleaving packets from different queue pairs cycle by cycle, which
+  nothing here does.
+- **Reset has to disable the write port, not just clear the outputs.**
+  Otherwise a write presented during reset lands in the RAM. Caught by
+  its own test, and the mutation that drops the line fails it.
+
+**Validation:** 11 tests. Tier 1 covers the fresh-table-is-`None`
+property across five addresses, the index/aliasing rule, the write port
+being driven and left disabled, tear-down writing `None`, and reset
+blocking a write. Tier 2 configures four queue pairs and reads each
+back — the test that actually distinguishes a table from a register —
+and tears one down and confirms it reads invalid again. Tiers 3–5
+present, with `.skip(2)` for the block-RAM reason and the Tier-3
+snapshot pinned by structure rather than text, as
+`core::ram::option_sync` does.
+
+Three mutations confirmed caught: zeroed-context initialisation,
+always-valid, and letting a write through during reset.
+
+**Follow-ups:**
+
+- **Phase 3 is not done.** All four widgets exist — the three debts,
+  `qp::state`, `qp::work_queue`, `qp::table` — but **none is wired into
+  `RoceWriteTx`**, which still takes a single `ctx` input and a single
+  `start`. Four unwired widgets is not an endpoint, and the phase gate
+  is explicitly about the integrated behaviour: several messages queued
+  back to back producing the right frame sequence, a second queue pair
+  interleaving, and transmission refused outside `RTS`. That integration
+  is the next commit.
+
+---
+
+## 2026-10-21 — `rhdl-roce::qp::work_queue`: a queue of messages, so `start` stops throwing them away
+
+**Path:** `crates/rhdl-roce/src/qp/work_queue.rs`,
+`examples/work_queue.rs`, `doc/work_queue.md`, `vcd/work_queue/`
+
+**Why this, why now:** Phase 3's second widget, and FERoCE's
+`RoCE_simple_work_queue` in RHDL terms. Until now `start` asserted while
+the transmitter was busy *abandoned* the message in flight — documented,
+but a documented sharp edge rather than a usable interface. An
+application posting three writes in quick succession would land two of
+them in the bin.
+
+**Design decisions:**
+
+- **The input is called `complete`, not `ready`.** A send path pulling
+  on a ready signal would advance the head when the *first* packet of a
+  multi-packet message was accepted, which is exactly wrong — the head
+  has to stay put until the whole message is on the wire. Naming the
+  input after the event rather than the handshake makes that hard to
+  misuse, and `the_head_advances_only_on_complete` pins it with six
+  idle cycles between posts.
+- **`flush` lives here rather than in the state machine.** SQD means
+  "finish what is outstanding, accept nothing new", and that is a
+  queue property: the head keeps draining while `accepted` stays low.
+  The composition drives it from the state machine's `draining`.
+- **A full queue refuses rather than drops.** Ordinary ready/valid: a
+  requester that ignores `accepted` loses work and one that honours it
+  cannot.
+- **Depth is a const generic over the FIFO's address width**, so the
+  usable depth is `2^N - 1` — one slot spent distinguishing full from
+  empty, as in every ring-buffer FIFO. Two to four entries is plenty
+  for a sensor pushing acquisition buffers and the cost is one block RAM
+  either way.
+
+**Surprises and gotchas:**
+
+- **`fifo::synchronous` has no `empty` output.** Emptiness is
+  `data == None`, because the head is an `Option`. That is the better
+  interface — the two cannot disagree — but it is worth recording once
+  rather than rediscovering, since the obvious `q.fifo.empty` simply
+  does not exist.
+- **`complete` on an empty queue must be a no-op, not an underflow.**
+  The FIFO exposes an `underflow` flag, so popping an empty queue is
+  detectable rather than silent, but the right behaviour is not to do
+  it. Gated on the head being present.
+
+**Validation:** 11 tests. Tier 1 covers the empty head, head-advances-
+only-on-`complete`, flush refusing work while the head drains, a full
+queue refusing, `complete` on empty being a no-op, and reset. Tier 2
+posts four messages and checks they emerge **in order with none lost**,
+plus a post-and-complete-on-the-same-cycle case. Tiers 3–5 present, with
+`.skip(2)` on the round trip for the usual block-RAM reason.
+
+Three mutations confirmed caught: advancing the head whenever non-empty,
+letting `flush` accept work, and popping an empty queue. The mutation
+script now asserts its anchor matched exactly once and says
+`ANCHOR FAILED` otherwise — after the state-machine entry's lesson that
+a silently-unapplied mutation reports "ok" and reads like survival.
+
+**Follow-ups:**
+
+- Not yet wired into `RoceWriteTx`; that happens with the QP table, when
+  the transmitter starts pulling messages from a queue instead of taking
+  a single `start`.
+- The RAM-backed `qp::context` table is the last piece of Phase 3.
+
+---
+
+## 2026-10-21 — `rhdl-roce::qp::state`: the queue-pair state machine
+
+**Path:** `crates/rhdl-roce/src/qp/state.rs`, `examples/qp_state.rs`,
+`doc/qp_state.md`, `doc/qp_state_fsm.md`, `vcd/qp_state/`
+
+**Why this, why now:** Phase 3's first real widget. A queue pair is not
+usable the moment it exists — the IBTA puts it through RESET → INIT →
+RTR → RTS as the two ends exchange parameters, and a requester may only
+transmit once it reaches RTS. Until now that rule lived in the caller's
+discipline: `RoceWriteTx` would happily build frames for a connection
+the peer had never heard of. `can_send` makes it a property of the
+hardware.
+
+**Design decisions:**
+
+- **SQE is deliberately absent.** It is entered when a work queue
+  element completes with an error on an unreliable queue pair, which
+  needs per-element completion status — that arrives with the work
+  completion machinery in a later phase. Adding the variant now would
+  produce a state nothing can enter, which is *worse* than omitting it:
+  it would show up in the generated diagram as an unreachable node and
+  imply a path that does not exist.
+  `every_state_is_reachable_and_there_are_no_orphans` enforces that.
+- **An illegal request is refused, not punished.** The state holds and
+  `rejected` pulses. Entering ERR instead would make a control-plane
+  bug indistinguishable from a wire error, and the two want different
+  responses.
+- **A datapath `error` overrides any request on the same cycle** and is
+  not reported as a rejection — a wire error is not something the
+  control plane gets to disagree with.
+- **`draining` is a separate output from `can_send`.** SQD means finish
+  what is outstanding and accept nothing new, which is a work-queue
+  concern rather than a datapath one, so the two are reported
+  separately rather than conflated.
+
+**Surprises and gotchas:**
+
+- **`Some(QpState::Init)` is not an expressible pattern.** A variant
+  pattern nested inside `Some(…)` is rejected with
+  `UnsupportedPatternInBindPattern` — notably *not* at `cargo check`
+  time, but when the kernel is actually lowered, which here meant the
+  example panicking inside `extract_widget_transitions_strict`. The fix
+  is three nested flat matches: unwrap the `Option` by its own match,
+  then match the inner value. Verbose, and it keeps the `q.state` match
+  outermost so the FSM extractor still finds the state field at the top
+  of the tree. This belongs in CLAUDE.md §4's list of what the kernel
+  subset rejects.
+- ~~**A computed state target defeats the FSM extractor.**~~
+  **This was wrong — see the 2026-10-21 correction entry.** Tested
+  afterwards: the extractor follows a computed target correctly, because
+  it unions `Select` branches and a mutable local lowers to exactly
+  that. Literal arms are kept because they read better, not because
+  they are required.
+- **Two of my three mutation checks silently did not apply**, because
+  the anchor strings I guessed did not match the generated code's
+  ordering. Both reported "ok", which I nearly read as "the mutation
+  survived" rather than "the mutation was never made". Mutation testing
+  needs its anchors asserted; the script now does `assert count == 1`
+  and says `ANCHOR FAILED` instead of running a no-op test.
+
+**Validation:** 13 tests. The centre is
+`the_transition_table_matches_the_ibta`, which walks all 36 (from, to)
+pairs against an **independently written** transition table — legal ones
+must take effect, illegal ones must hold and report `rejected`. Backed
+by `some_transitions_really_are_illegal`, which asserts at least ten
+pairs are refused so the first test cannot pass vacuously against a
+permissive table. Plus `can_send` in RTS only, error override from every
+state, ERR-recovers-only-through-RESET, idle hold, reset, and a Tier-2
+bring-up sequence that includes a refused request.
+
+Rule 14 satisfied: `FsmWidget` derive, the diagram generated from the
+kernel's own RHIF (6 states, 15 inter-state edges — exactly the 2+3+3+3+3+1
+the table defines), and a drift test. Tiers 3–5 present.
+
+Three mutations confirmed caught: `can_send` true while draining,
+RESET → RTS made legal, and ERR recovering straight to RTS.
+
+**Follow-ups:**
+
+- `qp::work_queue` and the RAM-backed `qp::context` table are the rest
+  of Phase 3; this widget is not yet wired into `RoceWriteTx`, so
+  `can_send` is not gating anything yet.
+- SQE when work completions land.
+
+---
+
+## 2026-10-20 — RoCEv2 Phase 3 planned: what FERoCE has that we do not, and which of it can actually be built next
+
+**Path:** `roce-v2-architecture.md` (§9 gains Phase 3; later phases
+renumbered; §3 and the Totals table reconciled)
+
+**Why this, why now:** asked whether the shipped transmitter was fully
+fledged, the honest answer was no, and the comparison that made the gap
+concrete was FERoCE's module list — five modules it ships that this
+crate lacks. The request was to plan all five as "Phase 3". Planning
+them revealed that **only two can go in one PR**, so the plan says that
+rather than pretending otherwise.
+
+**Design decisions:**
+
+- **Phase 3 is the two items with no unbuilt dependencies**: the IBTA
+  queue-pair state machine (`qp::state`, with `FsmWidget` and its
+  diagram) and a work queue (`qp::work_queue`, composing
+  `fifo::synchronous`). Plus making `qp::context` the RAM-backed,
+  QPN-indexed **table** that §6 promised and the first implementation
+  did not deliver — it is a plain input struct today, which is why the
+  endpoint supports exactly one connection.
+- **The other three are gated on infrastructure, not on effort**, and
+  each gets an honest home:
+  - **Retransmission → Phase 6.** A retransmission buffer exists to
+    hold packets until they are acknowledged; with no receive path
+    nothing retires them. The item *is* reliable transport.
+  - **Connection manager → Phase 4.** It is a UDP protocol
+    implementation that receives and parses datagrams, not a
+    configuration register, so it needs the receive path that phase
+    builds.
+  - **Realign FIFO → Phase 5.** This one is the interesting case: it is
+    **not a missing feature at all.** It is an artifact of FERoCE's 64-
+    and 512-bit datapaths, where a payload does not start on a beat
+    boundary. At one byte per cycle there is nothing to realign, so
+    building it now would produce a widget with no job until the
+    datapath widens — which is itself blocked on §8's open question
+    about runtime-amount shifts in the kernel subset.
+- **Three small debts ride with Phase 3** rather than drifting: generate
+  the pad bytes instead of requiring the caller to present zeros, handle
+  24-bit PSN wrap, and make the IPv4 DSCP configurable.
+- **Phase 3 is inserted rather than appended**, so the receive path, the
+  own-MAC adapter, RC, the verb set and congestion control shift to
+  4–8. Full stack goes from 13–18 to **15–21 months**; the first
+  deliverable anyone could reasonably call a transmitter is now Phase 3
+  at 17–24 weeks cumulative.
+
+**Surprises and gotchas:**
+
+- **The doc already carried stale phase cross-references from my own
+  earlier renumbering.** §3's module table pointed retransmission at
+  "Phase 3 `qp::retry`" and the connection manager at "Phase 2", and
+  two sentences sized "Phase 3" at 16–24 weeks — all of which described
+  the numbering *before* the receive-direction phase was inserted. Fixed
+  in the same pass. Renumbering phases in prose is exactly the kind of
+  change that rots silently, and this is the second time it has.
+- **The status line understated what was missing.** It said the gap was
+  "the link adapter and reliable transport", when the real list also
+  includes no QP state machine, no QP table, no work queue, no
+  connection manager and no receive path of any kind. Rewritten to say
+  so, because a reader was entitled to conclude rather more was built
+  than is.
+- **"Add the five things FERoCE has" is not a PR.** Taken literally it
+  spans Phases 3, 4, 5 and 6 — roughly six months — because three of
+  the five need either a receive path or a wider datapath first. The
+  plan records that explicitly so the next person does not re-derive it,
+  and so the scope question gets answered before code is written rather
+  than after, per the rule at the top of CLAUDE.md.
+
+**Validation:** documentation only; no code. The phase headings, the
+Totals table and the §3 module-mapping table were re-read against each
+other after renumbering, and the stale references checked by grep.
+
+**Follow-ups:**
+
+- Phase 3's gate is worth stating here too, since it is the first test
+  of "endpoint" rather than "packet builder": several messages queued
+  back to back on one queue pair produce the correct frame sequence
+  byte-exact against Scapy; a second queue pair with different
+  parameters interleaves correctly; and the state machine refuses to
+  transmit outside `RTS`.
+- Phase −1 (measure the PS descriptor rate) and the host GPUDirect
+  check are both still outstanding and both still cheap. Neither is
+  blocked by any of this.
+
+---
+
+## 2026-10-20 — `rhdl-roce::tx`: the assembled transmitter, and closing the Verilog-coverage gap
+
+**Path:** `crates/rhdl-roce/src/tx.rs`, `examples/tx.rs`, `doc/tx.md`,
+`doc/tx_fsm.md`, `vcd/tx/`; plus `test_kernel_vm_and_verilog_synchronous`
+coverage added across `headers.rs`, `frame.rs` and `qp/segmenter.rs`, and
+a four-argument `header_byte`
+
+**Why this, why now:** two gaps were pointed out in what had been
+shipped, and both were real.
+
+**Gap 1 — most of the crate's logic had never been through Verilog.**
+19 of 28 kernels were validated only by direct Rust calls. CLAUDE.md §4
+is explicit that a direct call is *more permissive* than the kernel VM —
+`Bits<N> << k` for `k >= N` wraps in Rust and errors in the VM — which
+is the entire reason the clamping work exists. So "every header byte
+matches Scapy over 8 vectors and 2000 fuzz cases" was a statement about
+the **Rust simulator**, not about hardware. `header_byte`, the top-level
+byte generator, was among the uncovered.
+
+**Gap 2 — there was no datapath.** Only `Icrc` and `WriteSegmenter`
+implemented `SynchronousIO`. `frame.rs` was entirely combinational, with
+no register, no byte counter and no stream port, so nothing could be
+instantiated on a board.
+
+Both are now closed: **0 of 29 kernels unverified**, and `RoceWriteTx`
+emits a complete frame whose bytes match Scapy exactly.
+
+**Design decisions:**
+
+- **`header_byte` dropped from five arguments to four**, taking a
+  pre-built `Bth` instead of `(QpContext, ackreq)`. `TestArg` is
+  implemented for tuples up to 4, so the five-argument version
+  *could not be tested* through the VM helper. The change is an
+  improvement regardless: the BTH is constant across a packet's bytes,
+  so building it per index described the same logic once per byte.
+- **The transmitter uses `#[derive(FsmWidget)]` and ships its diagram**,
+  per §12 rule 14. The FSM is genuinely informative here — four phases
+  in sequence — unlike the segmenter's, where the derive was declined
+  and the reason recorded.
+- **`d.phase` is assigned directly in each match arm**, not via an
+  intermediate. The extractor walks RHIF for writes to the state field
+  and a `let next = ...; d.phase = next` indirection hides them.
+- **The payload is pulled, not pushed.** The caller presents the byte at
+  the current offset and steps its source on `payload_advance`. That
+  suits the memory-backed source this will have (a DMA reading
+  acquisition samples) better than a stream the widget would buffer.
+- **The ICRC is fed each byte as it is emitted, gated on `ready`**, so
+  the checksum is settled by the time the phase reaches `Icrc` and
+  there is no stall. One dead cycle between packets, which Ethernet's
+  inter-frame gap requires anyway.
+- **`frame.rs`'s two layers are now actually separable, which they were
+  not.** Asked whether the assembled datapath belongs in a `net`
+  category, the answer is no — `RoceWriteTx` is an RDMA endpoint
+  (queue pairs, PSNs, remote keys), `rhdl-fpga` does not depend on
+  `rhdl-roce` and should not, and moving it would mean moving the
+  segmenter, headers, ICRC and QP context too. But the question exposed
+  a real defect: the IPv4 and UDP builders took a `PacketPlan` **purely
+  to look up a length**, and `udp_pack` **hardcoded port 4791**. Both
+  made genuinely generic networking code artificially RoCE-coupled, and
+  that is why the module did not look movable. They now take
+  `Bits<16>` lengths and read the destination port from
+  [`FrameConfig`], so `frame.rs` splits cleanly: **8 items with no RDMA
+  type in their signature** (`FrameConfig`, `eth_pack`, `eth_byte`,
+  `ipv4_head`, `ipv4_checksum`, `ipv4_byte`, `udp_pack`, `udp_byte`) are
+  ready to move to `net::` as a rename, and 6 (`header_byte`,
+  `bth_from_plan`, and the length arithmetic that knows a RETH is 16
+  bytes) stay. The move itself still waits on §12's category decision.
+
+**Surprises and gotchas:**
+
+- **RHDL caught a `dont_care()` partial read by name.** The idle-path
+  fallback was `None => PacketPlan::dont_care()`, and that value *is*
+  read — the header and length kernels evaluate every cycle regardless
+  of phase. The compiler listed every uncovered field path. `default()`
+  is the fix, and §12 rule 7 is the rule. A good example of the type
+  system doing the work it is there for.
+- **`resize` truncates rather than saturating, and that cost a real
+  bug.** `header_byte`'s RETH sub-index was
+  `(index - 54).resize::<5>()`, so index 86 gave 32, which narrows to 0
+  — returning RETH byte **0** instead of the last byte. Caught by the
+  out-of-range selector test. The rule is sharper than §4 states it:
+  clamp the operand **and** clamp before any narrowing.
+- **I chased a non-existent widget bug for a long time, and the fault
+  was my own closed-loop test harness.** The emitted frame matched
+  Scapy for 86 of 90 bytes and the ICRC did not. The engine was fed the
+  payload shifted by one — solved exactly, as
+  `fold(header + payload[1..15] + [0])`. The widget was correct
+  throughout: driving it **open-loop** showed `presented == emitted ==
+  fed` on every cycle. The harness bug is that `run_fn`'s closure
+  observes the output of the cycle driven by the *previous* call's
+  input, so stepping a payload cursor on an observed `payload_advance`
+  presents the next byte one cycle early. Recorded at length because
+  the failure mode is nasty: **the emitted stream still looks right
+  while the ICRC folds a shifted payload**, so the widget appears to
+  have a checksum bug.
+- **And on the way I wrote a vacuous test.** To isolate it I switched
+  to a constant payload and the ICRC matched — which proves nothing,
+  because with identical bytes an off-by-one is undetectable. Exactly
+  the failure the 2026-08-16 "sweep for vacuous assertions" entry is
+  about, committed by the person who had just read it.
+- **`with_reset(1)` shifts output samples one cycle later than inputs.**
+  Output sample `m` corresponds to input `m - 1`. Leaving that implicit
+  put the payload window and the ready-filter each one cycle out, in
+  *opposite* directions. `emit()` now names `input_of(m)` explicitly.
+- **`.unwrap_or_default()` is not in the kernel subset**, so clippy's
+  suggestion on the `Option` match had to be `#[allow]`ed with the
+  reason. `#[kernel]` lowers `match` on an `Option`, not arbitrary
+  `Option` methods.
+- **The FSM extractor reports self-loops**, so the transition count is
+  9 and not 5. An assertion on the bare count failed for a correct
+  reason; the test now asserts the *set* of inter-state edges and
+  separately that all four phases can hold.
+
+**Validation:** 92 tests in the crate (68 lib, 16 vector, 5 fuzz, 3
+doctests). `RoceWriteTx` has Tiers 1–5 plus the rule-14 diagram drift
+test. The acceptance test is
+`the_emitted_frame_matches_scapy`: the assembled datapath's `data` port
+produces vector `uc_write_only_16` byte for byte — Ethernet, IPv4 with
+its checksum, UDP, BTH, RETH, payload and ICRC.
+`a_stall_does_not_change_the_frame` re-runs it with a stall injected at
+five different cycles, including inside the header, the payload and the
+ICRC, and requires the frame to be identical — which is what makes the
+hold-don't-drop contract tested rather than asserted.
+
+Kernel Verilog coverage is now complete and audited by script: 29
+kernels, 27 with a `test_kernel_vm_and_verilog_synchronous` round-trip
+and 3 covered by their widgets' Tier-4 RTL+NTL, **0 unverified**. The
+FSM diagram is derived from the kernel's own RHIF and renders 4 states
+with 5 edges.
+
+**Follow-ups:**
+
+- **`link::gem_ring` is the last piece** before the Phase-2 gate in
+  `roce-v2-architecture.md`: an AXI-HP master writing these bytes into
+  the DDR ring the PS GEM serves.
+- **An addressed payload port** (`payload_offset`) would suit a
+  memory-backed source better than the current `payload_advance` pulse,
+  and would have made the test harness correct by construction. Needs
+  thought about presenting the offset a cycle early for registered
+  memory.
+- **An `RCStream` adapter** over the byte port, so the transmitter
+  composes with the rest of the library's streaming widgets.
+- `rhdl_fpga::doc::write_fsm_diagram` resolves against `rhdl-fpga`'s
+  manifest directory, like `write_svg_as_markdown` did, so a sibling
+  crate must use `render_fsm_diagram_markdown` and write the file
+  itself. Worth the same split treatment if another crate needs it.
+- The Tier-3 snapshot pins module structure and `endmodule` count
+  rather than the full text; the emitted module is mostly header mux and
+  a verbatim snapshot would be ~1500 lines of noise, which is the same
+  call `fifo::synchronous` makes.
+
+---
+
+## 2026-10-20 — `rhdl-roce::frame`: Ethernet, IPv4 and UDP, and a complete frame byte-for-byte
+
+**Path:** `crates/rhdl-roce/src/frame.rs`,
+`crates/rhdl-roce/tests/vectors.rs`
+
+**Why this, why now:** with the transport headers, the ICRC and the
+segmenter in place, the only thing between a `PacketPlan` and a real
+frame was the ordinary networking underneath — RoCEv2's whole trick is
+that it is a UDP datagram to port 4791. This adds that, and with it the
+strongest statement available short of a wire:
+**`a_complete_frame_matches_scapy_byte_for_byte` assembles the entire
+frame — headers from this module, payload, ICRC computed over what this
+crate itself produced — and compares all of it to Scapy's bytes.** The
+only thing missing before a NIC would accept the packet is the Ethernet
+FCS, which the MAC appends.
+
+**Design decisions:**
+
+- **It lives in `rhdl-roce` for now, and the module says why.** Ethernet,
+  IPv4 and UDP generation belongs in `rhdl-fpga` under a `net` category
+  — `roce-v2-architecture.md` §6 proposes exactly that — but adding a
+  top-level category is one of the decisions `architecture.md` requires
+  sign-off for, and that is still outstanding. Keeping it here does not
+  touch `rhdl-fpga`'s structure, and moving a module later is a rename.
+  This is the conservative option, not a land-grab.
+- **The ICRC computes over the frame, so the frame generator must not
+  compute the ICRC.** `header_byte` produces header bytes only; the
+  payload comes from a stream and the ICRC from `crate::icrc`. Keeping
+  that boundary is what lets the capstone test feed RHDL's own output
+  into the ICRC rather than Scapy's, which is a materially stronger
+  check.
+- **`ackreq` is a parameter of `bth_from_plan`, not a `PacketPlan`
+  field.** It is a reliable-transport concern and UC never
+  acknowledges, so the send queue has no opinion about it yet. When the
+  RC phase lands it becomes the requester's per-packet decision.
+- **The UDP checksum is hard-zero** (RoCEv2 requires it; the ICRC
+  already covers the same bytes) and the **IPv4 header checksum is
+  real**, because a router drops a bad header checksum long before the
+  ICRC is looked at. Both are pinned by tests.
+
+**Surprises and gotchas:**
+
+- **`Bits<N>` is defined only for `N` in `1..=128`** — `rhdl_bits`
+  generates the `BitWidth` impls with `seq_macro::seq!(N in 1..=128)`.
+  So the 160-bit IPv4 header **cannot** be packed into a single value
+  the way the 96-bit BTH and 128-bit RETH are. It is handled as a 96-bit
+  head plus the two 32-bit addresses, which they already were in
+  `FrameConfig`. Worth knowing before reaching for `Bits<160>` and
+  getting a confusing trait-bound error.
+- **Clamping has to happen before narrowing, and this cost a real bug.**
+  `header_byte`'s RETH sub-index was `(index - 54).resize::<5>()`, and
+  `resize` *truncates* rather than saturating — so index 86 gave
+  `86 - 54 = 32`, which narrows to 0, returning RETH byte **0** instead
+  of the last byte. Caught by `selectors_clamp_out_of_range_indices`,
+  which existed precisely because CLAUDE.md §4 warns about this family.
+  The rule is sharper than §4 states it: clamp the operand *and* clamp
+  before any narrowing conversion.
+- **Every branch of a mux evaluates, and in `ipv4_byte` that is not
+  academic.** The address branches compute `3 - sub_index` while the
+  head branch is selected; without per-branch clamping of each
+  sub-index, the head case produces a shift of up to 120 on a 32-bit
+  operand, which the kernel VM rejects outright. Each of the three
+  ranges gets its own clamped sub-index for that reason, which looks
+  defensive and is not.
+- **The second carry fold in the IPv4 checksum survived every test.**
+  Documented fully in the fuzzing entry above; the short version is that
+  a mutation deleting it passed all sixteen curated vector tests,
+  because the eight Scapy vectors never drive the accumulator into the
+  window where the first fold carries. Two tests now cover it: a
+  hand-solved case here and 199 solved cases in the fuzz corpus.
+- **`cfg` is a terrible name for a local in a crate that also has
+  `#[cfg]`.** Harmless, but it reads badly in the test module and is
+  worth avoiding next time.
+
+**Validation:** 10 tests in the module plus 4 in `tests/vectors.rs`.
+Module tests cover the checksum against an independently-written RFC 1071
+loop (including the double-carry cases), the all-ones header-sum
+property, the zero UDP checksum, the destination port and its byte
+order, length arithmetic with and without a RETH and with padding, the
+clamping of every selector including the frame-level dispatcher, and
+agreement between this module's layer offsets and `icrc::COVERAGE_START`
+— two modules naming the same boundary being exactly how they drift.
+
+Tier 3+4 for the combinational kernels is
+`test_kernel_vm_and_verilog_synchronous` on `ipv4_checksum`, `ipv4_byte`
+and `eth_byte`, which the 2026-08 CHANGELOG notes is the right cover for
+a pure kernel.
+
+In `tests/vectors.rs`: `whole_frame_headers_match_scapy` (every header
+byte of all eight vectors), `the_ipv4_header_checksum_is_correct`,
+`the_length_fields_match_the_frame`, and the capstone
+`a_complete_frame_matches_scapy_byte_for_byte`.
+
+**Verified able to fail.** Four mutations: a wrong EtherType (caught, at
+offset 12), a non-zero UDP checksum (caught, offset 40), an off-by-one
+UDP length (caught, offset 17, *and* via the IPv4 checksum), and the
+deleted carry fold (**not** caught by the curated vectors — see above).
+That one escape is why the fuzzing entry exists.
+
+**Follow-ups:**
+
+- **Migrate to `rhdl-fpga::net`** once §12's category decision lands.
+- **No VLAN tag and no IPv6.** The ICRC's masked offsets are absolute,
+  so both would need layer offsets threaded through instead of baked in.
+  Pinned by `the_frame_layout_the_masking_assumes_actually_holds`.
+- **`link::gem_ring` is the last piece before Phase 2's gate** — an
+  AXI-HP master writing these bytes into the DDR ring the PS GEM serves.
+  Everything above it now exists and is validated.
+- The frame generator is combinational and index-driven; the sequential
+  widget that walks the index, splices the payload stream and appends
+  the ICRC is still to be written.
+
+---
+
+## 2026-10-20 — Differential fuzzing against Scapy, and why uniform random was not enough
+
+**Path:** `crates/rhdl-roce/tests/fuzz.rs`,
+`crates/rhdl-roce/tests/vectors/write_vectors.txt` (now carries a
+2000-case corpus), `tools/gen_vectors.py`
+
+**Why this, why now:** asked directly whether there was "real fuzz
+testing for this", and the honest answer was no — eight curated vectors
+and some small enumerated sweeps. The question landed at exactly the
+right moment, because a mutation check had just shown the gap was not
+theoretical: **deleting the second carry fold from the IPv4 checksum
+survived every test in the crate.** This closes that, and the *shape* of
+the fix is the interesting part.
+
+**Design decisions:**
+
+- **Differential against Scapy, not against a model of my own.** 2000
+  randomised frames; Scapy says what the bytes should be. A Rust
+  reference model would catch arithmetic slips but not a
+  misunderstanding of the protocol, which is the failure mode that
+  matters here.
+- **The corpus is committed, not generated at test time.** Deterministic,
+  no Python dependency in `cargo test`, and a clean tree (§8).
+  `tools/gen_vectors.py` is run deliberately. The cost is 592 KB in the
+  repository, which is small against a 6.3 MB committed waveform.
+- **Payloads are derived, not stored.** Byte `i` is
+  `(payload_seed + i*31 + (i>>3)*7) & 0xFF`, computed on both sides, so
+  a 1 KB payload costs eight characters instead of 2048. That is what
+  keeps the corpus affordable while letting payload length range over
+  0–1024.
+- **Positional single-line records.** Key/value for 22 fields × 2000
+  cases doubled the file for no added clarity in a generated file.
+- **The fuzz tests use the `icrc_mask` and `crc32_step` kernels
+  directly** rather than simulating the `Icrc` widget 2000 times.
+  `vectors.rs` already drives the widget over real frames; a kilobyte of
+  simulated cycles per case to re-test the register around a function is
+  not a good trade. Total fuzz runtime is ~1.4 s.
+- **The corpus is structure-aware, not uniform.** See below — this is
+  the load-bearing decision.
+
+**Surprises and gotchas:**
+
+- **Uniform random fuzzing does not find the carry-fold bug. At all.**
+  The IPv4 checksum's first carry fold only carries out of bit 15 when
+  the accumulator lands in roughly twenty values out of a ~450,000
+  range, so the expected hit count in 2000 uniform draws is about 0.09.
+  **Measured: zero of 2000.** So every tenth case is now *solved* into
+  that window by choosing the IPv4 identification field to suit, which
+  takes coverage from 0 to 199 cases.
+- **And the thing that told us where the cliff was, was mutation testing
+  rather than fuzzing.** The honest ordering is: mutation testing found
+  that a fold could be deleted undetected; arithmetic said where the
+  reachable window was; the fuzzer was then *told* about it. A fuzzer
+  that does not know where the cliffs are will not find them. This is
+  worth internalising before reaching for fuzzing as a general answer.
+- **The demonstration, for the record.** With the second fold deleted:
+  the sixteen curated vector tests **still all pass**; the hand-solved
+  test in `frame.rs` fails; and the fuzz corpus fails at `fuzz00007` —
+  one of the solved cases — reporting *"header differs at offset 25"*,
+  which is the IPv4 checksum's low byte. Three levels of test, and only
+  the two that were built deliberately for this see it.
+- **`fuzz_count = 2000` shares a prefix with `fuzz00000`**, so a parser
+  that filtered records by `startswith("fuzz")` picked up the count line
+  and tripped over its field count. Renamed to `corpus_size`. A small
+  thing, but it cost a debugging cycle in the corpus-analysis script and
+  would have cost one in the Rust parser.
+- **An LCG width bug produced suspiciously small MAC addresses.**
+  `bits(48)` returned only 16 bits — the loop decremented past zero and
+  the final mask used the negative remainder. Visible only because
+  48-bit values printed as `0x00000000b61a`; a reviewer skimming the
+  corpus would have seen it, a test would not have. Fixed, and the
+  function now carries a comment saying what went wrong.
+- **Non-vacuity has to be asserted, not assumed.** Two tests exist
+  purely to stop the corpus quietly becoming worthless:
+  `the_corpus_still_covers_the_carry_window` (≥100 of 2000 cases must
+  reach the window) and `the_corpus_is_actually_varied` (all six WRITE
+  operations, both transports, all four pad counts, >500 distinct
+  payload lengths, a zero-length payload, both RETH states, both
+  `ackreq` states). This follows the 2026-08-16 "sweep for vacuous
+  assertions" entry: a corpus that collapsed to one opcode would still
+  pass every other test here.
+
+**Validation:** 5 tests. `fuzz_header_blocks_match_scapy` checks every
+header byte of all 2000 frames; `fuzz_icrcs_match_scapy` checks every
+ICRC, computed over the frame **this crate assembles** rather than over
+Scapy's bytes, so a header error that the ICRC covers produces two
+differences instead of cancelling out. Plus the two non-vacuity tests and
+a constants check. Corpus composition as generated: 434 FIRST, 240
+MIDDLE, 459 LAST, 220 LAST_WITH_IMM, 425 ONLY, 222 ONLY_WITH_IMM; 1318
+UC and 682 RC; pad counts 1010/346/327/317; 801 distinct payload lengths
+from 0 to 1024; 199 cases in the carry window.
+
+**Follow-ups:**
+
+- **This is a frozen corpus, not a coverage-guided fuzzer.** A real
+  `cargo-fuzz` target would explore continuously, but its oracle would
+  have to be a Rust model rather than Scapy, which gives up the
+  independence that makes this valuable. The better next step is more
+  *solved* cases for other narrow windows as they are identified —
+  mutation testing is how to find them.
+- **No fuzzing of the segmenter against Scapy yet.** Its invariants are
+  checked over three MTUs × eleven lengths, and the multi-packet message
+  is checked against three real vectors, but there is no randomised
+  message-level corpus. Worth adding when the byte generator consumes
+  plans end to end.
+- The corpus pins `Pmtu::B1024` throughout, since the path MTU does not
+  affect header bytes. A segmenter-level corpus would vary it.
+
+---
+
+## 2026-10-20 — `rhdl-roce::qp`: the segmenter, or the difference between a packet and a message
+
+**Path:** `crates/rhdl-roce/src/qp/{mod,context,segmenter}.rs`,
+`examples/segmenter.rs`, `doc/segmenter.md`, `vcd/segmenter/`
+
+**Why this, why now:** the packet level that landed earlier today can
+build a correct RoCEv2 packet, which is not the same as being able to
+send a *message*. An application asks to write N bytes at a remote
+address; the path MTU decides how many packets that takes and the IBTA
+decides what each one is called. This is the decision logic for that —
+`roce-v2-architecture.md` Phase 2's send queue, minus the link adapter
+and the Ethernet/IP/UDP wrapping that is still waiting on the `net`
+category question.
+
+**Design decisions:**
+
+- **`PacketPlan` separates deciding from emitting.** The segmenter
+  decides everything about a packet — opcode, PSN, payload length, pad
+  count, whether a RETH is carried and what is in it — and a downstream
+  byte generator then makes no decisions at all. That split is what
+  makes the hard part testable without any byte-level machinery, and it
+  is why the Tier-6 test below can exist before the header-emission path
+  does.
+- **`Pmtu` is an enum, not a number.** The IBTA defines exactly five
+  values and a queue pair negotiates one; an enum makes an
+  un-negotiable MTU unconfigurable and keeps the arithmetic to a shift.
+  Its docs record which values are actually *reachable*: the PS GEM's
+  1522-byte frame ceiling makes `B1024` the largest on that path, so
+  `B2048` and `B4096` are there for the own-MAC adapter and for jumbo
+  frames.
+- **Bundled state, per CLAUDE.md §3.1**, since this is one state machine
+  with several internal registers rather than a composition of
+  independent sub-circuits.
+- **Deliberately no state enum and no `FsmWidget` derive.** The only
+  sequential state is "a message is in progress", and a two-state
+  diagram would convey nothing the `busy` output does not. More to the
+  point, the interesting logic — which opcode this packet is — is a
+  function of `first` and `last` rather than of a state register, so an
+  FSM diagram would actively mislead by implying otherwise. Recorded
+  because §12 rule 14 makes the derive-plus-diagram pairing mandatory
+  and the reason for *not* opting in belongs on the record.
+- **`start` during an active message restarts it, and that is
+  documented rather than policed.** Policing it would add an error path
+  for a condition a correct caller cannot produce; the caller waits for
+  `busy` to fall.
+- **The plan is held, not dropped, when the sink is not ready** — the
+  same backpressure convention the rest of the library's streaming
+  widgets use.
+
+**Surprises and gotchas:**
+
+- **The RETH carries the *message's* length, not the packet's.** On a
+  FIRST packet of a 600-byte message segmented at 256, `dma_len` is 600
+  and the payload is 256. This is the single field most easily got
+  wrong, and the mutation check below confirms the tests catch it.
+- **A message of exactly one MTU is ONLY, not FIRST+LAST.** The boundary
+  is `<=`, and an off-by-one there doubles the packet count for every
+  aligned message — which is the most common case in practice, so it
+  would be a very expensive bug to ship.
+- **A zero-length message is still one packet.** It is a legal RDMA
+  WRITE that moves no data, and the natural implementation emits nothing
+  at all. Pinned by its own test and present in the vector set.
+- **`(4 - (len & 3)) & 3` needs the outer mask**, or an already-aligned
+  payload gets a pad count of 4 rather than 0. Verified exhaustively
+  over the whole 13-bit payload range rather than at the four residues,
+  because the exhaustive version costs nothing.
+- **Inside `mod tests`, `super::` is the widget's module**, so
+  `super::context::Pmtu` does not resolve from `qp::segmenter::tests` —
+  it is `crate::qp::context::Pmtu`. Trivial, but the error message
+  points at the import rather than at the nesting.
+- **`+=` and `-=` work fine inside a `#[kernel]`**, and lower
+  identically to the long form — the Tier-3 snapshot is byte-identical
+  either way. Worth recording because `dsp::fir::{general,symmetric}`
+  both carry `#[allow(clippy::assign_op_pattern)]` on their kernels,
+  which reads as evidence that compound assignment is unsupported. It
+  is not; `cdc::cross_counter` and `tristate::simple::sender` already
+  use it. Those two `allow`s look like they can be dropped, which is a
+  small follow-up for whoever is next in `dsp::fir`.
+
+**Validation:** 18 tests on this module, and the ones that matter are in
+`tests/vectors.rs`. **`the_segmenter_reproduces_a_real_multi_packet_message`
+asks for the same 600-byte message that vectors `uc_write_first_256`,
+`uc_write_middle_256` and `uc_write_last_88` represent, and checks every
+field of every plan against what is actually on those three
+Scapy-generated wires** — the opcode compared as the emitted *byte*
+rather than as an enum, the PSN, the payload length, the pad count, and
+the RETH. `the_segmenter_reproduces_every_single_packet_vector` does the
+same for the ONLY vectors, including the ragged 13-byte one and the
+zero-length one. So the segmenter's correctness is a claim about the
+protocol rather than about my arithmetic.
+
+`segmentation_invariants_hold_across_lengths_and_mtus` covers three MTUs
+× eleven lengths and asserts the properties that must hold for any
+input: payload bytes sum to the message, packet count is
+`ceil(length/mtu)` with a floor of one, PSNs are consecutive, exactly
+the first packet carries a RETH, every non-final packet is full and
+unpadded, and `dma_len` is the message length throughout.
+
+**Verified able to fail, not merely to pass.** Three mutations were
+applied and each was caught by a specific assertion with a useful
+message: `dma_len = this_len` → *"uc_write_first_256: RETH dma_len
+should be the whole message"*; `<=` → `<` → *"pmtu 256, length 256:
+wrong packet count"*; removing the PSN increment → *"pmtu 256, length
+257: PSN not consecutive"*. All restored and green.
+
+Tiers 1–5 present. Tier 3 audited rather than blessed: the five PMTU
+discriminants map to 256/512/1024/2048/4096 in order, the pad
+arithmetic appears as the expected `& 3` / `4 -` / `& 3` chain, and only
+the four opcodes the segmenter can select are emitted — the two
+`WithImmediate` variants correctly absent. Tier 4 stimulus includes a
+not-ready cycle so backpressure is in the round-trip rather than tied
+off.
+
+**Follow-ups:**
+
+- **The byte generator is the next piece**: turn a `PacketPlan` plus a
+  `QpContext` into the frame bytes, which needs the Ethernet/IPv4/UDP
+  headers and therefore the `net` category decision.
+- **`link::gem_ring`** — the AXI-HP master writing complete frames into
+  the DDR ring the PS GEM serves. After that, Phase 2's gate (data in a
+  host's registered buffer) is reachable.
+- The `WithImmediate` opcodes are representable but never selected; the
+  segmenter has no immediate-data input yet.
+- Reliable transport remains out of scope — no ACK path, no PSN window,
+  no retransmission buffer.
+
+---
+
+## 2026-10-20 — `rhdl-roce`: the RoCEv2 transport headers and the Invariant CRC
+
+**Path:** `crates/rhdl-roce/` (new crate) — `src/headers.rs`,
+`src/icrc.rs`, `tests/vectors.rs`, `tests/vectors/write_vectors.txt`,
+`tools/gen_vectors.py`, `examples/icrc.rs`, `doc/icrc.md`;
+`crates/rhdl-fpga/src/doc/mod.rs` gains `render_svg_markdown`
+
+**Why this, why now:** the ask was to implement and validate RoCEv2
+*sending*. Phase −1 (measuring the PS descriptor rate) and the host-side
+GPUDirect verification both need hardware that is not available yet, so
+this is everything in the send path that can be validated in pure
+simulation — which turns out to be the hard part. It is **Phase 1 of
+`roce-v2-architecture.md`**: the stateless packet level, whose gate in
+that document is exactly "Scapy validates the ICRC of every packet RHDL
+generates."
+
+**This is one phase of several, and the rest is absent rather than
+half-present.** There is no message segmenter, no PSN counter, no
+queue-pair context, no link adapter and no Ethernet/IP/UDP generation.
+Those are Phase 2 and they are listed under Follow-ups. Per CLAUDE.md's
+rule against shipping a sliver: the staging here is the staging already
+written down and submitted for sign-off in that document, not a
+convenient subset invented after the fact.
+
+**Design decisions:**
+
+- **A new crate, `rhdl-roce`**, following the `rhdl-rv32i` / `rhdl-alto`
+  precedent for project-scale work that is not a widget. This also
+  sidesteps the one genuinely blocked decision — whether `rhdl-fpga`
+  gets a `net` category for the IPv4/UDP layers — rather than
+  prejudging it.
+- **Opcodes are a type.** The IBTA opcode is a transport in the top
+  three bits and an operation in the low five, and the legal
+  combinations are not the cross product: UC supports SEND and RDMA
+  WRITE and nothing else. `Transport` and `WriteOpcode` make the
+  implemented combinations the only nameable ones — there is no
+  `WriteOpcode::ReadRequest` to pass by mistake. This is the concrete
+  cash-out of the "RoCEv2 wants to be written in a type system"
+  argument in that document's §1.
+- **But `Bth` still carries a raw `Bits<8>` opcode**, because it is a
+  *wire-format* record and the receive direction has to be able to hold
+  an opcode we do not implement. `encode_write_opcode` is the only
+  construction path, so the distinction costs nothing.
+- **Serialisation packs once and indexes**, rather than muxing
+  individually-assembled bytes. Cheaper in hardware and it puts every
+  field offset in one auditable place.
+- **Both byte selectors clamp their index**, which is the CLAUDE.md §4
+  lesson applied before it bit: the natural expression
+  `shift by 8 * (len - 1 - index)` underflows on an unsigned index and
+  produces a shift past the operand width, which the kernel VM rejects.
+  In a mux both arms evaluate, so the *operand* has to be clamped and
+  not merely the result.
+- **`Out` carries both `crc` and `wire`.** The on-wire ICRC field is the
+  CRC value little-endian, which is the opposite of every other
+  multi-byte field in the packet. Returning only the value would leave
+  that as a trap for the caller, so the byte-reversed form is a named
+  output.
+- **Scapy is the oracle, not a reference of my own writing.**
+  `scapy.contrib.roce` is an independent implementation used in practice
+  to dissect real RoCE traffic; agreement with it is evidence about the
+  protocol rather than about my reading of the spec. The vectors are
+  committed and the tests only read them, so a full run leaves the tree
+  clean (§8); `tools/gen_vectors.py` is run deliberately.
+- **The vector file records `icrc_input` as well as the frame.** That is
+  the exact byte sequence the CRC is computed over, so a mismatch is
+  localisable to either the *masking* or the *CRC* — two independent
+  failure modes that would otherwise be indistinguishable. It paid for
+  itself immediately as a debugging affordance even though nothing
+  failed.
+
+**Surprises and gotchas:**
+
+- **The ICRC's eight-byte all-ones prefix is free.** It is constant, so
+  its contribution to the CRC is constant: folding it into a fresh
+  CRC-32 always leaves the remainder at `0xDEBB20E3`. Seeding the
+  register with that is exactly equivalent to streaming the bytes, so
+  the engine has **no startup cycles and no prefix logic at all** —
+  against the 8-cycle-per-packet stall the obvious implementation
+  takes. Verified numerically against all eight vectors before any RHDL
+  was written, and pinned by a test that streams the prefix the long way
+  and compares.
+- **And that constant is the CRC-32 residue**, the same `0xDEBB20E3`
+  that appears in every CRC-32 implementation's magic-number table. Not
+  a coincidence — it is the same algebra read in the other direction —
+  but a satisfying confirmation that the arithmetic is right.
+- **Scapy sets `resv6 = 0xff` on a 6-bit field**, which truncates to
+  `0x3F`; combined with `fecn = becn = 1` the whole BTH byte 4 reads
+  `0xFF` to the CRC. So the rule is cleaner than the field list
+  suggests: it is one masked *byte*, not three masked fields.
+- **`write_svg_as_markdown` silently writes into `rhdl-fpga`'s `doc/`**
+  no matter which crate calls it, because it resolves `CARGO_MANIFEST_DIR`
+  at its own definition site. A sibling crate's example therefore
+  produces its trace in the wrong tree and the `include_str!` next to the
+  widget fails. Fixed by splitting out `render_svg_markdown`, which
+  returns the fragment and lets the caller choose the path;
+  `write_svg_as_markdown` is now a thin wrapper and documents the
+  restriction. No sibling crate had written a trace before, which is why
+  this had not surfaced.
+- **A zero-length payload broke my own vector parser.** The generator
+  writes `payload = ` with nothing after it, and after trimming there is
+  no `" = "` left to split on, so the field vanished and every test
+  failed with "no entry found for key". Splitting on `'='` rather than
+  `" = "` fixes it. Worth recording because the symptom pointed at the
+  wrong record entirely.
+- **The non-zero-DFF-reset divergence, for the third time this session.**
+  The seed is `0xDEBB20E3`, so Tier 4 needs `.skip(2)` exactly as
+  `core::crc` and `core::crc32` do.
+- **The masked offsets are absolute, which bakes in "IPv4, no VLAN
+  tag".** A VLAN tag shifts every one of them by four and IPv6 changes
+  both the length and the field set. Rather than leave that implicit,
+  `the_frame_layout_the_masking_assumes_actually_holds` pins the
+  EtherType, the IP version, the IHL, the protocol number and the UDP
+  port across every vector, so a future vector set that violates the
+  assumption fails there instead of silently producing a wrong ICRC.
+
+**Validation:** 24 tests. Tier 1 covers the mask over every offset in
+both directions, that exactly seven offsets are masked, that the
+host-side predicate and the kernel agree (two expressions of one rule
+that could otherwise drift), byte-reversal as an involution, the prefix
+constant derived the long way, reset, and `start`-beats-`enable`. Tier 2
+reproduces a real frame's ICRC. Both shift-heavy kernels get
+`test_kernel_vm_and_verilog_synchronous` per §4. Tiers 3–5 present; the
+Tier-3 snapshot was **audited rather than blessed** — the seven masked
+offsets, the `0xFF` substitution, the eight unrolled `0xEDB88320` stages
+and the `0xDEBB20E3` seed were each read out of the emitted Verilog and
+checked.
+
+Tier 6, the interoperability tier that §10 of the architecture document
+adds for network work, is `tests/vectors.rs`: **every BTH and RETH
+serialises byte-identically to Scapy's, and every one of the eight
+reference frames' ICRCs is reproduced exactly.** It also tests the
+contrapositive — flipping each covered byte in turn must change the
+ICRC, and flipping a *masked* byte must not — which is what distinguishes
+a working engine from one stuck at a plausible constant. Ethernet-header
+bytes are confirmed to be outside coverage.
+
+**Follow-ups:**
+
+- **Phase 2 is the rest of sending**: the PMTU segmenter and its
+  ONLY/FIRST/MIDDLE/LAST selection, the PSN counter, the queue-pair
+  context table, and `link::gem_ring`. Until those exist this generates
+  *packets*, not *messages*, and cannot put anything on a wire.
+- **Ethernet/IPv4/UDP generation is not here**, pending the `net`
+  category decision in that document's §12. The ICRC takes frame bytes
+  from its caller, so nothing is blocked on it except end-to-end
+  emission.
+- **VLAN tags and IPv6** would need `icrc_mask` to take layer offsets as
+  inputs rather than baking them in. Deliberate limitation, documented
+  in the module docs and pinned by a test.
+- **The receive direction** reuses these header records and the ICRC in
+  checking mode; it needs the memory-region table and local placement.
+- `crc32` is byte-wide only; above 1 GbE it needs to widen, and that is
+  where §8's alignment problem starts.
+
+---
+
+## 2026-10-20 — `core::crc32`: the byte-parallel CRC that a wire needs
+
+**Path:** `crates/rhdl-fpga/src/core/crc32.rs`,
+`examples/crc32.rs`, `doc/crc32.md`, `vcd/crc32/`
+
+**Why this, why now:** roadmap item 16 shipped `core::crc` as a
+*bit-serial* engine, and that engine cannot be used for anything on an
+Ethernet wire. Both the Ethernet FCS and the RoCEv2 Invariant CRC are
+CRC-32 at datapath width; at 1 Gbit/s a bit-serial engine would have to
+run at 1 GHz. This is the first of the two Phase-0 dependencies in
+`roce-v2-architecture.md`, and it is the one every other piece of the
+RoCEv2 send path waits on. It is also useful on its own merits —
+Ethernet, zlib, PNG and gzip all want exactly this checksum.
+
+**Design decisions:**
+
+- **One byte per cycle, which is the whole point.** 8 bits/cycle at
+  125 MHz is exactly 1 Gbit/s, so this closes timing at line rate on the
+  hardware in hand. The widget is width-generic-*ready* in shape but not
+  in fact; widening it to 64 bits for 10G is a later, separate change.
+- **Deliberately *not* parameterised, unlike `core::crc`.** CRC-32 is one
+  named algorithm with a fixed parameter set — reflected in and out,
+  init `0xFFFFFFFF`, final XOR `0xFFFFFFFF`, polynomial `0x04C11DB7`.
+  Every one of those is a chance to be subtly wrong in a way whose only
+  symptom is a peer silently discarding packets, so all four are baked in
+  and the output is the *finished* checksum rather than the raw
+  remainder. This is the opposite of the choice `core::crc` made, and the
+  module docs say so and why.
+- **The eight-iteration step is a constant-bound `for` loop.** It unrolls
+  into a combinational XOR network — the "CRC table" of software
+  implementations, except that in hardware the table *is* the network and
+  there is no memory to look up. Confirmed in the Tier-3 snapshot:
+  `0xEDB88320` appears as eight separate `localparam`s with a
+  shift-right-and-conditional-XOR chain between them.
+- **`crc32_step` is exposed as a kernel in its own right**, because the
+  ICRC path needs the primitive and not the registered widget.
+- **`Default` is hand-written, not derived.** A derived `Default` would
+  give a zero remainder, which computes a different, wrong checksum
+  silently instead of failing.
+
+**Surprises and gotchas:**
+
+- **The non-zero-DFF-reset divergence bit again, exactly as recorded.**
+  Tier 4 failed at time 0 with "expected `11111111...`, got `00000000...`"
+  — Verilog's `initial` block sets the register while the Rust simulator
+  starts from `dont_care`. `core::crc` already hits this and the fix is
+  the same `TestBenchOptions::default().skip(2)`. The CHANGELOG entry
+  from 2026-08-?? that documented this saved the diagnosis entirely;
+  worth noting as a case where the build narrative paid for itself.
+- **`TracedSample` has `output`, not `value.N`.** Minor, but the
+  compiler error (`no field 'value'`) lists the available fields, so it
+  is self-correcting.
+- **The published check value is the test that matters.** `"123456789"`
+  → `0xCBF43926` is the standard check constant for this parameter set,
+  and it is what pins reflection, init and XOR-out simultaneously. A
+  software reference written independently from the algorithm agrees with
+  it, and with the widget, over every single-byte message and lengths
+  0–24.
+- **A single zero byte is not the empty message.** Tested explicitly,
+  because the natural implementation bug — treating `enable` with a zero
+  byte as a no-op — produces exactly that confusion and nothing else
+  would catch it.
+
+**Validation:** Tiers 1–5, 14 tests. Tier 1 covers the published check
+value, the empty message, the single-zero-byte case, agreement with an
+independent software reference across lengths 0–24 and all 256
+single-byte messages, reset, `clear`-beats-`enable`, and idle hold.
+Tier 2 runs four messages through the assembled widget plus a
+two-messages-separated-by-`clear` case, which is the shape the ICRC path
+will use. The `crc32_step` kernel additionally gets
+`test_kernel_vm_and_verilog_synchronous` per CLAUDE.md §4, since a direct
+Rust call is more permissive than the kernel VM and this kernel is
+shift-heavy. Tier 3 snapshot audited by eye rather than blessed — the
+polynomial constant and the eight unrolled stages were read and
+confirmed. Tier 4 RTL+NTL round-trips with `.skip(2)`. Tier 5 digest
+committed. Example deterministic, trace committed.
+
+**Follow-ups:**
+
+- **Width-generic CRC-32** for 10G and above (64 bits/cycle), which is
+  where `roce-v2-architecture.md` §8's alignment problem starts to bite
+  and where Coyote's 304 KB generated `icrc.sv` lives. Not needed for
+  1 GbE.
+- The Ethernet FCS has the same polynomial and parameters, so a future
+  `net::mac` reuses this widget unchanged.
+
+---
 
 ## 2026-10-20 — RoCEv2: scoping an FPGA-to-GPU-memory sensor path, and why the sender need not be an RNIC
 
