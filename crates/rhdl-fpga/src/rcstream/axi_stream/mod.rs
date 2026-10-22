@@ -48,7 +48,7 @@
 //! produce a byte-identical waveform on the AXI side (modulo the
 //! one-cycle Carloni latency on each side).  This is the validation
 //! criterion — see the round-trip test in
-//! [`rcstream_to_axi::tests::test_round_trip`].
+//! `rcstream_to_axi::tests::test_round_trip`.
 //!
 //! See `stream-bus-architecture.md` §10 for the full design.
 

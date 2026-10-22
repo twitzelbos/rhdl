@@ -1,6 +1,6 @@
 //! Support for signed bit vectors whose size is determined at runtime
 //!
-//! The [SignedDynBits] type is a signed bit vector whose size is determined at runtime.
+//! The [`SignedDynBits`](crate::signed_dyn_bits::SignedDynBits) type is a signed bit vector whose size is determined at runtime.
 //! It is meant to overcome limitations in stable Rust that prevent the use of
 //! const generics in certain situations, such as in the implementation of the
 //! extended arithmetic operations defined in this crate.
@@ -82,7 +82,7 @@ impl SignedDynBits {
         x ^= x >> 64;
         x & 1 == 1
     }
-    /// Sign extend the value by the given number of bits, returning a [SignedDynBits] value.
+    /// Sign extend the value by the given number of bits, returning a [`SignedDynBits`] value.
     /// The output size is the input size plus the extension amount.
     ///
     /// # Panics
@@ -94,7 +94,7 @@ impl SignedDynBits {
             bits: M + self.bits,
         }
     }
-    /// Shift right by a constant amount, returning a [SignedDynBits] value.
+    /// Shift right by a constant amount, returning a [`SignedDynBits`] value.
     /// The output size is the input size minus the shift amount.
     /// # Panics
     /// Panics if the output size would be zero or negative.
@@ -105,7 +105,7 @@ impl SignedDynBits {
             bits: self.bits - M,
         }
     }
-    /// Shift left by a constant amount, returning a [SignedDynBits] value.
+    /// Shift left by a constant amount, returning a [`SignedDynBits`] value.
     /// The output size is the input size plus the shift amount.
     /// # Panics
     /// Panics if the output size would be greater than 128 bits.
@@ -116,7 +116,7 @@ impl SignedDynBits {
             bits: self.bits + M,
         }
     }
-    /// Resize the [SignedDynBits] value to a different number of bits.
+    /// Resize the [`SignedDynBits`] value to a different number of bits.
     /// If the new size is larger than the current size, then sign
     /// extension is performed.  If the new size is smaller than the
     /// current size, then the value is truncated to fit in the

@@ -31,7 +31,7 @@ type TimeAndSample = (u64, TypedBits);
 /// An SVG trace file container that collects trace samples
 /// and can render them into an SVG waveform diagram.
 ///
-/// See the [book] for examples on how to use it.
+/// See the book for examples on how to use it.
 #[derive(Default)]
 pub struct SvgFile {
     db: Option<Arc<RwLock<TraceMetadata>>>,

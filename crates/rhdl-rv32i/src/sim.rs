@@ -3,7 +3,7 @@
 //! Functional model of the entire shipped ISA (47 base
 //! instructions + CSR access + ECALL/EBREAK/MRET + illegal-
 //! instruction trap).  Used as the gold model for the
-//! [`lockstep`] harness: programs run on this simulator AND on
+//! `lockstep` harness: programs run on this simulator AND on
 //! both hardware cores; the per-cycle memory-write sequences
 //! must agree.
 //!

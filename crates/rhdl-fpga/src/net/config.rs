@@ -35,7 +35,7 @@ pub struct FrameConfig {
     /// UDP destination port — which is what selects the protocol riding
     /// on UDP.
     ///
-    /// A parameter rather than a constant inside [`udp_pack`], because
+    /// A parameter rather than a constant inside [`udp_pack`](crate::net::udp::udp_pack), because
     /// hardcoding 4791 there would make an otherwise generic UDP header
     /// builder quietly specific to one protocol — which is exactly the
     /// coupling that keeps these widgets in `net` rather than in the

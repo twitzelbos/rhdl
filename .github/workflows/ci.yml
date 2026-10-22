@@ -1,9 +1,12 @@
 # The checks CLAUDE.md §14 says "CI will run" — which, until this file,
 # nothing did.
 #
-# The three jobs are the three commands in §8's required column, and they
-# are separate jobs on purpose: when one fails, the job name alone says
-# which contract broke, without reading a log.
+# The jobs are the commands in §8's required column plus a docs gate, and
+# they are separate jobs on purpose: when one fails, the job name alone
+# says which contract broke, without reading a log.
+#
+# The test job is sharded by package; `shard-coverage` is the guard that
+# keeps a newly-added crate from silently belonging to no shard.
 name: CI
 
 on:
@@ -69,16 +72,48 @@ jobs:
       # under these flags can only exist if it passed.
       - run: cargo clippy --all --all-targets -- -D warnings
 
+  # Sharded by package. The unsharded job took 29-43 minutes, nearly all
+  # of it one crate: `rhdl-fpga`'s lib tests alone are ~9 minutes and the
+  # rest of the workspace together is less. Splitting lets the long pole
+  # run alone while everything else runs beside it.
+  #
+  # Sharding a test suite by name introduces a failure mode the single
+  # job did not have: a crate added later belongs to no shard and is
+  # silently never tested. `shard-coverage` below exists to make that
+  # impossible -- it fails if the union of the shards is not exactly the
+  # workspace membership.
   test:
-    name: cargo test
+    name: cargo test (${{ matrix.shard }})
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The long pole, alone.
+          - shard: fpga
+            packages: -p rhdl-fpga
+          # The two flagship cores.
+          - shard: cores
+            packages: -p rhdl-alto -p rhdl-rv32i
+          # Protocols and the rule layer.
+          - shard: protocol
+            packages: -p rhdl-roce -p rhdl-rule -p rhdl-rule-core -p rhdl-rule-rt
+          # Compiler, bits, Verilog, macros, and the book's code samples.
+          - shard: compiler
+            packages: >-
+              -p rhdl -p rhdl-core -p rhdl-bits -p rhdl-vlog -p rhdl-macro
+              -p rhdl-macro-core -p rhdl-dsp-design -p rhdl-bsp
+              -p rhdl-toolchains -p rhdl-span -p rhdl-trace-type
+              -p rhdl-surfer-plugin -p code -p mdbook-rhdl
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.RUST_VERSION }}
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.shard }}
 
       # A hard precondition, not a convenience: CLAUDE.md §12 rule 3.
       # Tier 4 is the only tier that checks the emitted hardware, so a
@@ -97,23 +132,21 @@ jobs:
       # test *binaries*, so one failing crate aborts the run before later
       # crates are reached and the summary looks like an ordinary failure
       # rather than a truncated run. CLAUDE.md §8 records the day that
-      # hid the whole of rhdl-fpga from every workspace run.
-      - run: cargo test --all --no-fail-fast
+      # hid the whole of rhdl-fpga from every workspace run. It still
+      # applies within a shard, which holds several crates.
+      - run: cargo test ${{ matrix.packages }} --no-fail-fast
 
       # Committed artifacts -- traces under doc/, VCD type sidecars,
       # FSM diagrams -- are refreshed by `cargo run --example ...` and
       # only *checked* by tests. A test may write one, but only if the
       # bytes are identical every time.
       #
-      # This is checked here rather than through `just tree-clean`,
-      # which runs the suite itself and deliberately swallows a test
-      # failure to get to the artifact check. Running the two as separate
-      # steps keeps "a test failed" and "a test rewrote a committed file"
-      # as distinct, separately-named failures.
-      - name: Working tree must be clean after a full test run
+      # Checked per shard rather than once: a shard that rewrites an
+      # artifact is the shard that names the culprit.
+      - name: Working tree must be clean after this shard
         run: |
           if [ -n "$(git status --porcelain)" ]; then
-            echo "::error::the test run modified committed artifacts"
+            echo "::error::shard ${{ matrix.shard }} modified committed artifacts"
             git status --short
             echo
             echo "A test is writing a committed file with non-identical bytes."
@@ -121,4 +154,92 @@ jobs:
             echo "move the write into an example."
             exit 1
           fi
-          echo "OK: the full test run left the working tree clean"
+          echo "OK: shard ${{ matrix.shard }} left the working tree clean"
+
+  # `rust-toolchain.toml` pins the toolchain for local work; this
+  # workflow's RUST_VERSION pins it for CI, because the toolchain action
+  # needs a literal value and cannot read the file. Two places holding
+  # one fact drift, so this asserts they do not -- a contributor whose
+  # local clippy runs a different minor than the gate is exactly the
+  # situation the pin exists to prevent.
+  toolchain-pin-agrees:
+    name: toolchain pin agrees with rust-toolchain.toml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          FILE=$(grep -E '^channel *=' rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
+          if [ "$FILE" != "${{ env.RUST_VERSION }}" ]; then
+            echo "::error::rust-toolchain.toml says '$FILE', ci.yml RUST_VERSION says '${{ env.RUST_VERSION }}'"
+            echo "Raise both together, or local builds and the CI gate run different lint sets."
+            exit 1
+          fi
+          echo "OK: both pin $FILE"
+
+  # The guard that makes sharding safe. Without it, adding a crate to the
+  # workspace and forgetting to add it to a shard means its tests quietly
+  # never run again -- a regression the unsharded job could not have.
+  shard-coverage:
+    name: every crate is in a shard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+      - name: Shards must cover the workspace exactly
+        run: |
+          # Keep this list identical to the matrix above.
+          SHARDED="rhdl-fpga rhdl-alto rhdl-rv32i rhdl-roce rhdl-rule
+                   rhdl-rule-core rhdl-rule-rt rhdl rhdl-core rhdl-bits
+                   rhdl-vlog rhdl-macro rhdl-macro-core rhdl-dsp-design
+                   rhdl-bsp rhdl-toolchains rhdl-span rhdl-trace-type
+                   rhdl-surfer-plugin code mdbook-rhdl"
+          # jq, not grep: `cargo metadata` carries a "name" for every
+          # target too -- each binary, test and example -- so a textual
+          # scrape returns ~300 names instead of the 21 packages.
+          cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[].name' | sort -u > /tmp/members.txt
+          echo "$SHARDED" | tr -s ' \n' '\n' | sed '/^$/d' | sort -u > /tmp/sharded.txt
+          if ! diff -u /tmp/members.txt /tmp/sharded.txt; then
+            echo "::error::the test shards do not cover the workspace exactly"
+            echo
+            echo "Lines starting '-' are workspace crates in no shard: their"
+            echo "tests would never run. Lines starting '+' name a crate that"
+            echo "no longer exists. Fix the matrix in this file, and this list."
+            exit 1
+          fi
+          echo "OK: $(wc -l < /tmp/members.txt) crates, all covered by a shard"
+
+  docs:
+    name: cargo doc -D warnings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+      - uses: Swatinem/rust-cache@v2
+
+      # CLAUDE.md §6 makes documentation part of the feature and §12.1
+      # forbids undocumented public API -- but nothing checked that a doc
+      # *link* pointed anywhere, and for a library workspace the docs are
+      # the product. By the time this gate was written the workspace had
+      # accumulated 201 rustdoc warnings across 7 crates, including ~18
+      # links naming types that exist nowhere: `PipeBRAM` for
+      # `PipeSyncBRAM`, `CarloniBuffer` for `StreamBuffer`,
+      # `WriteResponse` for `WriteResult`. Each was a rename whose doc
+      # references were never swept, because the compiler enforces every
+      # code reference to a renamed item and zero doc references.
+      #
+      # `RUSTDOCFLAGS` rather than `-- -D warnings`: rustdoc lints are
+      # configured through that variable, and passing flags after `--`
+      # sends them to rustdoc as *arguments*, which is not the same
+      # thing.
+      #
+      # `--no-deps` keeps this to the workspace's own crates; a
+      # dependency's doc warnings are not this repo's contract.
+      - name: Documentation must build without warnings
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps

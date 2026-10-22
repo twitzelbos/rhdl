@@ -30,7 +30,7 @@ bool |                  |
 //!
 //!# Internals
 //!
-//! `N` parallel [DFF]s, one per register, plus a one-hot decoder on
+//! `N` parallel [DFF](crate::core::dff::DFF)s, one per register, plus a one-hot decoder on
 //! `write_addr` (a single register is loaded when `write_enable` is
 //! high) and a multiplexer on `read_addr` (`read_data` is the
 //! same-cycle combinational selection).  All registers are also
@@ -49,7 +49,7 @@ bool |                  |
 //!   `read_valid` etc.
 //! - **Reset:** all registers reset to `T::default()`.  For
 //!   per-register reset values, build the file with
-//!   [Self::with_reset_values].
+//!   `Self::with_reset_values`.
 //!
 //!# Concurrent read+write to the same address
 //!

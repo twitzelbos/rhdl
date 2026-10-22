@@ -19,7 +19,7 @@ bool |                      |
 //!
 //!# Internals
 //!
-//! Internally, the edge detector is a single [DFF] that holds the
+//! Internally, the edge detector is a single [DFF](crate::core::dff::DFF) that holds the
 //! previous sample of the input.  The output flags are pure
 //! combinational functions of the current input and the held sample.
 //!

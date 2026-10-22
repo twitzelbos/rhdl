@@ -32,7 +32,7 @@
 //! assert_eq!(b.as_signed_bits::<9>(), s9(-38)); // b is a SignedDynBits with 9 bits
 //! ```
 //!
-//! You can also use `xneg` on [SignedDynBits]:
+//! You can also use `xneg` on [`SignedDynBits`]:
 //! ```
 //! # use rhdl_bits::*;
 //! # use rhdl_bits::alias::*;

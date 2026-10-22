@@ -19,7 +19,7 @@
 //! `RCStream`-typed pipeline registers; v0.2 uses plain `Digital`
 //! bundles (no ready/valid handshaking — the pipeline runs at full
 //! throughput, hazards are managed by stall/squash signals from
-//! the [`HazardUnit`]).
+//! the [`hazard`](crate::hazard) kernels).
 
 use crate::isa::{AluOp, AluSrc, BranchOp, CsrOp, MemOp, Opcode, SystemOp, WritebackSrc};
 use rhdl::prelude::*;
@@ -155,8 +155,8 @@ pub struct MemWb {
 
 /// Forwarding selector for one of the two ALU operand inputs.
 ///
-/// Computed by [`HazardUnit`] each cycle and consumed by the
-/// Execute stage.
+/// Computed by [`forward_select`](crate::hazard::forward_select) each
+/// cycle and consumed by the Execute stage.
 #[derive(PartialEq, Eq, Debug, Digital, Clone, Copy, Default)]
 pub enum ForwardSrc {
     /// No forwarding — use the value from ID/EX.

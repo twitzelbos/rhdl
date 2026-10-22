@@ -1,6 +1,6 @@
 //! Async FIFO Tester
 //!
-//! Combines the [FIFOFiller] and [FIFODrainer] along with an [AsyncFIFO] into a
+//! Combines the [FIFOFiller](crate::fifo::testing::filler::FIFOFiller) and [FIFODrainer] along with an [AsyncFIFO](crate::fifo::asynchronous::AsyncFIFO) into a
 //! test fixture.
 use rhdl::prelude::*;
 

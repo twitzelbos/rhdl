@@ -1,12 +1,12 @@
-//! Generate HDL (Verilog) for [Circuit](crate::Circuit)
+//! Generate HDL (Verilog) for [Circuit]
 //!
 //! This module provides functionality to generate HDL (specifically Verilog)
 //! representations of RHDL circuits.  You will generally not need to call these
-//! functions directly.  Instead use the method `descriptor` on [Circuit](crate::Circuit).
-//! The returned [Descriptor](crate::circuit::descriptor::Descriptor) will contain
+//! functions directly.  Instead use the method `descriptor` on [Circuit].
+//! The returned [`Descriptor`] will contain
 //! the HDL description of the circuit.
 //!
-//! See the [book] for more details on HDL generation in RHDL.
+//! See the book for more details on HDL generation in RHDL.
 use crate::{
     Circuit, CircuitDQ, CircuitIO, CompilationMode, HDLDescriptor, Kind, RHDLError,
     circuit::{

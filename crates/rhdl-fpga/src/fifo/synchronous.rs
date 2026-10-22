@@ -48,7 +48,7 @@
 //! do not lend themselves to the regular `input -> uut -> output`
 //! type of testing.  
 //!
-//! Instead, we can either build custom testing harnesses (see [SyncFIFOTester])
+//! Instead, we can either build custom testing harnesses (see `SyncFIFOTester`)
 //! or use the feedback testing mechanism.  The feedback testing
 //! mechanism allows you to provide a closure that computes the next
 //! set of inputs given the current outputs.  For synchronous

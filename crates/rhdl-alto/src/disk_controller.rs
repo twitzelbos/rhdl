@@ -47,7 +47,7 @@ pub struct CtrlIn {
     /// latches once we model them).  Per ContrAlto's
     /// `DiskController.cs` `ClearStatus()`: "Causes all error
     /// latches in disk controller hardware to reset, clears
-    /// KSTAT[13]".  Phase-3.5 simplification: clear the entire
+    /// `KSTAT[13]`".  Phase-3.5 simplification: clear the entire
     /// KSTAT word (we don't yet model individual error bits).
     pub clr_stat: bool,
 }

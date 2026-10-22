@@ -205,7 +205,7 @@ pub struct In {
     /// Mode byte to negotiate (per IEEE 1284-1994 Table 2).  Latched at `start`.
     /// Mode bytes ≥ 0x80 are *Extended Link ID* requests.
     pub mode_byte: Bits<8>,
-    /// Sampled D[7:0] from the device during ELI capture (only meaningful in CaptureEli state).
+    /// Sampled `D[7:0]` from the device during ELI capture (only meaningful in CaptureEli state).
     pub d_in_eli: Bits<8>,
     /// Strobe to begin negotiation.  Ignored while busy (other than Done).
     pub start: bool,

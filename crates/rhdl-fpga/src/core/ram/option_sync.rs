@@ -61,7 +61,7 @@ use rhdl::prelude::*;
 
 #[derive(PartialEq, Debug, Clone, Synchronous, SynchronousDQ)]
 #[rhdl(dq_no_prefix)]
-/// The unit to include that wraps the [SyncBRAM]
+/// The unit to include that wraps the [SyncBRAM](crate::core::ram::synchronous::SyncBRAM)
 /// The `T` parameter indicates the type of element stored in the
 /// BRAM.  It must implement [Digital].
 /// The `N` parameter indicates the number of address bits.  Thus,

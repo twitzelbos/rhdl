@@ -28,7 +28,7 @@
 //! data and the valid flag into an [Option], and
 //! forwards the `ready` signal.  To isolate the
 //! combinatorial logic from the bus, we also
-//! use a [CarloniBuffer] on the input.
+//! use a [CarloniBuffer](crate::stream::stream_buffer::StreamBuffer) on the input.
 //!
 #![doc = badascii!(r"
                                                ++pack++      

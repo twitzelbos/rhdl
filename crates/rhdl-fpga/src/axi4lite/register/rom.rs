@@ -20,7 +20,7 @@
 //!
 //!# Internal Details
 //!
-//! Internally, the register contains a [ReadEndpoint]
+//! Internally, the register contains a [`ReadEndpoint`]
 //! for communication with the AXI bus.  The
 //! address is checked against a provided value.
 #![doc = badascii!(r"
@@ -83,14 +83,14 @@ impl<const N: usize> AxiRom<N> {
 }
 
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
-/// Input for the [AxiRegBank]
+/// Input for the [AxiRegBank](crate::axi4lite::register::bank::AxiRegBank)
 pub struct In {
     /// AXI signals from the bus for reading
     pub axi: ReadMOSI,
 }
 
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
-/// Output for the [AxiRegBank]
+/// Output for the [AxiRegBank](crate::axi4lite::register::bank::AxiRegBank)
 pub struct Out<const N: usize> {
     /// AXI signals to the bus for reading
     pub read_axi: ReadMISO,

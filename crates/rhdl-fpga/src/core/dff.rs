@@ -1,9 +1,9 @@
 //! Digital Flip Flop
 //!
-//! The [DFF] is the building block for nearly all synchronous
-//! logic.  The [DFF] is generic over the type `T` it holds,
+//! The [`DFF`] is the building block for nearly all synchronous
+//! logic.  The [`DFF`] is generic over the type `T` it holds,
 //! and can store a custom value for the reset value to take.
-//! The [DFF] is positive edge triggered, with an active
+//! The [`DFF`] is positive edge triggered, with an active
 //! high reset.  It is a [Synchronous] component, and meant
 //! to be used in synchronous circuits.  
 //!
@@ -39,19 +39,19 @@
       +-+XX+--+-+D1+--+-+D2+--+-+D3+--+
 output+-------+-------+-------+-------+
 ")]
-//! One of the primary purposes of [DFF]s in designs is to decouple
+//! One of the primary purposes of [`DFF`]s in designs is to decouple
 //! the input side of the flip flop from the output side.  This allows
 //! the output side of the FF to only depend on a fixed quantity (the
 //! last recorded value), instead of the potentially changing input
 //! side.
 //!
-//! [DFF]s are used in state machines, as memory storage elements,
+//! [`DFF`]s are used in state machines, as memory storage elements,
 //! and to break up pipelines.
 //!
 //!# Example
 //!
 //! Here is a simple example of a state machine recognizing a sequence
-//! using a [DFF].
+//! using a [`DFF`].
 //!
 //!```
 #![doc = include_str!("../../examples/dff.rs")]
@@ -77,7 +77,7 @@ pub struct DFF<T: Digital> {
 }
 
 impl<T: Digital> DFF<T> {
-    /// Create a new [DFF] with the
+    /// Create a new [`DFF`] with the
     /// provided reset value.
     pub fn new(reset: T) -> Self {
         Self { reset }

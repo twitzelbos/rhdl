@@ -13,7 +13,7 @@
 //! mirror** of those tables — keep them in sync.
 //!
 //! Some R-slots are aliased differently per microcode region (e.g.,
-//! R[3] is `$AC0` in the Emulator and `$SKEW` in BitBLT).  Callers
+//! `R[3]` is `$AC0` in the Emulator and `$SKEW` in BitBLT).  Callers
 //! provide the running `task` so the resolver can pick the appropriate
 //! alias.  When multiple aliases share a slot in the same task, the
 //! most common is returned and others noted in the spec digest.

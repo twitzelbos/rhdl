@@ -1,6 +1,6 @@
 //! Stereo PWM audio output (v1: naive PWM, no sigma-delta)
 //!
-//! Two parallel [super::pwm::PwmGenerator] channels driven by a
+//! Two parallel [super::pwm::PwmGenerator](crate::core::pwm::PwmGenerator) channels driven by a
 //! shared sample-rate clock divider.  The host feeds in the next
 //! sample on each `sample_request` pulse; the widget latches and
 //! holds it as the PWM duty until the next sample period.  An

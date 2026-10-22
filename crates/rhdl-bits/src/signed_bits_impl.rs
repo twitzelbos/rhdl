@@ -202,7 +202,7 @@ where
         self.0
     }
     /// Convert the compile time sized [SignedBits] value
-    /// to a run-time traced [SignedDynBits] value.
+    /// to a run-time traced [`SignedDynBits`] value.
     pub const fn dyn_bits(self) -> SignedDynBits {
         SignedDynBits {
             val: self.raw(),
@@ -254,18 +254,18 @@ where
             self.as_unsigned().resize::<M>().as_signed()
         }
     }
-    /// Shift left by a constant amount, returning a [SignedDynBits] value.
+    /// Shift left by a constant amount, returning a [`SignedDynBits`] value.
     /// The output size is the input size plus the shift amount.
     /// Available in synthesizable contexts.
     pub fn xshl<const M: usize>(self) -> SignedDynBits {
         self.dyn_bits().xshl::<M>()
     }
-    /// Shift right by a constant amount, returning a [SignedDynBits] value.
+    /// Shift right by a constant amount, returning a [`SignedDynBits`] value.
     /// The output size is the input size minus the shift amount.
     pub fn xshr<const M: usize>(self) -> SignedDynBits {
         self.dyn_bits().xshr::<M>()
     }
-    /// Sign extend the value by the given number of bits, returning a [SignedDynBits] value.
+    /// Sign extend the value by the given number of bits, returning a [`SignedDynBits`] value.
     /// The output size is the input size plus the extension amount.
     /// Available in synthesizable contexts.
     pub fn xext<const M: usize>(self) -> SignedDynBits {

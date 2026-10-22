@@ -1,17 +1,17 @@
 //! N-stage bit synchronizer chain
 //!
-//! Generalizes the 2-stage [super::synchronizer::Sync1Bit] to a chain of
+//! Generalizes the 2-stage [`Sync1Bit`](crate::cdc::synchronizer::Sync1Bit) to a chain of
 //! `N` flip flops, all clocked by the destination domain `R`.  Used when
 //! a project requires more than the conventional 2-stage synchronizer
 //! (deeper chains lower the chance of metastability propagating, at the
 //! cost of an extra cycle of latency per stage).
 //!
-//! All caveats from [super::synchronizer::Sync1Bit] apply equally here:
+//! All caveats from [`Sync1Bit`](crate::cdc::synchronizer::Sync1Bit) apply equally here:
 //! a synchronizer chain reduces the *probability* of a metastable
 //! output, but does not preserve transition counts and does not protect
 //! multi-bit data.  Use a Gray-coded crossing
-//! ([super::cross_counter::CrossCounter]) for counts and a FIFO
-//! ([super::super::fifo::asynchronous::AsyncFIFO]) for arbitrary data.
+//! ([super::cross_counter::CrossCounter](crate::cdc::cross_counter::CrossCounter)) for counts and a FIFO
+//! ([super::super::fifo::asynchronous::AsyncFIFO](crate::fifo::asynchronous::AsyncFIFO)) for arbitrary data.
 //!
 //!# Connections
 //!
@@ -65,7 +65,7 @@ use syn::parse_quote;
 /// the `W` domain to the `R` domain.
 ///
 /// `N` is the chain depth; the conventional value is 2 (matching
-/// [super::synchronizer::Sync1Bit]).  Larger values further reduce the
+/// [`Sync1Bit`](crate::cdc::synchronizer::Sync1Bit)).  Larger values further reduce the
 /// metastability propagation probability, at one cycle of added latency
 /// per stage.
 #[derive(PartialEq, Debug, Clone, Default)]

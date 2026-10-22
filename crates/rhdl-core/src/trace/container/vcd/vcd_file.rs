@@ -21,7 +21,7 @@ use crate::{
 };
 
 /// A VCD trace container that writes trace pages to a VCD file.
-/// See the [book] for examples on how to use it.
+/// See the book for examples on how to use it.
 pub struct VcdFile {
     buffer: std::io::BufWriter<SpooledTempFile>,
     next_id_code: IdCode,

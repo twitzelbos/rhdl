@@ -6,7 +6,7 @@
 //! pair of RHDL streams.  One is a stream for addresses/data to write
 //! to the AXI bus.  The other is a stream of responses from
 //! the bus back to the controller.  Each request must generate
-//! a response.  This core can be paired up with the [WriteEndpoint]
+//! a response.  This core can be paired up with the [`WriteEndpoint`](crate::axi4lite::core::endpoint::write::WriteEndpoint)
 //! core to transport the RHDL stream across an AXI bus interface
 //! in a spec compliant manner.
 //!
@@ -14,7 +14,7 @@
 //!
 //! Here is the symbol for the core.  The core will sink a stream
 //! of [WriteCommand] and source a stream of
-//! [WriteResponse].
+//! [`WriteResult`].
 //!
 #![doc = badascii_formal!(r"
            ++WriteController+                      
@@ -47,9 +47,9 @@ R<WrtRslt> |                |<--------+  | Response
 //!
 //!# Internal Details
 //!
-//! Internally, the [WriteController] consists of the following rough
+//! Internally, the [`WriteController`] consists of the following rough
 //! contents.  A [crate::stream::map::Map] core is used to convert between
-//! the AXI [ResponseKind] to a [WriteResponse].  A [crate::stream::tee::Tee] core
+//! the AXI [ResponseKind] to a [`WriteResult`].  A [crate::stream::tee::Tee] core
 //! is used to feed the address and data channels from the single input stream.
 #![doc = badascii!(r"
                                       +-+Strm2AXI+---+ awaddr  7     
@@ -85,7 +85,7 @@ R<WrtRslt> |                |<--------+  | Response
 //!
 //!# Example
 //!
-//! An example of using a [WriteController] and [WriteEndpoint]
+//! An example of using a [`WriteController`] and [`WriteEndpoint`](crate::axi4lite::core::endpoint::write::WriteEndpoint)
 //! together in a test harness is included here:
 //!
 #![doc = badascii!(r"
@@ -179,7 +179,7 @@ pub fn map_result(_cr: ClockReset, resp: ResponseKind) -> WriteResult {
 }
 
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
-/// Input for the [WriteController] core
+/// Input for the [`WriteController`] core
 pub struct In {
     /// AXI signals from the bus
     pub axi: WriteMISO,
@@ -190,7 +190,7 @@ pub struct In {
 }
 
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
-/// Output from the [WriteController] core
+/// Output from the [`WriteController`] core
 pub struct Out {
     /// AXI signals to the bus
     pub axi: WriteMOSI,

@@ -62,7 +62,7 @@
 //! assert_eq!(b, s8(-76));
 //! ```
 //!
-//! You can convert them to [SignedDynBits] and left shift them too:
+//! You can convert them to [`SignedDynBits`] and left shift them too:
 //! ```
 //! # use rhdl_bits::*;
 //! # use rhdl_bits::alias::*;
@@ -72,7 +72,7 @@
 //! assert_eq!(b.as_signed_bits::<8>(), s8(-76));
 //! ```
 //!
-//! You can also left shift [SignedDynBits] by a [Bits] value:
+//! You can also left shift [`SignedDynBits`] by a [Bits] value:
 //! ```
 //! # use rhdl_bits::*;
 //! # use rhdl_bits::alias::*;

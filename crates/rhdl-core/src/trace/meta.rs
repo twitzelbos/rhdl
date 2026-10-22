@@ -13,7 +13,7 @@ pub struct TraceDetails {
     pub key: String,
     /// The number of trace bits allocated to this value
     pub width: usize,
-    /// The [Kind](crate::Kind) of this value.
+    /// The [Kind] of this value.
     pub kind: Kind,
 }
 

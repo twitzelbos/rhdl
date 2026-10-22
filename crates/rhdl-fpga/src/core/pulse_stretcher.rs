@@ -21,7 +21,7 @@ bool |                    | bool
 //!
 //!# Internals
 //!
-//! Internally, the stretcher composes a counter [DFF] with a constant
+//! Internally, the stretcher composes a counter [`DFF`](crate::core::dff::DFF) with a constant
 //! holding the configured stretch length.
 //!
 #![doc = badascii_doc::badascii!(r"

@@ -23,7 +23,7 @@
 //!
 //!# Internals
 //!
-//! Unlike [FlattenPipe] or [ChunkedPipe], the [FilterMap] does not
+//! Unlike [FlattenPipe](crate::stream::flatten::Flatten) or `ChunkedPipe`, the [FilterMap] does not
 //! impose any flow control on the upstream pipe.  Because it can
 //! at most produce as many items as the source pipe, it can be
 //! implemented with simple [StreamBuffer] buffers at the input

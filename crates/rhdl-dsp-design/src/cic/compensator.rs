@@ -27,7 +27,7 @@
 //! - **Linear phase means constant group delay**, so every frequency
 //!   in the band is delayed equally. A filter that delays one part of
 //!   the band more than another distorts the envelope, and in a
-//!   phase-sensitive receiver ([`super::super::ddc`]) that is not a
+//!   phase-sensitive receiver (`super::super::ddc`) that is not a
 //!   cosmetic defect — it is the measurement.
 //!
 //! # What the design does not do

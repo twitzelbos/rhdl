@@ -36,7 +36,7 @@
 //!
 //!# Internal Details
 //!
-//! Internally, the [Axi2ReadStreams] consists of the following rough
+//! Internally, the [Axi2ReadStreams](crate::axi4lite::core::endpoint::read::ReadEndpoint) consists of the following rough
 //! contents.  A [crate::stream::map::Map] core is used to map the
 //! [ReadResult] to a [ReadResponse], which is then adapted out to the
 //! AXI bus.
@@ -69,7 +69,7 @@
 //!
 //!# Example
 //!
-//! An example of using a [ReadController] and [ReadEndpoint]
+//! An example of using a [`ReadController`](crate::axi4lite::core::controller::read::ReadController) and [`ReadEndpoint`]
 //! together in a test harness is included here:
 //!
 #![doc = badascii!(r"
@@ -163,7 +163,7 @@ pub fn map_result(_cr: ClockReset, res: ReadResult) -> ReadResponse {
 }
 
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
-/// Input for the [AxiReadStreams] core
+/// Input for the [AxiReadStreams](crate::axi4lite::core::endpoint::read::ReadEndpoint) core
 pub struct In {
     /// AXI signals for core
     pub axi: ReadMOSI,
@@ -174,7 +174,7 @@ pub struct In {
 }
 
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
-/// Output from the [AxiReadStreams] core
+/// Output from the [AxiReadStreams](crate::axi4lite::core::endpoint::read::ReadEndpoint) core
 pub struct Out {
     /// AXI signals for core
     pub axi: ReadMISO,

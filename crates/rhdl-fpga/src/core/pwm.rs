@@ -22,7 +22,7 @@ B<N> |                        | bool
 //!
 //!# Internals
 //!
-//! A single counter [DFF] of width `N`.  Each cycle the counter
+//! A single counter [`DFF`](crate::core::dff::DFF) of width `N`.  Each cycle the counter
 //! increments (wrapping at `2^N`).  The combinational output is
 //! `counter < duty`.  Period = `2^N` cycles, so for an `f_clk` of
 //! 100 MHz and `N = 16`, the PWM frequency is

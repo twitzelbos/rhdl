@@ -15,7 +15,7 @@
 ")]
 //!# Internals
 //! Internally the delay is simply a chain of `N`
-//! [DFF]s, in a linear chain.  Note that the flip flops
+//! [`DFF`]s, in a linear chain.  Note that the flip flops
 //! will reset to the default value for `T`, which is
 //! why it is required for `T: Default`.
 //!

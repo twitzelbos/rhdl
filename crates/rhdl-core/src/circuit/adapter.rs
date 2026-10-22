@@ -1,4 +1,4 @@
-//! An adapter to use [Synchronous](crate::Synchronous) circuits in [Circuit](crate::Circuit) contexts.
+//! An adapter to use [Synchronous] circuits in [Circuit] contexts.
 //!
 //! An adapter allows you to wrap a synchronous circuit so that it can be used
 //! in an asynchronous context.  The adapter maps the (implicit) clock and reset
@@ -30,15 +30,15 @@
   (c&r) |                   +-----------------------+                   |        
         +---------------------------------------------------------------+        
 ")]
-//! In particular, note that the input type [SynchronousIO::I](crate::SynchronousIO::I) of the synchronous
+//! In particular, note that the input type [SynchronousIO::I] of the synchronous
 //! circuit does not explicitly include the clock and reset lines.  This makes it easier to compose synchronous
 //! circuits together, since you don't need to explicitly feed the clock and reset signals into each
 //! child.  
 //!
-//! Asynchronous [Circuit](crate::Circuit) circuits, on the other hand, have no implicit signals injected,
-//! and all input and output signals must appear in [CircuitIO::I](crate::CircuitIO::I) and [CircuitIO::O](crate::CircuitIO::O).
+//! Asynchronous [Circuit] circuits, on the other hand, have no implicit signals injected,
+//! and all input and output signals must appear in [CircuitIO::I] and [CircuitIO::O].
 //! Therefore, to use a synchronous circuit in an asynchronous context, we need to somehow make the
-//! clock and reset signals explicit.  This is what the [Adapter](Adapter) struct does.
+//! clock and reset signals explicit.  This is what the [Adapter] struct does.
 //!
 #![doc = badascii_doc::badascii!(r"
                      +--+Adapter+-------------------------------+               
@@ -109,7 +109,7 @@ impl<C: Synchronous + Default, D: Domain> Default for Adapter<C, D> {
 /// This type combines the clock and reset signals with the input
 /// signals for the underlying synchronous circuit.
 ///
-/// Each is also promoted to be a [Signal](crate::Signal) in the given domain D.
+/// Each is also promoted to be a [Signal] in the given domain D.
 ///
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub struct AdapterInput<I: Digital, D: Domain> {

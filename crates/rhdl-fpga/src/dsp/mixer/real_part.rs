@@ -26,7 +26,7 @@
       +-------------------------+
 ")]
 //!
-//! # Why this exists rather than `.re` on a [`ComplexMixer`]
+//! # Why this exists rather than `.re` on a [`ComplexMixer`](crate::dsp::mixer::complex::ComplexMixer)
 //!
 //! Taking the real part of
 //! [`ComplexMixer`](super::complex::ComplexMixer)'s output is the
@@ -63,7 +63,7 @@
 //! a **difference of two** of them: `ar·br` and `ai·bi` can both reach
 //! `2^(A+B-2)` with the same sign, so `ar·br − ai·bi` reaches
 //! `2^(A+B-1)` and needs `A+B+1` bits once
-//! [`convergent`](super::rounding::convergent) adds its half-LSB on
+//! `convergent` adds its half-LSB on
 //! top.
 //!
 //! `ComplexMixer` has the identical requirement — it is the same

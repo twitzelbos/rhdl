@@ -53,7 +53,7 @@ impl<T: Digital, S: Digital> TracedSample<T, S> {
             },
         }
     }
-    /// Allows you to remap the value of a [TraceSample] while keeping the
+    /// Allows you to remap the value of a [TraceSample](crate::trace::trace_sample::TracedSample) while keeping the
     /// time and debug page information untouched.
     pub fn map<U: Digital, V: Digital>(
         self,

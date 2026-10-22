@@ -46,8 +46,8 @@ pub fn imm_s(instr: Bits<32>) -> Bits<32> {
     combined | sign_mask
 }
 
-/// Sign-extend the B-type immediate (split across instr[31], [7],
-/// [30:25], [11:8]; bit 0 is always 0).
+/// Sign-extend the B-type immediate (split across `instr[31]`, `[7]`,
+/// `[30:25]`, `[11:8]`; bit 0 is always 0).
 #[kernel]
 pub fn imm_b(instr: Bits<32>) -> Bits<32> {
     // imm[12]    = instr[31]
@@ -76,7 +76,7 @@ pub fn imm_u(instr: Bits<32>) -> Bits<32> {
     instr & bits::<32>(0xFFFF_F000)
 }
 
-/// J-type immediate (split across instr[31], [19:12], [20], [30:21];
+/// J-type immediate (split across `instr[31]`, `[19:12]`, `[20]`, `[30:21]`;
 /// bit 0 is always 0).  Sign-extended to 32 bits.
 #[kernel]
 pub fn imm_j(instr: Bits<32>) -> Bits<32> {

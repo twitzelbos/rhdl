@@ -1,5 +1,5 @@
 #![warn(missing_docs)]
-//! Combine two [`RCStream`]s into one stream of pairs.
+//! Combine two [`RCStream`](crate::rcstream::bus::RCStream)s into one stream of pairs.
 //!
 //! Here is the schematic symbol
 #![doc = badascii_doc::badascii_formal!("
@@ -67,7 +67,7 @@ use rhdl::prelude::*;
 use super::bus::Item;
 use super::relay::RCStreamRelay;
 
-/// Combine two [`RCStream`]s into one stream of pairs.
+/// Combine two [`RCStream`](crate::rcstream::bus::RCStream)s into one stream of pairs.
 ///
 /// `A`/`F` are the first stream's payload and framing types, `B`/`G`
 /// the second's.  The output is `RCStream<(A, B), (F, G)>`.

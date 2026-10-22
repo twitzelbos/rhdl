@@ -1,5 +1,5 @@
 #![warn(missing_docs)]
-//! Aggregate `N` credit-based sources into one [`RCStream`].
+//! Aggregate `N` credit-based sources into one [`RCStream`](crate::rcstream::bus::RCStream).
 //!
 //! §11 gives credit-based flow control two motivations. The first —
 //! breaking a long combinational `ready` path — is served by
@@ -73,7 +73,7 @@ use crate::core::dff;
 use super::sink::CreditSink;
 use crate::rcstream::bus::Item;
 
-/// Aggregate `N` credit-based sources into a single [`RCStream`].
+/// Aggregate `N` credit-based sources into a single [`RCStream`](crate::rcstream::bus::RCStream).
 ///
 /// Each source has an independent credit pool and buffer; the outputs
 /// are merged by a round-robin arbiter. See module docs for both

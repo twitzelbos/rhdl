@@ -23,7 +23,7 @@ bool |                   |
 //!
 //!# Internals
 //!
-//! A single accumulator [DFF] of width `A_W`.  Each cycle the
+//! A single accumulator [DFF](crate::core::dff::DFF) of width `A_W`.  Each cycle the
 //! kernel computes the full-precision `2N`-bit product (via
 //! `DynBits::xmul`), zero-extends it to `A_W`, and adds it to the
 //! current accumulator value.  `clear` overrides `enable` and zeros

@@ -65,7 +65,7 @@
 //! merely a magnitude. Three things have to hold for that to be true,
 //! and all three are properties of pieces that already existed:
 //!
-//! - **The local oscillator is phase-coherent.** [`Nco`]'s accumulator
+//! - **The local oscillator is phase-coherent.** [`Nco`](crate::dsp::nco::composite::Nco)'s accumulator
 //!   represents absolute elapsed time and is never reset at an
 //!   acquisition boundary, so successive acquisitions share a phase
 //!   origin. [`Out::master`] exposes that origin.

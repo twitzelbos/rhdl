@@ -170,7 +170,7 @@ pub struct InterpSpec {
     /// **Largest** interpolation factor the design must support.
     ///
     /// The widget's `R_MAX`: widths and counters are sized for this, and
-    /// [`crate::cic::interpolator::In::rate`] chooses the rate at run
+    /// `crate::cic::interpolator::In::rate` chooses the rate at run
     /// time up to it. The envelope arrives at `fs_hz / R`.
     pub interpolate: usize,
     /// **Smallest** interpolation factor the design must support.

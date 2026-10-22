@@ -31,6 +31,240 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-10-22 — CI sharded with a coverage guard, the toolchain pinned locally, and a dead module deleted
+
+**Path:** `.github/workflows/ci.yml`, `rust-toolchain.toml` (new),
+`crates/rhdl-fpga/src/axi4lite/channel/` (deleted),
+`crates/rhdl-fpga/src/axi4/types.rs`
+
+**Why this, why now:** three loose ends the rustdoc work surfaced,
+closed in the same PR because each is small and all three are about the
+gate rather than the code it guards.
+
+**Design decisions:**
+
+- **The test job is sharded by package, and the shard list is
+  guarded.** The unsharded job took 29–43 minutes, nearly all of it one
+  crate: `rhdl-fpga`'s lib tests alone are ~9 minutes and the rest of
+  the workspace together is less. Four shards — `fpga` alone, `cores`
+  (Alto + RV32I), `protocol` (RoCE + the rule layer), and `compiler`
+  (everything else) — let the long pole run beside the rest.
+- **Sharding introduces a failure mode the single job did not have**, so
+  it does not land without a guard. A crate added later belongs to no
+  shard and is silently never tested again — strictly worse than a slow
+  job. The `shard-coverage` job fails unless the union of the shards is
+  *exactly* the workspace membership, printing which crates fall in the
+  gap. It was verified by removing `rhdl-roce` from the list and
+  confirming the diff names it.
+- **`jq`, not a `grep` scrape, to read `cargo metadata`.** The first
+  version of that guard scraped `"name":"..."` textually and returned
+  ~300 names instead of 21, because `cargo metadata` carries a `name`
+  for every *target* — each binary, test and example — as well as each
+  package.
+- **`rust-toolchain.toml` pins the toolchain for local work too.**
+  Before this, CI pinned 1.99 while a contributor's `cargo clippy` ran
+  on whatever they had installed — so the `-D warnings` gate could fail
+  on a machine that had never seen the lint. The file also carries
+  `components = ["rustfmt", "clippy"]` so a fresh checkout has what the
+  gate needs.
+- **The pin now lives in two places, so a job asserts they agree.** The
+  workflow keeps its own `RUST_VERSION` because the toolchain action
+  needs a literal and cannot read the file. Two places holding one fact
+  drift, and the drift is invisible until someone's local lint set
+  diverges from the gate's — which is the exact situation the pin
+  exists to prevent. `toolchain-pin-agrees` compares them.
+- **`axi4lite/channel/` is deleted rather than revived.** It was 222
+  lines checked into git but never declared in `axi4lite/mod.rs`, so it
+  had never compiled — and it does not compile now: declaring it
+  produces a dozen `cannot find type Q`/`cannot find type D` errors,
+  because it predates the `SynchronousDQ` derive that generates those
+  types. Its last commit is titled "Mostly compiles." Reviving it would
+  mean rewriting it against current conventions to produce a *competing*
+  generic stream abstraction to `rcstream`, which
+  `stream-bus-architecture.md` already settled as the canonical one, and
+  with no consumer: nothing references it, and the Lite widgets carry
+  `valid`/`ready` as plain `bool` fields on their MOSI/MISO structs. The
+  history has it if anyone wants it back.
+
+**Surprises and gotchas:**
+
+- **`cargo metadata`'s `name` fields are not just packages.** See
+  above; a textual scrape of that JSON is wrong by an order of
+  magnitude.
+- **Adding `rust-toolchain.toml` changes which toolchain local commands
+  select**, and rustup auto-installs it on the next `cargo` invocation.
+  Here it resolved to the identical compiler (1.99.1) that was already
+  installed as `stable`, so the only cost was a one-time component
+  download — but on a machine tracking a different `stable` it would be
+  a real switch, which is why it is called out rather than left to be
+  discovered.
+- **A guard that has never failed is not known to work.** Both new
+  guards were tested by breaking them on purpose: the shard guard with a
+  crate removed from the list, and the docs gate in the previous commit
+  with a planted broken link. This is the same reasoning as the AXI4
+  monitors' mutation run, and it is cheap enough that there is no excuse
+  for skipping it.
+
+**Validation:** workflow YAML parses and declares six jobs (`fmt`,
+`clippy`, `test`, `toolchain-pin-agrees`, `shard-coverage`, `docs`).
+The shard-coverage and drift-guard scripts were run locally exactly as
+CI runs them: 21 crates, all covered; both pins read 1.99. Deleting the
+channel module leaves `cargo check --package rhdl-fpga --all-targets`
+at zero errors.
+
+**Follow-ups:**
+
+- CLAUDE.md §8's tool table, §9 step 16, §14's pre-push list and the
+  TL;DR's clause 1 all printed `cargo clippy --all` without
+  `--all-targets`, and none mentioned `cargo doc`. The file has been
+  corrected locally but is **not** committed, per a standing
+  instruction not to commit CLAUDE.md to the repo. Until that changes,
+  the CI jobs are the only enforcement and the documented commands
+  understate what is required.
+
+---
+
+## 2026-10-22 — Rustdoc link debt cleared, and a CI gate so it cannot come back
+
+**Path:** 125 files across `rhdl-core`, `rhdl-fpga`, `rhdl-bits`,
+`rhdl-rv32i`, `rhdl-alto`, `rhdl-roce`, `rhdl-rule-core`,
+`rhdl-dsp-design`, `rhdl-vlog`; `.github/workflows/ci.yml`
+
+**Why this, why now:** CLAUDE.md §6 makes documentation part of the
+feature and §12.1 forbids undocumented public API, but nothing ever
+checked that a doc *link pointed anywhere*. `cargo doc` was not in the
+CI gate and is not in §8's required column, so the only way to see a
+broken link was to run it by hand. By the time anyone did, the
+workspace had **201 rustdoc warnings across 7 crates**. For a library
+workspace the docs are the product, so a dead `[RCStream]` repeated
+nine times is a user-facing defect, not cosmetic.
+
+**Design decisions:**
+
+- **The gate is the deliverable; clearing the debt is the
+  prerequisite.** A `cargo doc` job cannot be added while 201 warnings
+  exist, so the cleanup had to come first — but the cleanup is worth
+  little on its own, because the same rot regrows on the next rename.
+- **`RUSTDOCFLAGS: -D warnings`, not `-- -D warnings`.** Rustdoc lints
+  are configured through the environment variable; flags after `--` are
+  passed to rustdoc as *arguments*, which is a different thing and does
+  not deny warnings.
+- **`--no-deps`**, so the gate covers this workspace's crates and not a
+  dependency's doc hygiene.
+- **A name with no successor is de-linked, not redirected.** Where a
+  doc referenced a type that exists nowhere and has no obvious
+  replacement, the reference became code text rather than a guessed
+  link. A confidently wrong link misleads a reader; a warning only
+  annoyed one.
+- **The gate was tested by planting a broken link** and confirming
+  `cargo doc` exits non-zero. A gate that has never failed is not known
+  to work — the same reasoning as the AXI4 monitors' mutation run.
+
+**Surprises and gotchas:**
+
+- **~18 names in the public docs referred to types that do not
+  exist.** Every one came from a rename: `PipeBRAM` for
+  `PipeSyncBRAM`, `CarloniBuffer` for `StreamBuffer`, `FlattenPipe` /
+  `ChunkedPipe` / `FilterPipe` for `Flatten` / `Chunked` / `Filter`,
+  `TraceSample` for `TracedSample`, `const_max` for `const_max_pair`,
+  `crate::trace::db::trace` for `trace::page::trace`, and
+  `OptionAsyncBRAM` for `OptionAsyncBram` — a pure casing drift.
+  `WriteResponse` is wrong in one paragraph of the very file that gets
+  `WriteResult` right in another. **The cause is an asymmetry worth
+  remembering: the compiler enforces every code reference to a renamed
+  item and zero doc references**, so rename-driven doc rot is silent,
+  cumulative, and invisible in review because the rename's diff looks
+  complete.
+- **A few paragraphs promise types that were never built**, which is
+  worse than a stale link: `PipeAsyncBRAM`, `HazardUnit` and `Buffer`
+  describe an API the user cannot use. These are de-linked for now and
+  the paragraphs deserve rewording or the types deserve building.
+- **The 14 `[book]` links never had a destination.** There is no
+  published book URL and no `documentation` key in any `Cargo.toml`, so
+  they were always going to render as literal `[book]`.
+- **`axi4lite/channel/` is checked into git but never declared in
+  `axi4lite/mod.rs`** — dead code that does not compile and cannot be
+  linked. A paragraph in `axi4/types.rs` claimed AXI4 reused that
+  generic sender/receiver pair unchanged; it does not, and neither do
+  the Lite widgets, which carry `valid`/`ready` as plain `bool` fields
+  on their MOSI/MISO structs. Whether to revive or delete the module is
+  a separate decision.
+- **Three traps make scripted link fixes dangerous, and two of them
+  bit.** First, **intra-doc links resolve against the item's scope** —
+  a bare `[DFF]` is correct inside `dff.rs` and broken elsewhere, so a
+  global fix turned 22 `redundant explicit link target` warnings into
+  95. Second, **`#[attr]` contains `[attr]`**: a whole-file replace of
+  `[kernel]` rewrote 391 `#[kernel]` attributes and broke the build.
+  Third, **the replacement contains the search text** — `[`X`](path)`
+  begins with `[`X`]` — so a `while form in line` loop never
+  terminates, and two copies of that script spun at 99% CPU for fifty
+  minutes before being noticed. The working method is per-site, driven
+  by rustdoc's own `file:line:col`, restricted to doc-comment lines
+  outside ``` fences, skipping any `[x]` preceded by `#` or followed by
+  `(`.
+- **Roughly 130 of the 201 warnings were not broken links at all** but
+  hardware notation — `IR[7:0]`, `memory[MAR]`, `KSTAT[13]` — which
+  rustdoc reads as link syntax. Backticks are the right fix rather than
+  the escaping rustdoc suggests, because bit ranges should render as
+  code anyway.
+- **A `badascii!` doc attribute needs a blank `//!` line after it.**
+  The macro emits inline SVG, and without a blank line Markdown treats
+  the following doc lines as a continuation of that raw HTML block — so
+  backticks stop delimiting code and `Option<T>` reads as an unclosed
+  `<T>` tag. CLAUDE.md's canonical widget pattern has that blank line;
+  `stream/testing/single_stage.rs` had omitted it, which is why
+  correctly-backticked text still warned.
+- **Angle brackets inside ASCII art are HTML tags too.** The same
+  fixture's diagram labelled a signal `R<S>`; it is now `R(S)`, same
+  column width.
+- **`rustdoc::redundant_explicit_links` ignores a backticked label
+  until it doesn't.** Most `[`X`](path)` forms draw no warning, but two
+  did, and rustdoc reports that lint *without a location* in some
+  cases. Finding them needed per-crate bisection: strip every
+  redundant-shaped link in one crate, re-run, and restore only those
+  that turn unresolved.
+- **A `use` inside `#[cfg(test)] mod tests` is not in module scope.**
+  An in-scope heuristic that scanned the whole file therefore
+  mis-classified every site in eleven files, flip-flopping them between
+  `unresolved` and `redundant` across iterations. Scanning only the
+  text before the first `#[cfg(test)]` converges.
+
+**Validation:** `cargo doc --workspace --no-deps` with
+`RUSTDOCFLAGS=-D warnings` is clean, from 201 warnings. The gate was
+verified to fail on a planted broken link (exit 101). `cargo clippy
+--all --all-targets -- -D warnings`, `cargo fmt --all --check` and
+`cargo test --all --no-fail-fast` all pass, with a clean working tree
+afterwards. No `pub` item's visibility was changed and no code outside
+doc comments was touched, except the one ASCII-art diagram label.
+
+**Follow-ups:**
+
+- ~~Reword the paragraphs that promise `PipeAsyncBRAM`, `HazardUnit` and
+  `Buffer`~~ — **done in this PR.** De-linking had made those
+  warning-free but still inaccurate: they told a reader to use a type
+  that does not exist. They now name what does. `pipe::map`'s "insert a
+  `Buffer`" is [`core::delay::Delay`], the register-slice widget the
+  sentence was describing. `AsyncBRAM`'s suggested `PipeAsyncBRAM` was
+  never built, so the text now says plainly that the pipelined RAM is
+  synchronous-only, as `PipeSyncBRAM`. And rv32i's `HazardUnit` is not a
+  type at all — the logic lives in the `hazard` module as
+  `forward_select` and `detect_load_use_stall`, which is what the two
+  references now point at.
+
+  Worth separating from the rest of this entry: a warning-free doc is
+  not the same as a correct one. The `cargo doc` gate would have stayed
+  green with all four of these sentences still lying, because
+  de-linking satisfies rustdoc. Only reading them did.
+- ~~Decide whether `axi4lite/channel/` is revived or deleted.~~ —
+  **deleted in this PR**; see the entry above for why reviving it was
+  the wrong call.
+- The book has no published URL. If one appears, the fourteen former
+  `[book]` references become real links again.
+- CLAUDE.md §8's tool table does not list `cargo doc`, and §14's
+  pre-push list does not either. Both should, now that it is gated.
+
+---
+
 ## 2026-10-21 — AXI4 Phase 1: four protocol monitors, and the traffic written to break them
 
 **Path:** `crates/rhdl-fpga/src/axi4/check/{mod,rules,traffic,monitor,read_monitor}.rs`,

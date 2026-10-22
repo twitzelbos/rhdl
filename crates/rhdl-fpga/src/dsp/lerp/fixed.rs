@@ -8,7 +8,7 @@
 //!
 //!# Internal Details
 //! There are various subtleties at play here.  
-//! Given A: Bits<N>, B: Bits<N> and a factor: Bits<M>,
+//! Given A: `Bits<N>`, B: `Bits<N>` and a factor: `Bits<M>`,
 //!
 //! we want to compute
 //!

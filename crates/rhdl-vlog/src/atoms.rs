@@ -190,7 +190,7 @@ impl ToTokens for BitRange {
     }
 }
 
-/// A width specification for a signal, e.g., [7:0].
+/// A width specification for a signal, e.g., `[7:0]`.
 #[derive(Debug, Clone, Hash, PartialEq, Serialize, Deserialize)]
 pub struct WidthSpec {
     /// The bit range specifying the width.
@@ -234,7 +234,7 @@ impl ToTokens for WidthSpec {
 
 /// A signed or unsigned width specification.
 ///
-/// In Verilog, this would be represented as either "signed [7:0]" or simply "[7:0]".
+/// In Verilog, this would be represented as either "signed `[7:0]`" or simply "`[7:0]`".
 #[derive(Clone, Debug, Hash, PartialEq, Serialize, Deserialize)]
 pub enum SignedWidth {
     /// Signed width specification.

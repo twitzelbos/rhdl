@@ -1,8 +1,8 @@
-//! Utility wrapper to convert a pure function into an asynchronous [Circuit](crate::Circuit).
+//! Utility wrapper to convert a pure function into an asynchronous [Circuit].
 //!
 //! This module provides the [AsyncFunc] struct, which can wrap a pure function that is synthesizable
 //! (marked with `#[digital]`) into an asynchronous circuit.  It simply saves you the trouble of
-//! defining a new struct and implementing the [Circuit](crate::Circuit) trait manually.  
+//! defining a new struct and implementing the [Circuit] trait manually.  
 //!
 #![doc = badascii_doc::badascii!(r"
       ++AsyncFunc+------+       
@@ -36,7 +36,7 @@ use quote::format_ident;
 use rhdl_vlog::{self as vlog, maybe_port_wire};
 use syn::parse_quote;
 
-/// Wrap a pure (synthesizable) function into an asynchronous [Circuit](crate::Circuit).
+/// Wrap a pure (synthesizable) function into an asynchronous [Circuit].
 #[derive(Clone)]
 pub struct AsyncFunc<I: Timed, O: Timed> {
     kernel: Object,

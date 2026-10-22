@@ -26,7 +26,7 @@ M0   <--+AXI+--->|S0       M0|<----+AXI+---->
 //! At that point, to guarantee ordering of requests, the switch will
 //! wait for the pending transactions to complete before moving
 //! the channel to a different endpoint.  Internally, the switch is
-//! similar to the [BlockReadWriteController], in that it must track
+//! similar to the [BlockReadWriteController](crate::axi4lite::core::controller::blocking::BlockReadWriteController), in that it must track
 //! the number of pending transactions to know when it is safe to
 //! switch channels.
 

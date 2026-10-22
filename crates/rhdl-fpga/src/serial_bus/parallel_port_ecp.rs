@@ -153,7 +153,7 @@ pub struct In {
     pub flush: bool,
     /// Forward — sampled `PeriphAck` from the device.
     pub periph_ack_in: bool,
-    /// Reverse — sampled D[7:0] from the device.
+    /// Reverse — sampled `D[7:0]` from the device.
     pub d_in_rev: Bits<8>,
     /// Reverse — sampled `PeriphClk` from the device.
     pub periph_clk_in: bool,
@@ -169,7 +169,7 @@ pub struct In {
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
 /// Outputs from [ParallelPortEcp].
 pub struct Out {
-    /// Forward — 8-bit data driven on D[7:0] (only meaningful while `d_oe == 1`).
+    /// Forward — 8-bit data driven on `D[7:0]` (only meaningful while `d_oe == 1`).
     pub d_out: Bits<8>,
     /// True ⇒ host drives the D bus (forward direction).
     pub d_oe: bool,

@@ -15,7 +15,7 @@ pub fn compile_design_stage1<K: DigitalFn>(
 }
 
 /// Like [`compile_design_stage1`] but invokes `hook` after every
-/// pass.  See [`super::stage1::compile_with_checkpoints`] for the
+/// pass.  See `compile_with_checkpoints` for the
 /// observation contract.
 ///
 /// Used by the Phase 2 RHIF property tests to verify well-formedness

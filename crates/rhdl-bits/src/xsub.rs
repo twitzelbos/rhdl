@@ -5,7 +5,7 @@
 //! in scenarios where overflow needs to be avoided.
 //!
 //! Because of limitations in stable Rust, the application of applying the `.xsub()` method to a [Bits] or [SignedBits]
-//! value will always return a [SignedDynBits] value.  This is because the output
+//! value will always return a [`SignedDynBits`] value.  This is because the output
 //! size is not expressible at compile time using const generics.
 //!
 //!```
@@ -29,7 +29,7 @@
 //! assert_eq!(c.as_signed_bits::<9>(), s9(50)); // c is a SignedDynBits with 9 bits
 //! ```
 //!
-//! If the arguments are already [DynBits] the output will also be [SignedDynBits]:
+//! If the arguments are already [DynBits] the output will also be [`SignedDynBits`]:
 //!
 //! ```
 //! # use rhdl_bits::*;

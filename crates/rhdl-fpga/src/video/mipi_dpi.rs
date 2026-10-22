@@ -3,7 +3,7 @@
 //! For large TFT panels (5″ / 7″ / 10″) without an integrated
 //! controller — the host streams pixels in real time exactly like
 //! VGA, just at LVTTL voltages and with a different pin shape:
-//! VSYNC, HSYNC, DE (data enable), DCLK, R[7:0], G[7:0], B[7:0].
+//! VSYNC, HSYNC, DE (data enable), DCLK, `R[7:0]`, `G[7:0]`, `B[7:0]`.
 //!
 //! This widget wraps the shipped [super::video_timing::VideoTimingCore]
 //! with the DPI pin shape — same H/V counters, same sync generator,

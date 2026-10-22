@@ -39,7 +39,7 @@ fn wrap_pass<P: Pass>(obj: Object) -> Result<Object> {
     Ok(obj)
 }
 
-/// Per-pass observation hook used by [`compile_with_checkpoints`].
+/// Per-pass observation hook used by `compile_with_checkpoints`.
 ///
 /// The closure receives `(pass_name, post_pass_object)` after every
 /// `wrap_pass` invocation in the compile pipeline.  It is called for

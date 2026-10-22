@@ -8,7 +8,7 @@
 //! # Why this is a widget and not a `Driver`
 //!
 //! The Xilinx primitives already in this crate — `IBUFDS`, the
-//! open-collector pattern — are [`Driver`](rhdl::core::circuit::fixture::Driver)s:
+//! open-collector pattern — are [`Driver`]s:
 //! they sit at the pin boundary, emit an instantiation plus constraints,
 //! and are assembled into the fixture after the circuit tree is complete.
 //! A driver has no descriptor and no reachability matrix, so it cannot

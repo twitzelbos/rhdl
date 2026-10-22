@@ -28,7 +28,7 @@ enum State {
 /// Generally, you will not construct this type directly,
 /// but instead use the `run_fn` extension method on the circuit under test.
 ///
-/// See the [book] for an example of its use.
+/// See the book for an example of its use.
 #[must_use = "To run the simulation, you must exhaust the iterator or collect it into a VCD"]
 pub struct RunSynchronousFeedback<'a, T, F, S, I, O> {
     uut: &'a T,
@@ -67,7 +67,7 @@ where
 }
 
 /// Runs the synchronous circuit with feedback using the supplied input function.
-/// See the [book] for an example of its use.
+/// See the book for an example of its use.
 pub fn run_fn<T, F, S, I, O>(
     uut: &T,
     input_fn: F,
@@ -185,7 +185,7 @@ where
 /// Extension trait to provide a `run_fn` method on synchronous circuits.
 pub trait RunSynchronousFeedbackExt {
     /// Runs the synchronous circuit with feedback using the supplied input function.
-    /// See the [book] for an example of its use.
+    /// See the book for an example of its use.
     fn run_fn<F>(
         &self,
         input_fn: F,

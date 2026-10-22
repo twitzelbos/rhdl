@@ -23,7 +23,7 @@
 //!   bytes and that a pad count exists.
 //!
 //! The first group was *originally written taking a
-//! [`PacketPlan`][crate::qp::segmenter::PacketPlan] just to look up a
+//! [`PacketPlan`] just to look up a
 //! length, which coupled generic code to RDMA for no reason and made it
 //! look unmovable. Taking lengths instead is what makes the eventual
 //! move to `net` a rename plus an import change.

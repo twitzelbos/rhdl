@@ -100,7 +100,7 @@ use super::option_sync::OptionSyncBRAM;
 
 #[derive(PartialEq, Debug, Clone, Default, Synchronous, SynchronousDQ)]
 #[rhdl(dq_no_prefix)]
-/// The unit that implements the [PipeBRAM]
+/// The unit that implements the [PipeBRAM](crate::core::ram::pipe_sync::PipeSyncBRAM)
 /// The `T` parameter indicates the type of data held in the BRAM.
 /// The `N` parameter indicates the number of address bits.
 pub struct PipeSyncBRAM<T: Digital, const N: usize>
@@ -125,7 +125,7 @@ where
 }
 
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
-/// The inputs for the [PipeBRAM]
+/// The inputs for the [PipeBRAM](crate::core::ram::pipe_sync::PipeSyncBRAM)
 pub struct In<T: Digital, const N: usize>
 where
     rhdl::bits::W<N>: BitWidth,
@@ -149,7 +149,7 @@ where
 }
 
 #[kernel]
-/// The kernel for the [PipeBRAM]
+/// The kernel for the [PipeBRAM](crate::core::ram::pipe_sync::PipeSyncBRAM)
 pub fn kernel<T: Digital, const N: usize>(
     _cr: ClockReset,
     i: In<T, N>,
