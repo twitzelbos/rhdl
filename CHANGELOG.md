@@ -31,13 +31,13 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
-## 2026-10-21 — AXI4 Phase 1: two protocol monitors, and the traffic written to break them
+## 2026-10-21 — AXI4 Phase 1: four protocol monitors, and the traffic written to break them
 
-**Path:** `crates/rhdl-fpga/src/axi4/check/{mod,traffic,monitor}.rs`,
-`crates/rhdl-fpga/verilog/axi4/axi4_write_monitor.v`,
+**Path:** `crates/rhdl-fpga/src/axi4/check/{mod,rules,traffic,monitor,read_monitor}.rs`,
+`crates/rhdl-fpga/verilog/axi4/axi4_{write,read}_monitor.v`,
 `crates/rhdl-fpga/tests/axi4_tier_b_monitor.rs`,
-`crates/rhdl-fpga/examples/axi4_write_monitor.rs`,
-`crates/rhdl-fpga/doc/axi4_write_monitor.md`
+`crates/rhdl-fpga/examples/axi4_{write,read}_monitor.rs`,
+`crates/rhdl-fpga/doc/axi4_{write,read}_monitor.md`
 
 **Why this, why now:** `axi4-architecture.md` §7 makes a protocol
 checker the gate on everything else in the AXI4 track — every widget
@@ -47,42 +47,70 @@ run. The user chose full conformance scope and validation by *both* an
 RHDL checker and vendor Verilog, so the monitors come before the
 widgets they will police.
 
+Four monitors, not one: §7.2 asks for all five channels, and each
+channel pair gets an RHDL monitor (Tier A) and an independent
+hand-written Verilog one (Tier B).
+
 **Design decisions:**
 
-- **The broken traffic was written before the checker, and that
+- **The broken traffic was written before the checkers, and that
   ordering is the substance of the entry, not a process note.** A
   monitor is only worth what it rejects, and a checker written against
   traffic the author also believes is legal has a strong failure mode:
   it passes everything, including itself. So `check::traffic` names
-  fourteen violations and generates a transcript for each *first*, and
-  `every_injected_violation_is_caught` is the Phase 1 gate.
-- **Two enums, not one.** `Violation` is what the generator does;
-  `Fault` is what a monitor reports, and `Violation::expected()` maps
-  between them. The mapping is many-to-one — `BrespWithoutAw` and
+  sixteen write violations and thirteen read ones and generates a
+  transcript for each *first*, and the two
+  `every_injected_*_violation_is_caught` tests are the Phase 1 gate.
+- **Separate `Violation` and `Fault` enums.** `Violation` is what the
+  generator does; `Fault` is what a monitor reports, and `expected()`
+  maps between them. The mapping is many-to-one — `BrespWithoutAw` and
   `BrespSurplus` are different bus behaviour breaking one clause — and
   a single shared enum would have forced either a fake distinction in
   the monitor or a fake merge in the generator.
 - **One injected fault per transcript.** Otherwise a monitor passes by
   reporting any of several faults, and two checks wired to the same
   flag are indistinguishable from two working checks.
+- **Read and write are separate widgets sharing one `rules` module.**
+  AW and AR carry the same `AxiAddress` and the spec constrains both
+  identically, so the four address-phase rules live once in
+  `rules::address_fault` and are called by both. Two copies would be
+  two places to fix a misreading, and a drift between them would leave
+  *both* monitors' tests passing. What is not shared is the state: a
+  write burst carries strobes and terminates on `WLAST` against
+  `AWLEN`, a read burst carries per-beat `RRESP` and an `RID` to check.
+  Folding both into one widget would double the registered state every
+  instance pays for, for no shared logic. Sharing the rules turned out
+  to be a simplification in the emitted hardware too — the write
+  monitor's Verilog went from 914 lines to 893.
 - **Tier B is implemented by deliberately different means.** Where the
   Rust shifts a run of ones to build the legal strobe mask, the Verilog
   walks the byte lanes; where the Rust computes a beat address
-  closed-form from the beat index, the Verilog accumulates it; where the
-  Rust compares the pages of the first and last *beat*, the Verilog
-  compares the first and last *byte*. Agreement between two
-  implementations that made different choices is evidence. Agreement
-  between a function and its own transliteration is not, and a
-  transliterated Tier B would have been a ~300-line no-op.
-- **The monitor's blind spot is an output port, not an unwritten
-  `else`.** AXI4 permits write data before its address, and such a beat
-  cannot be position-checked — the monitor does not know which burst it
-  belongs to. It counts them on `unchecked_beats` instead of skipping
-  them, and the conformant control asserts that count is **zero**.
-  Without that assertion a monitor that classified every beat as
-  unpositionable would pass the whole gate by checking nothing.
-- **Response matching is by count, not by ID, and says so.** ID-keyed
-  matching is the Phase 4 ID table; a count is what is sound without it.
+  closed-form from the beat index, the Verilog accumulates it; where
+  the Rust counts elapsed beats *up* to `AxLEN`, the Verilog counts
+  remaining beats *down*; where the Rust compares the pages of the
+  first and last *beat*, the Verilog compares the first and last
+  *byte*. Agreement between two implementations that made different
+  choices is evidence. Agreement between a function and its own
+  transliteration is not, and a transliterated Tier B would have been
+  600 lines of no-op.
+- **The Verilog's fault codes are a hand-written wire format, not the
+  derived discriminant**, and that turned out to be load-bearing rather
+  than fastidious: adding the read variants inserted them into the
+  *middle* of the shared `Fault` enum, which would have silently
+  re-pointed the write monitor's existing `` `define ``s at different
+  faults. Because `code_of` is written out by hand, the read codes were
+  simply assigned above the write ones and `axi4_write_monitor.v` never
+  had to change.
+- **Each monitor's blind spot is an output port, not an unwritten
+  `else`.** AXI4 permits write data before its address, and read beats
+  for different IDs to interleave; neither can be position-checked
+  without the Phase 4 transaction table. Both monitors count such beats
+  on `unchecked_beats` instead of skipping them, and the conformant
+  controls assert that count is **zero**. Without that assertion a
+  monitor that classified every beat as unpositionable would pass the
+  whole gate by checking nothing. An interleaved read stream therefore
+  reports a large `unchecked_beats` and no faults — a visible statement
+  that the monitor did not check it, not a claim that it was clean.
 
 **Surprises and gotchas:**
 
@@ -93,17 +121,18 @@ widgets they will police.
   re-running the gate showed twelve were load-bearing and that
   `BValidDropped` and `BPayloadChanged` could be **deleted outright
   with every test still green** — no transcript ever stalled the
-  response channel, because the B handshake binds the subordinate and a
-  manager-shaped generator never exercises it. An unexercised check is
-  worse than a missing one: it reads as coverage. Fixed by adding the
-  two transcripts, and the conclusion is now permanently enforced by
-  `every_fault_is_exercised_by_some_transcript`, which requires every
-  `Fault` be in the image of some `Violation`. A mutation run cannot be
-  a `cargo test`; its *conclusion* can be.
+  response channel, because the B handshake binds the *subordinate* and
+  a manager-shaped generator never exercises it. An unexercised check
+  is worse than a missing one: it reads as coverage. Fixed by adding
+  the two transcripts, and the conclusion is now permanently enforced
+  by `every_fault_is_exercised_by_some_transcript`, which requires
+  every `Fault` be in the image of some `Violation` across both
+  channels. A mutation run cannot be a `cargo test`; its *conclusion*
+  can. The same run was repeated for the read monitor.
 - **The Tier A/Tier B cross-check paid for itself on its first run, and
   it was the *tally* that caught it, not the verdict.** Fifteen of
-  sixteen transcripts agreed exactly. `SizeExceedsBus` agreed on the
-  fault and disagreed 5-to-1 on the count: both monitors clamp the
+  sixteen write transcripts agreed exactly. `SizeExceedsBus` agreed on
+  the fault and disagreed 5-to-1 on the count: both monitors clamp the
   transfer size to keep the lane arithmetic in bounds, and they had
   clamped *oppositely* — Rust to one byte, Verilog to the full bus — so
   the same illegal burst drew four phantom strobe faults from one and
@@ -112,57 +141,86 @@ widgets they will police.
   the lane check rather than clamping it. Had the test compared only
   the verdict, it would have passed and the disagreement would have
   shipped.
-- **The Verilog monitor's first draft was blind to a whole fault**, and
-  only the agreement test could reveal it: it compared `BID` across a
-  stalled response beat but not `BRESP`, so a response whose status
-  changed while offered looked unchanged. An independent oracle has its
-  own bugs; what makes it useful is that they are *different* bugs.
+- **The Verilog write monitor's first draft was blind to a whole
+  fault**, and only the agreement test could reveal it: it compared
+  `BID` across a stalled response beat but not `BRESP`, so a response
+  whose status changed while offered looked unchanged. An independent
+  oracle has its own bugs; what makes it useful is that they are
+  *different* bugs.
+- **`.gitignore`'s `**/*.v` silently swallowed the entire Tier B
+  oracle.** The rule exists for the testbenches Tier 4 emits into
+  `<crate>/vlog/`, and it meant the hand-written Verilog monitor was
+  never going to be committed — leaving `tests/axi4_tier_b_monitor.rs`
+  failing on every machine but the one it was written on, with a
+  missing-file error that points at nothing in the diff. Hand-written
+  Verilog now lives in `<crate>/verilog/` with an explicit negation, so
+  source and output can be told apart. Note that `git check-ignore -v`
+  exits 0 on a *negation* match too, so it is a misleading way to test
+  this; `git add -n` is the honest check.
 - **`#[rhdl(dq_no_prefix)]` generates types literally named `Q` and
   `D`, so a const generic called `D` shadows one.** Every other type in
-  `axi4` uses `D` for the data width; the monitor has to call it `DW`.
-  The error does not mention the collision — it is `type provided when
-  a constant was expected`, pointed at the widget's own field list.
-- **CLAUDE.md §4's clamp-the-operand rule bites here for real.** The
-  strobe mask shifts by the transfer size, and both arms of an `if`
-  evaluate in hardware and in the kernel VM — so on the very traffic
-  the monitor exists to report, an unclamped `1 << bytes_per_beat(size)`
-  trips the VM's shift bound. It passes a direct Rust call and fails
-  only under `test_kernel_vm_and_verilog_synchronous`. There is a Tier-1
-  test named for this.
+  `axi4` uses `D` for the data width; both monitors have to call it
+  `DW`. The error does not mention the collision — it is `type provided
+  when a constant was expected`, pointed at the widget's own field list.
+- **`DW / 8` is not an operator the kernel compiler accepts**, so the
+  read monitor carries a separate `BYTES` const generic. This is the
+  same constraint, for the same reason, that already makes
+  `AxiWriteBeat` carry `STRB` rather than `Bits<{ D / 8 }>` — which
+  does not compile on stable Rust either.
+- **One shared `Fault` enum costs the write monitor a bit of output
+  width.** Adding the read faults took `Fault` past sixteen variants,
+  so it encodes in five bits rather than four, and the write monitor's
+  `Out` grew a bit for faults it can never itself report. For a
+  verification widget that is the right trade: the shared enum is what
+  lets one `code_of` mapping and one coverage test cover both channels.
+  It does mean a variant added to `Fault` moves both monitors' Tier-3
+  interface snapshots, which is worth knowing before blaming the
+  compiler.
 - **Tier 3 pins the interface, not the body, and this is a documented
-  deviation.** The emitted Verilog is 914 lines — five times the
-  largest snapshot anywhere else in the crate (`core::crc32`, 187) — so
-  an inline snapshot would make the file mostly generated Verilog and
-  make every diff review a skim. What is pinned is the module headers,
-  which carry the packed-vector widths of `In` and `Out` and so are the
-  actual ABI, plus the line count. Behaviour is covered where it
-  belongs: Tier 4 diffs every signal of every cycle, Tier 5 digests the
-  waveform.
+  deviation.** The emitted Verilog is 893 and 693 lines — nearly five
+  times the largest snapshot anywhere else in the crate
+  (`core::crc32`, 187) — so an inline snapshot would make these files
+  mostly generated Verilog and make every diff review a skim. What is
+  pinned is the module headers, which carry the packed-vector widths of
+  `In` and `Out` and so are the actual ABI, plus the line count.
+  Behaviour is covered where it belongs: Tier 4 diffs every signal of
+  every cycle, Tier 5 digests the waveform.
+- **Editing the crate while `cargo test --all` runs produces fake
+  failures.** Five `rhdl-roce` Tier-5 digest tests failed in a
+  workspace run that overlapped edits to `rhdl-fpga`, which `rhdl-roce`
+  depends on. They passed individually, passed as a whole binary, and a
+  clean full run afterwards was 4259/4259 with a clean tree. The tell
+  was that no `vcd/` artifact showed as modified in `git status`, which
+  a genuine digest mismatch would have left behind.
 
-**Validation:** All five tiers. Tier 1: seven direct kernel tests
-including reset, the shift-bound case, lane selection, and
-counter-underflow. Tier 2: the sixteen-transcript gate plus the
-fully-checked-and-clean control. Tier 3: emitted-interface snapshot.
-Tier 4: `iverilog` round-trip through both `.rtl()` and `.ntl()`. Tier
-5: VCD digest. Plus the Tier A/Tier B agreement test, which is stronger
-than any single tier: two independently-implemented monitors must agree
-on fault, tally and unchecked-beat count for all sixteen transcripts.
+**Validation:** All five tiers, both channels. Tier 1: eleven direct
+kernel tests across the two monitors, including reset, the shift-bound
+case, lane selection, counter underflow, `RLAST` retirement and `RID`
+agreement. Tier 2: the sixteen- and thirteen-transcript gates plus the
+fully-checked-and-clean controls. Tier 3: emitted-interface snapshots.
+Tier 4: `iverilog` round-trip through both `.rtl()` and `.ntl()` for
+both widgets. Tier 5: VCD digests. Plus the two Tier A/Tier B agreement
+tests, which are stronger than any single tier: independently
+implemented monitors must agree on fault, tally and unchecked-beat
+count for all twenty-nine transcripts.
 
 **Follow-ups:**
 
-- **The read channels (AR, R) are not monitored.** This is the write
-  path only, and the gate is met for the write path. `RLAST` position
-  and per-ID read-beat ordering need the outstanding-transaction table,
-  which is Phase 4; the read monitor should land with it rather than be
-  written twice.
-- Write data arriving before its address is counted, not checked.
-  Closing that needs the same Phase 4 table.
-- Responses are matched by count, so a response carrying an ID that was
-  never addressed is caught only while nothing else is outstanding.
-- Tier D — vendor VIP — remains toolchain-gated and planned for Phase 7.
-  The local toolchain is iverilog 13 with no SVA, no Verilator, no
+- **Per-ID out-of-order tracking is the one genuinely deferred piece.**
+  Write data arriving before its address, and read beats interleaved
+  across IDs, are counted rather than checked; closing both needs the
+  outstanding-transaction table of §5, which is Phase 4. Responses are
+  likewise matched by count rather than by ID, so one carrying an ID
+  that was never addressed is caught only while nothing else is
+  outstanding.
+- Tier D — vendor VIP — remains toolchain-gated and planned for Phase
+  7. The local toolchain is iverilog 13 with no SVA, no Verilator, no
   Yosys, which is why Tier B is plain Verilog always-blocks rather than
   `assert property`.
+- The write monitor does not check write-data interleaving, which AXI4
+  makes structurally impossible by removing `WID`; the assertion in
+  §7.2's list is therefore vacuous for AXI4 and would only matter for
+  an AXI3 bridge.
 
 ---
 

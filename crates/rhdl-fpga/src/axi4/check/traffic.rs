@@ -31,8 +31,10 @@
 //! them into one enum would have forced either a fake distinction in
 //! the monitor or a fake merge in the generator.
 
-use super::super::types::{AxiAddress, AxiResponse, AxiWriteBeat, AxiWriteResponse, BurstKind};
-use super::monitor::Fault;
+use super::super::types::{
+    AxiAddress, AxiReadBeat, AxiResponse, AxiWriteBeat, AxiWriteResponse, BurstKind,
+};
+use super::rules::Fault;
 use rhdl::prelude::*;
 
 /// A rule a transcript can break, named by how the traffic misbehaves.
@@ -377,6 +379,239 @@ where
             c.b.resp = AxiResponse::Okay;
             out.push(c);
         }
+    }
+
+    out.push(idle);
+    out.push(idle);
+    out
+}
+
+/// A read-channel rule a transcript can break.
+///
+/// Separate from [`Violation`] because the channels are separate
+/// widgets with separate transcripts; both map into the one shared
+/// [`Fault`] vocabulary via `expected()`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ReadViolation {
+    /// Conformant traffic. The control.
+    None,
+    /// `ARVALID` deasserted before `ARREADY` was ever seen.
+    ArValidDropped,
+    /// `ARVALID` held, but the address changed while waiting.
+    ArPayloadChanged,
+    /// `RVALID` deasserted before `RREADY`.
+    ///
+    /// Like the B channel's equivalent this binds the *subordinate*,
+    /// and is the kind of rule a manager-shaped generator forgets to
+    /// exercise. See the `check` module docs on what that cost.
+    RValidDropped,
+    /// `RVALID` held, but the beat changed while waiting.
+    RPayloadChanged,
+    /// `RLAST` asserted before the final beat.
+    RLastEarly,
+    /// The final beat returned without `RLAST`.
+    RLastMissing,
+    /// A read beat with no transaction outstanding.
+    RBeatWithoutAr,
+    /// A read beat whose `RID` is not the outstanding transaction's.
+    RIdMismatch,
+    /// An `Incr` burst crossing a 4 KiB boundary.
+    IncrCrosses4K,
+    /// A `Wrap` burst whose length is not 2, 4, 8 or 16 beats.
+    WrapBadLength,
+    /// A `Wrap` burst whose start address is not size-aligned.
+    WrapUnaligned,
+    /// `ARSIZE` larger than the data bus.
+    SizeExceedsBus,
+}
+
+impl ReadViolation {
+    /// The fault a correct read monitor reports for this traffic.
+    pub fn expected(self) -> Fault {
+        match self {
+            ReadViolation::None => Fault::None,
+            ReadViolation::ArValidDropped => Fault::ArValidDropped,
+            ReadViolation::ArPayloadChanged => Fault::ArPayloadChanged,
+            ReadViolation::RValidDropped => Fault::RValidDropped,
+            ReadViolation::RPayloadChanged => Fault::RPayloadChanged,
+            ReadViolation::RLastEarly => Fault::RLastEarly,
+            ReadViolation::RLastMissing => Fault::RLastMissing,
+            ReadViolation::RBeatWithoutAr => Fault::RBeatUnexpected,
+            ReadViolation::RIdMismatch => Fault::RIdMismatch,
+            ReadViolation::IncrCrosses4K => Fault::IncrCrosses4K,
+            ReadViolation::WrapBadLength => Fault::WrapBadLength,
+            ReadViolation::WrapUnaligned => Fault::WrapUnaligned,
+            ReadViolation::SizeExceedsBus => Fault::SizeExceedsBus,
+        }
+    }
+
+    /// Every read violation, so a test can require all be caught.
+    pub fn all() -> Vec<ReadViolation> {
+        vec![
+            ReadViolation::None,
+            ReadViolation::ArValidDropped,
+            ReadViolation::ArPayloadChanged,
+            ReadViolation::RValidDropped,
+            ReadViolation::RPayloadChanged,
+            ReadViolation::RLastEarly,
+            ReadViolation::RLastMissing,
+            ReadViolation::RBeatWithoutAr,
+            ReadViolation::RIdMismatch,
+            ReadViolation::IncrCrosses4K,
+            ReadViolation::WrapBadLength,
+            ReadViolation::WrapUnaligned,
+            ReadViolation::SizeExceedsBus,
+        ]
+    }
+}
+
+/// One cycle of the read channels, as a monitor sees them.
+#[derive(Clone, Copy, PartialEq, Debug, Digital, Default)]
+pub struct ReadCycle<const A: usize, const DW: usize, const ID: usize>
+where
+    rhdl::bits::W<A>: BitWidth,
+    rhdl::bits::W<DW>: BitWidth,
+    rhdl::bits::W<ID>: BitWidth,
+{
+    /// `ARVALID`.
+    pub ar_valid: bool,
+    /// `ARREADY`.
+    pub ar_ready: bool,
+    /// The AR payload. Meaningful only while `ar_valid`.
+    pub ar: AxiAddress<A, ID>,
+    /// `RVALID`.
+    pub r_valid: bool,
+    /// `RREADY`.
+    pub r_ready: bool,
+    /// The R payload.
+    pub r: AxiReadBeat<DW, ID>,
+}
+
+/// One conformant read burst with the named fault injected into it.
+///
+/// Same shape and the same discipline as [`write_transcript`]: a single
+/// four-beat aligned `Incr` burst, one injected fault, and every other
+/// rule left intact so the expected verdict is exact.
+pub fn read_transcript<const A: usize, const DW: usize, const ID: usize>(
+    bus_bytes: u128,
+    fault: ReadViolation,
+) -> Vec<ReadCycle<A, DW, ID>>
+where
+    rhdl::bits::W<A>: BitWidth,
+    rhdl::bits::W<DW>: BitWidth,
+    rhdl::bits::W<ID>: BitWidth,
+{
+    let size = bus_bytes.trailing_zeros() as u128;
+    let beats: u128 = 4;
+
+    let mut ar = AxiAddress::<A, ID> {
+        id: bits(1),
+        addr: bits(0x1000),
+        len: bits(beats - 1),
+        size: bits(size),
+        burst: BurstKind::Incr,
+        ..Default::default()
+    };
+
+    match fault {
+        ReadViolation::IncrCrosses4K => ar.addr = bits(0x2000 - bus_bytes),
+        ReadViolation::WrapBadLength => {
+            ar.burst = BurstKind::Wrap;
+            ar.len = bits(2); // three beats: not 2, 4, 8 or 16
+        }
+        ReadViolation::WrapUnaligned => {
+            ar.burst = BurstKind::Wrap;
+            ar.addr = bits(0x1000 + 1);
+        }
+        ReadViolation::SizeExceedsBus => ar.size = bits(size + 1),
+        _ => {}
+    }
+
+    let idle = ReadCycle::<A, DW, ID>::default();
+    let mut out: Vec<ReadCycle<A, DW, ID>> = Vec::new();
+
+    // ---- address phase
+    match fault {
+        ReadViolation::ArValidDropped => {
+            let mut c = idle;
+            c.ar_valid = true;
+            c.ar = ar;
+            out.push(c);
+            out.push(idle); // withdrawn, never accepted: the fault
+            let mut ok = c;
+            ok.ar_ready = true;
+            out.push(ok);
+        }
+        ReadViolation::ArPayloadChanged => {
+            let mut c = idle;
+            c.ar_valid = true;
+            c.ar = ar;
+            out.push(c);
+            let mut c2 = c;
+            c2.ar.addr = bits(0x3000);
+            out.push(c2);
+            let mut c3 = c2;
+            c3.ar_ready = true;
+            out.push(c3);
+        }
+        _ => {
+            let mut c = idle;
+            c.ar_valid = true;
+            c.ar_ready = true;
+            c.ar = ar;
+            out.push(c);
+        }
+    }
+
+    // ---- data phase: four accepted beats in every case, so that a
+    // handshake fault does not also become an RLAST fault.
+    for beat in 0..beats {
+        let mut c = idle;
+        c.r_valid = true;
+        c.r_ready = true;
+        c.r.id = bits(1);
+        c.r.data = bits(0xB0 + beat);
+        c.r.resp = AxiResponse::Okay;
+        c.r.last = beat + 1 == beats;
+
+        match fault {
+            ReadViolation::RLastEarly if beat == 1 => c.r.last = true,
+            ReadViolation::RLastMissing => c.r.last = false,
+            ReadViolation::RIdMismatch if beat == 1 => c.r.id = bits(2),
+            ReadViolation::RValidDropped if beat == 1 => {
+                // Offer, stall, withdraw -- then fall through and send
+                // the beat properly, so the burst is still four beats.
+                let mut stalled = c;
+                stalled.r_ready = false;
+                out.push(stalled);
+                out.push(idle);
+            }
+            ReadViolation::RPayloadChanged if beat == 1 => {
+                let mut stalled = c;
+                stalled.r_ready = false;
+                out.push(stalled);
+                let mut changed = stalled;
+                changed.r.data = bits(0xFF);
+                out.push(changed);
+                let mut taken = changed;
+                taken.r_ready = true;
+                out.push(taken);
+                continue;
+            }
+            _ => {}
+        }
+        out.push(c);
+    }
+
+    // ---- a surplus beat after the transaction has retired
+    if fault == ReadViolation::RBeatWithoutAr {
+        let mut c = idle;
+        c.r_valid = true;
+        c.r_ready = true;
+        c.r.id = bits(1);
+        c.r.resp = AxiResponse::Okay;
+        c.r.last = true;
+        out.push(c);
     }
 
     out.push(idle);

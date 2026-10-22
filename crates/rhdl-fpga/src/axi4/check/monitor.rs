@@ -65,82 +65,13 @@
 #![doc = include_str!("../../../doc/axi4_write_monitor.md")]
 
 use super::super::types::{
-    AxiAddress, AxiWriteBeat, AxiWriteResponse, BurstKind, beat_address, burst_beats,
-    bytes_per_beat, crosses_4k, size_fits_bus, wrap_len_is_legal,
+    AxiAddress, AxiWriteBeat, AxiWriteResponse, beat_address, burst_beats, bytes_per_beat,
+    size_fits_bus,
 };
+use super::rules::{Fault, address_fault, first_fault};
 use super::traffic::WriteCycle;
 use crate::core::dff;
 use rhdl::prelude::*;
-
-/// A protocol rule the monitor found broken.
-///
-/// Reported sticky-first: the monitor latches the earliest fault and
-/// holds it, because the first divergence is the one with a diagnosable
-/// cause. Later faults are usually its consequences, and the running
-/// `faults` count is there to say how many there were.
-#[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
-pub enum Fault {
-    /// No rule broken so far.
-    #[default]
-    None,
-    /// `AWVALID` fell before `AWREADY` rose.
-    AwValidDropped,
-    /// The AW payload changed while the beat was offered and unaccepted.
-    AwPayloadChanged,
-    /// `WVALID` fell before `WREADY` rose.
-    WValidDropped,
-    /// The W payload changed while the beat was offered and unaccepted.
-    WPayloadChanged,
-    /// `BVALID` fell before `BREADY` rose.
-    BValidDropped,
-    /// The B payload changed while the beat was offered and unaccepted.
-    BPayloadChanged,
-    /// `WLAST` on a beat before the burst's last.
-    WLastEarly,
-    /// The burst's last beat arrived without `WLAST`.
-    WLastMissing,
-    /// A write response with no transaction outstanding.
-    BrespUnexpected,
-    /// An `Incr` burst crossing a 4 KiB boundary.
-    IncrCrosses4K,
-    /// A `Wrap` burst of other than 2, 4, 8 or 16 beats.
-    WrapBadLength,
-    /// A `Wrap` burst starting off a size boundary.
-    WrapUnaligned,
-    /// `AxSIZE` wider than the data bus.
-    SizeExceedsBus,
-    /// `WSTRB` asserting a lane outside the transfer's selected bytes.
-    StrobeOutsideLanes,
-}
-
-impl Fault {
-    /// Every fault the monitor can report.
-    ///
-    /// Exists so that a test can require every one of them be reachable
-    /// from some entry in [`super::traffic::Violation::all`]. A check
-    /// the monitor performs that no traffic ever triggers is a check
-    /// that has never been run, and two of them shipped here before a
-    /// mutation run found them -- see the `check` module docs.
-    pub fn all() -> Vec<Fault> {
-        vec![
-            Fault::None,
-            Fault::AwValidDropped,
-            Fault::AwPayloadChanged,
-            Fault::WValidDropped,
-            Fault::WPayloadChanged,
-            Fault::BValidDropped,
-            Fault::BPayloadChanged,
-            Fault::WLastEarly,
-            Fault::WLastMissing,
-            Fault::BrespUnexpected,
-            Fault::IncrCrosses4K,
-            Fault::WrapBadLength,
-            Fault::WrapUnaligned,
-            Fault::SizeExceedsBus,
-            Fault::StrobeOutsideLanes,
-        ]
-    }
-}
 
 /// The monitor's internal registers, bundled.
 ///
@@ -251,34 +182,6 @@ where
 }
 
 #[kernel]
-/// Latch `new` if `cond` and nothing has been latched yet.
-///
-/// Sticky-first in one place, so that the long chain of checks in
-/// [`write_monitor`] reads as a list of rules rather than a list of
-/// nested conditionals.
-pub fn first_fault(current: Fault, cond: bool, new: Fault) -> Fault {
-    match current {
-        Fault::None => {
-            if cond {
-                new
-            } else {
-                current
-            }
-        }
-        _ => current,
-    }
-}
-
-#[kernel]
-/// Is this burst a `Wrap`?
-pub fn is_wrap(b: BurstKind) -> bool {
-    match b {
-        BurstKind::Wrap => true,
-        _ => false,
-    }
-}
-
-#[kernel]
 /// Kernel for [Axi4WriteMonitor].
 #[allow(clippy::too_many_lines)]
 pub fn write_monitor<const A: usize, const DW: usize, const STRB: usize, const ID: usize>(
@@ -313,16 +216,17 @@ where
     let b_dropped = b_held && !i.b_valid;
     let b_changed = b_held && i.b_valid && i.b != s.p_b;
 
-    // ---- address phase legality, checked as the AW is accepted
+    // ---- address phase legality, checked as the AW is accepted, by
+    // the rules AW and AR share. Written once in `rules` rather than
+    // twice: two copies would be two places to fix a misreading, and a
+    // drift between them would leave both monitors' tests passing.
     let aw_fire = i.aw_valid && i.aw_ready;
-    let wrap = is_wrap(i.aw.burst);
-    let size_bad = aw_fire && !size_fits_bus(i.aw.size, bus_bytes);
-    let crosses = aw_fire && crosses_4k::<A>(i.aw.addr, i.aw.size, i.aw.len, i.aw.burst);
-    let wrap_len_bad = aw_fire && wrap && !wrap_len_is_legal(i.aw.len);
-    // Size-alignment of a `Wrap` start. `bytes` is a power of two no
-    // greater than 128, so the mask is exact.
-    let aw_bytes = bytes_per_beat(i.aw.size).resize::<A>();
-    let wrap_unaligned = aw_fire && wrap && (i.aw.addr & (aw_bytes - bits::<A>(1))) != bits::<A>(0);
+    let addr_fault = address_fault::<A, ID>(i.aw, bus_bytes);
+    let addr_bad = aw_fire
+        && match addr_fault {
+            Fault::None => false,
+            _ => true,
+        };
 
     // ---- data phase
     let w_fire = i.w_valid && i.w_ready;
@@ -375,10 +279,7 @@ where
     fault = first_fault(fault, w_changed, Fault::WPayloadChanged);
     fault = first_fault(fault, b_dropped, Fault::BValidDropped);
     fault = first_fault(fault, b_changed, Fault::BPayloadChanged);
-    fault = first_fault(fault, size_bad, Fault::SizeExceedsBus);
-    fault = first_fault(fault, crosses, Fault::IncrCrosses4K);
-    fault = first_fault(fault, wrap_len_bad, Fault::WrapBadLength);
-    fault = first_fault(fault, wrap_unaligned, Fault::WrapUnaligned);
+    fault = first_fault(fault, addr_bad, addr_fault);
     fault = first_fault(fault, last_early, Fault::WLastEarly);
     fault = first_fault(fault, last_missing, Fault::WLastMissing);
     fault = first_fault(fault, strobe_bad, Fault::StrobeOutsideLanes);
@@ -402,16 +303,7 @@ where
     if b_changed {
         hits += bits::<16>(1);
     }
-    if size_bad {
-        hits += bits::<16>(1);
-    }
-    if crosses {
-        hits += bits::<16>(1);
-    }
-    if wrap_len_bad {
-        hits += bits::<16>(1);
-    }
-    if wrap_unaligned {
+    if addr_bad {
         hits += bits::<16>(1);
     }
     if last_early {
@@ -501,6 +393,7 @@ where
 mod tests {
     use super::*;
     use crate::axi4::check::traffic::{Violation, write_transcript};
+    use crate::axi4::types::BurstKind;
     use expect_test::expect;
     use rhdl::prelude::vlog::Pretty;
 
@@ -570,36 +463,6 @@ mod tests {
     #[test]
     fn violation_list_is_complete() {
         expect!["16"].assert_eq(&Violation::all().len().to_string());
-    }
-
-    /// Every fault the monitor can report must be reachable from some
-    /// transcript.
-    ///
-    /// This is the permanent form of a one-off mutation run that
-    /// disabled each check in turn and asked whether the gate noticed.
-    /// It noticed for twelve of fourteen: `BValidDropped` and
-    /// `BPayloadChanged` could be deleted outright with every test
-    /// still green, because no transcript ever stalled the response
-    /// channel. An unexercised check is worse than a missing one --
-    /// it reads as coverage.
-    ///
-    /// A mutation run cannot be a `cargo test`, but its *conclusion*
-    /// can be: if a fault is in no `Violation`'s image, nothing
-    /// exercises the code that reports it.
-    #[test]
-    fn every_fault_is_exercised_by_some_transcript() {
-        let reachable: Vec<Fault> = Violation::all()
-            .into_iter()
-            .map(Violation::expected)
-            .collect();
-        let orphans: Vec<Fault> = Fault::all()
-            .into_iter()
-            .filter(|f| !reachable.contains(f))
-            .collect();
-        assert!(
-            orphans.is_empty(),
-            "the monitor reports faults no transcript provokes, so these checks are never run: {orphans:?}"
-        );
     }
 
     /// Tier 1: reset clears every latched verdict.
@@ -777,14 +640,24 @@ mod tests {
 
     /// Tier 3: the emitted Verilog's **interface** is the contract.
     ///
-    /// The body is 914 lines, five times the largest snapshot anywhere
-    /// else in this crate (`core::crc32`, at 187), so pinning it inline
-    /// would make this file mostly generated Verilog and make every
-    /// read of the diff a skim. What is pinned instead is the part
+    /// The body is 893 lines, nearly five times the largest snapshot
+    /// anywhere else in this crate (`core::crc32`, at 187), so pinning
+    /// it inline would make this file mostly generated Verilog and make
+    /// every read of the diff a skim. What is pinned instead is the part
     /// users actually depend on: the module headers, which carry the
     /// bit-packing of `In` and `Out`. RHDL emits a struct port as one
-    /// packed vector, so those widths are the ABI -- add a field to
-    /// `WriteCycle` or `Out` and the number here moves.
+    /// packed vector, so those widths are the ABI.
+    ///
+    /// Three things move the numbers, and the third is the interesting
+    /// one: a field added to `WriteCycle` or `Out`; a change to the
+    /// compiler's packing; and **a variant added to the shared
+    /// [`Fault`] enum**. Giving the read monitor its own faults took
+    /// `Fault` past sixteen variants, so it now costs five bits rather
+    /// than four, and this widget's output grew a bit for faults it can
+    /// never itself report. That is the price of one shared vocabulary
+    /// across both monitors, and for a verification widget it is the
+    /// right trade -- the shared enum is what lets one `code_of`
+    /// mapping and one coverage test cover both channels.
     ///
     /// Behavioural regressions are covered where they belong: Tier 4
     /// below diffs every signal of every cycle against the Rust
@@ -800,11 +673,11 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         let expect = expect![[r#"
-            module top(input wire [1:0] clock_reset, input wire [113:0] i, output wire [35:0] o);
-            module top_state(input wire [1:0] clock_reset, input wire [232:0] i, output reg [232:0] o);"#]];
+            module top(input wire [1:0] clock_reset, input wire [113:0] i, output wire [36:0] o);
+            module top_state(input wire [1:0] clock_reset, input wire [233:0] i, output reg [233:0] o);"#]];
         expect.assert_eq(&headers);
         // A lost or merged module would keep the headers above intact.
-        expect!["914"].assert_eq(&hdl.lines().count().to_string());
+        expect!["893"].assert_eq(&hdl.lines().count().to_string());
         Ok(())
     }
 
@@ -840,7 +713,7 @@ mod tests {
             .join("vcd")
             .join("axi4_write_monitor");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["5cdf8d4551a5ce02d3021cc75b94331e332a7f297097480ffabe4d620cdbf547"];
+        let expect = expect!["085f2327c22dc037910348810866f01761c69eb4f754fd029811defe5606fc9a"];
         let digest = vcd.dump_to_file(root.join("monitor.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())
