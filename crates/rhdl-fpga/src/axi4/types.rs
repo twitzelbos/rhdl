@@ -13,15 +13,16 @@
 //! handshake is the `valid`/`ready` pair that carries it.
 //!
 //! An earlier draft of this paragraph claimed the handshake was reused
-//! unchanged from `axi4lite`. It is not, and the correction is worth
-//! recording because the obvious place to look is misleading: there
-//! *is* an `axi4lite/channel/` directory, with a generic sender and
-//! receiver, and it is checked into git — but `axi4lite/mod.rs` never
-//! declares it, so it is not compiled and cannot be referenced. The
-//! Lite widgets carry `valid`/`ready` as plain `bool` fields on their
-//! MOSI/MISO structs instead. Reusing that channel would mean first
-//! reviving a module nothing has built in some time, which is a
-//! separate decision from adding AXI4.
+//! unchanged from a generic channel in `axi4lite`. It is not. There
+//! was an `axi4lite/channel/` directory holding a generic sender and
+//! receiver, checked into git but never declared in
+//! `axi4lite/mod.rs` — so it had never compiled, and it does not
+//! compile today: it predates the `SynchronousDQ` derive and refers to
+//! `Q` and `D` types nothing generates for it. It has been deleted; the
+//! history has it if anyone wants it back. The Lite widgets carry
+//! `valid`/`ready` as plain `bool` fields on their MOSI/MISO structs,
+//! and [`crate::rcstream`] is the typed stream bus the project actually
+//! standardised on.
 //!
 //! | Channel | Beat type | Direction |
 //! |---|---|---|

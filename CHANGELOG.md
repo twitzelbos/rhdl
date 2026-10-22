@@ -31,6 +31,99 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-10-22 — CI sharded with a coverage guard, the toolchain pinned locally, and a dead module deleted
+
+**Path:** `.github/workflows/ci.yml`, `rust-toolchain.toml` (new),
+`crates/rhdl-fpga/src/axi4lite/channel/` (deleted),
+`crates/rhdl-fpga/src/axi4/types.rs`
+
+**Why this, why now:** three loose ends the rustdoc work surfaced,
+closed in the same PR because each is small and all three are about the
+gate rather than the code it guards.
+
+**Design decisions:**
+
+- **The test job is sharded by package, and the shard list is
+  guarded.** The unsharded job took 29–43 minutes, nearly all of it one
+  crate: `rhdl-fpga`'s lib tests alone are ~9 minutes and the rest of
+  the workspace together is less. Four shards — `fpga` alone, `cores`
+  (Alto + RV32I), `protocol` (RoCE + the rule layer), and `compiler`
+  (everything else) — let the long pole run beside the rest.
+- **Sharding introduces a failure mode the single job did not have**, so
+  it does not land without a guard. A crate added later belongs to no
+  shard and is silently never tested again — strictly worse than a slow
+  job. The `shard-coverage` job fails unless the union of the shards is
+  *exactly* the workspace membership, printing which crates fall in the
+  gap. It was verified by removing `rhdl-roce` from the list and
+  confirming the diff names it.
+- **`jq`, not a `grep` scrape, to read `cargo metadata`.** The first
+  version of that guard scraped `"name":"..."` textually and returned
+  ~300 names instead of 21, because `cargo metadata` carries a `name`
+  for every *target* — each binary, test and example — as well as each
+  package.
+- **`rust-toolchain.toml` pins the toolchain for local work too.**
+  Before this, CI pinned 1.99 while a contributor's `cargo clippy` ran
+  on whatever they had installed — so the `-D warnings` gate could fail
+  on a machine that had never seen the lint. The file also carries
+  `components = ["rustfmt", "clippy"]` so a fresh checkout has what the
+  gate needs.
+- **The pin now lives in two places, so a job asserts they agree.** The
+  workflow keeps its own `RUST_VERSION` because the toolchain action
+  needs a literal and cannot read the file. Two places holding one fact
+  drift, and the drift is invisible until someone's local lint set
+  diverges from the gate's — which is the exact situation the pin
+  exists to prevent. `toolchain-pin-agrees` compares them.
+- **`axi4lite/channel/` is deleted rather than revived.** It was 222
+  lines checked into git but never declared in `axi4lite/mod.rs`, so it
+  had never compiled — and it does not compile now: declaring it
+  produces a dozen `cannot find type Q`/`cannot find type D` errors,
+  because it predates the `SynchronousDQ` derive that generates those
+  types. Its last commit is titled "Mostly compiles." Reviving it would
+  mean rewriting it against current conventions to produce a *competing*
+  generic stream abstraction to `rcstream`, which
+  `stream-bus-architecture.md` already settled as the canonical one, and
+  with no consumer: nothing references it, and the Lite widgets carry
+  `valid`/`ready` as plain `bool` fields on their MOSI/MISO structs. The
+  history has it if anyone wants it back.
+
+**Surprises and gotchas:**
+
+- **`cargo metadata`'s `name` fields are not just packages.** See
+  above; a textual scrape of that JSON is wrong by an order of
+  magnitude.
+- **Adding `rust-toolchain.toml` changes which toolchain local commands
+  select**, and rustup auto-installs it on the next `cargo` invocation.
+  Here it resolved to the identical compiler (1.99.1) that was already
+  installed as `stable`, so the only cost was a one-time component
+  download — but on a machine tracking a different `stable` it would be
+  a real switch, which is why it is called out rather than left to be
+  discovered.
+- **A guard that has never failed is not known to work.** Both new
+  guards were tested by breaking them on purpose: the shard guard with a
+  crate removed from the list, and the docs gate in the previous commit
+  with a planted broken link. This is the same reasoning as the AXI4
+  monitors' mutation run, and it is cheap enough that there is no excuse
+  for skipping it.
+
+**Validation:** workflow YAML parses and declares six jobs (`fmt`,
+`clippy`, `test`, `toolchain-pin-agrees`, `shard-coverage`, `docs`).
+The shard-coverage and drift-guard scripts were run locally exactly as
+CI runs them: 21 crates, all covered; both pins read 1.99. Deleting the
+channel module leaves `cargo check --package rhdl-fpga --all-targets`
+at zero errors.
+
+**Follow-ups:**
+
+- CLAUDE.md §8's tool table, §9 step 16, §14's pre-push list and the
+  TL;DR's clause 1 all printed `cargo clippy --all` without
+  `--all-targets`, and none mentioned `cargo doc`. The file has been
+  corrected locally but is **not** committed, per a standing
+  instruction not to commit CLAUDE.md to the repo. Until that changes,
+  the CI jobs are the only enforcement and the documented commands
+  understate what is required.
+
+---
+
 ## 2026-10-22 — Rustdoc link debt cleared, and a CI gate so it cannot come back
 
 **Path:** 125 files across `rhdl-core`, `rhdl-fpga`, `rhdl-bits`,
@@ -162,7 +255,9 @@ doc comments was touched, except the one ASCII-art diagram label.
   not the same as a correct one. The `cargo doc` gate would have stayed
   green with all four of these sentences still lying, because
   de-linking satisfies rustdoc. Only reading them did.
-- Decide whether `axi4lite/channel/` is revived or deleted.
+- ~~Decide whether `axi4lite/channel/` is revived or deleted.~~ —
+  **deleted in this PR**; see the entry above for why reviving it was
+  the wrong call.
 - The book has no published URL. If one appears, the fourteen former
   `[book]` references become real links again.
 - CLAUDE.md §8's tool table does not list `cargo doc`, and §14's

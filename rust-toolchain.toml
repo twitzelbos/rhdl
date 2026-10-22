@@ -1,0 +1,22 @@
+# The toolchain this repository is developed and tested against.
+#
+# Why pin at all, and why a minor rather than `stable`: `cargo clippy
+# --all --all-targets -- -D warnings` is a CI gate, and clippy gains
+# lints between minor releases. Tracking `stable` means an unrelated
+# pull request fails the day Rust ships, for something its author did
+# not write. Pinning makes that a deliberate bump instead: raise the
+# version here and in `.github/workflows/ci.yml`, run the gate locally,
+# and fix what the new release found in its own commit.
+#
+# A patch release never changes the lint set, so the minor is the right
+# granularity -- security and bug fixes still arrive on their own.
+#
+# This file makes the pin apply to *local* work too, which it previously
+# did not: before this, CI pinned 1.99 while a contributor's `cargo
+# clippy` ran on whatever they had installed, so the gate could fail on
+# a machine that had never seen the lint. The CI workflow keeps its own
+# `RUST_VERSION` because the toolchain action needs a literal, and the
+# `toolchain-pin-agrees` job asserts the two never drift apart.
+[toolchain]
+channel = "1.99"
+components = ["rustfmt", "clippy"]
