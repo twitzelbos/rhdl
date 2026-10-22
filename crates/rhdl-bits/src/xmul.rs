@@ -6,7 +6,7 @@
 //! where overflow needs to be avoided.
 //!
 //! Because of limitations in stable Rust, the application of applying the `.xmul()` method to a [Bits] or [SignedBits]
-//! value will always return a [DynBits] or [SignedDynBits] value, respectively.  This is because the output
+//! value will always return a [DynBits] or [`SignedDynBits`] value, respectively.  This is because the output
 //! size is not expressible at compile time using const generics.
 //!
 //! ```
@@ -50,7 +50,7 @@
 //! assert_eq!(c.as_signed_bits::<12>(), s12(-150)); // c is a SignedDynBits with 12 bits
 //!```
 //!
-//! If the arguments are already [SignedDynBits] the output will also be [SignedDynBits]:
+//! If the arguments are already [`SignedDynBits`] the output will also be [`SignedDynBits`]:
 //! ```
 //! # use rhdl_bits::*;
 //! # use rhdl_bits::alias::*;
@@ -62,7 +62,7 @@
 //! assert_eq!(c, s12(-150).dyn_bits()); // c is a SignedDynBits with 12 bits
 //! ```
 //!
-//! Note that the maximum supported bit width for [Bits], [SignedBits], [DynBits] and [SignedDynBits] is 128 bits.
+//! Note that the maximum supported bit width for [Bits], [SignedBits], [DynBits] and [`SignedDynBits`] is 128 bits.
 //! Therefore, the sum of the sizes of the two inputs to the `xmul` method must not exceed 128 bits.
 //! Attempting to multiply two values whose combined bit width exceeds this limit will result in a panic at runtime.
 //!

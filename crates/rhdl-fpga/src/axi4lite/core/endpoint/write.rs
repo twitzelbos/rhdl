@@ -44,7 +44,7 @@
 //!
 //!# Internal Details
 //!
-//! Internally, the [WriteEndpoint] consists of the following
+//! Internally, the [`WriteEndpoint`] consists of the following
 //! rough contents.  The AXI streams for the address and
 //! data channels are converted into a pair of RHDL streams
 //! using [Axi2Rhdl] cores.  A [crate::stream::zip::Zip] core is used
@@ -87,7 +87,7 @@
 //!
 //!# Example
 //!
-//! An example of using a [WriteController] and [WriteEndpoint]
+//! An example of using a [`WriteController`](crate::axi4lite::core::controller::write::WriteController) and [`WriteEndpoint`]
 //! together in a test harness is included here:
 //!
 #![doc = badascii!(r"
@@ -181,7 +181,7 @@ pub fn map_result(_cr: ClockReset, resp: WriteResult) -> ResponseKind {
 }
 
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
-/// Input for the [WriteEndpoint] core
+/// Input for the [`WriteEndpoint`] core
 pub struct In {
     /// AXI signals from the bus
     pub axi: WriteMOSI,
@@ -192,7 +192,7 @@ pub struct In {
 }
 
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
-/// Output from the [WriteEndpoint] core
+/// Output from the [`WriteEndpoint`] core
 pub struct Out {
     /// AXI signals to the bus
     pub axi: WriteMISO,

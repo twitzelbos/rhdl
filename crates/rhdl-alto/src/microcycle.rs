@@ -30,7 +30,7 @@ pub struct CycleResult {
     pub next_l: Bits<16>,
     /// Whether the microinstruction wants to write R (BS = LoadR).
     pub r_wen: bool,
-    /// Value to write into R[rsel] if r_wen is true.
+    /// Value to write into `R[rsel]` if r_wen is true.
     pub r_wdata: Bits<16>,
     /// Next MPC (combining NEXT field with F2 modifications).
     pub next_mpc: Bits<10>,

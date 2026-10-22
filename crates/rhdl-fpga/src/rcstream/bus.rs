@@ -70,7 +70,7 @@
 //!
 //! The struct shape is identical for both directions; only the
 //! semantic meaning of each field differs by role.  This matches the
-//! existing [`super::StreamIO`] pattern.
+//! existing [`StreamIO`](crate::stream::StreamIO) pattern.
 
 use rhdl::prelude::*;
 

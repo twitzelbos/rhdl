@@ -1,9 +1,9 @@
 # The checks CLAUDE.md §14 says "CI will run" — which, until this file,
 # nothing did.
 #
-# The three jobs are the three commands in §8's required column, and they
-# are separate jobs on purpose: when one fails, the job name alone says
-# which contract broke, without reading a log.
+# The jobs are the commands in §8's required column plus a docs gate, and
+# they are separate jobs on purpose: when one fails, the job name alone
+# says which contract broke, without reading a log.
 name: CI
 
 on:
@@ -122,3 +122,36 @@ jobs:
             exit 1
           fi
           echo "OK: the full test run left the working tree clean"
+
+  docs:
+    name: cargo doc -D warnings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+      - uses: Swatinem/rust-cache@v2
+
+      # CLAUDE.md §6 makes documentation part of the feature and §12.1
+      # forbids undocumented public API -- but nothing checked that a doc
+      # *link* pointed anywhere, and for a library workspace the docs are
+      # the product. By the time this gate was written the workspace had
+      # accumulated 201 rustdoc warnings across 7 crates, including ~18
+      # links naming types that exist nowhere: `PipeBRAM` for
+      # `PipeSyncBRAM`, `CarloniBuffer` for `StreamBuffer`,
+      # `WriteResponse` for `WriteResult`. Each was a rename whose doc
+      # references were never swept, because the compiler enforces every
+      # code reference to a renamed item and zero doc references.
+      #
+      # `RUSTDOCFLAGS` rather than `-- -D warnings`: rustdoc lints are
+      # configured through that variable, and passing flags after `--`
+      # sends them to rustdoc as *arguments*, which is not the same
+      # thing.
+      #
+      # `--no-deps` keeps this to the workspace's own crates; a
+      # dependency's doc warnings are not this repo's contract.
+      - name: Documentation must build without warnings
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps

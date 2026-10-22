@@ -170,7 +170,7 @@ impl<T: Digital> Default for FIFOToStream<T> {
 
 /// Inputs to the [FIFOToStream] buffer
 ///
-/// For inputs, the push pull buffer has a Option<T> input to combine the
+/// For inputs, the push pull buffer has a `Option<T>` input to combine the
 /// write enable with the data signal, and provides a full signal back.
 /// It is important that the full signal is not dependant on the consumer,
 /// so that the pull-pull buffer isolates the producer from the consumer

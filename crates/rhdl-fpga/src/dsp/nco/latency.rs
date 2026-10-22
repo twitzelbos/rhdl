@@ -139,7 +139,7 @@ const _: () = assert!(
 /// Test-only composition used to measure [`MODULATION_CONTROL`] through
 /// the real datapath.
 ///
-/// **Not a shipped widget.** [`Nco`](super::composite::Nco) is
+/// **Not a shipped widget.** [`Nco`] is
 /// deliberately a subassembly: §8.4 describes a local timing agent that
 /// composes and schedules these pieces, so the modulation input lives
 /// outside it and a caller does this wiring. This module *is* that

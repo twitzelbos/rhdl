@@ -5,7 +5,7 @@
 //! in scenarios where overflow needs to be avoided.
 //!
 //! Because of limitations in stable Rust, the application of applying the `.xadd()` method to a [Bits] or [SignedBits]
-//! value will always return a [DynBits] or [SignedDynBits] value, respectively.  This is because the output
+//! value will always return a [DynBits] or [`SignedDynBits`] value, respectively.  This is because the output
 //! size is not expressible at compile time using const generics.
 //!
 //!```
@@ -52,7 +52,7 @@
 //! assert_eq!(c.as_signed_bits::<9>(), s9(-20)); // c is a SignedDynBits with 9 bits
 //!```
 //!
-//! If the arguments are already [SignedDynBits] the output will also be [SignedDynBits]:
+//! If the arguments are already [`SignedDynBits`] the output will also be [`SignedDynBits`]:
 //! ```
 //! # use rhdl_bits::*;
 //! # use rhdl_bits::alias::*;

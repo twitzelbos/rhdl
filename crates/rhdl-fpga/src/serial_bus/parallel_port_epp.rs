@@ -172,7 +172,7 @@ pub struct In {
     pub op: EppOp,
     /// Byte to drive (used only for AddrWrite / DataWrite).
     pub data: Bits<8>,
-    /// Sampled D[7:0] from the device (used during AddrRead / DataRead).
+    /// Sampled `D[7:0]` from the device (used during AddrRead / DataRead).
     pub d_in: Bits<8>,
     /// Strobe to begin the cycle.  Ignored while busy.
     pub start: bool,
@@ -191,7 +191,7 @@ pub struct Out {
     pub wr_n: bool,
     /// True ⇒ host drives the D bus.
     pub d_oe: bool,
-    /// D[7:0] output value (only meaningful while `d_oe == 1`).
+    /// `D[7:0]` output value (only meaningful while `d_oe == 1`).
     pub d_out: Bits<8>,
     /// Latched byte from the most-recent successful read cycle.
     pub data_out: Bits<8>,

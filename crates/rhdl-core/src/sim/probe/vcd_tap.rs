@@ -10,7 +10,7 @@ use crate::{
 };
 
 /// A probe that writes traced samples to a VCD file without consuming them.
-/// See the [book] for an example of its use.
+/// See the book for an example of its use.
 pub struct VcdTap<I> {
     inner: VcdFile,
     iter: I,

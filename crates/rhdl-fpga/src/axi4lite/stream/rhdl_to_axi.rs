@@ -20,7 +20,7 @@
 //!
 //!# Internal Details
 //!
-//! The core is simple.  It simply [unpack]'s the
+//! The core is simple.  It simply `unpack`'s the
 //! [Option] data input into a `tvalid` flag and
 //! a `tdata` output to comply with the AXI stream
 //! definition.  The `tready` signal is simply forwarded.

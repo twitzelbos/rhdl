@@ -14,7 +14,7 @@
 //! - The transfer rate is *much* slower than either clock — every
 //!   crossing takes ~6–8 destination cycles plus ~6–8 source
 //!   cycles.  For high-throughput multi-bit crossings, use
-//!   [super::super::fifo::asynchronous::AsyncFIFO] instead.
+//!   [super::super::fifo::asynchronous::AsyncFIFO](crate::fifo::asynchronous::AsyncFIFO) instead.
 //! - You can guarantee the source side waits for `busy` to drop
 //!   before issuing a new value.
 //!
@@ -67,7 +67,7 @@
 //!   periods (the 2-FF synchronizer's settling window).
 //! - The cross-domain wires `req` (W→R) and `ack` (R→W) each
 //!   pass through a 2-FF synchronizer in the destination domain.
-//!   Same caveats as [super::synchronizer::Sync1Bit] apply: the
+//!   Same caveats as [super::synchronizer::Sync1Bit](crate::cdc::synchronizer::Sync1Bit) apply: the
 //!   first FF in each chain is the metastability-resolution stage.
 //!
 //!# Example

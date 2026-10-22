@@ -103,7 +103,7 @@ impl DynBits {
     pub const fn raw(self) -> u128 {
         self.val
     }
-    /// Convert to a [SignedDynBits] value, interpreting the value as a signed integer
+    /// Convert to a [`SignedDynBits`] value, interpreting the value as a signed integer
     /// in two's complement representation.
     /// The output size is the same as the input size.
     pub const fn as_signed(self) -> SignedDynBits {

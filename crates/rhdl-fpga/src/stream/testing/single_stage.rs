@@ -8,14 +8,15 @@
 |          | ?S  |            | ?T   |          |
 |     data +---->|in       out+----->|data      |
 |          |     |            |      |          |
-|          | R<S>|            | R<T> |          |
+|          | R(S)|            | R(T) |          |
 |    ready |<----+ready  ready|<-----+ready     |
 +----------+     +------------+      +----------+
 ")]
-//! The source is provided by an iterator that yields [Option<T>]
+//!
+//! The source is provided by an iterator that yields `Option<T>`
 //! values, which are injected into the UUT when `ready` is `true`.
 //! The sink is provided by a consumer function that is called
-//! with each accepted data element as a [Option<S>], with the
+//! with each accepted data element as a `Option<S>`, with the
 //! `Some` variant indicating that the data element is valid.
 //! The consumer function provides the `ready` signal back to the
 //! stream to supply backpressure.
@@ -112,7 +113,7 @@ where
 ///
 /// `uut` is the stream stage to be tested.
 /// `source` is an iterator that returns items of type `Option<S>`.
-/// `sink` is a function receiving a [`SinkView<T>`] each cycle and
+/// `sink` is a function receiving a `SinkView<T>` each cycle and
 /// returning the backpressure signal.
 ///
 /// The sink's readiness here is **registered** — decided at one clock
@@ -121,8 +122,8 @@ where
 /// use [`single_stage_with_sink`] with
 /// [`SinkFromFn::new_combinational`] instead.
 ///
-/// To see example usages, look at the [Flatten] and
-/// [Chunked] examples.
+/// To see example usages, look at the [Flatten](crate::stream::flatten::Flatten) and
+/// `Chunked` examples.
 pub fn single_stage<S, T, C>(
     uut: C,
     source: impl Iterator<Item = Option<S>> + 'static,
@@ -192,7 +193,7 @@ where
             // |          | ?S  |            | ?T   |          |
             // |     data +---->|in       out+----->|data      |
             // |          |     |            |      |          |
-            // |          | R<S>|            | R<T> |          |
+            // |          | R(S)|            | R(T) |          |
             // |    ready |<---+|ready  ready|<-----+ready     |
             // +----------+     +------------+      +----------+
             //

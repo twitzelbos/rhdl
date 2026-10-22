@@ -205,7 +205,7 @@ struct OutputMethod {
     field_reads: std::collections::BTreeSet<String>,
 }
 
-/// Per-field classification used by [`lower_rule_kernel`] to decide
+/// Per-field classification used by `lower_rule_kernel` to decide
 /// the right auto-hold lowering for fields no rule writes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldKind {
@@ -269,7 +269,7 @@ fn classify_field(ty: &Type) -> FieldKind {
 /// and emits the struct + the lowered kernel together.
 ///
 /// The actual lowering work is shared with [`expand_rule_kernel_attr`]
-/// via [`lower_rule_kernel`].
+/// via `lower_rule_kernel`.
 pub fn expand_rule_kernel(input: TokenStream) -> syn::Result<TokenStream> {
     let RuleKernelInput {
         item_struct,
@@ -337,7 +337,7 @@ pub fn expand_rule_kernel(input: TokenStream) -> syn::Result<TokenStream> {
 /// (which by Rust convention will mirror the struct's).
 ///
 /// This is the attribute-form companion to the function-like
-/// [`expand_rule_kernel`].  Both share [`lower_rule_kernel`] —
+/// [`expand_rule_kernel`].  Both share `lower_rule_kernel` —
 /// behavioural parity is enforced by sharing the lowering code, not
 /// by reimplementation.
 ///
@@ -486,7 +486,7 @@ fn lower_rule_kernel(
     )
 }
 
-/// Version of [`lower_rule_kernel`] that also accepts an explicit
+/// Version of `lower_rule_kernel` that also accepts an explicit
 /// sub-widget name set (used by the attribute form, where the
 /// struct isn't visible and per-field type classification has to
 /// be supplied as an explicit list via the attribute argument).

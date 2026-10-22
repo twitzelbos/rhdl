@@ -3,7 +3,7 @@
 //! Most of RHDL's compilation and optimization of your circuit designs
 //! happen at run time, not when your code is first compiled by Rust.
 //!
-//! A key part of this is the [Descriptor] type, which describes
+//! A key part of this is the [`Descriptor`] type, which describes
 //! the interface and implementation of a circuit at run time.
 //! It includes information about the input and output kinds,
 //! the internal feedback types, the compiled kernel object,
@@ -13,11 +13,11 @@
 //! circuit, allowing for a run time iteration over the (heterogeneous)
 //! hierarchy of circuits that make up a design.
 //!
-//! You can obtain a [Descriptor] for a circuit by calling the
+//! You can obtain a [`Descriptor`] for a circuit by calling the
 //! `descriptor` method on the circuit, which is part of the
 //! [Circuit](crate::Circuit) trait, or part of the [Synchronous](crate::Synchronous) trait.
 //!
-//! Note also that the [Descriptor] type is generic over a marker type
+//! Note also that the [`Descriptor`] type is generic over a marker type
 //! that indicates whether the circuit is asynchronous or synchronous.
 //! This allows for type-safe handling of descriptors for different
 //! kinds of circuits.

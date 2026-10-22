@@ -82,15 +82,15 @@ clk   +----+    +----+    +----+    +----+
 //! boundary so that effectively, this phenom doesn't happen.  If
 //! you want to cross a counter (so that the output clock has the
 //! count of pulses arriving at the input clock domain), then
-//! look at [CrossCounter](super::cross_counter::CrossCounter).
+//! look at [`CrossCounter`](crate::cdc::cross_counter::CrossCounter).
 //! If you want to send data between clock domains, use a FIFO,
-//! such as [AsyncFIFO](super::super::fifo::asynchronous::AsyncFIFO).
+//! such as [`AsyncFIFO`](crate::fifo::asynchronous::AsyncFIFO).
 //!
 //! Finally, if you only want to cross data relatively slowly, use
-//! a multi-bit handshake based method, like the [SlowCrosser].
+//! a multi-bit handshake based method, like the [SlowCrosser](crate::cdc::slow_crosser::SlowCrosser).
 //!
 //! For more detail, see [this doc]
-//! (http://cva.stanford.edu/people/davidbbs/classes/ee108a/winter0607%20labs/lect.9.Metastability-blackschaffer.ppt)
+//! <http://cva.stanford.edu/people/davidbbs/classes/ee108a/winter0607%20labs/lect.9.Metastability-blackschaffer.ppt>
 //! from Stanford University.  It has a lot of great detail on the phenomenon.
 //!
 //! And just in case you think I am exaggerating the danger here (which

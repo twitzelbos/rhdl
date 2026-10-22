@@ -121,7 +121,7 @@ pub const ANGLE_W: usize = 18;
 /// full turn is `2^ANGLE_W`.
 ///
 /// Retained for the default configuration and as the reference the
-/// generic builder is checked against; [`atan_table`] computes the same
+/// generic builder is checked against; `atan_table` computes the same
 /// values for any angle width.
 pub const ATAN_TABLE: [i128; ITERATIONS] = [
     32768, 19344, 10221, 5188, 2604, 1303, 652, 326, 163, 81, 41, 20, 10, 5, 3, 1,

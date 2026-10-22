@@ -27,7 +27,7 @@ fn neg_edge<D: Domain>(prev_cr: Signal<ClockReset, D>, curr_cr: Signal<ClockRese
 /// with the specified clock periods, and an injector function
 /// to set up the inputs based on the current clock states.
 ///
-/// See the [book] for an example of its use.
+/// See the book for an example of its use.
 pub fn run_async_red_blue<'a, T, FR, FB, FJ, R, B>(
     uut: &'a T,
     mut red_fn: FR,

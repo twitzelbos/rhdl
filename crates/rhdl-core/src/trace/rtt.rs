@@ -1,4 +1,4 @@
-//! Given a [Kind], translate it into a RHDL Trace Type
+//! Given a [Kind](crate::types::kind::Kind), translate it into a RHDL Trace Type
 use crate::types::kind;
 use rhdl_trace_type as rtt;
 

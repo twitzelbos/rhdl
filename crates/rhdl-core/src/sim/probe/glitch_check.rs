@@ -4,7 +4,7 @@ use crate::{Clock, Digital, trace::trace_sample::TracedSample};
 /// The GlitchCheck struct.  Not intended to be used directly;
 /// use the [glitch_check] function to create one, or use
 /// the extension trait in [crate::sim::probe::ext].
-/// See the [book] for an example of its use.
+/// See the book for an example of its use.
 pub struct GlitchCheck<T, I, F> {
     clk: Clock,
     prev_val: T,

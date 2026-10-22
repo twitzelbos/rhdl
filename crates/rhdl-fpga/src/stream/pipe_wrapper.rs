@@ -99,7 +99,7 @@
 ")]
 //!
 //! It is understood that the pipline will start when fed `Some(S)` data
-//! element, and will produce exactly one [Option<T>] output element at some
+//! element, and will produce exactly one `Option<T>` output element at some
 //! time in the future.  The internal FIFO size is exposed, since knowledge of how big the
 //! output FIFO will need to be is a design decision.
 //!

@@ -73,7 +73,7 @@
 //! maximum, which costs **one bit** at every realistic configuration and
 //! removes the narrowing transfer entirely.
 //!
-//! So the only inter-stage operation is [`crate::dsp::sign_extend`], and
+//! So the only inter-stage operation is `crate::dsp::sign_extend`, and
 //! it is the same operation at every boundary including the ones where
 //! the widths happen to be equal. `cic_pruned!`'s module docs record a
 //! bug where a schedule that happened not to prune the first stage hid a

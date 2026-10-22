@@ -24,7 +24,7 @@ use super::kind::Tuple;
 
 type Result<T> = std::result::Result<T, RHDLError>;
 
-/// A struct that holds a [Kind](crate::types::kind::Kind) and a bit representation
+/// A struct that holds a [Kind] and a bit representation
 /// of a value that conforms to that kind.
 #[derive(Clone, PartialEq, Hash)]
 pub struct TypedBits {

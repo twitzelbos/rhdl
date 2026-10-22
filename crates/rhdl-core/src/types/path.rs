@@ -69,7 +69,7 @@ pub enum PathError {
 
 type Result<T> = std::result::Result<T, RHDLError>;
 
-/// An element of a [Path](crate::types::path::Path).
+/// An element of a [Path].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PathElement {
     /// An index into an array, e.g. `x[3]`

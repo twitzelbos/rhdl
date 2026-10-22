@@ -6,7 +6,7 @@
 //! pair of RHDL streams.  One is a stream for addresses to read
 //! from the AXI bus.  The other is a stream of responses from
 //! the bus back to the controller.  Each request must generate
-//! a response.  This core can be paired up with the [ReadEndpoint]
+//! a response.  This core can be paired up with the [`ReadEndpoint`](crate::axi4lite::core::endpoint::read::ReadEndpoint)
 //! core to transport the RHDL stream across an AXI bus interface
 //! in a spec compliant manner.
 //!
@@ -38,7 +38,7 @@ R<ReadRslt>|                |<--------+
 //!
 //!# Internal Details
 //!
-//! Internally, the [ReadController] consists of the following rough
+//! Internally, the [`ReadController`] consists of the following rough
 //! contents.  A [crate::stream::map::Map] core is used to convert between
 //! the AXI [ReadResponse] to a [ReadResult].
 #![doc = badascii!(r"
@@ -67,7 +67,7 @@ R<ReadRslt>|                |<--------+
 //!
 //!# Example
 //!
-//! An example of using a [ReadController] and [ReadEndpoint]
+//! An example of using a [`ReadController`] and [`ReadEndpoint`](crate::axi4lite::core::endpoint::read::ReadEndpoint)
 //! together in a test harness is included here:
 //!
 #![doc = badascii!(r"
@@ -152,7 +152,7 @@ pub fn map_result(_cr: ClockReset, resp: ReadResponse) -> ReadResult {
 }
 
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
-/// Input for the [ReadController] core
+/// Input for the [`ReadController`] core
 pub struct In {
     /// AXI signals from bus
     pub axi: ReadMISO,
@@ -163,7 +163,7 @@ pub struct In {
 }
 
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
-/// Output for the [ReadController] core
+/// Output for the [`ReadController`] core
 pub struct Out {
     /// AXI signals to the bus
     pub axi: ReadMOSI,

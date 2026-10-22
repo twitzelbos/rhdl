@@ -160,7 +160,7 @@ pub trait DigitalFn6 {
 }
 
 /// A description of a Digital function's signature.
-/// See: https://jsdw.me/posts/rust-fn-traits/
+/// See: <https://jsdw.me/posts/rust-fn-traits/>
 #[derive(Clone, PartialEq, Hash)]
 pub struct DigitalSignature {
     /// The argument [Kind]s.

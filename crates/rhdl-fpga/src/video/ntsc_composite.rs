@@ -56,7 +56,7 @@ B<2> |                         | B<2>
 //!# Internals
 //!
 //! Wraps the shipped [super::video_timing::VideoTimingCore] with
-//! NTSC timings (the host picks via [Self::ntsc_240p]) and
+//! NTSC timings (the host picks via `Self::ntsc_240p`) and
 //! composes a tiny 4-way multiplexer that selects the composite
 //! output level based on `(hsync OR vsync, active)`:
 //!

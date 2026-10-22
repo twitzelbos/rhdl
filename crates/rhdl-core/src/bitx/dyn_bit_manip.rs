@@ -142,7 +142,7 @@ pub fn move_nbits_to_msb<T: Copy>(a: &[T], n: usize) -> Vec<T> {
 }
 
 /// Pairwise max of two `usize` values, evaluable in `const`
-/// context.  The companion to [`const_max!`] — used internally
+/// context.  The companion to [`const_max_pair`] — used internally
 /// to keep the macro expansion linear in argument count.
 pub const fn const_max_pair(a: usize, b: usize) -> usize {
     if a > b { a } else { b }

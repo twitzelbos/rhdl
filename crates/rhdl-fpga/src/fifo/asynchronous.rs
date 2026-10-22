@@ -38,7 +38,7 @@
 //! emptiness of the output (i.e., if `data` is `None`, then
 //! the FIFO is empty, and `next = true` will cause an underflow.)
 //!
-//! Thus to test the FIFO, you can either use an [AsyncFIFOTester], which
+//! Thus to test the FIFO, you can either use an [AsyncFIFOTester](crate::fifo::testing::async_tester::AsyncFIFOTester), which
 //! includes a feed and drain, or you can use the [run_async_red_blue] helper
 //! function, which allows you to run a double-feedback simulation with
 //! two clocks.  It requires care, as RHDL does not enforce the

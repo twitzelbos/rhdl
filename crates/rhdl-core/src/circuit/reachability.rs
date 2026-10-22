@@ -32,7 +32,7 @@
 //!
 //! Not from RHIF. `combinational-reachability-and-loop-detection.md` §4.2
 //! specifies the intra-widget graph as a use-def walk over the RHIF
-//! `Object`, but RHIF is not retained past stage 1 — [`Descriptor`] holds
+//! `Object`, but RHIF is not retained past stage 1 — [`Descriptor`](crate::circuit::descriptor::Descriptor) holds
 //! an [`rtl::Object`]. Lowering that to a netlist with
 //! [`build_ntl_from_rtl`] gives the same information in a more convenient
 //! shape: the kernel's netlist has exactly the ports this analysis needs,

@@ -8,7 +8,7 @@
 //! Implementations are provided for `&'static str`, `usize`,
 //! slices of `&'static str`, and tuples of two TraceKeys.
 //!
-//! With these, you can call the [trace](crate::trace::db::trace) function with keys such as
+//! With these, you can call the [`trace`](crate::trace::page::trace) function with keys such as
 //! `"signal_name"`, `42`, `&["module", "submodule", "signal"]`,
 //! or `("module", "signal")`.
 use std::hash::Hash;

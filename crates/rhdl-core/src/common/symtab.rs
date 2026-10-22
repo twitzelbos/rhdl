@@ -2,8 +2,8 @@
 //!
 //! A symbol table consists of the following:
 //!
-//!  - A [SlotVec] of literals, which map [LiteralId]s to some literal value type `L` and associated metadata `M`.
-//!  - A [SlotVec] of registers, which map [RegisterId]s to some register value type `R` and associated metadata `M`.
+//!  - A `SlotVec` of literals, which map [LiteralId]s to some literal value type `L` and associated metadata `M`.
+//!  - A `SlotVec` of registers, which map [RegisterId]s to some register value type `R` and associated metadata `M`.
 //!
 //! Access to the symbol table can occur via the [Symbol] enum which can represent either a literal or a register.
 //! You can also access the table directly via the [LiteralId] and [RegisterId] types, in which case, you can access

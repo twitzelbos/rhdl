@@ -13,7 +13,7 @@ use crate::{
 };
 
 /// A probe that writes traced samples to a Svg file without consuming them.
-/// See the [book] for an example of its use.
+/// See the book for an example of its use.
 pub struct SvgTap<I> {
     inner: SvgFile,
     iter: I,

@@ -25,8 +25,8 @@
 //!
 //!# Internal Details
 //!
-//! Internally, the register contains both a [ReadEndpoint] and
-//! [WriteEndpoint] for communication with the AXI bus.  The
+//! Internally, the register contains both a [`ReadEndpoint`] and
+//! [`WriteEndpoint`] for communication with the AXI bus.  The
 //! address is checked against a provided value.  Write contention
 //! (i.e., writes to the register from both the client side
 //! and the AXI side on the same clock cycle) are resolved in

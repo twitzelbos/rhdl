@@ -19,7 +19,7 @@
 //!
 //! The internal circuitry of the reset conditioner is
 //! show below.  The reset conditioner is essentially a
-//! [Sync1Bit] one-bit synchronizer, with a constant
+//! [Sync1Bit](crate::cdc::synchronizer::Sync1Bit) one-bit synchronizer, with a constant
 //! input (and inverted output).  The difference is that
 //! the resets of both flip flops are tied to the input
 //! reset.  

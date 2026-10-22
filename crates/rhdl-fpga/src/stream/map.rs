@@ -22,7 +22,7 @@ Ry<T>|                | Ry<S>
 //!
 //!# Internals
 //!
-//! Unlike [Flatten] or [Chunked], the [Map] does not
+//! Unlike [Flatten](crate::stream::flatten::Flatten) or `Chunked`, the [Map] does not
 //! impose any flow control on the upstream.  Because it can
 //! at most produce as many items as the source stream, it can be
 //! implemented with simple [StreamBuffer] buffers at the input

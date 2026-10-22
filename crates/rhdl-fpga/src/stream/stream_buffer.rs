@@ -3,9 +3,9 @@
 //! This core wraps the [Carloni] skid buffer core
 //! in a more ergonomic [Option] based interface.  The
 //! `void_in` input and the `data_in` are combined into
-//! a single `data_in` with type [Option<T>], and the
+//! a single `data_in` with type `Option<T>`, and the
 //! `void_out` and `data_out` are similarly combined
-//! into a single `data_out` with type [Option<T>].  Furthermore
+//! into a single `data_out` with type `Option<T>`.  Furthermore
 //! for compatibility with the `ready-valid` interface used
 //! elsewhere in RHDL, the `stop` signals are inverted to be
 //! `valid` signals.
@@ -26,9 +26,9 @@ Ready<T>|                | Ready<T>
 //!
 //!# Internal details
 //!
-//! Internally, the buffer is simply a [CarloniBuffer]
+//! Internally, the buffer is simply a [`StreamBuffer`]
 //! with `pack` and `unpack` cores to convert the
-//! [Option<T>]  to a pair of `data` and `valid` lines.
+//! `Option<T>`  to a pair of `data` and `valid` lines.
 //! The code is pretty short and self-expanatory.
 //!
 //! Here is a sketch of the internals
@@ -52,7 +52,7 @@ Ready<T>|                | Ready<T>
 //!
 //!# Example
 //!
-//! Here is the example from the [CarloniBuffer] with an [Option<T>]
+//! Here is the example from the [`StreamBuffer`] with an `Option<T>`
 //! based interface.
 //!
 //!```

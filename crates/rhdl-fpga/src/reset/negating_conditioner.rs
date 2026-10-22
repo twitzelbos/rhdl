@@ -3,7 +3,7 @@
 //! It's fairly frequent that you need to couple an
 //! asynchronous (active-low) reset into RHDL, which uses
 //! a synchronous active-high reset.  This core combines
-//! the [ResetNegation] core with the [ResetConditioner]
+//! the [ResetNegation](crate::reset::negation::ResetNegation) core with the [ResetConditioner](crate::reset::conditioner::ResetConditioner)
 //! to provide a simple way to generate a synchronous
 //! clock and [Reset] signal from an asynchronous
 //! [ResetN] input.

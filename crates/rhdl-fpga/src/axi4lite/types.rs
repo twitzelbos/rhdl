@@ -143,7 +143,7 @@ pub type ReadResult = Result<AxilData, AXI4Error>;
 /// Helper function to recode a [ReadResponse] into a [Result].
 ///
 /// Because the [ReadResponse] is a bit cryptic, this function converts
-/// it into a [Result].  Note that the [ResponseKind::OKAY] and [ResponseKind::EXOKAY]
+/// it into a [Result].  Note that the `ResponseKind::OKAY` and `ResponseKind::EXOKAY`
 /// variants are collapsed into a single [Ok] variant.
 pub fn read_response_to_result(resp: ReadResponse) -> Result<AxilData, AXI4Error> {
     match resp.resp {

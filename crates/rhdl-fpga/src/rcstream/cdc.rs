@@ -1,5 +1,5 @@
 #![warn(missing_docs)]
-//! Clock-domain crossing for [`RCStream`] connections.
+//! Clock-domain crossing for [`RCStream`](crate::rcstream::bus::RCStream) connections.
 //!
 //! [`RCStreamCdc`] moves [`Item<T, F>`]s from a source in write domain
 //! `W` to a sink in read domain `R`, presenting a normal `RCStream`
@@ -24,7 +24,7 @@
 //!
 //!# Why this widget exists
 //!
-//! [`RCStream`] carries no clock-domain information in the
+//! [`RCStream`](crate::rcstream::bus::RCStream) carries no clock-domain information in the
 //! single-domain ([`Synchronous`]) family — the framework fans out one
 //! `ClockReset` to every sub-circuit, so "the domain" is implicit and
 //! uniform.  The moment a design has two clocks, moving a stream

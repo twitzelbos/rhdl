@@ -1,5 +1,5 @@
 #![warn(missing_docs)]
-//! `RCStreamFanout<T, F, N>` — broadcast one [`RCStream`] to `N` sinks.
+//! `RCStreamFanout<T, F, N>` — broadcast one [`RCStream`](crate::rcstream::bus::RCStream) to `N` sinks.
 //!
 //! Every sink receives **every** item. The widget holds each item until
 //! all `N` branches have taken it, then accepts the next one.
@@ -60,7 +60,7 @@
 //!
 //! That is deliberate. Deriving `ready` from `i.ready[]` would create a
 //! combinational input-to-output path and break
-//! [`no_combinatorial_paths`](crate::circuit::drc::no_combinatorial_paths),
+//! `no_combinatorial_paths`,
 //! which every `rcstream` combinator carries so that it remains a valid
 //! relay-insertion point under the Carloni LID theorem. Put an
 //! [`super::relay::RCStreamRelay`] on the input if the gap matters;

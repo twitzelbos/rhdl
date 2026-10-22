@@ -80,7 +80,7 @@ impl<T: Digital, W: Domain, R: Domain, const N: usize> OptionAsyncBram<T, W, R, 
 where
     rhdl::bits::W<N>: BitWidth,
 {
-    /// Create a new [OptionAsyncBRAM] with the provided initial contents.
+    /// Create a new [OptionAsyncBRAM](crate::core::ram::option_async::OptionAsyncBram) with the provided initial contents.
     pub fn new(initial: impl IntoIterator<Item = (Bits<N>, T)>) -> Self {
         Self {
             inner: super::asynchronous::AsyncBRAM::new(initial),
@@ -91,7 +91,7 @@ where
 type ReadI<const N: usize> = super::asynchronous::ReadI<N>;
 
 #[derive(PartialEq, Debug, Digital, Clone, Copy)]
-/// The write interface for the [OptionAsyncBRAM].
+/// The write interface for the [OptionAsyncBRAM](crate::core::ram::option_async::OptionAsyncBram).
 pub struct WriteI<T: Digital, const N: usize>
 where
     rhdl::bits::W<N>: BitWidth,
@@ -103,7 +103,7 @@ where
 }
 
 #[derive(PartialEq, Debug, Digital, Copy, Timed, Clone)]
-/// The input struct for the [OptionAsyncBRAM]
+/// The input struct for the [OptionAsyncBRAM](crate::core::ram::option_async::OptionAsyncBram)
 pub struct In<T: Digital, W: Domain, R: Domain, const N: usize>
 where
     rhdl::bits::W<N>: BitWidth,
@@ -124,7 +124,7 @@ where
 }
 
 #[kernel(allow_weak_partial)]
-/// Kernel function for [OptionAsyncBRAM]
+/// Kernel function for [OptionAsyncBRAM](crate::core::ram::option_async::OptionAsyncBram)
 pub fn ram_kernel<T: Digital, W: Domain, R: Domain, const N: usize>(
     i: In<T, W, R, N>,
     q: OptionAsyncBramQ<T, W, R, N>,

@@ -21,7 +21,7 @@
 //! 80-bit frame builder, hours/minutes/seconds packing, the
 //! drop-frame flag, the 16-bit sync word `0xBFFC`, and the
 //! audio-band waveform driver (the host can hook `line_out` to a
-//! [super::super::audio::audio_pwm::AudioPwm] mark/space generator
+//! `super::super::audio::audio_pwm::AudioPwm` mark/space generator
 //! or directly to a digital pin) are deferred to v2.
 //!
 //! Here is the schematic symbol

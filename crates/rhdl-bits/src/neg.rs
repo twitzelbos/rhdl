@@ -9,7 +9,7 @@
 //! assert_eq!(b, s8(-38));
 //! ```
 //!
-//! You can also negate a [SignedDynBits] value:
+//! You can also negate a [`SignedDynBits`] value:
 //! ```
 //! # use rhdl_bits::*;
 //! # use rhdl_bits::alias::*;

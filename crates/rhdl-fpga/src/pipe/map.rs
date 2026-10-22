@@ -11,7 +11,7 @@
 //! Note that the inputs are registered, but _not_ the outputs.
 //! This is by design, so that the pipe cores can be chained
 //! without redundant register slices between them.  If you want
-//! an extra register slice, you can insert a [Buffer] in the
+//! an extra register slice, you can insert a `Buffer` in the
 //! pipeline.  There are no combinatorial paths from the input
 //! to the output, and this is verified via a test.
 //!
@@ -28,7 +28,7 @@
 //!
 //!# Internals
 //!
-//! The [Map] core is simple.  A [DFF] registers the incoming
+//! The [Map] core is simple.  A [`DFF`] registers the incoming
 //! data.  When the input is `Some`, the provided function is
 //! provided the data, and the output wrapped into an option
 //! for passing down the pipeline.

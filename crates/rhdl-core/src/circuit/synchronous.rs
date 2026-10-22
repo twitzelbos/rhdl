@@ -8,9 +8,9 @@
 //! simulating the circuit behavior, and generating HDL descriptions.
 //!
 //! In almost all cases, you will want to `derive` the [Synchronous]
-//! trait for your circuit struct using the [rhdl_derive::Synchronous] macro,
+//! trait for your circuit struct using the `rhdl_derive::Synchronous` macro,
 //! which will automatically implement the necessary methods based on the
-//! fields of your struct and the [kernel] function you provide.
+//! fields of your struct and the `kernel` function you provide.
 //!
 //! # The Canonical Diagram
 //!

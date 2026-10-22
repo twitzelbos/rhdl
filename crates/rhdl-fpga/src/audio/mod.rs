@@ -2,7 +2,7 @@
 //! Audio output and audio-protocol widgets.
 //!
 //! Currently houses just the PWM / sigma-delta stereo audio
-//! generator ([`audio_pwm::AudioPwm`]).  Future inhabitants of
+//! generator (`audio_pwm::AudioPwm`).  Future inhabitants of
 //! this category include I²S transmit / receive, S/PDIF encoder /
 //! decoder, AC'97, audio resamplers, simple linear-PCM tone
 //! generators, and the audio islands of HDMI / DisplayPort.

@@ -74,10 +74,10 @@ pub struct In {
     pub current_task: Bits<4>,
     /// Disk's current rotational word data (combinational from
     /// disk's `current_word_data` output).  Used by F2=DiskWordTransfer
-    /// in Disk Word task to write the word to memory[KCWA].
+    /// in Disk Word task to write the word to `memory[KCWA]`.
     pub disk_word_data: Bits<16>,
     /// KCWA register value (combinational from controller's q.kcwa).
-    /// The address memory[KCWA] is the destination for per-word DMA.
+    /// The address `memory[KCWA]` is the destination for per-word DMA.
     pub kcwa: Bits<16>,
     /// KSTAT register value (16-bit disk status).  Per *Alto Hardware
     /// Manual* §2.1 + spec §3.2 + §8.5: in Disk Sector / Disk Word
@@ -135,7 +135,7 @@ pub struct Out {
     /// Memory write data — equals BUS when `mem_write_en`.
     pub mem_write_data: Bits<16>,
     /// Disk-controller register address (3 bits → registers 0-5).
-    /// Sourced from RSEL[2:0] of the current instruction.
+    /// Sourced from `RSEL[2:0]` of the current instruction.
     pub disk_ctrl_addr: Bits<3>,
     /// Disk-controller write enable — true when F1 = DiskCtrlWrite
     /// AND current_task == 4 (Disk Sector).
@@ -221,7 +221,7 @@ pub struct Out {
 /// the 1-cycle Q-register delay that sub-widget composition would
 /// introduce, so the engine kernel can compute the **effective RSEL**
 /// per-cycle (e.g., overridden by F2=ACSOURCE / F2=ACDEST in the
-/// Emulator task per spec §6.6) and read R[effective_rsel]
+/// Emulator task per spec §6.6) and read `R[effective_rsel]`
 /// combinationally in the same cycle.  Without this, ACSOURCE/ACDEST
 /// would only address the IR-derived register one cycle later, which
 /// is microcode-incompatible with real Alto.
@@ -297,7 +297,7 @@ pub struct Microengine {
 ///
 /// - The **bank** register (3 bits, 0..7) — Emulator's S-bank
 ///   select.  Set by ESRB (Emulator's Set Register Bank, F1=15B
-///   = our F1=13 in Emulator) which loads bank from BUS[2:0].
+///   = our F1=13 in Emulator) which loads bank from `BUS[2:0]`.
 ///
 /// **Critical asymmetries from L/R analog (per spec digest §4.3):**
 ///
@@ -344,7 +344,7 @@ impl Default for ControlRam {
 }
 
 impl Microengine {
-    /// Construct a Microengine with R[6] (= `$PC`, Emulator's program
+    /// Construct a Microengine with `R[6]` (= `$PC`, Emulator's program
     /// counter) initialized to a specific value.  Per AltoHW §3.4
     /// (Bootstrapping): "When the transfer is complete, PC ← 1, and
     /// the emulator is started."  The boot button performs this

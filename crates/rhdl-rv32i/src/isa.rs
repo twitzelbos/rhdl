@@ -47,7 +47,7 @@ pub enum Opcode {
     MiscMem,
 }
 
-/// ALU operation selected by the decoder.  Drives the [`Alu`]
+/// ALU operation selected by the decoder.  Drives the [`AluOp`]
 /// kernel.  Encodes the cross-product of `funct3` × the relevant
 /// `funct7` bit (which distinguishes ADD/SUB and SRL/SRA).
 ///

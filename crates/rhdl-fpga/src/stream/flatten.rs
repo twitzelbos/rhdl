@@ -9,7 +9,7 @@
 //!
 //!# Schematic Symbol
 //!
-//! Here is the schematic symbol for the [FlattenPipe] buffer
+//! Here is the schematic symbol for the [`Flatten`] buffer
 //!
 #![doc = badascii_formal!("
          +-+FlattenPipe+--+        
@@ -143,10 +143,10 @@ where
     }
 }
 
-/// Inputs for the [FlattenPipe] core
+/// Inputs for the [FlattenPipe](crate::stream::flatten::Flatten) core
 pub type In<T, const N: usize> = StreamIO<[T; N], T>;
 
-/// Outputs from the [FlattenPipe] core
+/// Outputs from the [FlattenPipe](crate::stream::flatten::Flatten) core
 pub type Out<T, const N: usize> = StreamIO<T, [T; N]>;
 
 impl<T: Digital, const M: usize, const N: usize> SynchronousIO for Flatten<T, M, N>

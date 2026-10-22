@@ -1,8 +1,8 @@
 //! # Bit width marker trait and type
 //!
 //! This module provides a marker trait and a type-level representation for bit widths
-//! in the range 1..=128. This is used to ensure that the number of bits in a [Bits](crate::Bits) or
-//! [SignedBits](crate::SignedBits) value is in a valid range.
+//! in the range 1..=128. This is used to ensure that the number of bits in a [Bits] or
+//! [SignedBits] value is in a valid range.
 //! ```
 //! use rhdl_bits::*;
 //! fn takes_variable_bit_widths<const N: usize>(value: Bits<N>) where W<N> : BitWidth {}

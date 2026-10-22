@@ -1,12 +1,12 @@
-//! Generate HDL (Verilog) for [Synchronous](crate::Synchronous)
+//! Generate HDL (Verilog) for [Synchronous]
 //!
 //! This module provides functionality to generate HDL (specifically Verilog)
 //! representations of RHDL synchronous circuits.  You will generally not need to call these
-//! functions directly.  Instead use the method `descriptor` on [Synchronous](crate::Synchronous).
-//! The returned [Descriptor](crate::circuit::descriptor::Descriptor) will contain
+//! functions directly.  Instead use the method `descriptor` on [Synchronous].
+//! The returned [`Descriptor`] will contain
 //! the HDL description of the circuit.
 //!
-//!! See the [book] for more details on HDL generation in RHDL.
+//!! See the book for more details on HDL generation in RHDL.
 
 use crate::{
     CompilationMode, HDLDescriptor, Kind, RHDLError, Synchronous, SynchronousDQ, SynchronousIO,

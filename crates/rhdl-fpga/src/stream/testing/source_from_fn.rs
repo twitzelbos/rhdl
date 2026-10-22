@@ -31,7 +31,7 @@ pub struct SourceFromFn<T: Digital> {
 impl<T: Digital> SourceFromFn<T> {
     /// Create a new [SourceFromFn] object from the given iterator
     ///
-    /// Note that the iterator will return a sequence of [Option<T>].
+    /// Note that the iterator will return a sequence of `Option<T>`.
     /// When the iterator is exhausted, no further data items will be
     /// returned.  _This does not stop the simulation_.  Stopping the
     /// simulation must be handled in some other way, as `rhdl` does

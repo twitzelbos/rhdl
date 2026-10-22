@@ -18,7 +18,7 @@ out               [d0..d3]         [d4..d7]
 //!
 //!# Schematic Symbol
 //!
-//! Here is the schematic symbol for the [ChunkedPipe] core.
+//! Here is the schematic symbol for the `ChunkedPipe` core.
 //!
 #![doc = badascii_formal!("
      ++Chunked+---+        

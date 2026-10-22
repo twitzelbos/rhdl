@@ -7,7 +7,7 @@ use crate::{Clock, ClockReset, Digital, trace::trace_sample::TracedSample};
 /// ever that clock signal experiences a positive edge, this probe will
 /// emit the _previous_ value for the stream.  
 ///
-/// Note that unlike [crate::sim::probe::sample_at_pos_edge::SampleAtPosEdge], this probe assumes that the input
+/// Note that unlike `crate::sim::probe::sample_at_pos_edge::SampleAtPosEdge`, this probe assumes that the input
 /// stream is synchronous, i.e., it contains clock and reset information
 /// as part of its input type.
 pub struct SynchronousSample<S>

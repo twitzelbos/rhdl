@@ -2,7 +2,7 @@
 //!
 //! This module provides the [Func] struct, which can wrap a pure function that is synthesizable
 //! (marked with `#[digital]`) into a synchronous circuit.  It simply saves you the trouble of
-//! defining a new struct and implementing the [Synchronous](crate::Synchronous) trait manually.  
+//! defining a new struct and implementing the [Synchronous] trait manually.  
 #![doc = badascii_doc::badascii!(r"
       ++Func+-----------+       
       |                 |       

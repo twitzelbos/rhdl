@@ -1,5 +1,5 @@
 #![warn(missing_docs)]
-//! Split one [`RCStream`] of pairs into two independent streams.
+//! Split one [`RCStream`](crate::rcstream::bus::RCStream) of pairs into two independent streams.
 //!
 //! The exact inverse of [`super::zip`].
 //!
@@ -57,7 +57,7 @@ use rhdl::prelude::*;
 use super::bus::Item;
 use super::relay::RCStreamRelay;
 
-/// Split one [`RCStream`] of pairs into two independent streams.
+/// Split one [`RCStream`](crate::rcstream::bus::RCStream) of pairs into two independent streams.
 ///
 /// `A`/`F` are the first output's payload and framing types, `B`/`G`
 /// the second's.  The input is `RCStream<(A, B), (F, G)>`.

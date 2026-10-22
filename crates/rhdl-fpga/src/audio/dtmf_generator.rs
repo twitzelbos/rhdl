@@ -15,7 +15,7 @@
 //! tones land at exactly the spec-defined frequencies — but the
 //! waveform is not a true sine; the harmonics ride above the
 //! voiceband (4 kHz) and either an analog low-pass filter or a
-//! sigma-delta DAC ([`super::audio_pwm::AudioPwm`]) is the
+//! sigma-delta DAC (`super::audio_pwm::AudioPwm`) is the
 //! intended downstream consumer.  A true sine via small lookup
 //! table is a v2 enhancement.
 //!

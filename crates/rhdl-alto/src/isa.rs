@@ -229,7 +229,7 @@ pub enum F2Function {
     BusToNext,
     /// `ALUCY` — F2 = 5.  Modify NEXT's bit 0 with ALU carry-out.
     AluCarryToNext,
-    /// `MD← BUS` — F2 = 6, universal.  Write BUS to memory[MAR]
+    /// `MD← BUS` — F2 = 6, universal.  Write BUS to `memory[MAR]`
     /// this cycle.
     StoreMd,
     /// `CONSTANT` — F2 = 7, universal.  BUS driven from constant ROM,
@@ -238,7 +238,7 @@ pub enum F2Function {
     Constant,
     /// F2 = 8 — per-task.  Emulator: BUSODD.  Disk: DiskInit (INIT).
     /// Phase-3.5 reuse: in Disk Word task (14), this is the atomic
-    /// per-word DMA trigger (memory[KCWA] ← disk_word_data; KCWA++).
+    /// per-word DMA trigger (`memory[KCWA]` ← disk_word_data; KCWA++).
     /// Real Alto uses the multi-cycle STROBE/KFER protocol; collapsed
     /// to one cycle here.
     DiskWordTransfer,
@@ -252,7 +252,7 @@ pub enum F2Function {
     /// Phase-3.5 implements Emulator semantics; Disk semantics no-op.
     LoadIr,
     /// F2 = 13 — per-task.  Emulator: IDISP (Instruction Dispatch —
-    /// OR IR[7:0] into NEXT[7:0]).  Disk: NFER.  Phase-3.5 implements
+    /// OR `IR[7:0]` into `NEXT[7:0]`).  Disk: NFER.  Phase-3.5 implements
     /// Emulator semantics.
     IDispatch,
     /// F2 = 14 — per-task.  Emulator: ACSOURCE.  Disk: STROBON.  No-op.
