@@ -34,4 +34,5 @@
 //! within the 3-bit field the spec gives it.
 
 pub mod check;
+pub mod manager;
 pub mod types;
