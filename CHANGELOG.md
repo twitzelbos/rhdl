@@ -221,6 +221,18 @@ count for all twenty-nine transcripts.
   makes structurally impossible by removing `WID`; the assertion in
   §7.2's list is therefore vacuous for AXI4 and would only matter for
   an AXI3 bridge.
+- **`axi4lite/channel/` is checked into git but never declared in
+  `axi4lite/mod.rs`**, so it is dead code that does not compile. Found
+  by a `cargo doc` run: a paragraph in `axi4/types.rs` claimed AXI4
+  reused that generic sender/receiver pair unchanged, and the
+  intra-doc link to it could not resolve. It cannot be reused as
+  things stand, and the Lite widgets do not use it either — they carry
+  `valid`/`ready` as plain `bool` fields on their MOSI/MISO structs.
+  The doc now says so. Whether to revive the module or delete it is a
+  separate decision from adding AXI4, but anyone reaching for "just
+  reuse the Lite channel" in a later phase will hit this first.
+  Note that `cargo doc` warnings are not part of the CI gate, so this
+  class of defect is currently only found by running it by hand.
 
 ---
 

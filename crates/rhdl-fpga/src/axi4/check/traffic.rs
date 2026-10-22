@@ -23,7 +23,7 @@
 //!
 //! # Two vocabularies
 //!
-//! [`Violation`] is what the generator *does*; [`super::monitor::Fault`]
+//! [`Violation`] is what the generator *does*; [`super::rules::Fault`]
 //! is what a monitor *reports*. They are deliberately separate types,
 //! because several traffic shapes can break one rule —
 //! [`Violation::BrespWithoutAw`] and [`Violation::BrespSurplus`] are

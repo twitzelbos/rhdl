@@ -27,7 +27,7 @@
 //!
 //! # Why 128 bits is the widest data bus
 //!
-//! [`AXI4_MAX_DATA_BITS`]. `Bits<N>` exists for `N` in `1..=128`, so a
+//! [`types::AXI4_MAX_DATA_BITS`]. `Bits<N>` exists for `N` in `1..=128`, so a
 //! 256- or 512-bit bus would need an array-of-words payload or a
 //! kernel-language change. Neither is foreclosed; both are more than
 //! this needs. `AxSIZE` tops out at 4 for a 16-byte bus, which is
