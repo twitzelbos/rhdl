@@ -590,7 +590,7 @@ mod tests {
         for size in 0u32..=4 {
             for len in [1u32, 3, 7, 15] {
                 let bytes = 1u128 << size;
-                let start = 3 * bytes & !(bytes - 1);
+                let start = (3 * bytes) & !(bytes - 1);
                 let seen: std::collections::BTreeSet<u128> = (0..=len)
                     .map(|beat| {
                         beat_address::<32>(

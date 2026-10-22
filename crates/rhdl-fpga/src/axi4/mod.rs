@@ -33,4 +33,5 @@
 //! this needs. `AxSIZE` tops out at 4 for a 16-byte bus, which is
 //! within the 3-bit field the spec gives it.
 
+pub mod check;
 pub mod types;

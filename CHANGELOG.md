@@ -31,6 +31,141 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-10-21 — AXI4 Phase 1: two protocol monitors, and the traffic written to break them
+
+**Path:** `crates/rhdl-fpga/src/axi4/check/{mod,traffic,monitor}.rs`,
+`crates/rhdl-fpga/verilog/axi4/axi4_write_monitor.v`,
+`crates/rhdl-fpga/tests/axi4_tier_b_monitor.rs`,
+`crates/rhdl-fpga/examples/axi4_write_monitor.rs`,
+`crates/rhdl-fpga/doc/axi4_write_monitor.md`
+
+**Why this, why now:** `axi4-architecture.md` §7 makes a protocol
+checker the gate on everything else in the AXI4 track — every widget
+built after this is validated against it, so a checker that silently
+passes bad traffic would launder every later defect into a green test
+run. The user chose full conformance scope and validation by *both* an
+RHDL checker and vendor Verilog, so the monitors come before the
+widgets they will police.
+
+**Design decisions:**
+
+- **The broken traffic was written before the checker, and that
+  ordering is the substance of the entry, not a process note.** A
+  monitor is only worth what it rejects, and a checker written against
+  traffic the author also believes is legal has a strong failure mode:
+  it passes everything, including itself. So `check::traffic` names
+  fourteen violations and generates a transcript for each *first*, and
+  `every_injected_violation_is_caught` is the Phase 1 gate.
+- **Two enums, not one.** `Violation` is what the generator does;
+  `Fault` is what a monitor reports, and `Violation::expected()` maps
+  between them. The mapping is many-to-one — `BrespWithoutAw` and
+  `BrespSurplus` are different bus behaviour breaking one clause — and
+  a single shared enum would have forced either a fake distinction in
+  the monitor or a fake merge in the generator.
+- **One injected fault per transcript.** Otherwise a monitor passes by
+  reporting any of several faults, and two checks wired to the same
+  flag are indistinguishable from two working checks.
+- **Tier B is implemented by deliberately different means.** Where the
+  Rust shifts a run of ones to build the legal strobe mask, the Verilog
+  walks the byte lanes; where the Rust computes a beat address
+  closed-form from the beat index, the Verilog accumulates it; where the
+  Rust compares the pages of the first and last *beat*, the Verilog
+  compares the first and last *byte*. Agreement between two
+  implementations that made different choices is evidence. Agreement
+  between a function and its own transliteration is not, and a
+  transliterated Tier B would have been a ~300-line no-op.
+- **The monitor's blind spot is an output port, not an unwritten
+  `else`.** AXI4 permits write data before its address, and such a beat
+  cannot be position-checked — the monitor does not know which burst it
+  belongs to. It counts them on `unchecked_beats` instead of skipping
+  them, and the conformant control asserts that count is **zero**.
+  Without that assertion a monitor that classified every beat as
+  unpositionable would pass the whole gate by checking nothing.
+- **Response matching is by count, not by ID, and says so.** ID-keyed
+  matching is the Phase 4 ID table; a count is what is sound without it.
+
+**Surprises and gotchas:**
+
+- **A mutation run found two checks that no test had ever executed.**
+  All of the first gate's assertions passed on the first attempt, which
+  given CLAUDE.md's standing warning was reason to distrust it rather
+  than to ship. Disabling each of the fourteen checks in turn and
+  re-running the gate showed twelve were load-bearing and that
+  `BValidDropped` and `BPayloadChanged` could be **deleted outright
+  with every test still green** — no transcript ever stalled the
+  response channel, because the B handshake binds the subordinate and a
+  manager-shaped generator never exercises it. An unexercised check is
+  worse than a missing one: it reads as coverage. Fixed by adding the
+  two transcripts, and the conclusion is now permanently enforced by
+  `every_fault_is_exercised_by_some_transcript`, which requires every
+  `Fault` be in the image of some `Violation`. A mutation run cannot be
+  a `cargo test`; its *conclusion* can be.
+- **The Tier A/Tier B cross-check paid for itself on its first run, and
+  it was the *tally* that caught it, not the verdict.** Fifteen of
+  sixteen transcripts agreed exactly. `SizeExceedsBus` agreed on the
+  fault and disagreed 5-to-1 on the count: both monitors clamp the
+  transfer size to keep the lane arithmetic in bounds, and they had
+  clamped *oppositely* — Rust to one byte, Verilog to the full bus — so
+  the same illegal burst drew four phantom strobe faults from one and
+  none from the other. Neither count was right, because the spec says
+  nothing about lanes once `AxSIZE` is illegal. Both now **suppress**
+  the lane check rather than clamping it. Had the test compared only
+  the verdict, it would have passed and the disagreement would have
+  shipped.
+- **The Verilog monitor's first draft was blind to a whole fault**, and
+  only the agreement test could reveal it: it compared `BID` across a
+  stalled response beat but not `BRESP`, so a response whose status
+  changed while offered looked unchanged. An independent oracle has its
+  own bugs; what makes it useful is that they are *different* bugs.
+- **`#[rhdl(dq_no_prefix)]` generates types literally named `Q` and
+  `D`, so a const generic called `D` shadows one.** Every other type in
+  `axi4` uses `D` for the data width; the monitor has to call it `DW`.
+  The error does not mention the collision — it is `type provided when
+  a constant was expected`, pointed at the widget's own field list.
+- **CLAUDE.md §4's clamp-the-operand rule bites here for real.** The
+  strobe mask shifts by the transfer size, and both arms of an `if`
+  evaluate in hardware and in the kernel VM — so on the very traffic
+  the monitor exists to report, an unclamped `1 << bytes_per_beat(size)`
+  trips the VM's shift bound. It passes a direct Rust call and fails
+  only under `test_kernel_vm_and_verilog_synchronous`. There is a Tier-1
+  test named for this.
+- **Tier 3 pins the interface, not the body, and this is a documented
+  deviation.** The emitted Verilog is 914 lines — five times the
+  largest snapshot anywhere else in the crate (`core::crc32`, 187) — so
+  an inline snapshot would make the file mostly generated Verilog and
+  make every diff review a skim. What is pinned is the module headers,
+  which carry the packed-vector widths of `In` and `Out` and so are the
+  actual ABI, plus the line count. Behaviour is covered where it
+  belongs: Tier 4 diffs every signal of every cycle, Tier 5 digests the
+  waveform.
+
+**Validation:** All five tiers. Tier 1: seven direct kernel tests
+including reset, the shift-bound case, lane selection, and
+counter-underflow. Tier 2: the sixteen-transcript gate plus the
+fully-checked-and-clean control. Tier 3: emitted-interface snapshot.
+Tier 4: `iverilog` round-trip through both `.rtl()` and `.ntl()`. Tier
+5: VCD digest. Plus the Tier A/Tier B agreement test, which is stronger
+than any single tier: two independently-implemented monitors must agree
+on fault, tally and unchecked-beat count for all sixteen transcripts.
+
+**Follow-ups:**
+
+- **The read channels (AR, R) are not monitored.** This is the write
+  path only, and the gate is met for the write path. `RLAST` position
+  and per-ID read-beat ordering need the outstanding-transaction table,
+  which is Phase 4; the read monitor should land with it rather than be
+  written twice.
+- Write data arriving before its address is counted, not checked.
+  Closing that needs the same Phase 4 table.
+- Responses are matched by count, so a response carrying an ID that was
+  never addressed is caught only while nothing else is outstanding.
+- Tier D — vendor VIP — remains toolchain-gated and planned for Phase 7.
+  The local toolchain is iverilog 13 with no SVA, no Verilator, no
+  Yosys, which is why Tier B is plain Verilog always-blocks rather than
+  `assert property`.
+
+---
+
 ## 2026-10-21 — Clippy clean across the workspace, a CI gate to keep it that way, and the Tier-4 gap it was hiding
 
 **Path:** `.github/workflows/ci.yml` (new), and 84 files across
