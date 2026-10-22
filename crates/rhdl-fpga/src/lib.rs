@@ -1,5 +1,6 @@
 //! FPGA Support for RHDL
 pub mod audio;
+pub mod axi4;
 pub mod axi4lite;
 pub mod cdc;
 pub mod core;
@@ -7,6 +8,7 @@ pub mod doc;
 pub mod dsp;
 pub mod fifo;
 pub mod gray;
+pub mod hdl_wrap;
 pub mod lid;
 pub mod net;
 pub mod pipe;

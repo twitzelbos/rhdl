@@ -1,6 +1,7 @@
 # Full AXI4 for RHDL — Design Plan
 
-**Status: the plan. No code yet.**
+**Status: the plan, with Phase 1's open questions answered by
+experiment — see §8.1. No datapath yet.**
 
 Validation is planned in four tiers, of which the first three are
 reachable on the current toolchain and the fourth — interop against
@@ -425,14 +426,103 @@ endpoint, under the randomised corpus of §7.4.*
 
 ---
 
+## 8.1 — Phase 1's open questions, answered
+
+Resolved by experiment before any datapath was written, which is what
+Phase 1 is for. Two of the three change a premise above.
+
+### `Bits<{ D / 8 }>` is not expressible, and the fallback works
+
+`struct WriteBeat<const D: usize> { strb: Bits<{ D / 8 }> }` does not
+compile on stable:
+
+```
+error: generic parameters may not be used in const operations
+  = help: const parameters may only be used as standalone arguments
+```
+
+It needs `generic_const_exprs`, which is unstable. The precedent in
+`dsp::cic::pruned` is not a counterexample — that expression sits
+inside a `macro_rules!` expansion where the parameters substitute to
+literals, so it is never a *generic* const operation.
+
+**Resolution: the §3 fallback, confirmed working.** A separate
+`const STRB: usize` with the invariant `STRB * 8 == D` asserted in a
+`const fn check()`, which a caller can force at compile time with
+`const _: () = WriteBeat::<32, 4>::check();`. Verified for a 32-bit
+bus and a 128-bit one.
+
+### The emitted module boundary has no named ports, and that is the real risk
+
+The plan guessed the Verilog-monitor risk was *injecting a module into
+the generated testbench*. It is not — `TestModule` is a `ModuleList`
+with a `Display`, so writing a bespoke testbench that instantiates DUT
+and monitor together is trivial and needs no new machinery.
+
+The actual risk is one level down. RHDL emits a widget's `I` and `O` as
+**single packed vectors**:
+
+```verilog
+module dut(input wire [1:0] clock_reset, input wire [7:0] i, output reg [7:0] o);
+```
+
+So an AXI4 widget does not present `awvalid`, `awaddr`, `awready`. It
+presents one wide `i` and one wide `o`. Nothing in `TestBenchOptions`
+or `hdl()` changes this.
+
+That breaks §7.5's constraint 2 as written, and it matters for both
+oracles: a hand-written monitor would have to slice the packed vectors
+at offsets transcribed from RHDL's `Digital` layout, and a vendor
+testbench — which binds by name — cannot bind at all.
+
+### …but the wrapper can be generated, not transcribed
+
+`rhdl_core::types::path::bit_range(kind, path)` is public and returns
+the exact bit range of a named field:
+
+```
+.valid -> bits 0..1    .addr -> bits 1..33   .len -> bits 33..41
+.size  -> bits 41..44  .id   -> bits 44..48
+```
+
+The leaf ranges tile the struct with no gaps or overlaps, which is what
+makes this safe rather than merely possible.
+
+**Resolution, and an amendment to §7.5: an AMBA-named port wrapper is
+generated from the `Digital` type, and generating it is a Phase 1
+deliverable rather than a Tier-D afterthought.** Three reasons it
+belongs there:
+
+1. Both oracles need it. Tier B's monitor should bind to named ports
+   for the same reason Tier D's vendor IP must — a hand-transcribed
+   offset table is a defect waiting for a struct-field reorder.
+2. It is **general infrastructure, not AXI4's**. Any widget that has to
+   present a named Verilog boundary wants it: vendor primitives per
+   `xilinx-primitive-library.md`, the black boxes of
+   `black-box-connectivity.md`, the MAC frontend `net` is waiting for.
+   Building it inside `axi4` would be the wrong home.
+3. It must be built through `rhdl-vlog`'s AST, not by string
+   templating — `architecture.md` is explicit, and a five-channel AXI4
+   boundary is far too many slices to hand-write safely in any case.
+
+**Decided: the wrapper generator lands inside Phase 1**, with the
+expectation that it is extracted once a second consumer wants it. The
+argument for a separate change — that it is general infrastructure —
+is still true and is why it lives in its own module rather than inside
+the AXI4 types, so extraction is a file move rather than a rewrite.
+
+---
+
 ## 9 — Risks and open questions
 
-1. **`Bits<{ D / 8 }>` may not be expressible.** Resolved in Phase 1;
-   fallback stated in §3.
-2. **The Verilog monitor may not be injectable into the generated
-   testbench.** Resolved in Phase 1; fallback stated in §7.3. This is
-   the risk that would most change the shape of the work, which is why
-   it is first.
+1. ~~**`Bits<{ D / 8 }>` may not be expressible.**~~ **Answered: it is
+   not.** See §8.1. The fallback is confirmed working.
+2. ~~**The Verilog monitor may not be injectable into the generated
+   testbench.**~~ **Answered, and the guess was wrong.** Injection is
+   trivial; the real obstacle is that RHDL emits struct I/O as packed
+   vectors with no named ports, so both oracles need a generated
+   AMBA-named wrapper. See §8.1. This did change the shape of the work,
+   which is why it was first.
 3. **A hand-written Verilog monitor is a second implementation, and
    second implementations have their own bugs.** Mitigated by the
    deliberately non-conformant master: a monitor that cannot catch a
@@ -446,9 +536,12 @@ endpoint, under the randomised corpus of §7.4.*
    shared surface is known rather than guessed.
 6. **The kernel subset has bitten every protocol widget so far** — no
    `if let`, no match guards, `resize` truncating rather than
-   saturating, `Bits<N>` only for N ≤ 128. A 512-bit AXI4 data bus is
-   **wider than `Bits<128>`**, so wide-bus support needs either an
-   array-of-words payload or a kernel-language change. **Open
-   question, and it bounds what "full" can mean**: resolve the
-   intended maximum bus width in Phase 1 before the beat structs are
-   fixed.
+   saturating, `Bits<N>` only for N ≤ 128.
+
+   **Decided: 128 bits is the maximum supported data width**, which is
+   exactly the `Bits<N>` ceiling and needs no array-of-words payload
+   and no kernel-language change. A `AXI4_MAX_DATA_BITS` constant
+   states it, and the beat structs are bounded by it rather than
+   silently failing at 129. Wider buses remain possible later by the
+   array route; nothing here forecloses it, and `AxSIZE` already tops
+   out at 4 for a 16-byte bus.

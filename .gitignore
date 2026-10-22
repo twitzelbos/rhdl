@@ -17,6 +17,15 @@ Cargo.lock
 **/*.vcd
 **/*.v
 
+# ...but hand-written Verilog is SOURCE, not output. The rule above
+# exists for the testbenches the Tier-4 tests emit into `<crate>/vlog/`,
+# and it silently swallowed the plain-Verilog AXI4 protocol monitor --
+# the whole independent half of validation Tier A/Tier B -- which would
+# have left `tests/axi4_tier_b_monitor.rs` failing on every machine but
+# the one it was written on. Hand-written Verilog goes in
+# `<crate>/verilog/` precisely so the two can be told apart.
+!**/verilog/**/*.v
+
 # Added by cargo
 
 /target
