@@ -11,8 +11,8 @@
 //! Note that the inputs are registered, but _not_ the outputs.
 //! This is by design, so that the pipe cores can be chained
 //! without redundant register slices between them.  If you want
-//! an extra register slice, you can insert a `Buffer` in the
-//! pipeline.  There are no combinatorial paths from the input
+//! an extra register slice, you can insert a
+//! [`Delay`](crate::core::delay::Delay) stage in the pipeline.  There are no combinatorial paths from the input
 //! to the output, and this is verified via a test.
 //!
 //!# Schematic Symbol

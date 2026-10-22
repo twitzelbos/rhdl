@@ -80,7 +80,9 @@ write.enable   +-------+       +-----------------------+
 //!
 //! In general, I don't recommend using an [AsyncBRAM].
 //! It's easier and more idiomatic to use an [OptionAsyncBRAM](crate::core::ram::option_async::OptionAsyncBram)
-//! or a `PipeAsyncBRAM` which provide [Option]-based interfaces.
+//! which provides an [Option]-based interface.  There is no
+//! pipelined *asynchronous* variant; the pipelined RAM is synchronous
+//! only, as [`PipeSyncBRAM`](crate::core::ram::pipe_sync::PipeSyncBRAM).
 //!
 //!# Example
 //!

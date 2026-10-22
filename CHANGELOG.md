@@ -146,9 +146,22 @@ doc comments was touched, except the one ASCII-art diagram label.
 
 **Follow-ups:**
 
-- Reword the paragraphs that promise `PipeAsyncBRAM`, `HazardUnit` and
-  `Buffer`, or build them. De-linking made the docs warning-free, not
-  accurate.
+- ~~Reword the paragraphs that promise `PipeAsyncBRAM`, `HazardUnit` and
+  `Buffer`~~ — **done in this PR.** De-linking had made those
+  warning-free but still inaccurate: they told a reader to use a type
+  that does not exist. They now name what does. `pipe::map`'s "insert a
+  `Buffer`" is [`core::delay::Delay`], the register-slice widget the
+  sentence was describing. `AsyncBRAM`'s suggested `PipeAsyncBRAM` was
+  never built, so the text now says plainly that the pipelined RAM is
+  synchronous-only, as `PipeSyncBRAM`. And rv32i's `HazardUnit` is not a
+  type at all — the logic lives in the `hazard` module as
+  `forward_select` and `detect_load_use_stall`, which is what the two
+  references now point at.
+
+  Worth separating from the rest of this entry: a warning-free doc is
+  not the same as a correct one. The `cargo doc` gate would have stayed
+  green with all four of these sentences still lying, because
+  de-linking satisfies rustdoc. Only reading them did.
 - Decide whether `axi4lite/channel/` is revived or deleted.
 - The book has no published URL. If one appears, the fourteen former
   `[book]` references become real links again.
