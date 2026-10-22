@@ -31,6 +31,247 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-10-22 — AXI4 Phase 2 met: the read manager, the memory endpoint, and a byte-exact loopback
+
+**Path:** `crates/rhdl-fpga/src/axi4/manager/read_burst.rs`,
+`crates/rhdl-fpga/src/axi4/endpoint/{mod,mem}.rs`,
+`crates/rhdl-fpga/tests/axi4_phase2_loopback.rs`,
+`crates/rhdl-fpga/examples/axi4_{read_burst,mem_endpoint}.rs`,
+`crates/rhdl-fpga/doc/axi4_{read_burst,read_burst_fsm,mem_endpoint}.md`
+
+**Why this, why now:** completes Phase 2. §8's gate is *"byte-exact
+loopback across every `len` 1..256 and every `size` up to the bus
+width, with both monitors silent"*, and that needs three widgets: the
+write manager (previous entry), a read manager, and an endpoint that
+actually stores bytes. **The gate now passes.**
+
+**Design decisions:**
+
+- **The expected contents are accumulated host-side, not read out of
+  the endpoint.** Each accepted beat's address, strobes and data are
+  applied to a plain `BTreeMap<u64, u8>`, and the read-back is compared
+  against that. Comparing against the endpoint's own idea of memory
+  would be comparing the merge logic with itself — and §4 warns
+  specifically that narrow transfers "cannot be tested by a loopback
+  between two RHDL widgets that share an off-by-one". The lane
+  arithmetic in the test is written independently of the manager's
+  `lane_strobe` kernel for the same reason.
+- **Strobed writes are read-modify-write, with the read running one
+  beat ahead.** A RAM of `DW`-bit words has no byte enables, so writing
+  a word would clobber the lanes `WSTRB` did not select — which a
+  byte-exact gate catches immediately. The burst's addresses are known
+  as soon as AW is accepted, so the read port runs a beat ahead and the
+  merge costs no extra cycle. An FPGA would instead use `DW/8`
+  byte-wide RAMs with per-lane write enables, which is the better
+  hardware and needs an array of sub-circuits; the read-ahead merge is
+  what is expressible today, and it is byte-exact, which is the
+  property under test.
+- **The endpoint serializes its two directions.** `SyncBRAM` has one
+  read port and the merge needs it, so only one burst is admitted at a
+  time. With one burst of each kind outstanding — all Phase 2 allows —
+  this costs nothing and is simpler than arbitrating. Concurrency wants
+  the byte-wide-RAM shape.
+- **The endpoint deliberately does *not* take `#[derive(FsmWidget)]`.**
+  It has two concurrent sequencers and the derive takes a single
+  `state_field`; tagging one would emit a diagram that silently omitted
+  half the widget, which is worse than none — CLAUDE.md §12.14 wants
+  the diagram because it makes structural review possible at a glance.
+  Both sequencers are drawn in the rustdoc by hand instead. The
+  single-FSM managers do take the derive.
+- **A read burst ends on `RLAST`, not on a beat count.** Ending on the
+  count would make a *missing* `RLAST` unobservable in the manager, and
+  reporting it is the read monitor's job; a manager that silently
+  recovered would hide the subordinate's fault.
+- **`RRESP` is per beat, so the manager reports the worst of the
+  burst.** Reporting only the last beat's status would hide a
+  partly-failed read. `BRESP` has no such problem, which is why the
+  write manager just forwards it.
+
+**Surprises and gotchas:**
+
+- **`Synchronous::sim` is per clock *phase*, not per cycle.** A `DFF`
+  latches on the low-to-high transition it detects by comparing against
+  its stored clock, so calling `sim` repeatedly with `clock(true)`
+  means no edge ever happens and **no register ever updates**. The
+  loopback sat completely dead — zero beats, every geometry — until
+  this was traced. A cycle is two calls: read outputs from the low
+  phase, commit with the high phase.
+- **Two widgets can be wired without a fixture because their outputs
+  are state-derived.** Neither manager's nor the endpoint's handshake
+  outputs depend on the other's, so stepping a *cloned* state yields
+  the outputs the real step will produce, and the two can be composed
+  in a test with no combinational loop. That is what made a
+  three-widget loopback possible without a fourth widget to hold them.
+- **The endpoint lost data on every narrow burst, and the merge is
+  why.** `SyncBRAM` samples its read on the clock's low phase *before*
+  applying that edge's write, so a read presented in one cycle returns
+  the content as of **before** that cycle's write. The read-ahead
+  therefore handed the merge a stale word whenever two consecutive
+  beats landed in the same word — every narrow burst — and each beat
+  clobbered the lanes the one before it had just set. Fixed by
+  forwarding the last written word. The RAM's own docs do warn that
+  same-address read/write is undefined; what bit here was the
+  *different*-address case, where the read is still pre-write.
+- **Every read beat was shifted by one, because the RAM address was
+  derived from registered state.** On the cycle AR is accepted the
+  latched descriptor is still the *previous* one, so the first fetch
+  read the wrong word and every beat after it returned its
+  predecessor's. Addresses presented to a RAM must come from the
+  post-transition state, since they are what the *next* cycle needs.
+- **A weak stimulus hid the first of those bugs.** The write data was
+  `0x1000_0000 + beat * 7`, which puts nearly all its entropy in byte
+  0 — so comparisons on lanes 1 to 3 were vacuous and a four-beat
+  narrow burst "passed" by coincidence. The data is now a word whose
+  four bytes are all distinct and beat-dependent. **A green test
+  proves nothing until it is known to be able to go red**, which is the
+  same lesson the Phase 1 monitors' mutation run taught, arriving from
+  the other direction: there the checker was too weak, here the
+  stimulus was.
+- **Unasserted scripted edits fail silently.** One `str.replace` for
+  the forwarding fix matched nothing — an earlier `sed` had already
+  changed `write.data` to `write.value` — and the "fix" appeared to
+  apply while changing nothing, costing a round of confused debugging.
+  Every such edit now asserts its target was found.
+
+**Validation:** **Phase 2's gate passes**: every `len` 1..256 × every
+`size` the bus carries × `Incr` and `Fixed`, written and read back byte
+for byte against an independent host model, with both monitors
+reporting no fault and zero unchecked beats. Mutation-tested — removing
+the write-forwarding and reverting the read address are both caught.
+Each widget additionally carries all five tiers: the read manager has
+seven Tier-1 tests plus its exact three-edge FSM set, the endpoint has
+six including the merge and forwarding properties, and both pass
+`iverilog` round-trip through `.rtl()` and `.ntl()`.
+
+**Follow-ups:**
+
+- The loopback exercises the Rust model of all three widgets together.
+  Each widget's Verilog is separately checked against its own model by
+  its Tier-4 round-trip, so the hardware is covered, but *the
+  composition* is not itself run through `iverilog`. A fixture widget
+  wrapping all three would give that, and is worth building when the
+  interconnect arrives in Phase 5 and there is more than one shape to
+  compose.
+- Byte-wide RAMs with per-lane write enables would remove both the
+  read-modify-write merge and the serialization between directions.
+  That is the right hardware and it needs an array of sub-circuits.
+- Unaligned starts and `Wrap` are Phase 3; both managers refuse `Wrap`
+  rather than mis-driving it.
+- Per-ID interleaving is Phase 4. The read manager reports a beat
+  bearing an unexpected `RID` on a port, which is checkable now only
+  because exactly one transaction is outstanding.
+
+---
+
+## 2026-10-22 — AXI4 Phase 2 (write half): the burst manager, judged by Phase 1's monitors
+
+**Path:** `crates/rhdl-fpga/src/axi4/manager/{mod,write_burst}.rs`,
+`crates/rhdl-fpga/tests/axi4_phase2_write_burst.rs`,
+`crates/rhdl-fpga/tests/common/mod.rs`,
+`crates/rhdl-fpga/examples/axi4_write_burst.rs`,
+`crates/rhdl-fpga/doc/axi4_write_burst{,_fsm}.md`
+
+**Why this, why now:** Phase 1 built the oracles and moved no data.
+This is the first widget that actually drives the bus, and it is the
+manager rather than the endpoint on purpose: the manager carries the
+*obligations* — the 4 KiB rule, `WLAST` position, legal `AxSIZE` — and
+a subordinate may only detect those, never fix them. Driving them
+correctly is therefore the thing worth proving first, and Phase 1's
+monitors can already judge it.
+
+**This is half of Phase 2, and the entry says so.** §8's gate is a
+byte-exact loopback with both monitors silent, which needs the read
+manager and the endpoint too. Those are next; this is not a claim that
+Phase 2 is met.
+
+**Design decisions:**
+
+- **The address phase completes before the data phase starts**, even
+  though AXI4 permits AW and W to overlap and a throughput-minded
+  manager would issue them together. A W beat arriving before its AW
+  cannot be position-checked: the monitor counts it on
+  `unchecked_beats` rather than guessing which burst it belongs to. So
+  overlapping the phases would make the Phase 2 gate *weaker* — the
+  monitor would fall silent precisely because it had stopped checking.
+  Overlap belongs with Phase 4's outstanding-transaction table, which
+  is what makes those beats placeable.
+- **An undrivable command is refused on a port, not driven badly.**
+  `Wrap` is Phase 3 and an oversized `AxSIZE` is a violation whoever
+  asked for it; both raise `rejected` and leave the sequencer in
+  `Idle`. The alternative — driving something malformed — would convert
+  a manager limitation into a protocol violation that the monitors
+  would then correctly and unhelpfully report.
+- **`WVALID` is never asserted speculatively.** The data phase offers a
+  beat only when a word is actually present, because once `WVALID` is
+  asserted it may not be withdrawn — exactly the rule
+  `Fault::WValidDropped` exists to catch. A manager that offered early
+  and retracted would be caught by its own monitor.
+- **One FSM `DFF` plus one bundled extras `DFF`**, per CLAUDE.md §3.1.
+  The enum keeps its own register because the `FsmWidget` extractor
+  finds transitions by matching `Index(q, [.state])`, and burying it in
+  the bundle would hide every edge.
+- **The gate asserts two things, not one.** `fault == None` *and*
+  `unchecked_beats == 0`. A monitor that classified every beat as
+  unpositionable would report no fault and satisfy a naive reading of
+  "both monitors silent"; requiring the unchecked count to be zero is
+  what makes silence mean "checked and clean" rather than "not looked
+  at". This is what `unchecked_beats` was built for in Phase 1.
+- **Tier B sees the generated traffic too, on a representative slice.**
+  Tier A and this manager are both RHDL, so a shared off-by-one passes
+  — and §4 singles out narrow transfers as exactly where that risk
+  lives, because the lane rotation is easy to get consistently wrong.
+  The slice is every `size` plus the boundary beat counts rather than
+  all 1,280 geometries, because each Tier B run forks `iverilog` and
+  `vvp` and the full sweep would dominate the suite for no extra
+  signal.
+
+**Surprises and gotchas:**
+
+- **Passing on the first run is not evidence, and the sweep was
+  mutation-tested.** Suppressing `WLAST` and forcing full strobes were
+  each injected into the manager and each was caught, which is what
+  says the 1,280-geometry sweep is doing work rather than passing
+  vacuously. The same discipline found two dead checks in Phase 1.
+- **The FSM edge set is pinned as a set, not a count.** The extractor
+  over-approximates when a transition's condition does not mention the
+  state — RoCE's TX FSM once reported all 20 edges on 5 nodes from an
+  offset-derived `if`-chain. A diagram is the load-bearing artifact for
+  FSM-aware review (CLAUDE.md §12.14), and one showing edges the
+  hardware cannot take is worse than none. This widget's four edges are
+  asserted exactly.
+- **`if let` *is* accepted in a kernel.** CLAUDE.md §4 lists it as
+  recently added and a note from earlier work claimed otherwise; the
+  compiler settles it. It is also what clippy's `single_match` wants,
+  and it emitted one line *less* Verilog than the equivalent `match`.
+- **Phase 2's gate covers narrow transfers, despite Phase 3 being the
+  "narrow" phase.** "Every `size` up to the bus width" means sizes
+  below the bus width, whose lanes rotate with the beat address. What
+  Phase 3 adds is the *unaligned* and `Wrap` interactions, not
+  narrowness itself — worth knowing before assuming the phases
+  partition the way their titles suggest.
+- **The Tier B testbench generator now lives in `tests/common/mod.rs`**
+  because two test binaries need it. It is a directory module, not
+  `tests/common.rs`, because a file directly in `tests/` is compiled as
+  its own test binary and this one has no tests in it.
+
+**Validation:** all five tiers plus the FSM contract. Tier 1: seven
+direct kernel tests covering reset, command acceptance, refusal,
+speculative-`WVALID`, `WLAST` position, the response pulse, and narrow
+lane rotation. Tier 2: a burst consuming one word per beat, and the
+1,280-geometry sweep. Tier 3: emitted-interface snapshot. Tier 4:
+`iverilog` round-trip through `.rtl()` and `.ntl()`. Tier 5: VCD
+digest. Plus the exact FSM edge set, the descriptor round-trip, and
+Tier B agreement on 30 geometries.
+
+**Follow-ups:**
+
+- The read-burst manager and the endpoint, then the byte-exact loopback
+  that is Phase 2's actual gate.
+- Unaligned start addresses: this manager drives full strobes for the
+  lanes its size selects and does not reduce the first beat. Phase 3.
+- `Fixed` is capped at 16 beats by the spec; the manager does not
+  enforce that cap, and the sweep simply does not ask for longer ones.
+  Enforcing it belongs with the other address-phase refusals.
 ## 2026-10-22 — CI sharded with a coverage guard, the toolchain pinned locally, and a dead module deleted
 
 **Path:** `.github/workflows/ci.yml`, `rust-toolchain.toml` (new),
