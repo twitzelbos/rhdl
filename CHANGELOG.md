@@ -31,6 +31,138 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-10-22 — AXI4 Phase 2 met: the read manager, the memory endpoint, and a byte-exact loopback
+
+**Path:** `crates/rhdl-fpga/src/axi4/manager/read_burst.rs`,
+`crates/rhdl-fpga/src/axi4/endpoint/{mod,mem}.rs`,
+`crates/rhdl-fpga/tests/axi4_phase2_loopback.rs`,
+`crates/rhdl-fpga/examples/axi4_{read_burst,mem_endpoint}.rs`,
+`crates/rhdl-fpga/doc/axi4_{read_burst,read_burst_fsm,mem_endpoint}.md`
+
+**Why this, why now:** completes Phase 2. §8's gate is *"byte-exact
+loopback across every `len` 1..256 and every `size` up to the bus
+width, with both monitors silent"*, and that needs three widgets: the
+write manager (previous entry), a read manager, and an endpoint that
+actually stores bytes. **The gate now passes.**
+
+**Design decisions:**
+
+- **The expected contents are accumulated host-side, not read out of
+  the endpoint.** Each accepted beat's address, strobes and data are
+  applied to a plain `BTreeMap<u64, u8>`, and the read-back is compared
+  against that. Comparing against the endpoint's own idea of memory
+  would be comparing the merge logic with itself — and §4 warns
+  specifically that narrow transfers "cannot be tested by a loopback
+  between two RHDL widgets that share an off-by-one". The lane
+  arithmetic in the test is written independently of the manager's
+  `lane_strobe` kernel for the same reason.
+- **Strobed writes are read-modify-write, with the read running one
+  beat ahead.** A RAM of `DW`-bit words has no byte enables, so writing
+  a word would clobber the lanes `WSTRB` did not select — which a
+  byte-exact gate catches immediately. The burst's addresses are known
+  as soon as AW is accepted, so the read port runs a beat ahead and the
+  merge costs no extra cycle. An FPGA would instead use `DW/8`
+  byte-wide RAMs with per-lane write enables, which is the better
+  hardware and needs an array of sub-circuits; the read-ahead merge is
+  what is expressible today, and it is byte-exact, which is the
+  property under test.
+- **The endpoint serializes its two directions.** `SyncBRAM` has one
+  read port and the merge needs it, so only one burst is admitted at a
+  time. With one burst of each kind outstanding — all Phase 2 allows —
+  this costs nothing and is simpler than arbitrating. Concurrency wants
+  the byte-wide-RAM shape.
+- **The endpoint deliberately does *not* take `#[derive(FsmWidget)]`.**
+  It has two concurrent sequencers and the derive takes a single
+  `state_field`; tagging one would emit a diagram that silently omitted
+  half the widget, which is worse than none — CLAUDE.md §12.14 wants
+  the diagram because it makes structural review possible at a glance.
+  Both sequencers are drawn in the rustdoc by hand instead. The
+  single-FSM managers do take the derive.
+- **A read burst ends on `RLAST`, not on a beat count.** Ending on the
+  count would make a *missing* `RLAST` unobservable in the manager, and
+  reporting it is the read monitor's job; a manager that silently
+  recovered would hide the subordinate's fault.
+- **`RRESP` is per beat, so the manager reports the worst of the
+  burst.** Reporting only the last beat's status would hide a
+  partly-failed read. `BRESP` has no such problem, which is why the
+  write manager just forwards it.
+
+**Surprises and gotchas:**
+
+- **`Synchronous::sim` is per clock *phase*, not per cycle.** A `DFF`
+  latches on the low-to-high transition it detects by comparing against
+  its stored clock, so calling `sim` repeatedly with `clock(true)`
+  means no edge ever happens and **no register ever updates**. The
+  loopback sat completely dead — zero beats, every geometry — until
+  this was traced. A cycle is two calls: read outputs from the low
+  phase, commit with the high phase.
+- **Two widgets can be wired without a fixture because their outputs
+  are state-derived.** Neither manager's nor the endpoint's handshake
+  outputs depend on the other's, so stepping a *cloned* state yields
+  the outputs the real step will produce, and the two can be composed
+  in a test with no combinational loop. That is what made a
+  three-widget loopback possible without a fourth widget to hold them.
+- **The endpoint lost data on every narrow burst, and the merge is
+  why.** `SyncBRAM` samples its read on the clock's low phase *before*
+  applying that edge's write, so a read presented in one cycle returns
+  the content as of **before** that cycle's write. The read-ahead
+  therefore handed the merge a stale word whenever two consecutive
+  beats landed in the same word — every narrow burst — and each beat
+  clobbered the lanes the one before it had just set. Fixed by
+  forwarding the last written word. The RAM's own docs do warn that
+  same-address read/write is undefined; what bit here was the
+  *different*-address case, where the read is still pre-write.
+- **Every read beat was shifted by one, because the RAM address was
+  derived from registered state.** On the cycle AR is accepted the
+  latched descriptor is still the *previous* one, so the first fetch
+  read the wrong word and every beat after it returned its
+  predecessor's. Addresses presented to a RAM must come from the
+  post-transition state, since they are what the *next* cycle needs.
+- **A weak stimulus hid the first of those bugs.** The write data was
+  `0x1000_0000 + beat * 7`, which puts nearly all its entropy in byte
+  0 — so comparisons on lanes 1 to 3 were vacuous and a four-beat
+  narrow burst "passed" by coincidence. The data is now a word whose
+  four bytes are all distinct and beat-dependent. **A green test
+  proves nothing until it is known to be able to go red**, which is the
+  same lesson the Phase 1 monitors' mutation run taught, arriving from
+  the other direction: there the checker was too weak, here the
+  stimulus was.
+- **Unasserted scripted edits fail silently.** One `str.replace` for
+  the forwarding fix matched nothing — an earlier `sed` had already
+  changed `write.data` to `write.value` — and the "fix" appeared to
+  apply while changing nothing, costing a round of confused debugging.
+  Every such edit now asserts its target was found.
+
+**Validation:** **Phase 2's gate passes**: every `len` 1..256 × every
+`size` the bus carries × `Incr` and `Fixed`, written and read back byte
+for byte against an independent host model, with both monitors
+reporting no fault and zero unchecked beats. Mutation-tested — removing
+the write-forwarding and reverting the read address are both caught.
+Each widget additionally carries all five tiers: the read manager has
+seven Tier-1 tests plus its exact three-edge FSM set, the endpoint has
+six including the merge and forwarding properties, and both pass
+`iverilog` round-trip through `.rtl()` and `.ntl()`.
+
+**Follow-ups:**
+
+- The loopback exercises the Rust model of all three widgets together.
+  Each widget's Verilog is separately checked against its own model by
+  its Tier-4 round-trip, so the hardware is covered, but *the
+  composition* is not itself run through `iverilog`. A fixture widget
+  wrapping all three would give that, and is worth building when the
+  interconnect arrives in Phase 5 and there is more than one shape to
+  compose.
+- Byte-wide RAMs with per-lane write enables would remove both the
+  read-modify-write merge and the serialization between directions.
+  That is the right hardware and it needs an array of sub-circuits.
+- Unaligned starts and `Wrap` are Phase 3; both managers refuse `Wrap`
+  rather than mis-driving it.
+- Per-ID interleaving is Phase 4. The read manager reports a beat
+  bearing an unexpected `RID` on a port, which is checkable now only
+  because exactly one transaction is outstanding.
+
+---
+
 ## 2026-10-22 — AXI4 Phase 2 (write half): the burst manager, judged by Phase 1's monitors
 
 **Path:** `crates/rhdl-fpga/src/axi4/manager/{mod,write_burst}.rs`,

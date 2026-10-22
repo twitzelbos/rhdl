@@ -11,4 +11,5 @@
 //! alone — a loopback between two halves of this crate proves they
 //! agree, not that either is right.
 
+pub mod read_burst;
 pub mod write_burst;
