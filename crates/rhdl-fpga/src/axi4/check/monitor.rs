@@ -41,10 +41,14 @@
 //! is not. Buffering early write data to close the gap properly needs
 //! the outstanding-transaction table, which is Phase 4's work.
 //!
-//! Likewise the strobe check assumes a size-aligned start address: the
-//! reduced first-beat lanes of an *unaligned* burst are not modelled,
-//! and an unaligned burst is reported as [`Fault::WrapUnaligned`] only
-//! for `Wrap`, where the spec forbids it outright.
+//! The strobe check models the reduced first beat of an **unaligned**
+//! burst: beat zero covers only from `AxADDR` to the end of its
+//! size-aligned block, so the lanes below the start address must stay
+//! dark. Before Phase 3 the low lane was aligned down unconditionally,
+//! which made the monitor permissive exactly there — it would have
+//! accepted a first beat writing bytes the manager was never asked to
+//! write. An unaligned `Wrap` is still a [`Fault::WrapUnaligned`],
+//! because the spec forbids it outright.
 //!
 //! # Per-ID tracking
 //!
@@ -250,12 +254,32 @@ where
     let tb = bytes_per_beat(s.aw.size);
     let safe_bytes = if fits { tb } else { bits::<9>(1) }.resize::<33>();
     let addr = beat_address::<A>(s.aw.addr, s.aw.size, s.aw.len, s.aw.burst, s.beat);
-    let ones = (bits::<33>(1) << safe_bytes) - bits::<33>(1);
     let bus_mask = bus_bytes.resize::<33>() - bits::<33>(1);
-    // Align the offset down to the transfer size: the selected lanes of
-    // an aligned transfer are contiguous and size-aligned.
-    let lane = addr.resize::<33>() & bus_mask & !(safe_bytes - bits::<33>(1));
-    let legal = (ones << lane).resize::<STRB>();
+
+    // The size-aligned block this beat sits in, as a lane range.
+    // `beat_address` already returns the *aligned* address, so this is
+    // the block's low lane and `hi` its high lane.
+    let base = addr.resize::<33>() & bus_mask & !(safe_bytes - bits::<33>(1));
+    let hi = base + safe_bytes - bits::<33>(1);
+
+    // An unaligned burst's **first** beat is narrower than its size: it
+    // covers only from `AxADDR` up to the end of that block, and the
+    // lanes below the start address must stay dark. Aligning the low
+    // lane down unconditionally -- which is what this did before Phase
+    // 3 -- made the monitor *permissive* exactly there: it would accept
+    // a first beat that wrote bytes the manager was never asked to
+    // write. Later beats are size-aligned by construction, so `base`
+    // is already right for them.
+    let start_lane = s.aw.addr.resize::<33>() & bus_mask;
+    let first_beat = s.beat == bits::<8>(0);
+    let lo = if first_beat && start_lane > base {
+        start_lane
+    } else {
+        base
+    };
+    let width = hi - lo + bits::<33>(1);
+    let ones = (bits::<33>(1) << width) - bits::<33>(1);
+    let legal = (ones << lo).resize::<STRB>();
     // Suppressed when `AxSIZE` does not fit the bus, because then the
     // lane check has no defined answer: the clamp above is an arbitrary
     // choice made to keep the shift in bounds, not a reading of the
@@ -462,7 +486,7 @@ mod tests {
     /// testing. Pinning the count is the cheap guard.
     #[test]
     fn violation_list_is_complete() {
-        expect!["16"].assert_eq(&Violation::all().len().to_string());
+        expect!["17"].assert_eq(&Violation::all().len().to_string());
     }
 
     /// Tier 1: reset clears every latched verdict.
@@ -677,7 +701,7 @@ mod tests {
             module top_state(input wire [1:0] clock_reset, input wire [233:0] i, output reg [233:0] o);"#]];
         expect.assert_eq(&headers);
         // A lost or merged module would keep the headers above intact.
-        expect!["893"].assert_eq(&hdl.lines().count().to_string());
+        expect!["922"].assert_eq(&hdl.lines().count().to_string());
         Ok(())
     }
 

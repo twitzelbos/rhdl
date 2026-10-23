@@ -88,6 +88,15 @@ pub enum Violation {
     /// `WSTRB` asserting a byte lane the beat's address and size do not
     /// select.
     StrobeOutsideLanes,
+    /// An unaligned `Incr` burst whose first beat drives full strobes.
+    ///
+    /// Legal traffic right up to the strobes: an unaligned start is
+    /// permitted, but beat zero then covers only from `AWADDR` to the
+    /// end of its size-aligned block, so the lanes below the start
+    /// address must stay dark. This is the negative that proves the
+    /// monitors' unaligned rule works — before Phase 3 they aligned the
+    /// low lane down unconditionally and would have accepted this.
+    UnalignedFirstBeatStrobes,
 }
 
 impl Violation {
@@ -115,6 +124,9 @@ impl Violation {
             Violation::WrapUnaligned => Fault::WrapUnaligned,
             Violation::SizeExceedsBus => Fault::SizeExceedsBus,
             Violation::StrobeOutsideLanes => Fault::StrobeOutsideLanes,
+            // Same clause, different traffic: lanes the transfer does
+            // not select.
+            Violation::UnalignedFirstBeatStrobes => Fault::StrobeOutsideLanes,
         }
     }
 
@@ -141,6 +153,7 @@ impl Violation {
             Violation::WrapUnaligned,
             Violation::SizeExceedsBus,
             Violation::StrobeOutsideLanes,
+            Violation::UnalignedFirstBeatStrobes,
         ]
     }
 }
@@ -232,6 +245,12 @@ where
             // A half-width transfer selects only the low lanes of the
             // bus; the data phase below then asserts all of them.
             aw.size = bits(size - 1);
+        }
+        Violation::UnalignedFirstBeatStrobes => {
+            // Full-width beats from an address one byte into the word.
+            // Beat zero should light only the lanes at or above that
+            // offset; the data phase lights them all.
+            aw.addr = bits(0x1000 + 1);
         }
         _ => {}
     }

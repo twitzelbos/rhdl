@@ -51,11 +51,13 @@
 //!
 //! # What this does not do yet
 //!
-//! One burst in flight, one ID, `Incr` and `Fixed`. `Wrap` is Phase 3
-//! and is rejected here rather than mis-driven — see
-//! [`Out::rejected`]. Unaligned start addresses are Phase 3 too: this
-//! manager drives full strobes for the lanes its size selects and does
-//! not reduce the first beat.
+//! One burst in flight and one ID. All three burst kinds, unaligned
+//! starts included. What is still refused rather than mis-driven — see
+//! [`Out::rejected`] — is traffic that would be a *protocol violation*:
+//! an `Incr` crossing 4 KiB, a `Wrap` of illegal length or unaligned
+//! start, or any `AxSIZE` wider than the bus. Those are manager
+//! obligations a subordinate can only detect, so refusing is the only
+//! correct answer. Per-ID interleaving is Phase 4.
 //!
 //!# Example
 //!
@@ -70,9 +72,10 @@
 #![doc = include_str!("../../../doc/axi4_write_burst_fsm.md")]
 
 use super::super::types::{
-    AxiAddress, AxiResponse, AxiWriteBeat, AxiWriteResponse, BurstKind, beat_address, burst_beats,
+    AxiAddress, AxiResponse, AxiWriteBeat, AxiWriteResponse, beat_address, burst_beats,
     bytes_per_beat, size_fits_bus,
 };
+use super::drivable;
 use crate::core::dff;
 use rhdl::prelude::*;
 
@@ -203,32 +206,30 @@ where
 }
 
 #[kernel]
-/// Can this manager drive the requested burst?
-///
-/// `Wrap` is Phase 3; an oversized `AxSIZE` is a protocol violation
-/// whoever asked for it. Both are refused rather than driven.
-pub fn drivable<const A: usize, const ID: usize>(a: AxiAddress<A, ID>, bus_bytes: Bits<9>) -> bool
-where
-    rhdl::bits::W<A>: BitWidth,
-    rhdl::bits::W<ID>: BitWidth,
-{
-    let kind_ok = match a.burst {
-        BurstKind::Incr => true,
-        BurstKind::Fixed => true,
-        BurstKind::Wrap => false,
-    };
-    kind_ok && size_fits_bus(a.size, bus_bytes)
-}
-
-#[kernel]
-/// The byte lanes a beat at `addr` of `size` bytes occupies.
+/// The byte lanes a beat occupies, including an unaligned first beat.
 ///
 /// Computed from the beat's offset within the bus, which is what makes
 /// a narrow transfer's lanes rotate as the address advances.
+///
+/// `start` is the burst's `AxADDR` and `first` says whether this is
+/// beat zero, because together they are what make an **unaligned**
+/// burst's first beat narrower than its size: it covers only from
+/// `AxADDR` to the end of its size-aligned block, so the lanes below
+/// the start address stay dark. Every later beat is size-aligned by
+/// construction.
+///
+/// Note that [`crate::axi4::check::monitor::Axi4WriteMonitor`] computes
+/// the same mask, so Tier A cannot independently confirm these strobes
+/// — a shared misreading would pass. The hand-written Verilog monitor
+/// is what checks them, and it reaches the answer by walking lanes
+/// rather than shifting a mask. `axi4-architecture.md` §4 singles this
+/// out as the case where that independence matters most.
 pub fn lane_strobe<const A: usize, const STRB: usize>(
+    start: Bits<A>,
     addr: Bits<A>,
     size: Bits<3>,
     bus_bytes: Bits<9>,
+    first: bool,
 ) -> Bits<STRB>
 where
     rhdl::bits::W<A>: BitWidth,
@@ -245,10 +246,18 @@ where
         bits::<9>(1)
     }
     .resize::<33>();
-    let ones = (bits::<33>(1) << tb) - bits::<33>(1);
     let bus_mask = bus_bytes.resize::<33>() - bits::<33>(1);
-    let lane = addr.resize::<33>() & bus_mask & !(tb - bits::<33>(1));
-    (ones << lane).resize::<STRB>()
+    let base = addr.resize::<33>() & bus_mask & !(tb - bits::<33>(1));
+    let hi = base + tb - bits::<33>(1);
+    let start_lane = start.resize::<33>() & bus_mask;
+    let lo = if first && start_lane > base {
+        start_lane
+    } else {
+        base
+    };
+    let width = hi - lo + bits::<33>(1);
+    let ones = (bits::<33>(1) << width) - bits::<33>(1);
+    (ones << lo).resize::<STRB>()
 }
 
 #[kernel]
@@ -322,7 +331,13 @@ where
             // it may not be withdrawn.
             o.w_valid = have_data;
             o.w.data = word;
-            o.w.strb = lane_strobe::<A, STRB>(addr, s.aw.size, bus_bytes);
+            o.w.strb = lane_strobe::<A, STRB>(
+                s.aw.addr,
+                addr,
+                s.aw.size,
+                bus_bytes,
+                s.beat == bits::<8>(0),
+            );
             o.w.last = last_beat;
             if have_data && i.w_ready {
                 o.data_taken = true;
@@ -363,6 +378,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::axi4::types::BurstKind;
     use expect_test::expect;
     use rhdl::prelude::vlog::Pretty;
 
@@ -427,11 +443,44 @@ mod tests {
         assert_eq!(d.extras.beat.raw(), 0);
     }
 
-    /// Tier 1: WRAP and an oversized `AxSIZE` are refused, and refusing
-    /// does not move the sequencer.
+    /// Tier 1: a legal `Wrap` is driven, not refused.
+    ///
+    /// Phase 3's headline change. `len = 3` is four beats, which is one
+    /// of the four lengths the spec permits, and `0x1000` is
+    /// size-aligned — so this is conformant traffic and refusing it
+    /// would be the bug.
+    #[test]
+    fn a_legal_wrap_burst_is_driven() {
+        let i = In::<32, 32, 4> {
+            cmd: Some(cmd(3, 2, BurstKind::Wrap)),
+            ..Default::default()
+        };
+        let (o, d) =
+            write_burst::<32, 32, 4, 4>(run_cr(), i, q(BurstState::Idle, AxiAddress::default(), 0));
+        assert!(!o.rejected, "a legal WRAP must be driven");
+        assert_eq!(d.state, BurstState::Addr);
+    }
+
+    /// Tier 1: everything that would be a protocol violation is refused
+    /// in place, and refusing does not move the sequencer.
+    ///
+    /// Each of these is a **manager** obligation a subordinate can only
+    /// detect, so driving it would make this widget the non-conformant
+    /// master the monitors exist to catch.
     #[test]
     fn undrivable_commands_are_refused_in_place() {
-        for bad in [cmd(3, 2, BurstKind::Wrap), cmd(3, 7, BurstKind::Incr)] {
+        let mut crossing = cmd(3, 2, BurstKind::Incr);
+        // Four 4-byte beats starting 4 bytes below a page end.
+        crossing.addr = bits(0x2000 - 4);
+        let mut unaligned_wrap = cmd(3, 2, BurstKind::Wrap);
+        unaligned_wrap.addr = bits(0x1001);
+        for bad in [
+            // WRAP of three beats: not 2, 4, 8 or 16.
+            cmd(2, 2, BurstKind::Wrap),
+            unaligned_wrap,
+            crossing,
+            cmd(3, 7, BurstKind::Incr),
+        ] {
             let i = In::<32, 32, 4> {
                 cmd: Some(bad),
                 ..Default::default()
@@ -522,14 +571,44 @@ mod tests {
             (0x102, 0b0100),
             (0x103, 0b1000),
         ] {
-            let s = lane_strobe::<32, 4>(bits(addr), bits(0), bb);
+            let s = lane_strobe::<32, 4>(bits(addr), bits(addr), bits(0), bb, false);
             assert_eq!(s.raw(), want, "1-byte beat at {addr:#x}");
         }
         // Two bytes per beat: the low or the high half.
-        assert_eq!(lane_strobe::<32, 4>(bits(0x100), bits(1), bb).raw(), 0b0011);
-        assert_eq!(lane_strobe::<32, 4>(bits(0x102), bits(1), bb).raw(), 0b1100);
+        let two = |a: u128| lane_strobe::<32, 4>(bits(a), bits(a), bits(1), bb, false).raw();
+        assert_eq!(two(0x100), 0b0011);
+        assert_eq!(two(0x102), 0b1100);
         // Full width: every lane.
-        assert_eq!(lane_strobe::<32, 4>(bits(0x100), bits(2), bb).raw(), 0b1111);
+        assert_eq!(
+            lane_strobe::<32, 4>(bits(0x100), bits(0x100), bits(2), bb, false).raw(),
+            0b1111
+        );
+    }
+
+    /// Tier 1: an unaligned burst's first beat is narrower than its
+    /// size, and only its first beat.
+    ///
+    /// Beat zero covers from `AWADDR` to the end of its size-aligned
+    /// block; the lanes below the start address must stay dark. Getting
+    /// this wrong writes bytes the manager was never asked to write,
+    /// and before Phase 3 both monitors would have permitted it.
+    #[test]
+    fn an_unaligned_first_beat_is_reduced() {
+        let bb = bits::<9>(BUS);
+        // Full-width burst starting one byte in: `beat_address` returns
+        // the *aligned* address for every beat, so the start offset is
+        // what narrows beat zero.
+        let first = lane_strobe::<32, 4>(bits(0x101), bits(0x100), bits(2), bb, true);
+        assert_eq!(first.raw(), 0b1110, "lane 0 is below the start address");
+        // The same beat, not first: fully aligned, every lane.
+        let later = lane_strobe::<32, 4>(bits(0x101), bits(0x100), bits(2), bb, false);
+        assert_eq!(later.raw(), 0b1111);
+        // Three bytes in: only the top lane.
+        let three = lane_strobe::<32, 4>(bits(0x103), bits(0x100), bits(2), bb, true);
+        assert_eq!(three.raw(), 0b1000);
+        // An aligned start is unaffected by `first`.
+        let aligned = lane_strobe::<32, 4>(bits(0x100), bits(0x100), bits(2), bb, true);
+        assert_eq!(aligned.raw(), 0b1111);
     }
 
     /// Tier 2: a burst completes and consumes exactly one word per beat.
@@ -580,7 +659,7 @@ mod tests {
             module top_state(input wire [1:0] clock_reset, input wire [1:0] i, output reg [1:0] o);
             module top_extras(input wire [1:0] clock_reset, input wire [72:0] i, output reg [72:0] o);"#]];
         expect.assert_eq(&headers);
-        expect!["539"].assert_eq(&hdl.lines().count().to_string());
+        expect!["660"].assert_eq(&hdl.lines().count().to_string());
         Ok(())
     }
 
