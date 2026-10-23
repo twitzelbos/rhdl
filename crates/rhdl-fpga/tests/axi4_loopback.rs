@@ -55,6 +55,8 @@ const DW: usize = 32;
 const STRB: usize = 4;
 const SHIFT: usize = 2;
 const ID: usize = 4;
+/// One outstanding-count slot per possible ID: `1 << ID`.
+const NIDS: usize = 16;
 const N: usize = 10; // 1024 words = 4 KiB, one page
 
 type Wr = Axi4WriteBurst<A, DW, STRB, ID>;
@@ -334,7 +336,7 @@ fn run_loop(len: u128, size: u128, burst: BurstKind, addr: u128) -> Loop {
 
 /// Tier A verdicts for both channels of one loop.
 fn verdicts(l: &Loop) -> ((Fault, u128), (Fault, u128)) {
-    let wm = Axi4WriteMonitor::<A, DW, STRB, ID>::default();
+    let wm = Axi4WriteMonitor::<A, DW, STRB, ID, NIDS>::default();
     let wi = l
         .write_cycles
         .clone()
@@ -348,7 +350,7 @@ fn verdicts(l: &Loop) -> ((Fault, u128), (Fault, u128)) {
         .last()
         .unwrap();
 
-    let rm = Axi4ReadMonitor::<A, DW, STRB, ID>::default();
+    let rm = Axi4ReadMonitor::<A, DW, STRB, ID, NIDS>::default();
     let ri = l
         .read_cycles
         .clone()

@@ -41,11 +41,13 @@ const A: usize = 32;
 const DW: usize = 32;
 const STRB: usize = 4;
 const ID: usize = 4;
+/// One outstanding-count slot per possible ID: `1 << ID`.
+const NIDS: usize = 16;
 const BUS_BYTES: u128 = 4;
 
 /// Tier A's verdict: `(fault code, fault tally, unchecked beats)`.
 fn tier_a(v: Violation) -> (u32, u128, u128) {
-    let uut = Axi4WriteMonitor::<A, DW, STRB, ID>::default();
+    let uut = Axi4WriteMonitor::<A, DW, STRB, ID, NIDS>::default();
     let cycles = write_transcript::<A, DW, STRB, ID>(BUS_BYTES, v);
     let input = cycles.into_iter().with_reset(1).clock_pos_edge(100);
     let out = uut
@@ -194,7 +196,7 @@ fn read_testbench(cycles: &[ReadCycle<A, DW, ID>]) -> String {
 
 /// Tier A's read-channel verdict.
 fn tier_a_read(v: ReadViolation) -> (u32, u128, u128) {
-    let uut = Axi4ReadMonitor::<A, DW, STRB, ID>::default();
+    let uut = Axi4ReadMonitor::<A, DW, STRB, ID, NIDS>::default();
     let cycles = read_transcript::<A, DW, ID>(BUS_BYTES, v);
     let input = cycles.into_iter().with_reset(1).clock_pos_edge(100);
     let out = uut

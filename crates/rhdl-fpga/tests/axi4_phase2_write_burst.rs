@@ -51,6 +51,8 @@ const A: usize = 32;
 const DW: usize = 32;
 const STRB: usize = 4;
 const ID: usize = 4;
+/// One outstanding-count slot per possible ID: `1 << ID`.
+const NIDS: usize = 16;
 
 /// What one burst produced: the bus transcript, and what the manager
 /// reported about it.
@@ -142,7 +144,7 @@ fn drive(len: u128, size: u128, burst: BurstKind, addr: u128) -> Run {
 
 /// Run a transcript past the Tier A monitor.
 fn verdict(cycles: Vec<WriteCycle<A, DW, STRB, ID>>) -> (Fault, u128, u128) {
-    let mon = Axi4WriteMonitor::<A, DW, STRB, ID>::default();
+    let mon = Axi4WriteMonitor::<A, DW, STRB, ID, NIDS>::default();
     let input = cycles.into_iter().with_reset(1).clock_pos_edge(100);
     let out = mon
         .run(input)

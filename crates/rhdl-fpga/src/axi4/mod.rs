@@ -35,5 +35,6 @@
 
 pub mod check;
 pub mod endpoint;
+pub mod id_table;
 pub mod manager;
 pub mod types;
