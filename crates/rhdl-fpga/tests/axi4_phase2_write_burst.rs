@@ -69,11 +69,11 @@ struct Run {
 /// all held high the manager sequences itself, so no feedback is
 /// needed and the stimulus stays a plain iterator. The manager's
 /// `data_taken` is what says which words it actually consumed.
-fn drive(len: u128, size: u128, burst: BurstKind) -> Run {
+fn drive(len: u128, size: u128, burst: BurstKind, addr: u128) -> Run {
     let beats = (len + 1) as usize;
     let cmd = AxiAddress::<A, ID> {
         id: bits(1),
-        addr: bits(0x1000),
+        addr: bits(addr),
         len: bits(len),
         size: bits(size),
         burst,
@@ -169,7 +169,7 @@ fn every_burst_geometry_is_conformant() {
                 if matches!(kind, BurstKind::Fixed) && len > 15 {
                     continue;
                 }
-                let run = drive(len, size, kind);
+                let run = drive(len, size, kind, 0x1000);
                 let beats = (len + 1) as usize;
                 let tag = format!("{name} len={len} size={size}");
 
@@ -219,15 +219,16 @@ fn every_burst_geometry_is_conformant() {
     );
 }
 
-/// A `Wrap` burst is refused, not mis-driven.
+/// An *illegal* `Wrap` burst is refused, not mis-driven.
 ///
-/// Phase 2 cannot drive WRAP, and the honest failure is to say so on a
-/// port. Driving it badly would turn a manager limitation into a
-/// protocol violation that the monitors would then — correctly, and
-/// unhelpfully — report.
+/// Phase 3 drives legal WRAP; three beats is not one of the four
+/// lengths the spec permits, so this one must still be refused.
+/// Driving it would turn a manager limitation into a protocol
+/// violation the monitors would then — correctly, and unhelpfully —
+/// report.
 #[test]
-fn a_wrap_burst_is_refused_rather_than_driven() {
-    let run = drive(3, 2, BurstKind::Wrap);
+fn an_illegal_wrap_burst_is_refused_rather_than_driven() {
+    let run = drive(2, 2, BurstKind::Wrap, 0x1000);
     assert_eq!(run.beats_accepted, 0, "WRAP must not produce beats");
     assert!(!run.completed, "WRAP must not report completion");
     let (fault, _, unchecked) = verdict(run.cycles);
@@ -252,11 +253,48 @@ fn tier_b_agrees_on_a_representative_slice() {
     rhdl::vlog::toolchain::require_iverilog();
     let dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("axi4_phase2");
     let mut wrong: Vec<String> = Vec::new();
+    // Every size (so every lane-rotation pattern), the boundary beat
+    // counts, all three burst kinds, and — the reason this slice exists
+    // at all — unaligned starts, where Tier A shares the manager's lane
+    // arithmetic and so cannot judge it.
+    let mut cases: Vec<(String, u128, u128, BurstKind, u128)> = Vec::new();
     for size in 0u128..=2 {
         for len in [0u128, 1, 3, 7, 15] {
             for (name, kind) in [("Incr", BurstKind::Incr), ("Fixed", BurstKind::Fixed)] {
-                let tag = format!("{name}_len{len}_size{size}");
-                let run = drive(len, size, kind);
+                cases.push((
+                    format!("{name}_len{len}_size{size}"),
+                    len,
+                    size,
+                    kind,
+                    0x1000,
+                ));
+            }
+        }
+        for len in [1u128, 3, 7, 15] {
+            cases.push((
+                format!("Wrap_len{len}_size{size}"),
+                len,
+                size,
+                BurstKind::Wrap,
+                0x1000,
+            ));
+        }
+        // Unaligned Incr: every start offset inside a transfer.
+        let tb = 1u128 << size;
+        for off in 1..tb {
+            cases.push((
+                format!("Incr_unaligned_off{off}_size{size}"),
+                3,
+                size,
+                BurstKind::Incr,
+                0x1000 + off,
+            ));
+        }
+    }
+    {
+        {
+            for (tag, len, size, kind, addr) in cases {
+                let run = drive(len, size, kind, addr);
                 let a = verdict(run.cycles.clone());
                 let b = common::tier_b_write(&run.cycles, &dir, &tag);
                 let a_code = (common::code_of(a.0), a.1, a.2);

@@ -31,6 +31,136 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-10-22 — AXI4 Phase 3 met: WRAP, unaligned starts, and a suite that solves for the hard cases
+
+**Path:** `crates/rhdl-fpga/src/axi4/check/{monitor,traffic}.rs`,
+`crates/rhdl-fpga/src/axi4/manager/{mod,read_burst,write_burst}.rs`,
+`crates/rhdl-fpga/verilog/axi4/axi4_write_monitor.v`,
+`crates/rhdl-fpga/tests/axi4_loopback.rs` (was
+`axi4_phase2_loopback.rs`), `crates/rhdl-fpga/tests/axi4_phase2_write_burst.rs`
+
+**Why this, why now:** Phase 3 of §8 — "WRAP, narrow, unaligned. The
+arithmetic of §4" — gated on §7.4's randomised suite "against both
+monitors, including the boundary cases the generator solves for". Both
+gates pass.
+
+**The first thing Phase 3 had to do was fix the oracle**, and that is
+the entry's lede. Both monitors' strobe check aligned the low byte lane
+*down* to the transfer size unconditionally, so for beat zero of an
+**unaligned** burst they would have accepted strobes on lanes *below*
+the start address — bytes the manager was never asked to write. Phase 1
+had recorded this as "the strobe check assumes a size-aligned start",
+which reads like a coverage gap but was actually a **permissive check**.
+Had the managers learned to drive unaligned bursts first, the Phase 3
+gate would have passed vacuously on wrong strobes.
+
+**Design decisions:**
+
+- **The unaligned rule went into both monitors by different means.**
+  Tier A computes the lane range and shifts a mask of that width; Tier B
+  walks the lanes and tests each against the range. That is the same
+  independence discipline the two monitors were built with, applied to
+  the new rule rather than assumed to carry over.
+- **A new negative transcript proves it.**
+  `Violation::UnalignedFirstBeatStrobes` is legal traffic right up to
+  the strobes, so it isolates exactly the rule just added. Without it
+  the fix would be an assertion about itself.
+- **The managers now refuse 4 KiB-crossing `Incr`.** The 4 KiB rule,
+  `Wrap` legality and `AxSIZE` are all *manager* obligations a
+  subordinate may only detect, never fix — so refusing is the only
+  correct answer, and driving them would make the manager the
+  non-conformant master the monitors exist to catch.
+- **`drivable` is shared between the two managers**, for the same reason
+  `rules::address_fault` is shared between the two monitors: AW and AR
+  are constrained identically, two copies are two places to fix a
+  misreading, and a drift between them would leave both managers' tests
+  green. This was not hypothetical — see the gotchas.
+- **The loopback computes beat addresses independently.** It had been
+  calling the same `beat_address` kernel the endpoint uses, so a bug in
+  WRAP's block arithmetic would have cancelled out on both sides. The
+  test now implements §4's formula in plain Rust, with `%` where the
+  kernel uses a mask, so the two agree by different routes.
+- **The randomised suite solves for the hard cases rather than sampling
+  them.** §7.4 is explicit that the RoCE corpus showed uniform fuzzing
+  misses narrow windows. So the generator *constructs*: `Incr` bursts
+  ending exactly at a 4 KiB boundary and crossing it by a single beat;
+  `Wrap` starts strictly inside the block, because a `Wrap` starting at
+  the block base behaves identically to `Incr` and exercises none of
+  the block arithmetic; and the narrowest transfer on the widest bus.
+  Uniform sampling of a 32-bit address space would essentially never
+  produce a 4 KiB crossing.
+- **The suite checks the illegal cases too, and asserts it generated
+  some.** Roughly a quarter of the random descriptors are not drivable,
+  and the assertion there is that the manager refuses them. Tail
+  assertions require both outcomes and a minimum number of genuine
+  wrap-points to have occurred, so the suite cannot pass by generating
+  nothing interesting.
+- **Deterministic seed**, per CLAUDE.md §12 rule 10. A suite that finds
+  a bug on Tuesday and cannot reproduce it on Wednesday has not found
+  a bug.
+
+**Surprises and gotchas:**
+
+- **"Assumes X" in a comment can mean "is wrong when not X".** Phase
+  1's note about the strobe check assuming alignment sounded like a
+  deferral and was a defect. Worth re-reading other such notes with
+  that in mind.
+- **A duplicated rule drifted within one session.** `drivable` was
+  copied into both managers; Phase 3 updated the write copy for WRAP
+  and left the read copy refusing it, so WRAP writes worked and WRAP
+  reads returned zero beats. The loopback caught it. The fix was to
+  share the rule, which is what the monitors had already done — the
+  lesson being that the monitors' shared-`address_fault` decision was
+  not fastidiousness, and the same reasoning applied to the managers a
+  phase later than it should have.
+- **A test correctly going red is not a test to "fix" quietly.**
+  `undrivable_commands_are_refused_in_place` asserted `Wrap` was
+  refused; Phase 3 drives it, so the assertion became wrong. Updating
+  it to the real refusal set — illegal `Wrap` length, unaligned `Wrap`,
+  4 KiB crossing, oversized `AxSIZE` — is the work, not deleting it.
+  The read manager's twin was missed on the first pass and only the
+  full-workspace run found it, which is an argument for running the
+  whole suite rather than the touched crate.
+- **Scripted edits that do not assert fail silently.** Three times this
+  session a `str.replace` matched nothing — `cargo fmt` had reflowed a
+  signature onto one line, changed an indentation level, or reordered
+  an import list — and the edit appeared to apply while changing
+  nothing. One of those left a *stale* `drivable` in place and cost a
+  confused debugging round. Every replacement now asserts its target
+  was found exactly once; the two misses after that were caught
+  immediately rather than discovered later.
+- **`{v:#02x}` has no width effect.** The `#` prefix consumes the
+  field, so two digits needs `{v:#04x}`. Clippy catches it.
+
+**Validation:** both gates pass. The loopback sweep is **892
+geometries** — every `len` 1..256 and every `size` for aligned `Incr`,
+`Fixed` to its 16-beat cap, `Wrap` at all four legal lengths, and every
+start offset inside a transfer for unaligned `Incr` — each written and
+read back byte for byte against the independent host model with both
+monitors silent and zero unchecked beats. The randomised suite adds
+~450 cases over §7.4's axes. Mutation-tested: broken WRAP addressing,
+an ignored unaligned first beat, a dropped 4 KiB refusal and accepted
+illegal `Wrap` lengths are each caught. Tier B's slice now covers WRAP
+and every unaligned offset, which matters because Tier A shares the
+manager's lane arithmetic and so cannot independently judge strobes.
+
+**Follow-ups:**
+
+- Per-ID interleaving and out-of-order completion: Phase 4, with the ID
+  table of §5.
+- The composition still is not run through `iverilog`; each widget is.
+  A fixture widget is worth building when Phase 5's interconnect gives
+  more than one shape to compose.
+- `Fixed` beyond 16 beats is not refused by `drivable`; the spec caps
+  it, and the suites simply never ask. It belongs with the other
+  address-phase refusals.
+- The read manager does not reduce anything for an unaligned start —
+  reads have no strobes, and discarding the leading bytes is the
+  consumer's job. The loopback does that discarding in its comparison,
+  which is correct but means no widget is currently responsible for it.
+
+---
+
 ## 2026-10-22 — AXI4 Phase 2 met: the read manager, the memory endpoint, and a byte-exact loopback
 
 **Path:** `crates/rhdl-fpga/src/axi4/manager/read_burst.rs`,

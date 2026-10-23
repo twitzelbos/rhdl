@@ -101,6 +101,9 @@ module axi4_write_monitor (
   integer    li;
   reg [ 3:0] legal;
   reg [31:0] tb;            // bytes this transfer
+  reg [31:0] start_addr;    // AWADDR as issued, for the reduced first beat
+  reg [31:0] base_lo;       // low lane of the beat's size-aligned block
+  reg [31:0] start_lo;      // low lane the start address actually begins at
   reg [31:0] lo;            // first lane of the transfer within the bus
   reg [31:0] first_byte, last_byte, span;
   reg [31:0] aligned;
@@ -187,10 +190,18 @@ module axi4_write_monitor (
       // the comment in monitor.rs.
       size_ok = ((1 << cur_size) <= BUS_BYTES);
       tb = size_ok ? (1 << cur_size) : BUS_BYTES;
-      lo = (cur_addr & (BUS_BYTES - 1)) & ~(tb - 1);
+      base_lo = (cur_addr & (BUS_BYTES - 1)) & ~(tb - 1);
+      // An unaligned burst's FIRST beat is narrower than its size: it
+      // runs from AWADDR to the end of that size-aligned block, and the
+      // lanes below the start address stay dark. Later beats are
+      // size-aligned by construction. Kept as a lane walk rather than
+      // the Rust's mask arithmetic -- the point of this file is that it
+      // reaches the same answer by other means.
+      start_lo = start_addr & (BUS_BYTES - 1);
+      lo = ((beat == 0) && (start_lo > base_lo)) ? start_lo : base_lo;
       legal = 0;
       for (li = 0; li < BUS_BYTES; li = li + 1)
-        if ((li >= lo) && (li < lo + tb)) legal[li] = 1'b1;
+        if ((li >= lo) && (li < base_lo + tb)) legal[li] = 1'b1;
       strobe_bad = checked && size_ok && ((w_strb & ~legal) != 0);
 
       // ---- response phase
@@ -230,6 +241,8 @@ module axi4_write_monitor (
       if (aw_fire) begin
         aw_active <= 1'b1;
         cur_addr  <= aw_addr & ~((1 << aw_size) - 1);
+        start_addr <= aw_addr;
+        start_addr <= aw_addr;
         cur_len   <= aw_len;
         cur_size  <= aw_size;
         cur_burst <= aw_burst;

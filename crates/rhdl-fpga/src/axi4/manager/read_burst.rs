@@ -57,7 +57,8 @@
 //! And the auto-generated FSM diagram:
 #![doc = include_str!("../../../doc/axi4_read_burst_fsm.md")]
 
-use super::super::types::{AxiAddress, AxiReadBeat, AxiResponse, BurstKind, size_fits_bus};
+use super::super::types::{AxiAddress, AxiReadBeat, AxiResponse};
+use super::drivable;
 use crate::core::dff;
 use rhdl::prelude::*;
 
@@ -196,21 +197,6 @@ pub fn worse(a: AxiResponse, b: AxiResponse) -> AxiResponse {
 }
 
 #[kernel]
-/// Can this manager drive the requested burst?
-pub fn drivable<const A: usize, const ID: usize>(a: AxiAddress<A, ID>, bus_bytes: Bits<9>) -> bool
-where
-    rhdl::bits::W<A>: BitWidth,
-    rhdl::bits::W<ID>: BitWidth,
-{
-    let kind_ok = match a.burst {
-        BurstKind::Incr => true,
-        BurstKind::Fixed => true,
-        BurstKind::Wrap => false,
-    };
-    kind_ok && size_fits_bus(a.size, bus_bytes)
-}
-
-#[kernel]
 /// Kernel for [Axi4ReadBurst].
 pub fn read_burst<const A: usize, const DW: usize, const BYTES: usize, const ID: usize>(
     cr: ClockReset,
@@ -306,6 +292,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::axi4::types::BurstKind;
     use expect_test::expect;
     use rhdl::prelude::vlog::Pretty;
 
@@ -371,10 +358,47 @@ mod tests {
         assert_eq!(d.extras, Extras::<32, 4>::default());
     }
 
-    /// Tier 1: WRAP and an oversized `ARSIZE` are refused in place.
+    /// Tier 1: a legal `Wrap` read is driven, not refused.
+    ///
+    /// Phase 3's change on the read side. Four beats is one of the four
+    /// lengths the spec permits and `0x2000` is size-aligned, so this
+    /// is conformant traffic and refusing it would be the bug.
+    #[test]
+    fn a_legal_wrap_burst_is_driven() {
+        let i = In::<32, 32, 4, 4> {
+            cmd: Some(cmd(3, 2, BurstKind::Wrap)),
+            ..Default::default()
+        };
+        let (o, d) = read_burst::<32, 32, 4, 4>(
+            run_cr(),
+            i,
+            q(ReadState::Idle, AxiAddress::default(), 0, AxiResponse::Okay),
+        );
+        assert!(!o.rejected, "a legal WRAP read must be driven");
+        assert_eq!(d.state, ReadState::Addr);
+    }
+
+    /// Tier 1: everything that would be a protocol violation is refused
+    /// in place.
+    ///
+    /// The 4 KiB rule, `Wrap` legality and `ARSIZE` are **manager**
+    /// obligations a subordinate may only detect, so driving them would
+    /// make this widget the non-conformant master the monitors exist to
+    /// catch. Shares [`drivable`] with the write manager, so this test
+    /// and its write-side twin check one rule from two directions.
     #[test]
     fn undrivable_commands_are_refused_in_place() {
-        for bad in [cmd(3, 2, BurstKind::Wrap), cmd(3, 7, BurstKind::Incr)] {
+        let mut crossing = cmd(3, 2, BurstKind::Incr);
+        crossing.addr = bits(0x2000 - 4);
+        let mut unaligned_wrap = cmd(3, 2, BurstKind::Wrap);
+        unaligned_wrap.addr = bits(0x2001);
+        for bad in [
+            // Three beats: not 2, 4, 8 or 16.
+            cmd(2, 2, BurstKind::Wrap),
+            unaligned_wrap,
+            crossing,
+            cmd(3, 7, BurstKind::Incr),
+        ] {
             let i = In::<32, 32, 4, 4> {
                 cmd: Some(bad),
                 ..Default::default()
@@ -505,7 +529,7 @@ mod tests {
             module top(input wire [1:0] clock_reset, input wire [107:0] i, output wire [105:0] o);
             module top_state(input wire [1:0] clock_reset, input wire [1:0] i, output reg [1:0] o);
             module top_extras(input wire [1:0] clock_reset, input wire [74:0] i, output reg [74:0] o);"#]].assert_eq(&headers);
-        expect!["412"].assert_eq(&hdl.lines().count().to_string());
+        expect!["504"].assert_eq(&hdl.lines().count().to_string());
         Ok(())
     }
 
