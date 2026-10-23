@@ -58,13 +58,29 @@ use super::traffic::ReadCycle;
 use crate::core::dff;
 use rhdl::prelude::*;
 
+/// What one `ARID` has outstanding.
+#[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
+pub struct RdSlot {
+    /// `ARLEN` of the transaction in flight for this ID.
+    pub len: Bits<8>,
+    /// Beats of it already returned.
+    pub beat: Bits<8>,
+    /// Is a transaction in flight for this ID?
+    pub active: bool,
+}
+
 /// The monitor's internal registers, bundled.
 ///
 /// One `Digital` struct in one `DFF` rather than a dozen sibling
 /// `DFF`s, per CLAUDE.md §3.1.
-#[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
-pub struct ReadState<const A: usize, const DW: usize, const BYTES: usize, const ID: usize>
-where
+#[derive(PartialEq, Debug, Digital, Clone, Copy)]
+pub struct ReadState<
+    const A: usize,
+    const DW: usize,
+    const BYTES: usize,
+    const ID: usize,
+    const NID: usize,
+> where
     rhdl::bits::W<A>: BitWidth,
     rhdl::bits::W<DW>: BitWidth,
     rhdl::bits::W<BYTES>: BitWidth,
@@ -82,20 +98,50 @@ where
     p_r_valid: bool,
     p_r_ready: bool,
     p_r: AxiReadBeat<DW, ID>,
-    /// Is a read burst's address latched and its data phase in flight?
-    ar_active: bool,
-    /// The latched address phase of the burst in flight.
-    ar: AxiAddress<A, ID>,
-    /// Beats of the burst in flight already accepted.
-    beat: Bits<8>,
-    /// Transactions addressed but not yet fully returned.
-    outstanding: Bits<8>,
+    /// One slot per `ARID`, indexed by the full ID so nothing aliases.
+    ///
+    /// This is what makes interleaving checkable. AXI4 permits read
+    /// data for *different* IDs to interleave beat by beat, while data
+    /// for the *same* ID must stay in order — so the single beat
+    /// counter Phase 1 had could not tell a legal interleave from a
+    /// reordered burst, and had to treat an unexpected ID as a fault.
+    /// A counter per ID distinguishes them: an interleave is simply two
+    /// counters advancing independently, and same-ID ordering is
+    /// enforced by that ID's own counter sequencing its beats.
+    slots: [RdSlot; NID],
     /// The first fault seen.
     fault: Fault,
     /// How many faults were seen in total.
     faults: Bits<16>,
     /// Read beats the position checks could not be applied to.
     unchecked: Bits<16>,
+}
+
+impl<const A: usize, const DW: usize, const BYTES: usize, const ID: usize, const NID: usize> Default
+    for ReadState<A, DW, BYTES, ID, NID>
+where
+    rhdl::bits::W<A>: BitWidth,
+    rhdl::bits::W<DW>: BitWidth,
+    rhdl::bits::W<BYTES>: BitWidth,
+    rhdl::bits::W<ID>: BitWidth,
+{
+    fn default() -> Self {
+        // Written out because `std` has no blanket `[T; N]: Default`
+        // for a generic `N`, only fixed sizes.
+        Self {
+            seen: false,
+            p_ar_valid: false,
+            p_ar_ready: false,
+            p_ar: AxiAddress::default(),
+            p_r_valid: false,
+            p_r_ready: false,
+            p_r: AxiReadBeat::default(),
+            slots: [RdSlot::default(); NID],
+            fault: Fault::default(),
+            faults: bits(0),
+            unchecked: bits(0),
+        }
+    }
 }
 
 /// What the monitor reports.
@@ -125,18 +171,23 @@ pub struct ReadOut {
 /// `BYTES` is a separate parameter rather than `DW / 8` because
 /// division is not an operator the kernel compiler accepts, which is
 /// the same constraint that makes `AxiWriteBeat` carry `STRB`.
-pub struct Axi4ReadMonitor<const A: usize, const DW: usize, const BYTES: usize, const ID: usize>
-where
+pub struct Axi4ReadMonitor<
+    const A: usize,
+    const DW: usize,
+    const BYTES: usize,
+    const ID: usize,
+    const NID: usize,
+> where
     rhdl::bits::W<A>: BitWidth,
     rhdl::bits::W<DW>: BitWidth,
     rhdl::bits::W<BYTES>: BitWidth,
     rhdl::bits::W<ID>: BitWidth,
 {
-    state: dff::DFF<ReadState<A, DW, BYTES, ID>>,
+    state: dff::DFF<ReadState<A, DW, BYTES, ID, NID>>,
 }
 
-impl<const A: usize, const DW: usize, const BYTES: usize, const ID: usize> Default
-    for Axi4ReadMonitor<A, DW, BYTES, ID>
+impl<const A: usize, const DW: usize, const BYTES: usize, const ID: usize, const NID: usize> Default
+    for Axi4ReadMonitor<A, DW, BYTES, ID, NID>
 where
     rhdl::bits::W<A>: BitWidth,
     rhdl::bits::W<DW>: BitWidth,
@@ -150,8 +201,8 @@ where
     }
 }
 
-impl<const A: usize, const DW: usize, const BYTES: usize, const ID: usize> SynchronousIO
-    for Axi4ReadMonitor<A, DW, BYTES, ID>
+impl<const A: usize, const DW: usize, const BYTES: usize, const ID: usize, const NID: usize>
+    SynchronousIO for Axi4ReadMonitor<A, DW, BYTES, ID, NID>
 where
     rhdl::bits::W<A>: BitWidth,
     rhdl::bits::W<DW>: BitWidth,
@@ -160,16 +211,22 @@ where
 {
     type I = ReadCycle<A, DW, ID>;
     type O = ReadOut;
-    type Kernel = read_monitor<A, DW, BYTES, ID>;
+    type Kernel = read_monitor<A, DW, BYTES, ID, NID>;
 }
 
 #[kernel]
 /// Kernel for [Axi4ReadMonitor].
-pub fn read_monitor<const A: usize, const DW: usize, const BYTES: usize, const ID: usize>(
+pub fn read_monitor<
+    const A: usize,
+    const DW: usize,
+    const BYTES: usize,
+    const ID: usize,
+    const NID: usize,
+>(
     cr: ClockReset,
     i: ReadCycle<A, DW, ID>,
-    q: Q<A, DW, BYTES, ID>,
-) -> (ReadOut, D<A, DW, BYTES, ID>)
+    q: Q<A, DW, BYTES, ID, NID>,
+) -> (ReadOut, D<A, DW, BYTES, ID, NID>)
 where
     rhdl::bits::W<A>: BitWidth,
     rhdl::bits::W<DW>: BitWidth,
@@ -207,15 +264,29 @@ where
             _ => true,
         };
 
-    // ---- data phase
+    // ---- data phase, per ID
     let r_fire = i.r_valid && i.r_ready;
-    let checked = r_fire && s.ar_active;
-    let unchecked = r_fire && !s.ar_active;
-    let last_beat = s.beat == burst_beats(s.ar.len).resize::<8>() - bits::<8>(1);
+    let r_slot = i.r.id.resize::<ID>();
+    let slot = s.slots[r_slot];
+    // Does *anything* have a transaction in flight? The distinction
+    // matters for diagnosis: a beat arriving when the bus is entirely
+    // idle is a different mistake from one naming the wrong ID while
+    // other transactions are legitimately in progress.
+    let mut any_active = false;
+    for k in 0..NID {
+        if s.slots[k].active {
+            any_active = true;
+        }
+    }
+    let checked = r_fire && slot.active;
+    let unchecked = r_fire && !slot.active;
+    let last_beat = slot.beat == burst_beats(slot.len).resize::<8>() - bits::<8>(1);
     let last_early = checked && i.r.last && !last_beat;
     let last_missing = checked && !i.r.last && last_beat;
-    let id_mismatch = checked && i.r.id != s.ar.id;
-    let beat_unexpected = r_fire && s.outstanding == bits::<8>(0);
+    // This ID has nothing outstanding, but something else does.
+    let id_mismatch = r_fire && !slot.active && any_active;
+    // Nothing outstanding at all.
+    let beat_unexpected = r_fire && !slot.active && !any_active;
 
     fault = first_fault(fault, ar_dropped, Fault::ArValidDropped);
     fault = first_fault(fault, ar_changed, Fault::ArPayloadChanged);
@@ -266,37 +337,41 @@ where
     n.p_r_ready = i.r_ready;
     n.p_r = i.r;
 
+    // Accepting an address activates that ID's slot. A second AR for an
+    // ID already in flight is *legal* AXI4 — the two complete in order
+    // — but one slot per ID cannot sequence two of them, so it is
+    // counted rather than silently mis-tracked. Supporting it needs a
+    // queue per ID, which §5 does not ask for.
+    let ar_slot = i.ar.id.resize::<ID>();
+    let ar_unsequenceable = ar_fire && s.slots[ar_slot].active;
+    if ar_fire && !s.slots[ar_slot].active {
+        let mut e = s.slots[ar_slot];
+        e.len = i.ar.len;
+        e.beat = bits::<8>(0);
+        e.active = true;
+        n.slots[ar_slot] = e;
+    }
+    // The beat advances that ID's own counter, which is what keeps
+    // interleaved IDs from disturbing each other.
     let r_closes = checked && i.r.last;
-    n.ar = if ar_fire { i.ar } else { s.ar };
-    n.ar_active = if ar_fire {
-        true
-    } else {
-        s.ar_active && !r_closes
-    };
-    // A new address and a closing burst both restart the count.
-    n.beat = if ar_fire || r_closes {
-        bits::<8>(0)
-    } else if checked {
-        s.beat + bits::<8>(1)
-    } else {
-        s.beat
-    };
+    if checked {
+        let mut e = n.slots[r_slot];
+        if r_closes {
+            e.active = false;
+            e.beat = bits::<8>(0);
+        } else {
+            e.beat = slot.beat + bits::<8>(1);
+        }
+        n.slots[r_slot] = e;
+    }
 
     // Outstanding transactions, not underflowing past zero: a beat with
     // nothing outstanding is reported above, and must not wrap the
     // counter round to swallow the next 255 checks. A read transaction
     // retires on its RLAST, not on its first beat.
-    let up = if ar_fire { bits::<8>(1) } else { bits::<8>(0) };
-    let down = if r_closes && s.outstanding != bits::<8>(0) {
-        bits::<8>(1)
-    } else {
-        bits::<8>(0)
-    };
-    n.outstanding = s.outstanding + up - down;
-
     n.fault = fault;
     n.faults = s.faults + hits;
-    n.unchecked = if unchecked {
+    n.unchecked = if unchecked || ar_unsequenceable {
         s.unchecked + bits::<16>(1)
     } else {
         s.unchecked
@@ -307,11 +382,11 @@ where
     o.faults = n.faults;
     o.unchecked_beats = n.unchecked;
 
-    let mut d = D::<A, DW, BYTES, ID>::dont_care();
+    let mut d = D::<A, DW, BYTES, ID, NID>::dont_care();
     d.state = n;
 
     if cr.reset.any() {
-        d.state = ReadState::<A, DW, BYTES, ID>::default();
+        d.state = ReadState::<A, DW, BYTES, ID, NID>::default();
         o.fault = Fault::None;
         o.faults = bits::<16>(0);
         o.unchecked_beats = bits::<16>(0);
@@ -323,12 +398,11 @@ where
 mod tests {
     use super::*;
     use crate::axi4::check::traffic::{ReadViolation, read_transcript};
-    use crate::axi4::types::BurstKind;
     use expect_test::expect;
     use rhdl::prelude::vlog::Pretty;
 
     // A 32-bit bus.
-    type Mon = Axi4ReadMonitor<32, 32, 4, 4>;
+    type Mon = Axi4ReadMonitor<32, 32, 4, 4, 16>;
     const BUS_BYTES: u128 = 4;
 
     /// Run a transcript through the monitor and report its verdict.
@@ -379,19 +453,45 @@ mod tests {
     /// Tier 1: reset clears every latched verdict.
     #[test]
     fn reset_clears_the_read_verdict() {
-        let s = ReadState::<32, 32, 4, 4> {
+        let s = ReadState::<32, 32, 4, 4, 16> {
             fault: Fault::RLastEarly,
             faults: bits(3),
             unchecked: bits(2),
             ..Default::default()
         };
-        let q = Q::<32, 32, 4, 4> { state: s };
+        let q = Q::<32, 32, 4, 4, 16> { state: s };
         let i = ReadCycle::<32, 32, 4>::default();
         let cr = clock_reset(clock(true), reset(true));
-        let (o, d) = read_monitor::<32, 32, 4, 4>(cr, i, q);
+        let (o, d) = read_monitor::<32, 32, 4, 4, 16>(cr, i, q);
         assert_eq!(o.fault, Fault::None);
         assert_eq!(o.faults.raw(), 0);
-        assert_eq!(d.state, ReadState::<32, 32, 4, 4>::default());
+        assert_eq!(d.state, ReadState::<32, 32, 4, 4, 16>::default());
+    }
+
+    /// A state with the given IDs in flight.
+    fn with_slots(active: &[(usize, u128)]) -> ReadState<32, 32, 4, 4, 16> {
+        let mut st = ReadState::<32, 32, 4, 4, 16>::default();
+        for (id, len) in active {
+            st.slots[*id] = RdSlot {
+                len: bits(*len),
+                beat: bits(0),
+                active: true,
+            };
+        }
+        st
+    }
+
+    fn beat_of(id: u128, last: bool) -> ReadCycle<32, 32, 4> {
+        ReadCycle::<32, 32, 4> {
+            r_valid: true,
+            r_ready: true,
+            r: AxiReadBeat {
+                id: bits(id),
+                last,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
     }
 
     /// Tier 1: a read transaction retires on `RLAST`, not on its first
@@ -401,56 +501,77 @@ mod tests {
     /// `RBeatUnexpected` from its second beat onward.
     #[test]
     fn a_read_transaction_retires_on_rlast() {
-        let s = ReadState::<32, 32, 4, 4> {
-            ar_active: true,
-            ar: AxiAddress {
-                addr: bits(0x40),
-                len: bits(3),
-                size: bits(2),
-                burst: BurstKind::Incr,
-                id: bits(1),
-                ..Default::default()
-            },
-            beat: bits(0),
-            outstanding: bits(1),
-            ..Default::default()
+        let q = Q::<32, 32, 4, 4, 16> {
+            state: with_slots(&[(1, 3)]),
         };
-        let q = Q::<32, 32, 4, 4> { state: s };
         let cr = clock_reset(clock(true), reset(false));
-
-        // A non-final beat: still outstanding afterwards.
-        let mid = ReadCycle::<32, 32, 4> {
-            r_valid: true,
-            r_ready: true,
-            r: AxiReadBeat {
-                id: bits(1),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let (o, d) = read_monitor::<32, 32, 4, 4>(cr, mid, q);
+        let (o, d) = read_monitor::<32, 32, 4, 4, 16>(cr, beat_of(1, false), q);
         assert_eq!(o.fault, Fault::None);
-        assert_eq!(d.state.outstanding.raw(), 1, "retired too early");
-        assert_eq!(d.state.beat.raw(), 1);
-        assert!(d.state.ar_active);
+        assert!(d.state.slots[1].active, "retired too early");
+        assert_eq!(d.state.slots[1].beat.raw(), 1);
     }
 
-    /// Tier 1: a read beat bearing the wrong `RID` is caught.
+    /// **Phase 4's gate, half one (read side).** Read data for two IDs
+    /// interleaves beat by beat, and that is legal.
+    ///
+    /// §5: "Read data for different IDs may interleave **beat by
+    /// beat**. Read data for the *same* ID must stay in order." A
+    /// single beat counter cannot tell those apart — which is why Phase
+    /// 1's monitor had to treat any unexpected `RID` as a fault, and so
+    /// would have reported this perfectly legal traffic. One counter
+    /// per ID makes the interleave simply two counters advancing.
+    #[test]
+    fn read_data_for_two_ids_may_interleave_beat_by_beat() {
+        let cr = clock_reset(clock(true), reset(false));
+        let mut st = with_slots(&[(1, 1), (2, 1)]);
+        // Alternate: 1, 2, 1(last), 2(last).
+        for (id, last) in [(1u128, false), (2, false), (1, true), (2, true)] {
+            let q = Q::<32, 32, 4, 4, 16> { state: st };
+            let (o, d) = read_monitor::<32, 32, 4, 4, 16>(cr, beat_of(id, last), q);
+            assert_eq!(
+                o.fault,
+                Fault::None,
+                "interleaved beat for ID {id} must not fault"
+            );
+            assert_eq!(
+                o.unchecked_beats.raw(),
+                0,
+                "and must be checked, not skipped"
+            );
+            st = d.state;
+        }
+        assert!(!st.slots[1].active, "ID 1 retired on its own RLAST");
+        assert!(!st.slots[2].active, "and so did ID 2");
+    }
+
+    /// Tier 1: same-ID beats are still sequenced, so an early `RLAST`
+    /// on one ID is caught even while another ID is mid-burst.
+    #[test]
+    fn same_id_ordering_is_enforced_during_an_interleave() {
+        let cr = clock_reset(clock(true), reset(false));
+        // ID 1 expects two beats; ID 2 is also in flight.
+        let q = Q::<32, 32, 4, 4, 16> {
+            state: with_slots(&[(1, 1), (2, 3)]),
+        };
+        let (o, _d) = read_monitor::<32, 32, 4, 4, 16>(cr, beat_of(1, true), q);
+        assert_eq!(
+            o.fault,
+            Fault::RLastEarly,
+            "ID 1's first beat is not its last, whatever ID 2 is doing"
+        );
+    }
+
+    /// Tier 1: a beat for an ID with nothing outstanding, while other
+    /// IDs are in flight, is an ID mismatch rather than a stray beat.
+    ///
+    /// The two are distinguished on purpose: a beat arriving when the
+    /// bus is entirely idle is a different mistake from one naming the
+    /// wrong ID while other transactions legitimately progress.
     #[test]
     fn a_read_beat_with_the_wrong_id_is_caught() {
-        let s = ReadState::<32, 32, 4, 4> {
-            ar_active: true,
-            ar: AxiAddress {
-                len: bits(3),
-                size: bits(2),
-                burst: BurstKind::Incr,
-                id: bits(1),
-                ..Default::default()
-            },
-            outstanding: bits(1),
-            ..Default::default()
+        let q = Q::<32, 32, 4, 4, 16> {
+            state: with_slots(&[(1, 3)]),
         };
-        let q = Q::<32, 32, 4, 4> { state: s };
         let cr = clock_reset(clock(true), reset(false));
         let i = ReadCycle::<32, 32, 4> {
             r_valid: true,
@@ -461,7 +582,7 @@ mod tests {
             },
             ..Default::default()
         };
-        let (o, _d) = read_monitor::<32, 32, 4, 4>(cr, i, q);
+        let (o, _d) = read_monitor::<32, 32, 4, 4, 16>(cr, i, q);
         assert_eq!(o.fault, Fault::RIdMismatch);
     }
 
@@ -469,7 +590,7 @@ mod tests {
     /// silently dropped.
     #[test]
     fn an_unplaceable_read_beat_is_counted() {
-        let q = Q::<32, 32, 4, 4> {
+        let q = Q::<32, 32, 4, 4, 16> {
             state: ReadState::default(),
         };
         let cr = clock_reset(clock(true), reset(false));
@@ -478,7 +599,7 @@ mod tests {
             r_ready: true,
             ..Default::default()
         };
-        let (o, _d) = read_monitor::<32, 32, 4, 4>(cr, i, q);
+        let (o, _d) = read_monitor::<32, 32, 4, 4, 16>(cr, i, q);
         assert_eq!(o.unchecked_beats.raw(), 1);
     }
 
@@ -499,10 +620,10 @@ mod tests {
             .join("\n");
         let expect = expect![[r#"
             module top(input wire [1:0] clock_reset, input wire [107:0] i, output wire [36:0] o);
-            module top_state(input wire [1:0] clock_reset, input wire [227:0] i, output reg [227:0] o);"#]];
+            module top_state(input wire [1:0] clock_reset, input wire [417:0] i, output reg [417:0] o);"#]];
         expect.assert_eq(&headers);
         // A lost or merged module would leave the headers above intact.
-        expect!["693"].assert_eq(&hdl.lines().count().to_string());
+        expect!["1369"].assert_eq(&hdl.lines().count().to_string());
         Ok(())
     }
 
@@ -532,7 +653,7 @@ mod tests {
             .join("vcd")
             .join("axi4_read_monitor");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["3c8e6b523f9c5c0bbfdf9bb448206dbb4b3f26cfcf2193d546e8f4697e47ddf7"];
+        let expect = expect!["dc378ef967c84685b2fb62ae83e93dc7f4d68242dacb1d0c354316f6e47f947e"];
         let digest = vcd.dump_to_file(root.join("monitor.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

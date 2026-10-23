@@ -4,7 +4,7 @@ use rhdl_fpga::axi4::check::traffic::{Violation, write_transcript};
 use rhdl_fpga::doc::write_svg_as_markdown;
 
 // A 32-bit data bus: four byte lanes, so STRB is 4.
-type Monitor = Axi4WriteMonitor<32, 32, 4, 4>;
+type Monitor = Axi4WriteMonitor<32, 32, 4, 4, 16>;
 
 fn main() -> Result<(), RHDLError> {
     // A conformant four-beat burst, then the same burst with WLAST

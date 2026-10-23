@@ -96,7 +96,12 @@ module axi4_write_monitor (
   reg [ 2:0] cur_size;
   reg [ 1:0] cur_burst;
   reg [ 7:0] beat;
-  reg [ 7:0] outstanding;
+  // One outstanding count per ID, as a memory array -- the Rust keeps a
+  // `Digital` array indexed by a resized ID. Both are "index by ID";
+  // what differs is the update order below, and that is where the two
+  // could disagree.
+  reg [ 7:0] outstanding [0:15];
+  integer    oi;
 
   integer    li;
   reg [ 3:0] legal;
@@ -132,7 +137,8 @@ module axi4_write_monitor (
   always @(posedge clk) begin
     if (!rstn) begin
       fault <= `F_NONE; faults <= 0; unchecked <= 0;
-      seen <= 0; aw_active <= 0; beat <= 0; outstanding <= 0;
+      seen <= 0; aw_active <= 0; beat <= 0;
+      for (oi = 0; oi < 16; oi = oi + 1) outstanding[oi] <= 0;
       p_aw_valid <= 0; p_aw_ready <= 0; p_w_valid <= 0; p_w_ready <= 0;
       p_b_valid <= 0; p_b_ready <= 0;
     end else begin
@@ -206,7 +212,12 @@ module axi4_write_monitor (
 
       // ---- response phase
       b_fire = b_valid && b_ready;
-      bresp_bad = b_fire && (outstanding == 0);
+      // Keyed on the response's own ID. A global count could only
+      // catch a surplus response while *nothing* was outstanding, so a
+      // response for an ID never addressed passed unnoticed whenever
+      // any other transaction was in flight. That gap is what the
+      // BrespForeignIdWhileBusy transcript exposes.
+      bresp_bad = b_fire && (outstanding[b_id] == 0);
 
       note(`F_AW_VALID_DROPPED,     aw_dropped);
       note(`F_AW_PAYLOAD_CHANGED,   aw_changed);
@@ -264,8 +275,19 @@ module axi4_write_monitor (
       // Outstanding transactions, not underflowing past zero: a
       // response with nothing outstanding is reported above and must
       // not wrap the counter round to swallow later checks.
-      if (aw_fire && !(b_fire && outstanding != 0))      outstanding <= outstanding + 1;
-      else if (!aw_fire && (b_fire && outstanding != 0))  outstanding <= outstanding - 1;
+      // Each ID moves on its own, so an AW and a B naming *different*
+      // IDs in one cycle both take effect. Saturating at zero: a
+      // surplus response is reported above and must not underflow into
+      // 255, which would swallow that ID's next 255 checks.
+      if (aw_fire && b_fire && (aw_id == b_id)) begin
+        // Same ID both ways: +1 then -1 nets out, unless there was
+        // nothing to retire.
+        if (outstanding[b_id] == 0) outstanding[aw_id] <= outstanding[aw_id] + 1;
+      end else begin
+        if (aw_fire) outstanding[aw_id] <= outstanding[aw_id] + 1;
+        if (b_fire && outstanding[b_id] != 0)
+          outstanding[b_id] <= outstanding[b_id] - 1;
+      end
     end
   end
 endmodule

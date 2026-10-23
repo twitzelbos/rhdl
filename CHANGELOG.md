@@ -31,6 +31,132 @@ If `git log` answers *what changed and when*, this CHANGELOG answers *what we we
 
 ---
 
+## 2026-10-23 — AXI4 Phase 4 met: per-ID tracking, interleaving, and a table that stalls
+
+**Path:** `crates/rhdl-fpga/src/axi4/id_table.rs` (new),
+`crates/rhdl-fpga/src/axi4/check/{monitor,read_monitor,traffic}.rs`,
+`crates/rhdl-fpga/verilog/axi4/axi4_{write,read}_monitor.v`,
+`crates/rhdl-fpga/examples/axi4_id_table.rs`,
+`crates/rhdl-fpga/doc/axi4_id_table.md`
+
+**Why this, why now:** Phase 4 of §8 — "IDs and out-of-order. Per-ID
+state, the ID table of §5, read-beat interleaving" — gated on "two IDs
+completing out of order, and a full ID table stalling rather than
+aliasing, asserted as a *distinguishable* outcome, not merely as 'it
+still works'." Both halves pass. This is also the phase that retires
+most of what Phases 1–3 deferred honestly rather than silently.
+
+**Design decisions:**
+
+- **The ID table stalls; `roce::qp::table` aliases.** Same structure —
+  direct-mapped on the low bits — and deliberately the opposite policy,
+  which is worth stating because copying the RoCE widget wholesale
+  would have been the natural move. A queue-pair context is
+  configuration the *host* controls: if two numbers collide, the host
+  chose them. An AXI4 ID arrives from whatever master is attached, so
+  the table cannot assume anyone arranged for it to fit, and §5 is
+  explicit that accepting a colliding transaction risks routing its
+  response to the wrong port — a data-corruption bug. Stalling costs
+  throughput and shows up in a waveform; aliasing is silent.
+- **The three outcomes are distinguishable because the gate demands
+  it.** A single `ready` bit cannot tell a collision from a saturated
+  counter, and a test that only checked "it still works" would pass
+  whether the table stalled or aliased. [`Admit`] names which
+  happened, and the two are asserted separately.
+- **The same ID twice is not a collision.** AXI4 permits several
+  outstanding transactions per ID; they merely complete in order. So a
+  slot holds an ID *and a count*. Reading §5's "a collision stalls" as
+  "one transaction per slot" would refuse perfectly legal traffic — a
+  plausible misreading that would have looked correct in every test one
+  would think to write for it.
+- **Per-ID response matching in the write monitor**, indexed by the
+  full `BID` so nothing aliases. Phase 1's single global count could
+  only catch a surplus response while *nothing* was outstanding, so a
+  response for an ID never addressed passed unnoticed whenever any
+  other transaction was in flight.
+- **Per-ID slots in the read monitor**, which is what makes
+  interleaving *checkable* rather than merely tolerated. §5: read data
+  for different IDs may interleave beat by beat, while data for the
+  same ID must stay in order. A single beat counter cannot tell those
+  apart — which is why Phase 1 had to treat any unexpected `RID` as a
+  fault, and would therefore have *reported legal traffic*. One counter
+  per ID makes an interleave two counters advancing independently, and
+  same-ID ordering falls out of each ID sequencing its own beats.
+- **`RIdMismatch` and `RBeatUnexpected` are now separate diagnoses.** A
+  beat arriving on an entirely idle bus is a different mistake from one
+  naming the wrong ID while other transactions legitimately progress.
+  The same split as the write side's `BrespWithoutAw` versus the new
+  `BrespForeignIdWhileBusy`.
+- **Every change was made in both monitors, independently.** Tier B
+  counts each ID's beats *up* against `ARLEN` where Tier A compares
+  against `burst_beats(len) - 1`, and keeps its slots as parallel
+  memory arrays where Tier A uses a `Digital` array of structs. Same
+  predicate, other arithmetic.
+
+**Surprises and gotchas:**
+
+- **Tier B caught the regression this phase fixes, by disagreeing.**
+  The moment Tier A gained per-ID response matching, the A/B test
+  failed on `BrespForeignIdWhileBusy`: Tier B, still on a global count,
+  reported **no fault** where Tier A reported one. That disagreement is
+  the independent evidence that Phase 1's check really did miss a
+  response for a never-addressed ID — not an argument that it might
+  have. The two-monitor arrangement has now paid for itself three times
+  (the `AxSIZE` clamp in Phase 1, the `BRESP` blindness in Phase 1, and
+  this).
+- **Per-ID tracking made one of our own transcripts ambiguous.**
+  `ReadViolation::RIdMismatch` *substituted* a foreign-ID beat, which
+  worked while a single counter advanced on every beat. With per-ID
+  counters the foreign beat no longer advances ID 1, so ID 1 ends a
+  beat short and its `RLAST` arrives early — a **second** fault, which
+  breaks the one-injected-fault-per-transcript rule the whole suite
+  rests on. Fixed by *inserting* an extra beat rather than substituting
+  one. Worth remembering that a transcript encodes assumptions about
+  the checker, and improving the checker can invalidate them.
+- **`std` has no blanket `[T; N]: Default` for a generic `N`.** Three
+  widgets in this phase hold a per-ID array and each needed a
+  hand-written `Default`. The error points at the `derive`, not at the
+  array, which makes it read like a `Digital` problem.
+- **`q.<field>` is the child aggregate, not the state.** Writing
+  `q.slots` instead of `q.state.slots` compiles into a confusing "no
+  field `slots`" against the generated `Q` type.
+- **A Russian word got into a doc comment** from a slip of the
+  keyboard; `cargo doc` will not catch that, and neither will clippy.
+  Worth a skim of prose in review rather than trusting the gates.
+
+**Validation:** both gate halves. Write side:
+`two_ids_completing_out_of_order_is_accepted` requires silence *and*
+zero unchecked beats, so acceptance cannot come from a monitor that
+stopped looking. Read side:
+`read_data_for_two_ids_may_interleave_beat_by_beat`, plus
+`same_id_ordering_is_enforced_during_an_interleave` to show the
+interleave did not simply disable the ordering check. Table:
+`Admit::Collision` and `Admit::Saturated` asserted separately, with
+the collision shown to persist until the owner fully retires. The ID
+table carries all five tiers (13 tests). Both Tier A/Tier B agreement
+tests pass across all 31 transcripts. Mutation-tested: collapsing every
+ID onto one slot, suppressing same-ID ordering, and ignoring the
+response ID are each caught. Workspace: 4332 tests, 0 failures, clippy
+and `cargo doc -D warnings` clean.
+
+**Follow-ups:**
+
+- **A second outstanding transaction for an already-active ID is legal
+  and is counted, not checked.** Sequencing two needs a queue per ID,
+  which §5 does not ask for; the monitors increment `unchecked_beats`
+  so the gap is a number on a port rather than an unwritten `else`.
+- The managers still issue one burst at a time, and the write
+  manager's address phase still does not overlap its data phase. The
+  ID table is what makes overlap safe to add; doing so is a
+  throughput change rather than a conformance one.
+- The endpoint serves one transaction at a time, so it cannot *produce*
+  interleaved read data. The interleaving tests drive the monitors from
+  hand-written transcripts instead. An endpoint with per-ID state is
+  what Phase 5's interconnect will want.
+- `Fixed` beyond 16 beats is still not refused by `drivable`.
+
+---
+
 ## 2026-10-22 — AXI4 Phase 3 met: WRAP, unaligned starts, and a suite that solves for the hard cases
 
 **Path:** `crates/rhdl-fpga/src/axi4/check/{monitor,traffic}.rs`,

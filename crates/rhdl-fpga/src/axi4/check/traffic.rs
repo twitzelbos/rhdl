@@ -88,6 +88,17 @@ pub enum Violation {
     /// `WSTRB` asserting a byte lane the beat's address and size do not
     /// select.
     StrobeOutsideLanes,
+    /// A write response for a foreign ID *while another is
+    /// outstanding*.
+    ///
+    /// The case Phase 1's global count could not see. With one
+    /// transaction outstanding the old check asked only "is anything
+    /// outstanding?", so a response bearing an ID that was never
+    /// addressed passed unnoticed. Per-ID counts catch it, and this
+    /// transcript is what proves they do — it is deliberately *not* the
+    /// same shape as [`Violation::BrespWithoutAw`], which only fires
+    /// when the bus is idle.
+    BrespForeignIdWhileBusy,
     /// An unaligned `Incr` burst whose first beat drives full strobes.
     ///
     /// Legal traffic right up to the strobes: an unaligned start is
@@ -127,6 +138,7 @@ impl Violation {
             // Same clause, different traffic: lanes the transfer does
             // not select.
             Violation::UnalignedFirstBeatStrobes => Fault::StrobeOutsideLanes,
+            Violation::BrespForeignIdWhileBusy => Fault::BrespUnexpected,
         }
     }
 
@@ -154,6 +166,7 @@ impl Violation {
             Violation::SizeExceedsBus,
             Violation::StrobeOutsideLanes,
             Violation::UnalignedFirstBeatStrobes,
+            Violation::BrespForeignIdWhileBusy,
         ]
     }
 }
@@ -380,6 +393,18 @@ where
             c3.b_ready = true;
             out.push(c3);
         }
+        Violation::BrespForeignIdWhileBusy => {
+            // A response for ID 7, which was never addressed, while ID
+            // 1 is still outstanding. The legitimate response is never
+            // sent, so ID 1 stays in flight and the only fault is the
+            // foreign one.
+            let mut c = idle;
+            c.b_valid = true;
+            c.b_ready = true;
+            c.b.id = bits(7);
+            c.b.resp = AxiResponse::Okay;
+            out.push(c);
+        }
         Violation::BrespSurplus => {
             for _ in 0..2 {
                 let mut c = idle;
@@ -596,7 +621,20 @@ where
         match fault {
             ReadViolation::RLastEarly if beat == 1 => c.r.last = true,
             ReadViolation::RLastMissing => c.r.last = false,
-            ReadViolation::RIdMismatch if beat == 1 => c.r.id = bits(2),
+            ReadViolation::RIdMismatch if beat == 1 => {
+                // An *extra* beat bearing a foreign ID, not a
+                // substituted one. Substituting it used to work when
+                // the monitor kept a single beat counter -- the foreign
+                // beat still advanced it -- but with per-ID counters it
+                // does not, so ID 1 would then be a beat short and its
+                // `RLAST` would arrive early. That is a *second* fault,
+                // and one injected fault per transcript is what makes
+                // the expected verdict exact.
+                let mut stray = c;
+                stray.r.id = bits(2);
+                stray.r.last = false;
+                out.push(stray);
+            }
             ReadViolation::RValidDropped if beat == 1 => {
                 // Offer, stall, withdraw -- then fall through and send
                 // the beat properly, so the burst is still four beats.
@@ -633,6 +671,78 @@ where
         out.push(c);
     }
 
+    out.push(idle);
+    out.push(idle);
+    out
+}
+
+/// Two write bursts whose responses come back in the opposite order.
+///
+/// **Legal traffic**, and the first half of Phase 4's gate: §8 asks for
+/// "two IDs completing out of order". AXI4 permits write responses to
+/// complete out of order *across* IDs, so a monitor must accept this —
+/// and a monitor keeping one global count accepts it only by accident,
+/// because it never looks at which ID a response names.
+///
+/// Returned as its own builder rather than a [`Violation`] variant,
+/// because the expected verdict is silence: it belongs with the
+/// conformant controls, not with the faults.
+pub fn write_transcript_two_ids_out_of_order<
+    const A: usize,
+    const D: usize,
+    const STRB: usize,
+    const ID: usize,
+>(
+    bus_bytes: u128,
+) -> Vec<WriteCycle<A, D, STRB, ID>>
+where
+    rhdl::bits::W<A>: BitWidth,
+    rhdl::bits::W<D>: BitWidth,
+    rhdl::bits::W<STRB>: BitWidth,
+    rhdl::bits::W<ID>: BitWidth,
+{
+    let size = bus_bytes.trailing_zeros() as u128;
+    let all_lanes = (1u128 << bus_bytes) - 1;
+    let idle = WriteCycle::<A, D, STRB, ID>::default();
+    let mut out: Vec<WriteCycle<A, D, STRB, ID>> = Vec::new();
+
+    // Two single-beat bursts, issued and filled in order. The write
+    // data phase is *not* interleaved -- AXI4 removed `WID`, so it
+    // cannot be -- which is exactly why only the responses can reorder.
+    for (id, addr) in [(1u128, 0x1000u128), (2, 0x2000)] {
+        let aw = AxiAddress::<A, ID> {
+            id: bits(id),
+            addr: bits(addr),
+            len: bits(0),
+            size: bits(size),
+            burst: BurstKind::Incr,
+            ..Default::default()
+        };
+
+        let mut a = idle;
+        a.aw_valid = true;
+        a.aw_ready = true;
+        a.aw = aw;
+        out.push(a);
+
+        let mut w = idle;
+        w.w_valid = true;
+        w.w_ready = true;
+        w.w.data = bits(0xA0 + id);
+        w.w.strb = bits(all_lanes);
+        w.w.last = true;
+        out.push(w);
+    }
+
+    // Responses in the opposite order: ID 2 first, then ID 1.
+    for id in [2u128, 1] {
+        let mut b = idle;
+        b.b_valid = true;
+        b.b_ready = true;
+        b.b.id = bits(id);
+        b.b.resp = AxiResponse::Okay;
+        out.push(b);
+    }
     out.push(idle);
     out.push(idle);
     out

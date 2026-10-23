@@ -52,12 +52,16 @@
 //!
 //! # Per-ID tracking
 //!
-//! Responses are matched against a **count** of outstanding
-//! transactions, not against their IDs, so a response bearing an ID
-//! that was never addressed is caught only while no other transaction
-//! is outstanding. ID-keyed matching is the ID table from
-//! `axi4-architecture.md` §5 and arrives with Phase 4; the count is
-//! what is sound without it.
+//! Responses are matched **by ID**: one outstanding count per `AWID`,
+//! indexed by the full ID so nothing aliases. So a response bearing an
+//! ID that was never addressed is caught even while other transactions
+//! are in flight, and responses completing out of order across IDs are
+//! *accepted* rather than merely tolerated — each ID has its own count,
+//! so the order they return in does not matter.
+//!
+//! Phase 1 kept a single global count, which could only catch a surplus
+//! response while nothing at all was outstanding. `NID` must be
+//! `1 << ID`; [`Axi4WriteMonitor::check_widths`] enforces it.
 //!
 //!# Example
 //!
@@ -83,9 +87,14 @@ use rhdl::prelude::*;
 /// `DFF`s, per CLAUDE.md §3.1: the auto-generated `Q`/`D` tuples stop
 /// at 12 elements, and these are one observer's state, not a dozen
 /// sub-circuits.
-#[derive(PartialEq, Debug, Digital, Clone, Copy, Default)]
-pub struct State<const A: usize, const DW: usize, const STRB: usize, const ID: usize>
-where
+#[derive(PartialEq, Debug, Digital, Clone, Copy)]
+pub struct State<
+    const A: usize,
+    const DW: usize,
+    const STRB: usize,
+    const ID: usize,
+    const NID: usize,
+> where
     rhdl::bits::W<A>: BitWidth,
     rhdl::bits::W<DW>: BitWidth,
     rhdl::bits::W<STRB>: BitWidth,
@@ -113,14 +122,55 @@ where
     aw: AxiAddress<A, ID>,
     /// Beats of the burst in flight already accepted.
     beat: Bits<8>,
-    /// Transactions addressed but not yet responded to.
-    outstanding: Bits<8>,
+    /// Transactions addressed but not yet responded to, **per ID**.
+    ///
+    /// Indexed by the full `AWID`, so nothing aliases: `NID` is
+    /// `1 << ID`. Phase 1 kept a single global count, which could only
+    /// catch a surplus response while *nothing* was outstanding — a
+    /// response bearing an ID never addressed passed unnoticed whenever
+    /// any other transaction was in flight. Per-ID counts are what make
+    /// out-of-order completion across IDs checkable rather than merely
+    /// tolerated.
+    outstanding: [Bits<8>; NID],
     /// The first fault seen.
     fault: Fault,
     /// How many faults were seen in total.
     faults: Bits<16>,
     /// Write beats the position checks could not be applied to.
     unchecked: Bits<16>,
+}
+
+impl<const A: usize, const DW: usize, const STRB: usize, const ID: usize, const NID: usize> Default
+    for State<A, DW, STRB, ID, NID>
+where
+    rhdl::bits::W<A>: BitWidth,
+    rhdl::bits::W<DW>: BitWidth,
+    rhdl::bits::W<STRB>: BitWidth,
+    rhdl::bits::W<ID>: BitWidth,
+{
+    fn default() -> Self {
+        // Written out because `std` has no blanket `[T; N]: Default`
+        // for a generic `N`, only fixed sizes.
+        Self {
+            seen: false,
+            p_aw_valid: false,
+            p_aw_ready: false,
+            p_aw: AxiAddress::default(),
+            p_w_valid: false,
+            p_w_ready: false,
+            p_w: AxiWriteBeat::default(),
+            p_b_valid: false,
+            p_b_ready: false,
+            p_b: AxiWriteResponse::default(),
+            aw_active: false,
+            aw: AxiAddress::default(),
+            beat: bits(0),
+            outstanding: [bits(0); NID],
+            fault: Fault::default(),
+            faults: bits(0),
+            unchecked: bits(0),
+        }
+    }
 }
 
 /// What the monitor reports.
@@ -147,18 +197,23 @@ pub struct Out {
 /// `Q` and `D`, and a const generic called `D` shadows the generated
 /// one. The error is a confusing `type provided when a constant was
 /// expected` pointing at the widget's own field list.
-pub struct Axi4WriteMonitor<const A: usize, const DW: usize, const STRB: usize, const ID: usize>
-where
+pub struct Axi4WriteMonitor<
+    const A: usize,
+    const DW: usize,
+    const STRB: usize,
+    const ID: usize,
+    const NID: usize,
+> where
     rhdl::bits::W<A>: BitWidth,
     rhdl::bits::W<DW>: BitWidth,
     rhdl::bits::W<STRB>: BitWidth,
     rhdl::bits::W<ID>: BitWidth,
 {
-    state: dff::DFF<State<A, DW, STRB, ID>>,
+    state: dff::DFF<State<A, DW, STRB, ID, NID>>,
 }
 
-impl<const A: usize, const DW: usize, const STRB: usize, const ID: usize> Default
-    for Axi4WriteMonitor<A, DW, STRB, ID>
+impl<const A: usize, const DW: usize, const STRB: usize, const ID: usize, const NID: usize> Default
+    for Axi4WriteMonitor<A, DW, STRB, ID, NID>
 where
     rhdl::bits::W<A>: BitWidth,
     rhdl::bits::W<DW>: BitWidth,
@@ -172,8 +227,26 @@ where
     }
 }
 
-impl<const A: usize, const DW: usize, const STRB: usize, const ID: usize> SynchronousIO
-    for Axi4WriteMonitor<A, DW, STRB, ID>
+impl<const A: usize, const DW: usize, const STRB: usize, const ID: usize, const NID: usize>
+    Axi4WriteMonitor<A, DW, STRB, ID, NID>
+where
+    rhdl::bits::W<A>: BitWidth,
+    rhdl::bits::W<DW>: BitWidth,
+    rhdl::bits::W<STRB>: BitWidth,
+    rhdl::bits::W<ID>: BitWidth,
+{
+    /// The invariant the type system cannot state: `NID == 1 << ID`.
+    ///
+    /// One outstanding-count slot per possible ID, so nothing aliases.
+    /// Force it with
+    /// `const _: () = Axi4WriteMonitor::<32, 32, 4, 4, 16>::check_widths();`.
+    pub const fn check_widths() {
+        assert!(1 << ID == NID, "NID must be 1 << ID");
+    }
+}
+
+impl<const A: usize, const DW: usize, const STRB: usize, const ID: usize, const NID: usize>
+    SynchronousIO for Axi4WriteMonitor<A, DW, STRB, ID, NID>
 where
     rhdl::bits::W<A>: BitWidth,
     rhdl::bits::W<DW>: BitWidth,
@@ -182,17 +255,23 @@ where
 {
     type I = WriteCycle<A, DW, STRB, ID>;
     type O = Out;
-    type Kernel = write_monitor<A, DW, STRB, ID>;
+    type Kernel = write_monitor<A, DW, STRB, ID, NID>;
 }
 
 #[kernel]
 /// Kernel for [Axi4WriteMonitor].
 #[allow(clippy::too_many_lines)]
-pub fn write_monitor<const A: usize, const DW: usize, const STRB: usize, const ID: usize>(
+pub fn write_monitor<
+    const A: usize,
+    const DW: usize,
+    const STRB: usize,
+    const ID: usize,
+    const NID: usize,
+>(
     cr: ClockReset,
     i: WriteCycle<A, DW, STRB, ID>,
-    q: Q<A, DW, STRB, ID>,
-) -> (Out, D<A, DW, STRB, ID>)
+    q: Q<A, DW, STRB, ID, NID>,
+) -> (Out, D<A, DW, STRB, ID, NID>)
 where
     rhdl::bits::W<A>: BitWidth,
     rhdl::bits::W<DW>: BitWidth,
@@ -293,7 +372,12 @@ where
 
     // ---- response phase
     let b_fire = i.b_valid && i.b_ready;
-    let bresp_bad = b_fire && s.outstanding == bits::<8>(0);
+    // Keyed on the response's own ID, so a response for an ID that was
+    // never addressed is caught even while other transactions are in
+    // flight -- and responses completing out of order across IDs are
+    // accepted, because each ID carries its own count.
+    let b_slot = i.b.id.resize::<ID>();
+    let bresp_bad = b_fire && s.outstanding[b_slot] == bits::<8>(0);
 
     // Rules in order. `first_fault` keeps the earliest; the order here
     // only decides which of several faults *in one cycle* is named.
@@ -380,13 +464,19 @@ where
     // Outstanding transactions, saturating at both ends: a response
     // with nothing outstanding is reported above, and must not
     // underflow the counter into 255 and swallow the next 255 checks.
-    let up = if aw_fire { bits::<8>(1) } else { bits::<8>(0) };
-    let down = if b_fire && s.outstanding != bits::<8>(0) {
-        bits::<8>(1)
-    } else {
-        bits::<8>(0)
-    };
-    n.outstanding = s.outstanding + up - down;
+    // Each ID's count moves independently. Applied as two separate
+    // updates rather than one net figure because the AW and the B of a
+    // single cycle may name *different* IDs.
+    let aw_slot = i.aw.id.resize::<ID>();
+    if aw_fire {
+        n.outstanding[aw_slot] = s.outstanding[aw_slot] + bits::<8>(1);
+    }
+    if b_fire && n.outstanding[b_slot] != bits::<8>(0) {
+        // Saturating at zero: a surplus response is reported above and
+        // must not underflow into 255, which would swallow the next 255
+        // checks for that ID.
+        n.outstanding[b_slot] -= bits::<8>(1);
+    }
 
     n.fault = fault;
     n.faults = s.faults + hits;
@@ -401,11 +491,11 @@ where
     o.faults = n.faults;
     o.unchecked_beats = n.unchecked;
 
-    let mut d = D::<A, DW, STRB, ID>::dont_care();
+    let mut d = D::<A, DW, STRB, ID, NID>::dont_care();
     d.state = n;
 
     if cr.reset.any() {
-        d.state = State::<A, DW, STRB, ID>::default();
+        d.state = State::<A, DW, STRB, ID, NID>::default();
         o.fault = Fault::None;
         o.faults = bits::<16>(0);
         o.unchecked_beats = bits::<16>(0);
@@ -416,13 +506,15 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::axi4::check::traffic::{Violation, write_transcript};
+    use crate::axi4::check::traffic::{
+        Violation, write_transcript, write_transcript_two_ids_out_of_order,
+    };
     use crate::axi4::types::BurstKind;
     use expect_test::expect;
     use rhdl::prelude::vlog::Pretty;
 
     // A 32-bit bus: four byte lanes.
-    type Mon = Axi4WriteMonitor<32, 32, 4, 4>;
+    type Mon = Axi4WriteMonitor<32, 32, 4, 4, 16>;
     const BUS_BYTES: u128 = 4;
 
     /// Run a transcript through the monitor and report its verdict.
@@ -478,6 +570,41 @@ mod tests {
         assert_eq!(unchecked, 0, "a conformant burst left beats unchecked");
     }
 
+    /// **Phase 4's gate, half one.** Two IDs completing out of order
+    /// draw no fault.
+    ///
+    /// §8 asks for "two IDs completing out of order". AXI4 permits
+    /// write responses to complete out of order across IDs, so the
+    /// monitor must *accept* this — and the `unchecked_beats == 0`
+    /// half of the assertion is what stops it being accepted for the
+    /// wrong reason, by a monitor that had simply stopped looking.
+    ///
+    /// Note what makes this a real test only after Phase 4: a monitor
+    /// keeping one global count accepts out-of-order completion by
+    /// accident, because it never examines which ID a response names.
+    /// The companion negative is
+    /// `Violation::BrespForeignIdWhileBusy`, which that monitor
+    /// accepted too — wrongly.
+    #[test]
+    fn two_ids_completing_out_of_order_is_accepted() {
+        let uut = Mon::default();
+        let cycles = write_transcript_two_ids_out_of_order::<32, 32, 4, 4>(BUS_BYTES);
+        let input = cycles.into_iter().with_reset(1).clock_pos_edge(100);
+        let out = uut
+            .run(input)
+            .synchronous_sample()
+            .map(|x| x.output)
+            .collect::<Vec<_>>();
+        let last = *out.last().unwrap();
+        assert_eq!(last.fault, Fault::None, "out-of-order across IDs is legal");
+        assert_eq!(last.faults.raw(), 0);
+        assert_eq!(
+            last.unchecked_beats.raw(),
+            0,
+            "and every beat was actually checked"
+        );
+    }
+
     /// `Violation::all` really does list every variant.
     ///
     /// `expected()`'s `match` stops compiling when a variant is added,
@@ -486,7 +613,7 @@ mod tests {
     /// testing. Pinning the count is the cheap guard.
     #[test]
     fn violation_list_is_complete() {
-        expect!["17"].assert_eq(&Violation::all().len().to_string());
+        expect!["18"].assert_eq(&Violation::all().len().to_string());
     }
 
     /// Tier 1: reset clears every latched verdict.
@@ -496,20 +623,20 @@ mod tests {
     /// whole suite look broken at once.
     #[test]
     fn reset_clears_the_verdict() {
-        let s = State::<32, 32, 4, 4> {
+        let s = State::<32, 32, 4, 4, 16> {
             fault: Fault::WLastEarly,
             faults: bits(3),
             unchecked: bits(2),
             ..Default::default()
         };
-        let q = Q::<32, 32, 4, 4> { state: s };
+        let q = Q::<32, 32, 4, 4, 16> { state: s };
         let i = WriteCycle::<32, 32, 4, 4>::default();
         let cr = clock_reset(clock(true), reset(true));
-        let (o, d) = write_monitor::<32, 32, 4, 4>(cr, i, q);
+        let (o, d) = write_monitor::<32, 32, 4, 4, 16>(cr, i, q);
         assert_eq!(o.fault, Fault::None);
         assert_eq!(o.faults.raw(), 0);
         assert_eq!(o.unchecked_beats.raw(), 0);
-        assert_eq!(d.state, State::<32, 32, 4, 4>::default());
+        assert_eq!(d.state, State::<32, 32, 4, 4, 16>::default());
     }
 
     /// Tier 1: accepting an address latches the burst and zeroes the
@@ -520,6 +647,9 @@ mod tests {
             aw_valid: true,
             aw_ready: true,
             aw: AxiAddress {
+                // An explicit, non-zero ID: the count is now per-ID, so
+                // which slot it lands in is part of what is tested.
+                id: bits(1),
                 addr: bits(0x40),
                 len: bits(3),
                 size: bits(2),
@@ -528,16 +658,16 @@ mod tests {
             },
             ..Default::default()
         };
-        let q = Q::<32, 32, 4, 4> {
+        let q = Q::<32, 32, 4, 4, 16> {
             state: State::default(),
         };
         let cr = clock_reset(clock(true), reset(false));
-        let (o, d) = write_monitor::<32, 32, 4, 4>(cr, i, q);
+        let (o, d) = write_monitor::<32, 32, 4, 4, 16>(cr, i, q);
         assert_eq!(o.fault, Fault::None);
         assert!(d.state.aw_active);
         assert_eq!(d.state.beat.raw(), 0);
         assert_eq!(d.state.aw.addr.raw(), 0x40);
-        assert_eq!(d.state.outstanding.raw(), 1);
+        assert_eq!(d.state.outstanding[1].raw(), 1, "counted against AWID 1");
     }
 
     /// Tier 1: `AxSIZE` wider than the bus is caught as the address is
@@ -561,14 +691,14 @@ mod tests {
             aw: oversized,
             ..Default::default()
         };
-        let s = State::<32, 32, 4, 4> {
+        let s = State::<32, 32, 4, 4, 16> {
             aw_active: true,
             aw: oversized,
             ..Default::default()
         };
-        let q = Q::<32, 32, 4, 4> { state: s };
+        let q = Q::<32, 32, 4, 4, 16> { state: s };
         let cr = clock_reset(clock(true), reset(false));
-        let (o, _d) = write_monitor::<32, 32, 4, 4>(cr, i, q);
+        let (o, _d) = write_monitor::<32, 32, 4, 4, 16>(cr, i, q);
         assert_eq!(o.fault, Fault::SizeExceedsBus);
     }
 
@@ -576,7 +706,7 @@ mod tests {
     /// asserting every lane is a strobe fault.
     #[test]
     fn narrow_transfer_rejects_lanes_outside_its_own() {
-        let s = State::<32, 32, 4, 4> {
+        let s = State::<32, 32, 4, 4, 16> {
             aw_active: true,
             aw: AxiAddress {
                 addr: bits(0x40),
@@ -588,7 +718,7 @@ mod tests {
             beat: bits(0),
             ..Default::default()
         };
-        let q = Q::<32, 32, 4, 4> { state: s };
+        let q = Q::<32, 32, 4, 4, 16> { state: s };
         let cr = clock_reset(clock(true), reset(false));
 
         // Lanes 0 and 1 are the selected ones at address 0x40.
@@ -601,12 +731,12 @@ mod tests {
             },
             ..Default::default()
         };
-        let (o, _) = write_monitor::<32, 32, 4, 4>(cr, ok, q);
+        let (o, _) = write_monitor::<32, 32, 4, 4, 16>(cr, ok, q);
         assert_eq!(o.fault, Fault::None);
 
         let mut bad = ok;
         bad.w.strb = bits(0b1111);
-        let (o, _) = write_monitor::<32, 32, 4, 4>(cr, bad, q);
+        let (o, _) = write_monitor::<32, 32, 4, 4, 16>(cr, bad, q);
         assert_eq!(o.fault, Fault::StrobeOutsideLanes);
     }
 
@@ -627,11 +757,11 @@ mod tests {
             },
             ..Default::default()
         };
-        let q = Q::<32, 32, 4, 4> {
+        let q = Q::<32, 32, 4, 4, 16> {
             state: State::default(),
         };
         let cr = clock_reset(clock(true), reset(false));
-        let (o, _d) = write_monitor::<32, 32, 4, 4>(cr, i, q);
+        let (o, _d) = write_monitor::<32, 32, 4, 4, 16>(cr, i, q);
         assert_eq!(
             o.fault,
             Fault::None,
@@ -653,13 +783,13 @@ mod tests {
             b_ready: true,
             ..Default::default()
         };
-        let q = Q::<32, 32, 4, 4> {
+        let q = Q::<32, 32, 4, 4, 16> {
             state: State::default(),
         };
         let cr = clock_reset(clock(true), reset(false));
-        let (o, d) = write_monitor::<32, 32, 4, 4>(cr, i, q);
+        let (o, d) = write_monitor::<32, 32, 4, 4, 16>(cr, i, q);
         assert_eq!(o.fault, Fault::BrespUnexpected);
-        assert_eq!(d.state.outstanding.raw(), 0, "counter must not wrap");
+        assert_eq!(d.state.outstanding[0].raw(), 0, "counter must not wrap");
     }
 
     /// Tier 3: the emitted Verilog's **interface** is the contract.
@@ -698,10 +828,10 @@ mod tests {
             .join("\n");
         let expect = expect![[r#"
             module top(input wire [1:0] clock_reset, input wire [113:0] i, output wire [36:0] o);
-            module top_state(input wire [1:0] clock_reset, input wire [233:0] i, output reg [233:0] o);"#]];
+            module top_state(input wire [1:0] clock_reset, input wire [353:0] i, output reg [353:0] o);"#]];
         expect.assert_eq(&headers);
         // A lost or merged module would keep the headers above intact.
-        expect!["922"].assert_eq(&hdl.lines().count().to_string());
+        expect!["1368"].assert_eq(&hdl.lines().count().to_string());
         Ok(())
     }
 
@@ -737,7 +867,7 @@ mod tests {
             .join("vcd")
             .join("axi4_write_monitor");
         std::fs::create_dir_all(&root).unwrap();
-        let expect = expect!["085f2327c22dc037910348810866f01761c69eb4f754fd029811defe5606fc9a"];
+        let expect = expect!["af720469488b0d391672fe99521eeb5cbbb4fd2372874c1a603c186ca1ad2c2f"];
         let digest = vcd.dump_to_file(root.join("monitor.vcd")).unwrap();
         expect.assert_eq(&digest);
         Ok(())

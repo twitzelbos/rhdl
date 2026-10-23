@@ -87,10 +87,15 @@ module axi4_read_monitor (
   reg [31:0] p_r_data;
   reg [ 1:0] p_r_resp;
 
-  reg        ar_active;
-  reg [ 3:0] cur_id;
-  reg [ 8:0] remaining;    // beats still owed, counted DOWN
-  reg [ 7:0] outstanding;
+  // One slot per ARID, as three parallel memory arrays. The Rust keeps
+  // a `Digital` array of structs; what differs is that this counts each
+  // ID's beats UP against its ARLEN while the Rust compares against
+  // `burst_beats(len) - 1`. Same predicate, other arithmetic.
+  reg        slot_active [0:15];
+  reg [ 7:0] slot_len    [0:15];
+  reg [ 7:0] slot_beat   [0:15];
+  reg        any_active;
+  integer    si;
 
   reg [31:0] first_byte, last_byte, span, aligned;
 
@@ -115,7 +120,12 @@ module axi4_read_monitor (
   always @(posedge clk) begin
     if (!rstn) begin
       fault <= `RF_NONE; faults <= 0; unchecked <= 0;
-      seen <= 0; ar_active <= 0; remaining <= 0; outstanding <= 0;
+      seen <= 0;
+      for (si = 0; si < 16; si = si + 1) begin
+        slot_active[si] <= 0;
+        slot_len[si]    <= 0;
+        slot_beat[si]   <= 0;
+      end
       p_ar_valid <= 0; p_ar_ready <= 0; p_r_valid <= 0; p_r_ready <= 0;
     end else begin
       nhits = 0;
@@ -152,11 +162,22 @@ module axi4_read_monitor (
       // ---- data phase. `remaining` counts beats still owed, so the
       // final beat is the one where it reaches 1.
       r_fire  = r_valid && r_ready;
-      checked = r_fire && ar_active;
-      last_early   = checked && r_last  && (remaining != 1);
-      last_missing = checked && !r_last && (remaining == 1);
-      id_mismatch  = checked && (r_id != cur_id);
-      beat_unexpected = r_fire && (outstanding == 0);
+      // Does anything at all have a transaction in flight? A beat
+      // arriving on an idle bus is a different mistake from one naming
+      // the wrong ID while other transactions legitimately progress.
+      any_active = 1'b0;
+      for (si = 0; si < 16; si = si + 1)
+        if (slot_active[si]) any_active = 1'b1;
+
+      checked = r_fire && slot_active[r_id];
+      // Counted UP against ARLEN: the final beat is the one whose index
+      // equals it. Read data for different IDs may interleave beat by
+      // beat, so each ID's own counter is what sequences it; a single
+      // counter cannot tell a legal interleave from a reordered burst.
+      last_early   = checked && r_last  && (slot_beat[r_id] != slot_len[r_id]);
+      last_missing = checked && !r_last && (slot_beat[r_id] == slot_len[r_id]);
+      id_mismatch  = r_fire && !slot_active[r_id] && any_active;
+      beat_unexpected = r_fire && !slot_active[r_id] && !any_active;
 
       note(`RF_AR_VALID_DROPPED,   ar_dropped);
       note(`RF_AR_PAYLOAD_CHANGED, ar_changed);
@@ -172,7 +193,13 @@ module axi4_read_monitor (
       note(`RF_R_BEAT_UNEXPECTED,  beat_unexpected);
 
       faults    <= faults + nhits;
-      unchecked <= unchecked + ((r_fire && !ar_active) ? 1 : 0);
+      // A beat for an inactive ID, or a second AR for an ID already in
+      // flight: legal AXI4 in the second case, but one slot per ID
+      // cannot sequence two of them, so it is counted rather than
+      // silently mis-tracked.
+      unchecked <= unchecked
+                 + ((r_fire && !slot_active[r_id]) ? 1 : 0)
+                 + ((ar_fire && slot_active[ar_id]) ? 1 : 0);
 
       seen <= 1'b1;
       p_ar_valid <= ar_valid; p_ar_ready <= ar_ready;
@@ -187,21 +214,21 @@ module axi4_read_monitor (
       // missing RLAST unobservable: the transaction would close and the
       // next beat would look like a surplus rather than naming the real
       // rule. The countdown is the *position* oracle, not the lifetime.
-      if (ar_fire) begin
-        ar_active <= 1'b1;
-        cur_id    <= ar_id;
-        remaining <= ar_len + 1;
-      end else if (checked && r_last) begin
-        ar_active <= 1'b0;
-        remaining <= 0;
-      end else if (checked) begin
-        remaining <= (remaining == 0) ? 0 : remaining - 1;
+      // Activate on AR, advance or retire on R -- each ID independently,
+      // so an AR and an R naming different IDs in one cycle both land.
+      if (ar_fire && !slot_active[ar_id]) begin
+        slot_active[ar_id] <= 1'b1;
+        slot_len[ar_id]    <= ar_len;
+        slot_beat[ar_id]   <= 0;
       end
-
-      if (ar_fire && !(checked && r_last && outstanding != 0))
-        outstanding <= outstanding + 1;
-      else if (!ar_fire && (checked && r_last && outstanding != 0))
-        outstanding <= outstanding - 1;
+      if (checked) begin
+        if (r_last) begin
+          slot_active[r_id] <= 1'b0;
+          slot_beat[r_id]   <= 0;
+        end else begin
+          slot_beat[r_id] <= slot_beat[r_id] + 1;
+        end
+      end
     end
   end
 endmodule
